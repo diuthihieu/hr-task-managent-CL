@@ -12,19 +12,19 @@
 // the JSON column is deliberately scoped to one record's cells, not a
 // whole-app blob, so that optimization is additive, not a rewrite.
 //
-// NOTE ON PROVIDER: this file targets SQLite for local development inside
-// this sandbox (no Docker/Postgres available here). Every type used below
-// is Postgres-compatible; switching `provider` to "postgresql" and
-// `DATABASE_URL` to a Postgres connection string is a drop-in change -
-// see docker-compose.yml for the production Postgres service.
+// NOTE ON PROVIDER: Postgres (Supabase). `directUrl` is a non-pooled
+// connection used only for migrations; `url` is the pooled (Supavisor
+// transaction-mode) connection used by the app at runtime, required when
+// running on serverless platforms like Vercel.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ---------------------------------------------------------------------------

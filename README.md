@@ -46,7 +46,8 @@ information architecture is visible today.
 
 ```bash
 npm install
-npx prisma migrate dev   # creates prisma/dev.db (SQLite) and applies the schema
+cp .env.example .env     # fill in DATABASE_URL / DIRECT_URL (Postgres) and AUTH_SECRET
+npx prisma migrate dev   # applies the schema to your Postgres database
 npm run db:seed          # seeds the BESTARION / HR Operations demo data
 npm run dev
 ```
@@ -100,23 +101,19 @@ the specific fields a query needs to filter/sort on. The schema comment in
 `prisma/schema.prisma` documents this path; it wasn't built now to avoid
 over-engineering a v1 with no scale problem yet.
 
-### Database provider: SQLite (dev) vs PostgreSQL (production)
+### Database provider: PostgreSQL
 
-The spec asks for PostgreSQL. This repo's local development environment
-(the sandbox this was built in) had no Docker/Postgres available, so
-`prisma/schema.prisma` is currently set to `provider = "sqlite"` — every
-type used (`String`, `Int`, `Float`, `Boolean`, `DateTime`, JSON-as-`String`)
-is Postgres-compatible, so switching is a two-line change:
-
-1. In `prisma/schema.prisma`, change `provider = "sqlite"` to
-   `provider = "postgresql"` under `datasource db`.
-2. Point `DATABASE_URL` at your Postgres instance (see `docker-compose.yml`,
-   which already runs Postgres 16 for you) and run
-   `npx prisma migrate dev --name init` once against it.
+`prisma/schema.prisma` targets PostgreSQL, with a separate `directUrl` for
+migrations. This matters when the database sits behind a connection pooler
+(e.g. Supabase's Supavisor, or any serverless deployment target like Vercel):
+`DATABASE_URL` should point at the pooled/transaction-mode endpoint (used by
+Prisma Client at runtime), and `DIRECT_URL` at an unpooled/session-mode
+endpoint (used only by Prisma Migrate). See `.env.example` for both a local
+Docker Compose setup and a hosted-Postgres (Supabase) setup.
 
 `docker-compose.yml` and the `Dockerfile` build the production image against
-Postgres already; `docker compose up` after the schema switch will build the
-app, run migrations, and serve it on port 3000.
+Postgres; `docker compose up` will build the app, run migrations, and serve
+it on port 3000.
 
 ### Folder structure
 

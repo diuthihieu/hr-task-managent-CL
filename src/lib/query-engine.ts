@@ -82,6 +82,7 @@ export interface ViewConfig {
   calendar?: CalendarConfig;
   gallery?: GalleryConfig;
   form?: FormConfig;
+  eisenhower?: EisenhowerConfig;
 }
 
 export interface GanttConfig {
@@ -133,6 +134,14 @@ export interface FormConfig {
   conditionalRules?: FormConditionalRule[];
   submitLabel?: string;
   successMessage?: string;
+}
+
+export interface EisenhowerConfig {
+  importanceFieldId?: string;
+  urgencyFieldId?: string;
+  dueDateFieldId?: string; // used only by the "auto-set Urgency from due date" action
+  urgentWithinDays?: number;
+  cardFieldIds?: string[];
 }
 
 function computeCellValue(record: RecordRow, field: FieldRow, byId: Map<string, FieldRow>): unknown {

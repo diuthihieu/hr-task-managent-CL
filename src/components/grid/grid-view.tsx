@@ -18,7 +18,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { GripVertical, Maximize2, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import { Checkbox } from "@/components/ui/misc";
-import { Cell, CellDisplayValue, type Member, type LinkTarget } from "./cell";
+import { Cell, CellDisplayValue, type Member, type LinkTarget, type OkrOptions } from "./cell";
 import { FieldHeaderMenu } from "./field-header-menu";
 import { AddFieldButton } from "./add-field-menu";
 import { getCellValue, getConditionalStyle, type RecordGroup, type ConditionalFormatRule } from "@/lib/query-engine";
@@ -35,6 +35,7 @@ interface GridViewProps {
   flatRecords: RecordRow[];
   members: Member[];
   linkTargets: Record<string, LinkTarget>;
+  okrOptions?: OkrOptions;
   hiddenFieldIds: string[];
   columnOrder: string[];
   columnWidths: Record<string, number>;
@@ -345,6 +346,7 @@ function Row({
                   record={record}
                   members={props.members}
                   linkTargets={props.linkTargets}
+                  okrOptions={props.okrOptions}
                   onChange={(v) => props.onCellChange(record.id, field.id, v)}
                 />
               </div>

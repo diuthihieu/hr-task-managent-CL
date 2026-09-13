@@ -161,6 +161,19 @@ export function FieldEditorDialog({
             <p className="text-[11px] text-neutral-400 -mt-1">Attach files by URL - paste a link and give it a name from the cell.</p>
           )}
 
+          {(draft.type === "importance" || draft.type === "urgency") && (
+            <p className="text-[11px] text-neutral-400 -mt-1">
+              {draft.type === "importance" ? "Important / Not Important" : "Urgent / Not Urgent"} - a fixed pair used by
+              the Eisenhower view to place cards in quadrants.
+            </p>
+          )}
+
+          {(draft.type === "okr_objective" || draft.type === "okr_key_result") && (
+            <p className="text-[11px] text-neutral-400 -mt-1">
+              Pick from this workspace&apos;s live {draft.type === "okr_objective" ? "Objectives" : "Key Results"} - manage them from the OKRs section.
+            </p>
+          )}
+
           {draft.type === "currency" && (
             <div>
               <label className="text-xs font-medium text-neutral-500 mb-1 block">Currency symbol</label>

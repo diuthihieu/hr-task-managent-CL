@@ -43,6 +43,8 @@ export const FIELD_TYPES: FieldTypeDef[] = [
   { type: "multi_select", label: "Multi Select", category: "selection", icon: "ListChecks", editable: true },
   { type: "status", label: "Status", category: "selection", icon: "Flag", editable: true },
   { type: "rating", label: "Rating", category: "selection", icon: "Star", editable: true },
+  { type: "importance", label: "Importance", category: "selection", icon: "Gem", editable: true },
+  { type: "urgency", label: "Urgency", category: "selection", icon: "Flame", editable: true },
 
   // People
   { type: "person", label: "Person", category: "people", icon: "User", editable: true },
@@ -68,6 +70,8 @@ export const FIELD_TYPES: FieldTypeDef[] = [
   { type: "link", label: "Link to Record", category: "relational", icon: "Link2", editable: true },
   { type: "lookup", label: "Lookup", category: "relational", icon: "SearchCode", editable: false, comingSoon: true },
   { type: "rollup", label: "Rollup", category: "relational", icon: "Sigma", editable: false, comingSoon: true },
+  { type: "okr_objective", label: "Objective", category: "relational", icon: "Target", editable: true },
+  { type: "okr_key_result", label: "Key Result", category: "relational", icon: "KeySquare", editable: true },
 
   // System
   { type: "created_time", label: "Created Time", category: "system", icon: "Clock", editable: false },
@@ -116,6 +120,25 @@ export const PRIORITY_OPTIONS_DEFAULT = [
   { id: "high", label: "High", color: "#f97316" },
   { id: "critical", label: "Critical", color: "#ef4444" },
 ];
+
+// Fixed vocabularies for the Eisenhower Matrix's two reusable fields. Unlike
+// single_select, the option ids are load-bearing (the matrix quadrant logic
+// switches on them), so the field editor doesn't expose an options UI for
+// these two types - the options are seeded once when the field is created
+// and never change.
+export const IMPORTANCE_OPTIONS = [
+  { id: "important", label: "Important", color: "#ef4444" },
+  { id: "not_important", label: "Not Important", color: "#94a3b8" },
+];
+export const URGENCY_OPTIONS = [
+  { id: "urgent", label: "Urgent", color: "#f97316" },
+  { id: "not_urgent", label: "Not Urgent", color: "#94a3b8" },
+];
+
+// `SELECT_SINGLE_TYPES` below (single_select/status/importance/urgency) is
+// the type list to use anywhere a field renders/filters/sorts as "pick one
+// option from field.config.options" - importance/urgency just have a fixed,
+// pre-seeded vocabulary instead of user-defined ones.
 
 export interface SelectOption {
   id: string;
@@ -167,11 +190,16 @@ export interface AttachmentValue {
 
 export const TEXT_LIKE_TYPES = ["text", "long_text", "email", "phone", "url"];
 export const NUMERIC_LIKE_TYPES = ["number", "integer", "percent", "currency", "progress", "rating", "duration"];
-export const SELECT_SINGLE_TYPES = ["single_select", "status"];
+export const SELECT_SINGLE_TYPES = ["single_select", "status", "importance", "urgency"];
 export const SELECT_MULTI_TYPES = ["multi_select"];
 export const DATE_LIKE_TYPES = ["date", "datetime"];
 
 export function carryOverConfig(oldType: string, newType: string, oldConfig: FieldConfig): FieldConfig {
+  // Importance/Urgency have a fixed, load-bearing vocabulary - never let an
+  // arbitrary options list from the old type overwrite it.
+  if (newType === "importance") return { options: IMPORTANCE_OPTIONS };
+  if (newType === "urgency") return { options: URGENCY_OPTIONS };
+
   const bothSelectLike = [...SELECT_SINGLE_TYPES, ...SELECT_MULTI_TYPES];
   if (bothSelectLike.includes(oldType) && bothSelectLike.includes(newType)) {
     return { options: oldConfig.options };

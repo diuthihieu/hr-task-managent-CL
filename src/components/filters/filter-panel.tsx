@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/misc";
 import { nanoid } from "nanoid";
 import { operatorsForType } from "./operator-options";
-import { parseFieldConfig } from "@/lib/field-types";
+import { parseFieldConfig, SELECT_SINGLE_TYPES } from "@/lib/field-types";
 import type { FilterCondition, FilterGroup, FilterOperator } from "@/lib/query-engine";
 import type { FieldRow } from "@/types";
 import type { Member } from "@/components/grid/cell";
@@ -113,7 +113,7 @@ export function FilterValueInput({
   onChange: (v: unknown) => void;
 }) {
   const config = parseFieldConfig(field.config);
-  if (["single_select", "status", "multi_select"].includes(field.type)) {
+  if ([...SELECT_SINGLE_TYPES, "multi_select"].includes(field.type)) {
     return (
       <Select
         className="flex-1"

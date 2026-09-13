@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getMembership, getWorkspaceIdForTable } from "@/lib/permissions";
+import { resolveTaskOkrWeight } from "@/lib/okr-engine";
+import type { FieldRow } from "@/types";
 
 function serialize(record: { id: string; tableId: string; data: string; order: number; createdById: string | null; createdAt: Date; updatedAt: Date }) {
   return {
@@ -52,5 +54,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ tableId
       createdById: (session.user as { id: string }).id,
     },
   });
+
+  const allFields = (await prisma.field.findMany({ where: { tableId } })) as unknown as FieldRow[];
+  const krFields = allFields.filter((f) => f.type === "okr_key_result");
+  const newKrIds = [...new Set(krFields.map((f) => data[f.id]).filter((v): v is string => typeof v === "string" && v.length > 0))];
+  if (newKrIds.length) {
+    const weight = resolveTaskOkrWeight(allFields, data);
+    await Promise.all(
+      newKrIds.map((keyResultId) =>
+        prisma.keyResultTask.create({ data: { keyResultId, tableId, recordId: record.id, weight } })
+      )
+    );
+  }
+
   return NextResponse.json(serialize(record), { status: 201 });
 }

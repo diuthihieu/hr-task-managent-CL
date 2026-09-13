@@ -63,3 +63,81 @@ export interface WorkspaceMemberRow {
   role: string;
   user: { id: string; name: string; email: string; avatarColor: string };
 }
+
+// ---------------------------------------------------------------------------
+// OKRs
+// ---------------------------------------------------------------------------
+
+export type OkrCycleType = "quarter" | "year" | "custom";
+export type ObjectiveStatus = "not_started" | "on_track" | "at_risk" | "off_track" | "completed";
+export type OkrPriority = "low" | "medium" | "high" | "critical";
+export type KeyResultType = "task_based" | "numeric" | "percentage" | "manual";
+
+export interface TeamRow {
+  id: string;
+  workspaceId: string;
+  name: string;
+  color: string;
+}
+
+export interface OkrUserLite {
+  id: string;
+  name: string;
+  avatarColor: string;
+}
+
+/** A task record contributing to a Key Result, with its own resolved progress already computed server-side. */
+export interface KeyResultTaskRow {
+  id: string;
+  keyResultId: string;
+  tableId: string;
+  tableName: string;
+  baseId: string;
+  recordId: string;
+  weight: number;
+  title: string;
+  status: string | null;
+  progress: number; // 0-100, resolved from the record's own Progress/Status field
+  dueDate: string | null;
+  assignee: OkrUserLite | null;
+}
+
+export interface KeyResultRow {
+  id: string;
+  objectiveId: string;
+  title: string;
+  owner: OkrUserLite | null;
+  type: KeyResultType;
+  startValue: number;
+  targetValue: number;
+  currentValue: number;
+  unit: string | null;
+  weight: number;
+  manualProgress: number | null;
+  status: string;
+  order: number;
+  progress: number; // 0-100, always derived
+  tasks: KeyResultTaskRow[];
+}
+
+export interface ObjectiveRow {
+  id: string;
+  workspaceId: string;
+  teamId: string | null;
+  team: TeamRow | null;
+  title: string;
+  description: string | null;
+  owner: OkrUserLite | null;
+  cycleType: OkrCycleType;
+  cycleLabel: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  status: ObjectiveStatus;
+  confidence: number;
+  priority: OkrPriority;
+  contributors: OkrUserLite[];
+  createdAt: string;
+  updatedAt: string;
+  keyResults: KeyResultRow[];
+  progress: number; // 0-100, weighted average of key results
+}

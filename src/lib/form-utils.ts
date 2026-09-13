@@ -26,6 +26,8 @@ const NOT_FORMABLE_TYPES = [
   "ai_field",
   "json",
   "api_result",
+  "okr_objective",
+  "okr_key_result",
 ];
 
 export function isFieldFormable(field: FieldRow): boolean {

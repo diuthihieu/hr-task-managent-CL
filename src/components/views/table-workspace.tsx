@@ -19,7 +19,9 @@ import { FieldEditorDialog, type FieldDraft } from "@/components/fields/field-ed
 import { ExportDialog } from "./export-dialog";
 import type { LinkTarget, Member } from "@/components/grid/cell";
 import { applyFilters, applySorts, applyGroup, getCellValue, type ViewConfig, type FilterCondition } from "@/lib/query-engine";
-import { parseFieldConfig, getFieldType, carryOverConfig } from "@/lib/field-types";
+import { parseFieldConfig, getFieldType, carryOverConfig, IMPORTANCE_OPTIONS, URGENCY_OPTIONS } from "@/lib/field-types";
+import { EisenhowerView } from "@/components/eisenhower/eisenhower-view";
+import type { OkrOptions } from "@/components/grid/cell";
 import type { FieldRow, RecordRow, ViewRow } from "@/types";
 
 interface TableDetail {
@@ -29,7 +31,7 @@ interface TableDetail {
   views: ViewRow[];
   members: Member[];
   myRole: string;
-  base: { id: string; name: string; workspace: { slug: string; name: string } };
+  base: { id: string; name: string; workspaceId: string; workspace: { slug: string; name: string } };
 }
 
 export function TableWorkspace({
@@ -55,6 +57,7 @@ export function TableWorkspace({
   const [fieldDialog, setFieldDialog] = useState<{ open: boolean; field: FieldRow | null; insertAfterOrder?: number }>({ open: false, field: null });
   const [exportOpen, setExportOpen] = useState(false);
   const [linkTargets, setLinkTargets] = useState<Record<string, LinkTarget>>({});
+  const [okrOptions, setOkrOptions] = useState<OkrOptions>({ objectives: [], keyResults: [] });
   const [loading, setLoading] = useState(true);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -115,6 +118,17 @@ export function TableWorkspace({
     });
   }, [table]);
 
+  // Live Objective/Key Result options for `okr_objective`/`okr_key_result` cell pickers.
+  useEffect(() => {
+    if (!table) return;
+    const hasOkrFields = table.fields.some((f) => f.type === "okr_objective" || f.type === "okr_key_result");
+    if (!hasOkrFields) return;
+    api
+      .get<OkrOptions>(`/api/workspaces/${table.base.workspaceId}/okr-options`)
+      .then(setOkrOptions)
+      .catch(() => {});
+  }, [table]);
+
   const activeView = table?.views.find((v) => v.id === activeViewId);
   const config: ViewConfig = useMemo(() => (activeView ? JSON.parse(activeView.config || "{}") : {}), [activeView]);
 
@@ -149,9 +163,18 @@ export function TableWorkspace({
   const reorderable = (!config.sorts || config.sorts.length === 0) && !config.group?.fieldId && !search.trim() && !config.filters?.conditions?.length;
 
   async function handleCellChange(recordId: string, fieldId: string, value: unknown) {
-    setRecords((prev) => prev.map((r) => (r.id === recordId ? { ...r, data: { ...r.data, [fieldId]: value } } : r)));
+    return handleCellChangeMultiple(recordId, { [fieldId]: value });
+  }
+
+  // Setting more than one field on the same record at once (e.g. Eisenhower
+  // drag-drop writing Importance + Urgency together) must go through a single
+  // request: two concurrent handleCellChange calls would each read-merge
+  // against the same stale server row and the second write would clobber the
+  // first.
+  async function handleCellChangeMultiple(recordId: string, patch: Record<string, unknown>) {
+    setRecords((prev) => prev.map((r) => (r.id === recordId ? { ...r, data: { ...r.data, ...patch } } : r)));
     try {
-      await api.patch(`/api/records/${recordId}`, { data: { [fieldId]: value } });
+      await api.patch(`/api/records/${recordId}`, { data: patch });
     } catch {
       toast.error("Failed to save change");
       load();
@@ -207,6 +230,10 @@ export function TableWorkspace({
     const typeDef = getFieldType(type);
     const defaultConfig = ["single_select", "multi_select", "status"].includes(type)
       ? { options: [{ id: nanoid(6), label: "Option 1", color: "#3b82f6" }] }
+      : type === "importance"
+      ? { options: IMPORTANCE_OPTIONS }
+      : type === "urgency"
+      ? { options: URGENCY_OPTIONS }
       : {};
     try {
       const field = await api.post<FieldRow>(`/api/tables/${tableId}/fields`, {
@@ -506,6 +533,18 @@ export function TableWorkspace({
           onCellChange={handleCellChange}
           onOpenRecord={setOpenRecordId}
         />
+      ) : activeView?.type === "eisenhower" ? (
+        <EisenhowerView
+          fields={fields}
+          flatRecords={sorted}
+          members={members}
+          config={config.eisenhower ?? {}}
+          onConfigChange={(patch) => updateConfig({ eisenhower: { ...(config.eisenhower ?? {}), ...patch } })}
+          onCellChange={handleCellChange}
+          onCellChangeMultiple={handleCellChangeMultiple}
+          onOpenRecord={setOpenRecordId}
+          okrOptions={okrOptions}
+        />
       ) : (
         <GridView
           fields={fields}
@@ -513,6 +552,7 @@ export function TableWorkspace({
           flatRecords={sorted}
           members={members}
           linkTargets={linkTargets}
+          okrOptions={okrOptions}
           hiddenFieldIds={config.hiddenFieldIds ?? []}
           columnOrder={config.columnOrder ?? []}
           columnWidths={config.columnWidths ?? {}}
@@ -540,6 +580,7 @@ export function TableWorkspace({
           fields={fields}
           members={members}
           linkTargets={linkTargets}
+          okrOptions={okrOptions}
           onClose={() => setOpenRecordId(null)}
           onChange={(fieldId, value) => handleCellChange(openRecord.id, fieldId, value)}
           onDelete={() => {

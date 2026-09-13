@@ -1,11 +1,11 @@
 "use client";
 import { useState } from "react";
-import { Star, User as UserIcon, Link2, Check, Paperclip, Plus, X } from "lucide-react";
+import { Star, User as UserIcon, Link2, Check, Paperclip, Plus, X, Target, KeySquare } from "lucide-react";
 import { Checkbox } from "@/components/ui/misc";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { getFieldType, parseFieldConfig, type SelectOption, type AttachmentValue } from "@/lib/field-types";
+import { getFieldType, parseFieldConfig, SELECT_SINGLE_TYPES, type SelectOption, type AttachmentValue } from "@/lib/field-types";
 import { cn, initials, formatDate } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
 
@@ -19,12 +19,18 @@ export interface LinkTarget {
   records: { id: string; label: string }[];
 }
 
+export interface OkrOptions {
+  objectives: { id: string; title: string }[];
+  keyResults: { id: string; title: string; objectiveId: string }[];
+}
+
 interface CellProps {
   field: FieldRow;
   value: unknown;
   record: RecordRow;
   members: Member[];
   linkTargets?: Record<string, LinkTarget>; // keyed by field.id, for `link` fields
+  okrOptions?: OkrOptions; // for `okr_objective` / `okr_key_result` fields
   onChange: (value: unknown) => void;
   readOnlyOverride?: boolean;
 }
@@ -40,7 +46,7 @@ function OptionBadge({ option }: { option: SelectOption }) {
   );
 }
 
-export function Cell({ field, value, members, linkTargets, onChange }: CellProps) {
+export function Cell({ field, value, members, linkTargets, okrOptions, onChange }: CellProps) {
   const typeDef = getFieldType(field.type);
   const config = parseFieldConfig(field.config);
   const base = "h-full w-full flex items-center px-2 text-sm";
@@ -143,7 +149,9 @@ export function Cell({ field, value, members, linkTargets, onChange }: CellProps
         />
       );
     case "single_select":
-    case "status": {
+    case "status":
+    case "importance":
+    case "urgency": {
       const options = config.options ?? [];
       const selected = options.find((o) => o.id === value);
       return (
@@ -304,6 +312,80 @@ export function Cell({ field, value, members, linkTargets, onChange }: CellProps
         </Popover>
       );
     }
+    case "okr_objective": {
+      const objectives = okrOptions?.objectives ?? [];
+      const selected = objectives.find((o) => o.id === value);
+      return (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button className={cn(base, "gap-1 cursor-pointer overflow-hidden")}>
+              {selected ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 text-xs truncate max-w-full">
+                  <Target size={10} className="shrink-0" /> <span className="truncate">{selected.title}</span>
+                </span>
+              ) : (
+                <span className="text-neutral-300">—</span>
+              )}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-56 p-1 max-h-64 overflow-y-auto thin-scroll">
+            {objectives.length === 0 && <div className="text-xs text-neutral-400 px-2 py-2">No Objectives yet - create one from the OKRs section</div>}
+            {objectives.map((o) => (
+              <button
+                key={o.id}
+                onClick={() => onChange(o.id === value ? null : o.id)}
+                className="w-full flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm text-left"
+              >
+                <span className="flex-1 truncate">{o.title}</span>
+                {o.id === value && <Check size={13} className="text-indigo-600" />}
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
+      );
+    }
+    case "okr_key_result": {
+      const keyResults = okrOptions?.keyResults ?? [];
+      const objectives = okrOptions?.objectives ?? [];
+      const selected = keyResults.find((k) => k.id === value);
+      return (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button className={cn(base, "gap-1 cursor-pointer overflow-hidden")}>
+              {selected ? (
+                <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 px-2 py-0.5 text-xs truncate max-w-full">
+                  <KeySquare size={10} className="shrink-0" /> <span className="truncate">{selected.title}</span>
+                </span>
+              ) : (
+                <span className="text-neutral-300">—</span>
+              )}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-64 p-1 max-h-72 overflow-y-auto thin-scroll">
+            {keyResults.length === 0 && <div className="text-xs text-neutral-400 px-2 py-2">No Key Results yet - add one under an Objective</div>}
+            {objectives.map((o) => {
+              const krs = keyResults.filter((k) => k.objectiveId === o.id);
+              if (!krs.length) return null;
+              return (
+                <div key={o.id} className="mb-1">
+                  <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-neutral-400 truncate">{o.title}</div>
+                  {krs.map((k) => (
+                    <button
+                      key={k.id}
+                      onClick={() => onChange(k.id === value ? null : k.id)}
+                      className="w-full flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm text-left"
+                    >
+                      <span className="flex-1 truncate">{k.title}</span>
+                      {k.id === value && <Check size={13} className="text-indigo-600" />}
+                    </button>
+                  ))}
+                </div>
+              );
+            })}
+          </PopoverContent>
+        </Popover>
+      );
+    }
     case "attachment": {
       const files: AttachmentValue[] = Array.isArray(value) ? (value as AttachmentValue[]) : [];
       return (
@@ -396,7 +478,7 @@ function PopoverOption({ option, selected, onClick }: { option: SelectOption; se
 
 export function CellDisplayValue(field: FieldRow, value: unknown): string {
   const config = parseFieldConfig(field.config);
-  if (["single_select", "status"].includes(field.type)) {
+  if (SELECT_SINGLE_TYPES.includes(field.type)) {
     return config.options?.find((o) => o.id === value)?.label ?? "";
   }
   if (field.type === "multi_select" && Array.isArray(value)) {

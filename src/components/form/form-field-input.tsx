@@ -73,6 +73,8 @@ export function FormFieldInput({
       );
     case "single_select":
     case "status":
+    case "importance":
+    case "urgency":
       return (
         <Select
           className="w-full"

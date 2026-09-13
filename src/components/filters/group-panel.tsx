@@ -1,10 +1,11 @@
 "use client";
 import { Group as GroupIcon, X } from "lucide-react";
 import { Select } from "@/components/ui/misc";
+import { SELECT_SINGLE_TYPES } from "@/lib/field-types";
 import type { GroupRule } from "@/lib/query-engine";
 import type { FieldRow } from "@/types";
 
-const GROUPABLE_TYPES = ["single_select", "multi_select", "status", "person", "people"];
+const GROUPABLE_TYPES = [...SELECT_SINGLE_TYPES, "multi_select", "person", "people"];
 const NUMERIC_TYPES = ["number", "integer", "percent", "currency", "rating", "progress", "duration"];
 
 export function GroupPanel({ fields, group, onChange }: { fields: FieldRow[]; group: GroupRule | undefined; onChange: (g: GroupRule | undefined) => void }) {

@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { X, Trash2, Send } from "lucide-react";
 import { Cell } from "./cell";
-import type { Member, LinkTarget } from "./cell";
+import type { Member, LinkTarget, OkrOptions } from "./cell";
 import { getCellValue } from "@/lib/query-engine";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
@@ -24,6 +24,7 @@ export function RecordDrawer({
   fields,
   members,
   linkTargets,
+  okrOptions,
   onClose,
   onChange,
   onDelete,
@@ -32,6 +33,7 @@ export function RecordDrawer({
   fields: FieldRow[];
   members: Member[];
   linkTargets: Record<string, LinkTarget>;
+  okrOptions?: OkrOptions;
   onClose: () => void;
   onChange: (fieldId: string, value: unknown) => void;
   onDelete: () => void;
@@ -81,7 +83,7 @@ export function RecordDrawer({
               <div key={field.id}>
                 <label className="text-xs font-medium text-neutral-500 mb-1 block">{field.name}</label>
                 <div className="rounded-md border border-neutral-200 dark:border-neutral-800 min-h-[34px]">
-                  <Cell field={field} value={value} record={record} members={members} linkTargets={linkTargets} onChange={(v) => onChange(field.id, v)} />
+                  <Cell field={field} value={value} record={record} members={members} linkTargets={linkTargets} okrOptions={okrOptions} onChange={(v) => onChange(field.id, v)} />
                 </div>
                 {typeDef.comingSoon && <p className="text-[11px] text-neutral-400 mt-1">Coming soon in a later phase</p>}
               </div>

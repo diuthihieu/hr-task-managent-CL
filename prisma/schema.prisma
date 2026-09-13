@@ -39,10 +39,13 @@ model User {
   avatarColor  String   @default("#6366f1")
   createdAt    DateTime @default(now())
 
-  memberships    WorkspaceMember[]
-  recordsCreated Record[]          @relation("RecordCreatedBy")
-  comments       Comment[]
-  auditLogs      AuditLog[]
+  memberships          WorkspaceMember[]
+  recordsCreated       Record[]               @relation("RecordCreatedBy")
+  comments             Comment[]
+  auditLogs            AuditLog[]
+  objectivesOwned      Objective[]            @relation("ObjectiveOwner")
+  keyResultsOwned      KeyResult[]            @relation("KeyResultOwner")
+  objectiveContributes ObjectiveContributor[]
 }
 
 model Workspace {
@@ -51,9 +54,11 @@ model Workspace {
   slug      String   @unique
   createdAt DateTime @default(now())
 
-  members   WorkspaceMember[]
-  bases     Base[]
-  auditLogs AuditLog[]
+  members    WorkspaceMember[]
+  bases      Base[]
+  auditLogs  AuditLog[]
+  teams      Team[]
+  objectives Objective[]
 }
 
 model WorkspaceMember {
@@ -139,9 +144,10 @@ model Record {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  table     TableDef  @relation(fields: [tableId], references: [id], onDelete: Cascade)
-  createdBy User?     @relation("RecordCreatedBy", fields: [createdById], references: [id])
-  comments  Comment[]
+  table          TableDef        @relation(fields: [tableId], references: [id], onDelete: Cascade)
+  createdBy      User?           @relation("RecordCreatedBy", fields: [createdById], references: [id])
+  comments       Comment[]
+  keyResultLinks KeyResultTask[]
 
   @@index([tableId])
 }
@@ -173,6 +179,107 @@ model Comment {
   record Record @relation(fields: [recordId], references: [id], onDelete: Cascade)
   user   User   @relation(fields: [userId], references: [id])
 
+  @@index([recordId])
+}
+
+// ---------------------------------------------------------------------------
+// OKRs - Team > Objective > Key Result > Task. Objective/KeyResult progress
+// is never stored: it's always derived at read time from KeyResultTask links
+// (task-based) or from the KR's own value fields (numeric/percentage/manual),
+// so a Task progress edit is reflected everywhere the instant it's read back
+// - no write-fanout, nothing to keep in sync. See src/lib/okr-engine.ts.
+// ---------------------------------------------------------------------------
+
+model Team {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  color       String   @default("#6366f1")
+  createdAt   DateTime @default(now())
+
+  workspace  Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  objectives Objective[]
+
+  @@index([workspaceId])
+}
+
+model Objective {
+  id          String    @id @default(cuid())
+  workspaceId String
+  teamId      String?
+  title       String
+  description String?
+  ownerId     String?
+  cycleType   String    @default("quarter") // quarter | year | custom
+  cycleLabel  String?
+  startDate   DateTime?
+  endDate     DateTime?
+  status      String    @default("on_track") // not_started | on_track | at_risk | off_track | completed
+  confidence  Int       @default(70)
+  priority    String    @default("medium") // low | medium | high | critical
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace    Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  team         Team?                  @relation(fields: [teamId], references: [id])
+  owner        User?                  @relation("ObjectiveOwner", fields: [ownerId], references: [id])
+  contributors ObjectiveContributor[]
+  keyResults   KeyResult[]
+
+  @@index([workspaceId])
+  @@index([teamId])
+}
+
+model ObjectiveContributor {
+  id          String @id @default(cuid())
+  objectiveId String
+  userId      String
+
+  objective Objective @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([objectiveId, userId])
+}
+
+model KeyResult {
+  id             String   @id @default(cuid())
+  objectiveId    String
+  title          String
+  ownerId        String?
+  type           String   @default("task_based") // task_based | numeric | percentage | manual
+  startValue     Float    @default(0)
+  targetValue    Float    @default(100)
+  currentValue   Float    @default(0)
+  unit           String?
+  weight         Float    @default(1)
+  manualProgress Float?
+  status         String   @default("on_track")
+  order          Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  objective Objective       @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+  owner     User?           @relation("KeyResultOwner", fields: [ownerId], references: [id])
+  taskLinks KeyResultTask[]
+
+  @@index([objectiveId])
+}
+
+// The join between a Key Result and a Task record living in any Table -
+// deliberately a real relational row (not a field stashed in Record.data)
+// so progress rollup is a cheap indexed query instead of a cross-table scan.
+model KeyResultTask {
+  id          String   @id @default(cuid())
+  keyResultId String
+  tableId     String
+  recordId    String
+  weight      Float    @default(1)
+  createdAt   DateTime @default(now())
+
+  keyResult KeyResult @relation(fields: [keyResultId], references: [id], onDelete: Cascade)
+  record    Record    @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@unique([keyResultId, recordId])
   @@index([recordId])
 }
 

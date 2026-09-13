@@ -6,13 +6,13 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Select } from "@/components/ui/misc";
 import { getCellValue } from "@/lib/query-engine";
 import type { KanbanConfig } from "@/lib/query-engine";
-import { parseFieldConfig, type SelectOption } from "@/lib/field-types";
+import { parseFieldConfig, SELECT_SINGLE_TYPES, type SelectOption } from "@/lib/field-types";
 import { formatDisplayValue } from "@/lib/format";
 import { cn, initials } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
 import type { Member } from "@/components/grid/cell";
 
-const GROUPABLE_TYPES = ["single_select", "status", "multi_select", "person"];
+const GROUPABLE_TYPES = [...SELECT_SINGLE_TYPES, "multi_select", "person"];
 
 interface Column {
   key: string;
@@ -250,7 +250,7 @@ function KanbanCard({
 
 function KanbanFieldChip({ field, value, members }: { field: FieldRow; value: unknown; members: Member[] }) {
   const cfg = parseFieldConfig(field.config);
-  if (["single_select", "status"].includes(field.type)) {
+  if (SELECT_SINGLE_TYPES.includes(field.type)) {
     const option = cfg.options?.find((o) => o.id === value);
     return option ? <Badge option={option} /> : null;
   }

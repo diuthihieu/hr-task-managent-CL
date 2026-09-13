@@ -33,6 +33,28 @@ export async function POST(req: Request, { params }: { params: Promise<{ tableId
       config: config ? JSON.stringify(config) : null,
     },
   });
+
+  // A Key Result link is only useful for progress rollup once tasks can
+  // carry a weight, so seed that sibling field automatically instead of
+  // making every user remember to add it by hand.
+  if (field.type === "okr_key_result") {
+    const hasWeightField = await prisma.field.findFirst({
+      where: { tableId, name: { equals: "OKR Contribution Weight", mode: "insensitive" } },
+    });
+    if (!hasWeightField) {
+      const weightOrder = await prisma.field.count({ where: { tableId } });
+      await prisma.field.create({
+        data: {
+          tableId,
+          name: "OKR Contribution Weight",
+          type: "percent",
+          order: weightOrder,
+          description: "How much this task's progress counts toward its Key Result (equal weight if left empty).",
+        },
+      });
+    }
+  }
+
   return NextResponse.json(field, { status: 201 });
 }
 

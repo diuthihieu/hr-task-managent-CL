@@ -55,3 +55,21 @@ export async function getWorkspaceIdForDashboardBlock(blockId: string) {
   });
   return block?.dashboard.base.workspaceId ?? null;
 }
+
+export async function getWorkspaceIdForObjective(objectiveId: string) {
+  const objective = await prisma.objective.findUnique({ where: { id: objectiveId }, select: { workspaceId: true } });
+  return objective?.workspaceId ?? null;
+}
+
+export async function getWorkspaceIdForKeyResult(keyResultId: string) {
+  const kr = await prisma.keyResult.findUnique({
+    where: { id: keyResultId },
+    select: { objective: { select: { workspaceId: true } } },
+  });
+  return kr?.objective.workspaceId ?? null;
+}
+
+export async function getWorkspaceIdForTeam(teamId: string) {
+  const team = await prisma.team.findUnique({ where: { id: teamId }, select: { workspaceId: true } });
+  return team?.workspaceId ?? null;
+}

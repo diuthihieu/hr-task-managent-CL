@@ -1,4 +1,5 @@
 import type { FilterOperator } from "@/lib/query-engine";
+import { SELECT_SINGLE_TYPES } from "@/lib/field-types";
 
 const TEXT_OPS: { value: FilterOperator; label: string }[] = [
   { value: "contains", label: "contains" },
@@ -57,7 +58,7 @@ const PERSON_OPS: { value: FilterOperator; label: string }[] = [
 export function operatorsForType(type: string) {
   if (["number", "integer", "percent", "currency", "duration", "progress", "rating"].includes(type)) return NUMBER_OPS;
   if (["date", "datetime", "created_time", "modified_time"].includes(type)) return DATE_OPS;
-  if (["single_select", "status"].includes(type)) return SELECT_OPS;
+  if (SELECT_SINGLE_TYPES.includes(type)) return SELECT_OPS;
   if (["multi_select", "link"].includes(type)) return MULTI_SELECT_OPS;
   if (["person", "people", "created_by"].includes(type)) return PERSON_OPS;
   if (type === "checkbox") return [{ value: "equals" as FilterOperator, label: "is" }];

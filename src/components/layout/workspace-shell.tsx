@@ -18,6 +18,8 @@ import {
   Moon,
   LogOut,
   Workflow as WorkflowIcon,
+  Target,
+  Briefcase,
 } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
 import { api } from "@/lib/api-client";
@@ -58,6 +60,11 @@ export function WorkspaceShell({
   const activeBaseId = pathname.match(/\/b\/([^/]+)/)?.[1];
   const activeTableId = pathname.match(/\/t\/([^/]+)/)?.[1];
   const activeDashboardId = pathname.match(/\/dash\/([^/]+)/)?.[1];
+  const isMyWork = pathname.includes("/my-work");
+  const isTeamOkrs = /\/okrs$/.test(pathname);
+  const isMyOkrs = pathname.endsWith("/okrs/my");
+  const isOkrDashboard = pathname.endsWith("/okrs/dashboard");
+  const isOkrDetail = /\/okrs\/[^/]+$/.test(pathname) && !isMyOkrs && !isOkrDashboard && !isTeamOkrs;
 
   function toggleExpand(baseId: string) {
     setExpanded((prev) => {
@@ -146,6 +153,50 @@ export function WorkspaceShell({
             <span className="flex-1 text-left">Search</span>
             <kbd className="text-[10px] px-1 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-400">Ctrl K</kbd>
           </button>
+
+          <Link
+            href={`/w/${workspace.slug}/my-work`}
+            className={cn(
+              "flex items-center gap-2 rounded-md px-2 py-1.5 mb-2",
+              isMyWork ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+            )}
+          >
+            <Briefcase size={14} />
+            <span className="flex-1 text-left">My Work</span>
+          </Link>
+
+          <div className="mb-2">
+            <div className="px-2 mb-0.5 flex items-center gap-1.5 text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+              <Target size={12} /> OKRs
+            </div>
+            <Link
+              href={`/w/${workspace.slug}/okrs`}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-2 py-1 ml-1",
+                isTeamOkrs || isOkrDetail ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              )}
+            >
+              <span className="flex-1 text-left text-sm">Team OKRs</span>
+            </Link>
+            <Link
+              href={`/w/${workspace.slug}/okrs/my`}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-2 py-1 ml-1",
+                isMyOkrs ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              )}
+            >
+              <span className="flex-1 text-left text-sm">My OKRs</span>
+            </Link>
+            <Link
+              href={`/w/${workspace.slug}/okrs/dashboard`}
+              className={cn(
+                "flex items-center gap-2 rounded-md px-2 py-1 ml-1",
+                isOkrDashboard ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+              )}
+            >
+              <span className="flex-1 text-left text-sm">Dashboard</span>
+            </Link>
+          </div>
 
           <div className="mt-1 mb-1 px-2 flex items-center justify-between text-xs font-semibold text-neutral-400 uppercase tracking-wide">
             <span>Bases</span>

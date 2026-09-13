@@ -10,7 +10,7 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, Sheet, Kanban, Calendar, GanttChartSquare, GalleryHorizontal, FileInput, Trash2, MoreHorizontal, Pencil, Copy } from "lucide-react";
+import { Plus, Sheet, Kanban, Calendar, GanttChartSquare, GalleryHorizontal, FileInput, Grid2x2, Trash2, MoreHorizontal, Pencil, Copy } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/toast";
 import type { ViewRow } from "@/types";
@@ -23,6 +23,7 @@ const VIEW_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   gantt: GanttChartSquare,
   gallery: GalleryHorizontal,
   form: FileInput,
+  eisenhower: Grid2x2,
 };
 
 const VIEW_TYPES = [
@@ -32,6 +33,7 @@ const VIEW_TYPES = [
   { type: "gantt", label: "Gantt", available: true },
   { type: "gallery", label: "Gallery", available: true },
   { type: "form", label: "Form", available: true },
+  { type: "eisenhower", label: "Eisenhower", available: true },
 ];
 
 export function ViewTabs({

@@ -3,7 +3,7 @@
 // need the same human-readable text a user sees in the Grid, not the raw
 // option id / user id / ISO timestamp that's actually stored.
 
-import { parseFieldConfig, type AttachmentValue } from "./field-types";
+import { parseFieldConfig, SELECT_SINGLE_TYPES, type AttachmentValue } from "./field-types";
 import type { FieldRow } from "@/types";
 
 export interface FormatMember {
@@ -15,7 +15,7 @@ export function formatDisplayValue(field: FieldRow, value: unknown, members: For
   if (value === null || value === undefined || value === "") return "";
   const config = parseFieldConfig(field.config);
 
-  if (["single_select", "status"].includes(field.type)) {
+  if (SELECT_SINGLE_TYPES.includes(field.type)) {
     return config.options?.find((o) => o.id === value)?.label ?? String(value);
   }
   if (field.type === "multi_select" && Array.isArray(value)) {

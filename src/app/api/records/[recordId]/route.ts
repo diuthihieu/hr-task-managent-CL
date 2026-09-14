@@ -69,6 +69,17 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ record
 
   const record = await prisma.record.update({ where: { id: recordId }, data });
   if (body.data) await syncKeyResultLinks(recordId, existing.tableId, oldData, mergedData);
+  await prisma.auditLog.create({
+    data: {
+      workspaceId,
+      userId: (session.user as { id: string }).id,
+      action: "update",
+      objectType: "record",
+      objectId: recordId,
+      oldValue: body.data ? JSON.stringify(oldData) : null,
+      newValue: body.data ? JSON.stringify(mergedData) : null,
+    },
+  });
   return NextResponse.json(serialize(record));
 }
 
@@ -81,5 +92,8 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ reco
   const membership = await getMembership((session.user as { id: string }).id, workspaceId);
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   await prisma.record.delete({ where: { id: recordId } });
+  await prisma.auditLog.create({
+    data: { workspaceId, userId: (session.user as { id: string }).id, action: "delete", objectType: "record", objectId: recordId },
+  });
   return NextResponse.json({ ok: true });
 }

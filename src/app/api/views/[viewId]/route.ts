@@ -11,6 +11,19 @@ async function workspaceIdForView(viewId: string) {
   return view?.table.base.workspaceId ?? null;
 }
 
+export async function GET(_req: Request, { params }: { params: Promise<{ viewId: string }> }) {
+  const session = await auth();
+  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { viewId } = await params;
+  const workspaceId = await workspaceIdForView(viewId);
+  if (!workspaceId) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
+  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const view = await prisma.view.findUnique({ where: { id: viewId } });
+  if (!view) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  return NextResponse.json(view);
+}
+
 export async function PATCH(req: Request, { params }: { params: Promise<{ viewId: string }> }) {
   const session = await auth();
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

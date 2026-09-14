@@ -76,7 +76,7 @@ export interface ViewConfig {
   columnWidths?: Record<string, number>;
   frozenCount?: number;
   conditionalFormats?: ConditionalFormatRule[];
-  rowHeight?: "short" | "medium" | "tall";
+  rowHeight?: "short" | "medium" | "tall" | "auto";
   ganttConfig?: GanttConfig;
   kanban?: KanbanConfig;
   calendar?: CalendarConfig;

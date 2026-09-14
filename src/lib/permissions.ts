@@ -73,3 +73,8 @@ export async function getWorkspaceIdForTeam(teamId: string) {
   const team = await prisma.team.findUnique({ where: { id: teamId }, select: { workspaceId: true } });
   return team?.workspaceId ?? null;
 }
+
+export async function getWorkspaceIdForThought(thoughtId: string) {
+  const thought = await prisma.capturedThought.findUnique({ where: { id: thoughtId }, select: { workspaceId: true } });
+  return thought?.workspaceId ?? null;
+}

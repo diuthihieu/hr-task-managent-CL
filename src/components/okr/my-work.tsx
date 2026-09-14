@@ -1,10 +1,11 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CheckSquare, Target, KeySquare, Grid2x2, CalendarClock } from "lucide-react";
+import { CheckSquare, Target, KeySquare, Grid2x2, CalendarClock, Sparkles } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/misc";
 import { ProgressBar, StatusBadge, DeadlineLabel } from "./okr-ui";
+import { PutAllThingsOn } from "@/components/capture/put-all-things-on";
 import type { ObjectiveRow, KeyResultRow } from "@/types";
 import type { MyTaskRow } from "@/app/api/workspaces/[workspaceId]/my-work/route";
 
@@ -59,14 +60,19 @@ export function MyWork({ workspaceId, workspaceSlug }: { workspaceId: string; wo
       <div className="flex items-center px-4 h-12 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
         <h1 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">My Work</h1>
       </div>
-      <Tabs defaultValue="tasks" className="flex-1 flex flex-col overflow-hidden">
+      <Tabs defaultValue="capture" className="flex-1 flex flex-col overflow-hidden">
         <TabsList className="px-4 h-10 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+          <TabsTrigger value="capture"><Sparkles size={13} /> Put All Things On</TabsTrigger>
           <TabsTrigger value="tasks"><CheckSquare size={13} /> My Tasks ({data.tasks.length})</TabsTrigger>
           <TabsTrigger value="okrs"><Target size={13} /> My OKRs ({data.objectives.length})</TabsTrigger>
           <TabsTrigger value="krs"><KeySquare size={13} /> My Key Results ({data.keyResults.length})</TabsTrigger>
           <TabsTrigger value="eisenhower"><Grid2x2 size={13} /> My Eisenhower Matrix</TabsTrigger>
           <TabsTrigger value="deadlines"><CalendarClock size={13} /> Upcoming Deadlines</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="capture" className="flex-1 flex overflow-hidden">
+          <PutAllThingsOn workspaceId={workspaceId} workspaceSlug={workspaceSlug} />
+        </TabsContent>
 
         <TabsContent value="tasks" className="flex-1 overflow-y-auto thin-scroll p-4">
           <div className="space-y-1">

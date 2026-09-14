@@ -1,6 +1,6 @@
 "use client";
 import { forwardRef } from "react";
-import { Search, ListFilter, ArrowUpDown, Group as GroupIcon, EyeOff, Paintbrush, Rows3, Trash2, X, Download } from "lucide-react";
+import { Search, ListFilter, ArrowUpDown, Group as GroupIcon, EyeOff, Paintbrush, Rows3, Trash2, X, Download, Copy } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/misc";
@@ -26,6 +26,7 @@ export function ViewToolbar({
   onBulkDelete,
   onClearSelection,
   onExportClick,
+  onSaveAsView,
   viewType = "grid",
 }: {
   fields: FieldRow[];
@@ -38,6 +39,7 @@ export function ViewToolbar({
   onBulkDelete: () => void;
   onClearSelection: () => void;
   onExportClick: () => void;
+  onSaveAsView?: () => void;
   viewType?: string;
 }) {
   const isGrid = viewType === "grid";
@@ -46,6 +48,7 @@ export function ViewToolbar({
   const sortCount = config.sorts?.length ?? 0;
   const hiddenCount = config.hiddenFieldIds?.length ?? 0;
   const formatCount = config.conditionalFormats?.length ?? 0;
+  const hasAdjustments = !!(filterCount || sortCount || config.group?.fieldId || hiddenCount || formatCount);
 
   if (selectedCount > 0) {
     return (
@@ -102,17 +105,24 @@ export function ViewToolbar({
           <PopoverTrigger asChild>
             <ToolbarButton icon={<Rows3 size={13} />} label="Row height" />
           </PopoverTrigger>
-          <PopoverContent className="w-40 p-1">
-            {(["short", "medium", "tall"] as const).map((h) => (
+          <PopoverContent className="w-44 p-1">
+            {(
+              [
+                ["short", "Compact"],
+                ["medium", "Default"],
+                ["tall", "Comfortable"],
+                ["auto", "Auto Fit Content"],
+              ] as const
+            ).map(([h, label]) => (
               <button
                 key={h}
                 onClick={() => onConfigChange({ rowHeight: h })}
                 className={cn(
-                  "w-full text-left px-2 py-1.5 rounded-sm text-sm capitalize hover:bg-neutral-100 dark:hover:bg-neutral-800",
+                  "w-full text-left px-2 py-1.5 rounded-sm text-sm hover:bg-neutral-100 dark:hover:bg-neutral-800",
                   (config.rowHeight ?? "medium") === h && "font-semibold text-indigo-600"
                 )}
               >
-                {h}
+                {label}
               </button>
             ))}
           </PopoverContent>
@@ -120,6 +130,14 @@ export function ViewToolbar({
       )}
 
       <div className="ml-auto flex items-center gap-1.5 shrink-0">
+        {onSaveAsView && (
+          <ToolbarButton
+            icon={<Copy size={13} />}
+            label="Save as View"
+            onClick={onSaveAsView}
+            title={hasAdjustments ? "Save the current filter/sort/group/fields as a new child view" : "Save this view's configuration as a new child view"}
+          />
+        )}
         <ToolbarButton icon={<Download size={13} />} label="Export" onClick={onExportClick} />
         <div className="relative">
           <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400" />

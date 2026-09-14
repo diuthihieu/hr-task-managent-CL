@@ -33,6 +33,21 @@ interface CellProps {
   okrOptions?: OkrOptions; // for `okr_objective` / `okr_key_result` fields
   onChange: (value: unknown) => void;
   readOnlyOverride?: boolean;
+  /** Row Height = "Auto Fit Content": wrap text instead of single-line truncating, growing the row to fit (capped by maxHeight). */
+  wrapText?: boolean;
+  maxHeight?: number;
+  columnWidth?: number;
+}
+
+// Rough chars-per-line estimate from a column's pixel width, for sizing an
+// auto-growing textarea without a full text-measurement/ResizeObserver pass -
+// good enough to make longer content visibly take more rows, not pixel-exact.
+const AVG_CHAR_PX = 6.5;
+function estimateRows(value: string, columnWidthPx: number | undefined, maxRows: number): number {
+  if (!value) return 1;
+  const charsPerLine = Math.max(10, Math.floor((columnWidthPx ?? 180) / AVG_CHAR_PX));
+  const lines = value.split("\n").reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
+  return Math.max(1, Math.min(maxRows, lines));
 }
 
 function OptionBadge({ option }: { option: SelectOption }) {
@@ -46,7 +61,7 @@ function OptionBadge({ option }: { option: SelectOption }) {
   );
 }
 
-export function Cell({ field, value, members, linkTargets, okrOptions, onChange }: CellProps) {
+export function Cell({ field, value, members, linkTargets, okrOptions, wrapText, maxHeight, columnWidth, onChange }: CellProps) {
   const typeDef = getFieldType(field.type);
   const config = parseFieldConfig(field.config);
   const base = "h-full w-full flex items-center px-2 text-sm";
@@ -57,6 +72,36 @@ export function Cell({ field, value, members, linkTargets, okrOptions, onChange 
 
   switch (field.type) {
     case "text":
+    case "long_text": {
+      if (wrapText) {
+        const maxRows = field.type === "long_text" ? 10 : 6;
+        const rows = estimateRows((value as string) ?? "", columnWidth, maxRows);
+        return (
+          <textarea
+            rows={rows}
+            className="w-full bg-transparent outline-none resize-none text-sm text-neutral-800 dark:text-neutral-100 focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40 px-2 py-1.5 leading-5"
+            style={{ maxHeight, overflowY: "auto" }}
+            value={(value as string) ?? ""}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        );
+      }
+      return field.type === "long_text" ? (
+        <textarea
+          rows={1}
+          className={cn(base, "bg-transparent outline-none resize-none text-neutral-800 dark:text-neutral-100 focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40 py-1.5")}
+          value={(value as string) ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      ) : (
+        <input
+          className={cn(base, "bg-transparent outline-none text-neutral-800 dark:text-neutral-100 focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40")}
+          value={(value as string) ?? ""}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder=""
+        />
+      );
+    }
     case "email":
     case "phone":
     case "url":
@@ -66,15 +111,6 @@ export function Cell({ field, value, members, linkTargets, okrOptions, onChange 
           value={(value as string) ?? ""}
           onChange={(e) => onChange(e.target.value)}
           placeholder=""
-        />
-      );
-    case "long_text":
-      return (
-        <textarea
-          rows={1}
-          className={cn(base, "bg-transparent outline-none resize-none text-neutral-800 dark:text-neutral-100 focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40 py-1.5")}
-          value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)}
         />
       );
     case "number":

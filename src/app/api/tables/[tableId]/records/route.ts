@@ -55,6 +55,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ tableId
     },
   });
 
+  await prisma.auditLog.create({
+    data: { workspaceId, userId: (session.user as { id: string }).id, action: "create", objectType: "record", objectId: record.id },
+  });
+
   const allFields = (await prisma.field.findMany({ where: { tableId } })) as unknown as FieldRow[];
   const krFields = allFields.filter((f) => f.type === "okr_key_result");
   const newKrIds = [...new Set(krFields.map((f) => data[f.id]).filter((v): v is string => typeof v === "string" && v.length > 0))];

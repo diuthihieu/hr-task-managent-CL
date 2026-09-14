@@ -30,10 +30,14 @@ export default async function WorkspaceLayout({
   });
 
   const bases = await prisma.base.findMany({
-    where: { workspaceId: workspace.id },
+    where: { workspaceId: workspace.id, archived: false },
     orderBy: { order: "asc" },
     include: {
-      tables: { orderBy: { order: "asc" }, select: { id: true, name: true, icon: true } },
+      tables: {
+        where: { archived: false },
+        orderBy: { order: "asc" },
+        select: { id: true, name: true, icon: true, views: { orderBy: { order: "asc" }, select: { id: true, name: true, type: true } } },
+      },
       dashboards: { orderBy: { createdAt: "asc" }, select: { id: true, name: true } },
     },
   });

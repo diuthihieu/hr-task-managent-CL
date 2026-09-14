@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 const ROW_HEIGHTS: Record<string, number> = { short: 32, medium: 40, tall: 64 };
 const DEFAULT_WIDTH = 180;
 const PRIMARY_WIDTH = 220;
+const AUTO_FIT_MAX_HEIGHT = 180; // cap so one very long value can't blow up the whole table
 
 interface GridViewProps {
   fields: FieldRow[];
@@ -40,7 +41,7 @@ interface GridViewProps {
   columnOrder: string[];
   columnWidths: Record<string, number>;
   frozenCount: number;
-  rowHeight: "short" | "medium" | "tall";
+  rowHeight: "short" | "medium" | "tall" | "auto";
   conditionalFormats: ConditionalFormatRule[];
   selectedIds: Set<string>;
   onToggleSelect: (id: string) => void;
@@ -188,7 +189,7 @@ export function GridView(props: GridViewProps) {
         </DndContext>
       </DndContext>
       <button
-        onClick={props.onAddRecord}
+        onClick={() => props.onAddRecord()}
         className="flex items-center gap-2 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-900 w-full text-left border-b border-neutral-100 dark:border-neutral-900"
       >
         <Plus size={14} /> Add record
@@ -289,7 +290,9 @@ function Row({
   frozenCount: number;
 } & GridViewProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: record.id, disabled: !props.reorderable });
-  const height = ROW_HEIGHTS[props.rowHeight] ?? 36;
+  const autoFit = props.rowHeight === "auto";
+  const height = autoFit ? undefined : ROW_HEIGHTS[props.rowHeight] ?? 36;
+  const minHeight = autoFit ? ROW_HEIGHTS.short : undefined;
   const selected = props.selectedIds.has(record.id);
   const rowStyle = getConditionalStyle(record, props.fields, props.conditionalFormats, "__row__");
 
@@ -300,7 +303,7 @@ function Row({
       style={{ transform: CSS.Transform.toString(transform), transition, backgroundColor: rowStyle.rowColor ? `${rowStyle.rowColor}18` : undefined }}
       className={cn("flex group/row hover:bg-neutral-50 dark:hover:bg-neutral-900/60", isDragging && "opacity-50 z-40 relative", selected && "bg-indigo-50/50 dark:bg-indigo-950/20")}
     >
-      <div role="cell" className="sticky left-0 z-10 flex items-center justify-center gap-0.5 bg-white dark:bg-neutral-950 border-b border-r border-neutral-100 dark:border-neutral-900 shrink-0" style={{ height, width: 36, minWidth: 36 }}>
+      <div role="cell" className="sticky left-0 z-10 flex items-center justify-center gap-0.5 bg-white dark:bg-neutral-950 border-b border-r border-neutral-100 dark:border-neutral-900 shrink-0" style={{ height, minHeight, width: 36, minWidth: 36 }}>
         <span {...attributes} {...listeners} className={cn("text-neutral-300 shrink-0", props.reorderable ? "cursor-grab opacity-0 group-hover/row:opacity-100" : "opacity-0")}>
           <GripVertical size={12} />
         </span>
@@ -319,6 +322,7 @@ function Row({
               width: widthOf(field),
               minWidth: widthOf(field),
               height,
+              minHeight,
               backgroundColor: style.backgroundColor ? `${style.backgroundColor}30` : undefined,
               position: frozen ? "sticky" : undefined,
               left: frozen ? frozenOffset : undefined,
@@ -329,17 +333,17 @@ function Row({
               frozen && !style.backgroundColor && "bg-white dark:bg-neutral-950"
             )}
           >
-            <div className="h-full flex items-center">
+            <div className={cn("flex", autoFit ? "items-start" : "h-full items-center")}>
               {field.isPrimary && (
                 <button
                   onClick={() => props.onOpenRecord(record.id)}
-                  className="opacity-0 group-hover/row:opacity-100 shrink-0 ml-1 text-neutral-400 hover:text-indigo-600"
+                  className={cn("opacity-0 group-hover/row:opacity-100 shrink-0 ml-1 text-neutral-400 hover:text-indigo-600", autoFit && "mt-2")}
                   title="Expand record"
                 >
                   <Maximize2 size={12} />
                 </button>
               )}
-              <div className="flex-1 h-full overflow-hidden">
+              <div className={cn("flex-1 overflow-hidden", autoFit ? "" : "h-full")}>
                 <Cell
                   field={field}
                   value={value}
@@ -347,6 +351,9 @@ function Row({
                   members={props.members}
                   linkTargets={props.linkTargets}
                   okrOptions={props.okrOptions}
+                  wrapText={autoFit}
+                  maxHeight={autoFit ? AUTO_FIT_MAX_HEIGHT : undefined}
+                  columnWidth={widthOf(field)}
                   onChange={(v) => props.onCellChange(record.id, field.id, v)}
                 />
               </div>

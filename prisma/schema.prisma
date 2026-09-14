@@ -46,6 +46,7 @@ model User {
   objectivesOwned      Objective[]            @relation("ObjectiveOwner")
   keyResultsOwned      KeyResult[]            @relation("KeyResultOwner")
   objectiveContributes ObjectiveContributor[]
+  capturedThoughts     CapturedThought[]
 }
 
 model Workspace {
@@ -54,11 +55,12 @@ model Workspace {
   slug      String   @unique
   createdAt DateTime @default(now())
 
-  members    WorkspaceMember[]
-  bases      Base[]
-  auditLogs  AuditLog[]
-  teams      Team[]
-  objectives Objective[]
+  members          WorkspaceMember[]
+  bases            Base[]
+  auditLogs        AuditLog[]
+  teams            Team[]
+  objectives       Objective[]
+  capturedThoughts CapturedThought[]
 }
 
 model WorkspaceMember {
@@ -86,6 +88,7 @@ model Base {
   color       String   @default("#6366f1")
   description String?
   order       Int      @default(0)
+  archived    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -105,6 +108,7 @@ model TableDef {
   icon        String   @default("Sheet")
   description String?
   order       Int      @default(0)
+  archived    Boolean  @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -281,6 +285,35 @@ model KeyResultTask {
 
   @@unique([keyResultId, recordId])
   @@index([recordId])
+}
+
+// ---------------------------------------------------------------------------
+// Put All Things On - a lightweight capture inbox, deliberately NOT another
+// task table: it only asks for what a fast brain-dump needs (name, rough
+// duration, category, optional rough timing). Clarifying and converting a
+// thought creates a real Record in the target Task table; the thought row
+// then just remembers where that record ended up, for audit/undo.
+// ---------------------------------------------------------------------------
+
+model CapturedThought {
+  id                       String    @id @default(cuid())
+  workspaceId              String
+  userId                   String
+  taskName                 String
+  tableId                  String // which Task table this will become a Record in
+  categoryOptionId         String? // option id from that table's Category-like field
+  estimatedDurationMinutes Int?
+  plannedAt                DateTime? // user-entered planned date/time for the task
+  status                   String    @default("captured") // captured | clarifying | converted | archived
+  convertedRecordId        String?
+  convertedAt              DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, userId, status])
 }
 
 // ---------------------------------------------------------------------------

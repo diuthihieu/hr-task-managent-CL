@@ -10,9 +10,9 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
   if (!workspace) return null;
 
   const bases = await prisma.base.findMany({
-    where: { workspaceId: workspace.id },
+    where: { workspaceId: workspace.id, archived: false },
     orderBy: { order: "asc" },
-    include: { _count: { select: { tables: true } } },
+    include: { _count: { select: { tables: { where: { archived: false } } } } },
   });
 
   const name = session?.user?.name?.split(" ")[0] || "there";

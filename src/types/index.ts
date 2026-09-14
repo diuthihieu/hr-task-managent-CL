@@ -120,6 +120,43 @@ export interface KeyResultRow {
   tasks: KeyResultTaskRow[];
 }
 
+// ---------------------------------------------------------------------------
+// Put All Things On
+// ---------------------------------------------------------------------------
+
+export interface CaptureCategoryOption {
+  id: string;
+  label: string;
+  color: string;
+}
+
+/** A table capable of receiving converted thoughts - has at least a Category-like field. */
+export interface CaptureTargetRow {
+  tableId: string;
+  tableName: string;
+  baseId: string;
+  baseName: string;
+  categoryFieldId: string;
+  categoryOptions: CaptureCategoryOption[];
+  statusOptions: CaptureCategoryOption[];
+  priorityOptions: CaptureCategoryOption[];
+}
+
+export interface CapturedThoughtRow {
+  id: string;
+  taskName: string;
+  tableId: string;
+  tableName: string;
+  baseId: string;
+  categoryOptionId: string | null;
+  categoryLabel: string | null;
+  categoryColor: string | null;
+  estimatedDurationMinutes: number | null;
+  plannedAt: string | null;
+  status: string;
+  createdAt: string;
+}
+
 export interface ObjectiveRow {
   id: string;
   workspaceId: string;

@@ -70,13 +70,27 @@ export function TableWorkspace({
       ]);
       setTable(detail);
       setRecords(recs);
-      setActiveViewId((prev) => prev || detail.views.find((v) => v.isDefault)?.id || detail.views[0]?.id || "");
+      const requestedViewId = searchParams.get("view");
+      const requestedViewValid = requestedViewId && detail.views.some((v) => v.id === requestedViewId);
+      setActiveViewId((prev) => (requestedViewValid ? requestedViewId! : prev || detail.views.find((v) => v.isDefault)?.id || detail.views[0]?.id || ""));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to load table");
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-fetch the whole table when tableId changes; the view-param sync effect below reacts to searchParams on its own
   }, [tableId]);
+
+  // Sidebar links to a specific view via ?view= - sync it in without a full table re-fetch
+  // when only the view changes (same table).
+  useEffect(() => {
+    const requestedViewId = searchParams.get("view");
+    if (requestedViewId && table?.views.some((v) => v.id === requestedViewId)) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing local view selection to the URL is exactly what this effect is for
+      setActiveViewId(requestedViewId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams, table?.id]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching table data on mount / table change is exactly what this effect is for
@@ -394,6 +408,24 @@ export function TableWorkspace({
       toast.error("Failed to delete view");
     }
   }
+  async function handleSaveAsView() {
+    if (!activeView) return;
+    const name = prompt("Name for this saved view", `${activeView.name} (filtered)`);
+    if (!name) return;
+    try {
+      const view = await api.post<ViewRow>(`/api/tables/${tableId}/views`, {
+        name,
+        type: activeView.type,
+        config: JSON.parse(activeView.config || "{}"),
+      });
+      setTable((t) => (t ? { ...t, views: [...t.views, view] } : t));
+      setActiveViewId(view.id);
+      toast.success(`Saved as "${name}"`);
+    } catch {
+      toast.error("Failed to save view");
+    }
+  }
+
   async function handleDuplicateView(id: string) {
     const source = table?.views.find((v) => v.id === id);
     if (!source) return;
@@ -475,6 +507,7 @@ export function TableWorkspace({
           onBulkDelete={handleBulkDelete}
           onClearSelection={() => setSelectedIds(new Set())}
           onExportClick={() => setExportOpen(true)}
+          onSaveAsView={handleSaveAsView}
           viewType={activeView?.type ?? "grid"}
         />
       )}

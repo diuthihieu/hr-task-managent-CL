@@ -43,7 +43,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ tableI
   const membership = await getMembership((session.user as { id: string }).id, workspaceId);
   if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const body = await req.json();
-  const table = await prisma.tableDef.update({ where: { id: tableId }, data: { name: body.name } });
+  const data: Record<string, unknown> = {};
+  if (body.name !== undefined) data.name = body.name;
+  if (body.archived !== undefined) data.archived = body.archived;
+  if (body.order !== undefined) data.order = body.order;
+  const table = await prisma.tableDef.update({ where: { id: tableId }, data });
   return NextResponse.json(table);
 }
 

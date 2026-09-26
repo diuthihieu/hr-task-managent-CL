@@ -16,6 +16,7 @@ interface MemberRow {
   email: string;
   avatarColor: string;
   role: string;
+  isActive?: boolean;
 }
 
 const ROLES = [
@@ -26,7 +27,7 @@ const ROLES = [
   { value: "viewer", label: "Viewer" },
 ];
 
-export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }: { workspaceId: string; currentUserId: string; currentUserRole: string }) {
+export function SettingsMembers({ workspaceId, currentUserId, currentUserRole, isSystemAdmin }: { workspaceId: string; currentUserId: string; currentUserRole: string; isSystemAdmin: boolean }) {
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -99,15 +100,15 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate">
                   {m.name} {m.id === currentUserId && <span className="text-neutral-400 font-normal">(you)</span>}
+                  {m.isActive === false && <span className="ml-1 text-[10px] uppercase text-neutral-400">deactivated</span>}
                 </div>
                 <div className="text-xs text-neutral-400 truncate">{m.email}</div>
               </div>
-              <Select
-                className="w-32"
-                value={m.role}
-                onValueChange={(v) => changeRole(m.id, v)}
-                options={ROLES}
-              />
+              {canManage ? (
+                <Select className="w-32" value={m.role} onValueChange={(v) => changeRole(m.id, v)} options={currentUserRole === "owner" ? ROLES : ROLES.filter((r) => r.value !== "owner" || m.role === "owner")} />
+              ) : (
+                <span className="text-xs text-neutral-500 capitalize w-32 text-right">{m.role}</span>
+              )}
               {canManage && m.id !== currentUserId && (
                 <button onClick={() => removeMember(m.id, m.name)} className="text-neutral-400 hover:text-red-600 shrink-0">
                   <Trash2 size={14} />
@@ -125,11 +126,14 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
             <div>
               <label className="text-xs font-medium text-neutral-500 mb-1 block">Email</label>
               <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" autoFocus />
-              <p className="text-[11px] text-neutral-400 mt-1">The person must already have an account in this app.</p>
+              <p className="text-[11px] text-neutral-400 mt-1">
+                The person must already have an account. New accounts are created by a system administrator
+                {isSystemAdmin ? <> in the <a href="/admin" className="text-indigo-600 hover:underline">Admin console</a></> : ""}.
+              </p>
             </div>
             <div>
               <label className="text-xs font-medium text-neutral-500 mb-1 block">Role</label>
-              <Select className="w-full" value={inviteRole} onValueChange={setInviteRole} options={ROLES.filter((r) => r.value !== "owner")} />
+              <Select className="w-full" value={inviteRole} onValueChange={setInviteRole} options={currentUserRole === "owner" ? ROLES : ROLES.filter((r) => r.value !== "owner")} />
             </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">

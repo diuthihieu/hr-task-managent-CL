@@ -1,51 +1,53 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { getMembership, roleAtLeast } from "@/lib/permissions";
+import { requireUser, requireWorkspaceRole, route, readJson, badRequest, forbidden, notFound } from "@/lib/authz";
+import { logActivity } from "@/lib/activity";
+import { workspaceRoleSchema } from "@/lib/validation";
 
-const VALID_ROLES = ["owner", "admin", "editor", "contributor", "viewer"];
+type P = { workspaceId: string; userId: string };
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ workspaceId: string; userId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { workspaceId, userId: targetUserId } = await params;
-  const actorId = (session.user as { id: string }).id;
-  const actorMembership = await getMembership(actorId, workspaceId);
-  if (!actorMembership || !roleAtLeast(actorMembership.role, "admin")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+async function assertKeepsAnOwner(workspaceId: string, userId: string) {
+  const others = await prisma.workspaceMember.count({ where: { workspaceId, role: "owner", userId: { not: userId } } });
+  if (others === 0) throw badRequest("A workspace needs at least one owner");
+}
 
-  const { role } = await req.json();
-  if (!VALID_ROLES.includes(role)) return NextResponse.json({ error: "Invalid role" }, { status: 400 });
-
-  if (role !== "owner") {
-    const target = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId: targetUserId } } });
-    if (target?.role === "owner") {
-      const ownerCount = await prisma.workspaceMember.count({ where: { workspaceId, role: "owner" } });
-      if (ownerCount <= 1) return NextResponse.json({ error: "A workspace needs at least one owner" }, { status: 400 });
-    }
-  }
-
-  const updated = await prisma.workspaceMember.update({
-    where: { workspaceId_userId: { workspaceId, userId: targetUserId } },
-    data: { role },
-    include: { user: { select: { id: true, name: true, email: true, avatarColor: true } } },
+export const PATCH = route<P>(async (req, { params }) => {
+  const user = await requireUser();
+  const { workspaceId, userId } = await params;
+  const ctx = await requireWorkspaceRole(user, workspaceId, "admin");
+  const { role } = z.object({ role: workspaceRoleSchema }).parse(await readJson(req));
+  const target = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId } } });
+  if (!target) throw notFound("Member");
+  if ((role === "owner" || target.role === "owner") && ctx.role !== "owner") throw forbidden("Only owners can grant or remove the owner role");
+  if (target.role === "owner" && role !== "owner") await assertKeepsAnOwner(workspaceId, userId);
+  const updated = await prisma.$transaction(async (tx) => {
+    const m = await tx.workspaceMember.update({
+      where: { workspaceId_userId: { workspaceId, userId } },
+      data: { role },
+      include: { user: { select: { id: true, name: true, email: true, avatarColor: true, isActive: true } } },
+    });
+    await logActivity(tx, { workspaceId, actorId: user.id, entityType: "member", entityId: userId, action: "role_changed", changes: { role: { from: target.role, to: role } } });
+    return m;
   });
   return NextResponse.json({ ...updated.user, role: updated.role });
-}
+});
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ workspaceId: string; userId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { workspaceId, userId: targetUserId } = await params;
-  const actorId = (session.user as { id: string }).id;
-  const actorMembership = await getMembership(actorId, workspaceId);
-  if (!actorMembership || !roleAtLeast(actorMembership.role, "admin")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const target = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId: targetUserId } } });
-  if (target?.role === "owner") {
-    const ownerCount = await prisma.workspaceMember.count({ where: { workspaceId, role: "owner" } });
-    if (ownerCount <= 1) return NextResponse.json({ error: "A workspace needs at least one owner" }, { status: 400 });
+export const DELETE = route<P>(async (_req, { params }) => {
+  const user = await requireUser();
+  const { workspaceId, userId } = await params;
+  const ctx = await requireWorkspaceRole(user, workspaceId, "admin");
+  const target = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId } } });
+  if (!target) throw notFound("Member");
+  if (target.role === "owner") {
+    if (ctx.role !== "owner") throw forbidden("Only owners can remove an owner");
+    await assertKeepsAnOwner(workspaceId, userId);
   }
-
-  await prisma.workspaceMember.delete({ where: { workspaceId_userId: { workspaceId, userId: targetUserId } } });
-  return NextResponse.json({ ok: true });
-}
+  await prisma.$transaction(async (tx) => {
+    // Unassign from this workspace's tasks, then drop the membership.
+    await tx.taskAssignee.deleteMany({ where: { userId, task: { workspaceId } } });
+    await tx.workspaceMember.delete({ where: { workspaceId_userId: { workspaceId, userId } } });
+    await logActivity(tx, { workspaceId, actorId: user.id, entityType: "member", entityId: userId, action: "deleted" });
+  });
+  return new NextResponse(null, { status: 204 });
+});

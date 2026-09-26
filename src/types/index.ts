@@ -1,19 +1,30 @@
+/**
+ * A column as the view components see it. Built server-side by
+ * `src/lib/task-grid.ts` from either a task's own typed column ("system"
+ * fields, ids prefixed `sys_`) or a project custom field (uuid id).
+ */
 export interface FieldRow {
   id: string;
-  tableId: string;
+  projectId: string;
   name: string;
   type: string;
-  config: string | null;
+  config: string | null; // JSON: select options, precision, formula expression...
   order: number;
   isPrimary: boolean;
   visible: boolean;
   description: string | null;
   defaultValue: string | null;
+  /** True for task columns (title, status, dates...): cannot be deleted or retyped. */
+  system?: boolean;
+  /** True when the value is computed/managed by the server (created time...). */
+  readOnly?: boolean;
+  isRequired?: boolean;
 }
 
+/** One task as the view components see it: `data` is keyed by FieldRow.id. */
 export interface RecordRow {
   id: string;
-  tableId: string;
+  projectId: string;
   data: Record<string, unknown>;
   order: number;
   createdById: string | null;
@@ -23,7 +34,7 @@ export interface RecordRow {
 
 export interface ViewRow {
   id: string;
-  tableId: string;
+  projectId: string;
   name: string;
   type: string;
   config: string;
@@ -32,22 +43,18 @@ export interface ViewRow {
   isPublic?: boolean;
 }
 
-export interface TableRow {
-  id: string;
-  baseId: string;
-  name: string;
-  icon: string;
-  description: string | null;
-  order: number;
-}
+export type WorkspaceRoleName = "owner" | "admin" | "editor" | "contributor" | "viewer";
 
-export interface BaseRow {
+export interface ProjectRow {
   id: string;
   workspaceId: string;
   name: string;
-  icon: string;
-  color: string;
   description: string | null;
+  color: string;
+  status: string;
+  ownerId: string | null;
+  startDate: string | null;
+  endDate: string | null;
   order: number;
 }
 
@@ -60,8 +67,59 @@ export interface WorkspaceRow {
 export interface WorkspaceMemberRow {
   id: string;
   userId: string;
-  role: string;
-  user: { id: string; name: string; email: string; avatarColor: string };
+  role: WorkspaceRoleName;
+  user: { id: string; name: string; email: string; avatarColor: string; isActive?: boolean };
+}
+
+export interface StatusRow {
+  id: string;
+  name: string;
+  color: string;
+  category: "todo" | "in_progress" | "done" | "cancelled";
+  order: number;
+  isDefault: boolean;
+  taskCount?: number;
+}
+
+export interface CategoryRow {
+  id: string;
+  name: string;
+  color: string;
+  order: number;
+  taskCount?: number;
+}
+
+export interface AdminUserRow {
+  id: string;
+  email: string;
+  name: string;
+  systemRole: "ADMIN" | "MEMBER";
+  isActive: boolean;
+  mustChangePassword: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  workspaces: { id: string; name: string; role: WorkspaceRoleName }[];
+}
+
+export interface AttachmentRow {
+  id: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  uploadedBy: { id: string; name: string } | null;
+  createdAt: string;
+  downloadUrl: string;
+}
+
+export interface ActivityRow {
+  id: string;
+  entityType: string;
+  entityId: string;
+  action: string;
+  summary: string | null;
+  changes: Record<string, { from: unknown; to: unknown }> | null;
+  actor: { id: string; name: string; avatarColor: string } | null;
+  createdAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -90,10 +148,9 @@ export interface OkrUserLite {
 export interface KeyResultTaskRow {
   id: string;
   keyResultId: string;
-  tableId: string;
-  tableName: string;
-  baseId: string;
-  recordId: string;
+  projectId: string;
+  projectName: string;
+  taskId: string;
   weight: number;
   title: string;
   status: string | null;
@@ -130,13 +187,10 @@ export interface CaptureCategoryOption {
   color: string;
 }
 
-/** A table capable of receiving converted thoughts - has at least a Category-like field. */
+/** A project that captured thoughts can be converted into tasks of. */
 export interface CaptureTargetRow {
-  tableId: string;
-  tableName: string;
-  baseId: string;
-  baseName: string;
-  categoryFieldId: string;
+  projectId: string;
+  projectName: string;
   categoryOptions: CaptureCategoryOption[];
   statusOptions: CaptureCategoryOption[];
   priorityOptions: CaptureCategoryOption[];
@@ -145,10 +199,9 @@ export interface CaptureTargetRow {
 export interface CapturedThoughtRow {
   id: string;
   taskName: string;
-  tableId: string;
-  tableName: string;
-  baseId: string;
-  categoryOptionId: string | null;
+  projectId: string;
+  projectName: string;
+  categoryId: string | null;
   categoryLabel: string | null;
   categoryColor: string | null;
   estimatedDurationMinutes: number | null;
@@ -177,4 +230,21 @@ export interface ObjectiveRow {
   updatedAt: string;
   keyResults: KeyResultRow[];
   progress: number; // 0-100, weighted average of key results
+}
+
+export interface MyTaskRow {
+  projectId: string;
+  projectName: string;
+  taskId: string;
+  title: string;
+  status: string | null;
+  statusCategory: string;
+  priority: string | null;
+  progress: number;
+  dueDate: string | null;
+  importance: "important" | "not_important" | null;
+  urgency: "urgent" | "not_urgent" | null;
+  objectiveId: string | null;
+  keyResultId: string | null;
+  contributesToOkr: boolean;
 }

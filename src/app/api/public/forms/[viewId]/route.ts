@@ -1,74 +1,73 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { errorResponse, badRequest, notFound } from "@/lib/authz";
 import { getOrderedFormFields, isFieldVisible } from "@/lib/form-utils";
+import { logActivity } from "@/lib/activity";
+import { buildFields, createTask, loadProjectMeta } from "@/lib/task-grid";
 import type { FormConfig } from "@/lib/query-engine";
 
+// Anonymous submissions for form views explicitly marked public. Only the
+// fields the form shows are exposed or writable; everything else is ignored.
+
 async function loadPublicForm(viewId: string) {
-  const view = await prisma.view.findUnique({
-    where: { id: viewId },
-    include: { table: { include: { fields: { orderBy: { order: "asc" } }, base: { select: { workspaceId: true } } } } },
-  });
-  if (!view || view.type !== "form" || !view.isPublic) return null;
-  return view;
+  const view = await prisma.view.findFirst({ where: { id: viewId, type: "form", isPublic: true, project: { deletedAt: null } } });
+  if (!view) return null;
+  const meta = await loadProjectMeta(view.projectId);
+  if (!meta) return null;
+  const config = (view.config ?? {}) as FormConfig;
+  const fields = buildFields(meta).filter((f) => !f.readOnly);
+  const ordered = getOrderedFormFields(fields, config).filter(({ formField }) => formField.visible);
+  return { view, meta, config, ordered };
 }
 
 export async function GET(_req: Request, { params }: { params: Promise<{ viewId: string }> }) {
-  const { viewId } = await params;
-  const view = await loadPublicForm(viewId);
-  if (!view) return NextResponse.json({ error: "Not found" }, { status: 404 });
-
-  const members = await prisma.workspaceMember.findMany({
-    where: { workspaceId: view.table.base.workspaceId },
-    include: { user: { select: { id: true, name: true, avatarColor: true } } },
-  });
-
-  return NextResponse.json({
-    tableName: view.table.name,
-    fields: view.table.fields,
-    members: members.map((m) => m.user),
-    config: JSON.parse(view.config || "{}"),
-  });
+  try {
+    const { viewId } = await params;
+    const form = await loadPublicForm(viewId);
+    if (!form) throw notFound("Form");
+    const needsMembers = form.ordered.some(({ field }) => field.type === "person" || field.type === "people");
+    const members = needsMembers
+      ? await prisma.workspaceMember.findMany({
+          where: { workspaceId: form.meta.project.workspaceId, user: { isActive: true, deletedAt: null } },
+          include: { user: { select: { id: true, name: true, avatarColor: true } } },
+        })
+      : [];
+    return NextResponse.json({
+      tableName: form.meta.project.name,
+      fields: form.ordered.map(({ field }) => field),
+      members: members.map((m) => m.user),
+      config: form.config,
+    });
+  } catch (e) {
+    return errorResponse(e);
+  }
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ viewId: string }> }) {
-  const { viewId } = await params;
-  const view = await loadPublicForm(viewId);
-  if (!view) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  try {
+    const { viewId } = await params;
+    const form = await loadPublicForm(viewId);
+    if (!form) throw notFound("Form");
+    const body = (await req.json().catch(() => ({}))) as { data?: Record<string, unknown> };
+    const values = body.data && typeof body.data === "object" ? body.data : {};
 
-  const body = await req.json().catch(() => ({}));
-  const config: FormConfig = JSON.parse(view.config || "{}");
-  const orderedFields = getOrderedFormFields(view.table.fields, config);
-  const values: Record<string, unknown> = body.data || {};
-
-  for (const { field, formField } of orderedFields) {
-    if (!formField.visible || !formField.required) continue;
-    if (!isFieldVisible(field.id, config, values)) continue;
-    const v = values[field.id];
-    if (v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length)) {
-      return NextResponse.json({ error: `"${field.name}" is required` }, { status: 400 });
+    for (const { field, formField } of form.ordered) {
+      if (!formField.required || !isFieldVisible(field.id, form.config, values)) continue;
+      const v = values[field.id];
+      if (v === undefined || v === null || v === "" || (Array.isArray(v) && !v.length)) throw badRequest(`"${field.name}" is required`);
     }
+    const data: Record<string, unknown> = {};
+    for (const { field } of form.ordered) {
+      if (!isFieldVisible(field.id, form.config, values)) continue;
+      if (values[field.id] !== undefined) data[field.id] = values[field.id];
+    }
+
+    await prisma.$transaction(async (tx) => {
+      const taskId = await createTask(tx, { projectId: form.view.projectId, workspaceId: form.meta.project.workspaceId, actorId: null, data });
+      await logActivity(tx, { workspaceId: form.meta.project.workspaceId, actorId: null, entityType: "task", entityId: taskId, action: "created", summary: `Submitted via public form "${form.view.name}"` });
+    });
+    return NextResponse.json({ ok: true }, { status: 201 });
+  } catch (e) {
+    return errorResponse(e);
   }
-
-  const data: Record<string, unknown> = {};
-  for (const { field, formField } of orderedFields) {
-    if (!formField.visible || !isFieldVisible(field.id, config, values)) continue;
-    if (values[field.id] !== undefined) data[field.id] = values[field.id];
-  }
-
-  const maxOrder = await prisma.record.aggregate({ where: { tableId: view.tableId }, _max: { order: true } });
-  const autoNumberFields = view.table.fields.filter((f) => f.type === "auto_number");
-  if (autoNumberFields.length) {
-    const count = await prisma.record.count({ where: { tableId: view.tableId } });
-    for (const f of autoNumberFields) data[f.id] = count + 1;
-  }
-
-  await prisma.record.create({
-    data: {
-      tableId: view.tableId,
-      data: JSON.stringify(data),
-      order: (maxOrder._max.order ?? 0) + 1,
-    },
-  });
-
-  return NextResponse.json({ ok: true }, { status: 201 });
 }

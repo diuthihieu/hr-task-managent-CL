@@ -1,117 +1,86 @@
-// Turns raw Prisma Objective/KeyResult/KeyResultTask rows into the fully
-// resolved ObjectiveRow/KeyResultRow shape the UI renders - joining in each
-// linked task's own table fields to compute its progress, status label, due
-// date and assignee. This is where "derived, not duplicated" progress data
-// actually gets computed; see src/lib/okr-engine.ts for the pure math.
+// Turns Objective / KeyResult rows (with their linked tasks, via
+// tasks.key_result_id) into the resolved ObjectiveRow shape the UI renders.
+// Progress is derived at read time; see okr-engine.ts for the math.
 
-import { prisma } from "./prisma";
-import { parseFieldConfig } from "./field-types";
-import { findFieldByRole } from "./field-roles";
-import { computeKeyResultProgress, computeObjectiveProgress, resolveTaskProgress } from "./okr-engine";
-import type { FieldRow, KeyResultRow, KeyResultTaskRow, ObjectiveRow, OkrUserLite } from "@/types";
 import type { Prisma } from "@prisma/client";
+import { prisma } from "./prisma";
+import { computeKeyResultProgress, computeObjectiveProgress, resolveTaskProgress } from "./okr-engine";
+import { fromDateOnly } from "./task-grid";
+import type { KeyResultRow, KeyResultTaskRow, ObjectiveRow, OkrUserLite } from "@/types";
 
-const OBJECTIVE_INCLUDE = {
+const USER = { select: { id: true, name: true, avatarColor: true } } as const;
+
+export const OBJECTIVE_INCLUDE = {
   team: true,
-  owner: true,
-  contributors: { include: { user: true } },
+  owner: USER,
+  contributors: { include: { user: USER } },
   keyResults: {
-    orderBy: { order: "asc" as const },
+    where: { deletedAt: null },
+    orderBy: { sortOrder: "asc" },
     include: {
-      owner: true,
-      taskLinks: true,
+      owner: USER,
+      tasks: {
+        where: { deletedAt: null, project: { deletedAt: null } },
+        orderBy: { createdAt: "asc" },
+        include: {
+          status: { select: { name: true, category: true } },
+          project: { select: { id: true, name: true } },
+          assignees: { include: { user: USER }, take: 1, orderBy: { assignedAt: "asc" } },
+        },
+      },
     },
   },
 } satisfies Prisma.ObjectiveInclude;
 
 type ObjectiveWithIncludes = Prisma.ObjectiveGetPayload<{ include: typeof OBJECTIVE_INCLUDE }>;
 
-function toUserLite(u: { id: string; name: string; avatarColor: string } | null | undefined): OkrUserLite | null {
-  return u ? { id: u.id, name: u.name, avatarColor: u.avatarColor } : null;
-}
+const lite = (u: { id: string; name: string; avatarColor: string } | null | undefined): OkrUserLite | null =>
+  u ? { id: u.id, name: u.name, avatarColor: u.avatarColor } : null;
 
-export async function resolveObjectives(objectives: ObjectiveWithIncludes[]): Promise<ObjectiveRow[]> {
-  const allTaskLinks = objectives.flatMap((o) => o.keyResults.flatMap((k) => k.taskLinks));
-  const tableIds = [...new Set(allTaskLinks.map((t) => t.tableId))];
-  const recordIds = allTaskLinks.map((t) => t.recordId);
-
-  const [fields, tables, records, members] = await Promise.all([
-    tableIds.length ? prisma.field.findMany({ where: { tableId: { in: tableIds } }, orderBy: { order: "asc" } }) : Promise.resolve([]),
-    tableIds.length ? prisma.tableDef.findMany({ where: { id: { in: tableIds } }, select: { id: true, name: true, baseId: true } }) : Promise.resolve([]),
-    recordIds.length ? prisma.record.findMany({ where: { id: { in: recordIds } } }) : Promise.resolve([]),
-    objectives.length ? prisma.workspaceMember.findMany({ where: { workspaceId: objectives[0].workspaceId }, include: { user: true } }) : Promise.resolve([]),
-  ]);
-
-  const fieldsByTable = new Map<string, FieldRow[]>();
-  for (const f of fields) {
-    const list = fieldsByTable.get(f.tableId) ?? [];
-    list.push(f as unknown as FieldRow);
-    fieldsByTable.set(f.tableId, list);
-  }
-  const tableNameById = new Map(tables.map((t) => [t.id, t.name]));
-  const tableBaseById = new Map(tables.map((t) => [t.id, t.baseId]));
-  const recordById = new Map(records.map((r) => [r.id, r]));
-  const memberById = new Map(members.map((m) => [m.userId, m.user]));
-
-  function resolveTaskRow(link: (typeof allTaskLinks)[number]): KeyResultTaskRow | null {
-    const record = recordById.get(link.recordId);
-    if (!record) return null;
-    const tableFields = fieldsByTable.get(link.tableId) ?? [];
-    const data = JSON.parse(record.data || "{}") as Record<string, unknown>;
-
-    const primaryField = tableFields.find((f) => f.isPrimary);
-    const title = primaryField ? String(data[primaryField.id] ?? "") : "";
-
-    const statusField = findFieldByRole(tableFields, "status");
-    const statusCfg = statusField ? parseFieldConfig(statusField.config) : null;
-    const statusLabel = statusField ? statusCfg?.options?.find((o) => o.id === data[statusField.id])?.label ?? null : null;
-
-    const dueDateField = findFieldByRole(tableFields, "due_date", { fallbackToType: true });
-    const dueDate = dueDateField ? (data[dueDateField.id] as string | null) ?? null : null;
-
-    const personField = findFieldByRole(tableFields, "owner", { fallbackToType: true });
-    const assigneeId = personField ? (data[personField.id] as string | null) : null;
-    const assignee = assigneeId ? toUserLite(memberById.get(assigneeId) ?? null) : null;
-
-    return {
-      id: link.id,
-      keyResultId: link.keyResultId,
-      tableId: link.tableId,
-      tableName: tableNameById.get(link.tableId) ?? "",
-      baseId: tableBaseById.get(link.tableId) ?? "",
-      recordId: link.recordId,
-      weight: link.weight,
-      title,
-      status: statusLabel,
-      progress: resolveTaskProgress(tableFields, data),
-      dueDate,
-      assignee,
-    };
-  }
-
+export function resolveObjectives(objectives: ObjectiveWithIncludes[]): ObjectiveRow[] {
   return objectives.map((o) => {
     const keyResults: KeyResultRow[] = o.keyResults.map((kr) => {
-      const taskRows = kr.taskLinks.map(resolveTaskRow).filter((t): t is KeyResultTaskRow => t !== null);
+      const tasks: KeyResultTaskRow[] = kr.tasks.map((t) => ({
+        id: t.id,
+        keyResultId: kr.id,
+        projectId: t.project.id,
+        projectName: t.project.name,
+        taskId: t.id,
+        weight: Number(t.okrWeight),
+        title: t.title,
+        status: t.status.name,
+        progress: resolveTaskProgress({ progress: t.progress, statusCategory: t.status.category }),
+        dueDate: fromDateOnly(t.dueDate),
+        assignee: lite(t.assignees[0]?.user),
+      }));
+      // Cancelled tasks no longer count toward the key result.
+      const counted = kr.tasks.filter((t) => t.status.category !== "cancelled").map((t) => tasks.find((r) => r.id === t.id)!);
       const progress = computeKeyResultProgress(
-        { type: kr.type, startValue: kr.startValue, targetValue: kr.targetValue, currentValue: kr.currentValue, manualProgress: kr.manualProgress },
-        taskRows.map((t) => ({ progress: t.progress, weight: t.weight }))
+        {
+          type: kr.type,
+          startValue: Number(kr.startValue),
+          targetValue: Number(kr.targetValue),
+          currentValue: Number(kr.currentValue),
+          manualProgress: kr.manualProgress === null ? null : Number(kr.manualProgress),
+        },
+        counted.map((t) => ({ progress: t.progress, weight: t.weight }))
       );
       return {
         id: kr.id,
         objectiveId: kr.objectiveId,
         title: kr.title,
-        owner: toUserLite(kr.owner),
-        type: kr.type as KeyResultRow["type"],
-        startValue: kr.startValue,
-        targetValue: kr.targetValue,
-        currentValue: kr.currentValue,
+        owner: lite(kr.owner),
+        type: kr.type,
+        startValue: Number(kr.startValue),
+        targetValue: Number(kr.targetValue),
+        currentValue: Number(kr.currentValue),
         unit: kr.unit,
-        weight: kr.weight,
-        manualProgress: kr.manualProgress,
+        weight: Number(kr.weight),
+        manualProgress: kr.manualProgress === null ? null : Number(kr.manualProgress),
         status: kr.status,
-        order: kr.order,
+        order: kr.sortOrder,
         progress,
-        tasks: taskRows,
+        tasks,
       };
     });
 
@@ -122,15 +91,15 @@ export async function resolveObjectives(objectives: ObjectiveWithIncludes[]): Pr
       team: o.team ? { id: o.team.id, workspaceId: o.team.workspaceId, name: o.team.name, color: o.team.color } : null,
       title: o.title,
       description: o.description,
-      owner: toUserLite(o.owner),
-      cycleType: o.cycleType as ObjectiveRow["cycleType"],
+      owner: lite(o.owner),
+      cycleType: o.cycleType,
       cycleLabel: o.cycleLabel,
-      startDate: o.startDate ? o.startDate.toISOString() : null,
-      endDate: o.endDate ? o.endDate.toISOString() : null,
-      status: o.status as ObjectiveRow["status"],
+      startDate: fromDateOnly(o.startDate),
+      endDate: fromDateOnly(o.endDate),
+      status: o.status,
       confidence: o.confidence,
-      priority: o.priority as ObjectiveRow["priority"],
-      contributors: o.contributors.map((c) => toUserLite(c.user)).filter((u): u is OkrUserLite => u !== null),
+      priority: o.priority,
+      contributors: o.contributors.map((c) => lite(c.user)).filter((u): u is OkrUserLite => u !== null),
       createdAt: o.createdAt.toISOString(),
       updatedAt: o.updatedAt.toISOString(),
       keyResults,
@@ -139,28 +108,21 @@ export async function resolveObjectives(objectives: ObjectiveWithIncludes[]): Pr
   });
 }
 
-export const OBJECTIVE_INCLUDE_ARG = OBJECTIVE_INCLUDE;
-
-/** Objectives where the user is owner, contributor, or the assignee of a task contributing to one of its Key Results. */
+/** Objectives where the user is owner, contributor, KR owner, or assignee of a task contributing to one of its key results. */
 export async function getMyObjectiveRows(workspaceId: string, userId: string): Promise<ObjectiveRow[]> {
   const objectives = await prisma.objective.findMany({
     where: {
       workspaceId,
-      OR: [{ ownerId: userId }, { contributors: { some: { userId } } }, { keyResults: { some: { ownerId: userId } } }],
+      deletedAt: null,
+      OR: [
+        { ownerId: userId },
+        { contributors: { some: { userId } } },
+        { keyResults: { some: { deletedAt: null, ownerId: userId } } },
+        { keyResults: { some: { deletedAt: null, tasks: { some: { deletedAt: null, assignees: { some: { userId } } } } } } },
+      ],
     },
-    include: OBJECTIVE_INCLUDE_ARG,
+    include: OBJECTIVE_INCLUDE,
     orderBy: { createdAt: "desc" },
   });
-  const directRows = await resolveObjectives(objectives);
-  const matchedIds = new Set(directRows.map((r) => r.id));
-
-  const others = await prisma.objective.findMany({
-    where: { workspaceId, id: { notIn: [...matchedIds] } },
-    include: OBJECTIVE_INCLUDE_ARG,
-    orderBy: { createdAt: "desc" },
-  });
-  const otherRows = await resolveObjectives(others);
-  const viaTask = otherRows.filter((o) => o.keyResults.some((k) => k.tasks.some((t) => t.assignee?.id === userId)));
-
-  return [...directRows, ...viaTask];
+  return resolveObjectives(objectives);
 }

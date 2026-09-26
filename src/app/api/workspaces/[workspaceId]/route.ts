@@ -1,34 +1,44 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { getMembership, roleAtLeast } from "@/lib/permissions";
+import { requireUser, requireAdmin, requireWorkspaceRole, route, readJson } from "@/lib/authz";
+import { logActivity, diff } from "@/lib/activity";
+import { nameSchema } from "@/lib/validation";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ workspaceId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+type P = { workspaceId: string };
+
+export const GET = route<P>(async (_req, { params }) => {
+  const user = await requireUser();
   const { workspaceId } = await params;
-  const userId = (session.user as { id: string }).id;
-  const membership = await getMembership(userId, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const ctx = await requireWorkspaceRole(user, workspaceId, "viewer");
+  const w = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
+  return NextResponse.json({ id: w.id, name: w.name, slug: w.slug, description: w.description, createdAt: w.createdAt.toISOString(), role: ctx.role });
+});
 
-  const workspace = await prisma.workspace.findUnique({ where: { id: workspaceId } });
-  if (!workspace) return NextResponse.json({ error: "Not found" }, { status: 404 });
+const patchSchema = z.object({ name: nameSchema.optional(), description: z.string().max(2000).nullable().optional() });
 
-  return NextResponse.json({ id: workspace.id, name: workspace.name, slug: workspace.slug, createdAt: workspace.createdAt.toISOString(), role: membership.role });
-}
-
-export async function PATCH(req: Request, { params }: { params: Promise<{ workspaceId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const PATCH = route<P>(async (req, { params }) => {
+  const user = await requireUser();
   const { workspaceId } = await params;
-  const userId = (session.user as { id: string }).id;
-  const membership = await getMembership(userId, workspaceId);
-  if (!membership || !roleAtLeast(membership.role, "admin")) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  await requireWorkspaceRole(user, workspaceId, "admin");
+  const body = patchSchema.parse(await readJson(req));
+  const w = await prisma.$transaction(async (tx) => {
+    const before = await tx.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
+    const after = await tx.workspace.update({ where: { id: workspaceId }, data: { ...body, updatedById: user.id } });
+    const changes = diff(before, after, ["name", "description"]);
+    if (changes) await logActivity(tx, { workspaceId, actorId: user.id, entityType: "workspace", entityId: workspaceId, action: "updated", changes });
+    return after;
+  });
+  return NextResponse.json({ id: w.id, name: w.name, slug: w.slug, description: w.description });
+});
 
-  const body = await req.json();
-  const data: Record<string, unknown> = {};
-  if (body.name !== undefined && body.name.trim()) data.name = body.name.trim();
-
-  const workspace = await prisma.workspace.update({ where: { id: workspaceId }, data });
-  return NextResponse.json({ id: workspace.id, name: workspace.name, slug: workspace.slug });
-}
+/** Soft delete; system admins only. */
+export const DELETE = route<P>(async (_req, { params }) => {
+  const admin = await requireAdmin();
+  const { workspaceId } = await params;
+  await prisma.$transaction(async (tx) => {
+    await tx.workspace.update({ where: { id: workspaceId }, data: { deletedAt: new Date(), updatedById: admin.id } });
+    await logActivity(tx, { workspaceId, actorId: admin.id, entityType: "workspace", entityId: workspaceId, action: "deleted" });
+  });
+  return new NextResponse(null, { status: 204 });
+});

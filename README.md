@@ -1,193 +1,109 @@
-# Basework — Internal Work Management Platform
+# Basework — HR Work Management
 
-An Airtable/Lark-Base-style workspace → base → table → view engine, built as an
-internal work management platform for an HR Operations team: one master task
-table viewed many ways, aligned to Team OKRs, with a quick-capture inbox in
-front of it.
+A relational web app for an HR team's projects, tasks and goals (OKRs).
+**Browser → Next.js route handlers (auth + authorization) → Prisma → PostgreSQL.**
+Every piece of business data lives in PostgreSQL and is entered by users; the
+app ships with no pre-loaded business data.
 
-## What's implemented
+- Database design, ER diagram, constraints, indexes and risks: **[docs/DATABASE.md](docs/DATABASE.md)**
+- Schema: [`prisma/schema.prisma`](prisma/schema.prisma) · Migrations: [`prisma/migrations/`](prisma/migrations)
 
-**Data engine**
-- **Auth** — email/password (NextAuth v5, credentials + JWT sessions).
-- **Workspace → Base → Table → Field → Record** — fully dynamic schema; adding
-  a field never touches SQL DDL.
-- **Filter engine** (AND/OR groups, per-type operators incl. current user),
-  **sorts**, **grouping** with count/sum/avg/min/max, **conditional formatting**.
-- **Formula fields** — `IF`, `AND`, `OR`, `NOT`, `CONCAT`,
-  `LEFT/RIGHT/MID/LEN/UPPER/LOWER`, `TODAY/NOW/YEAR/MONTH/DAY/DATE_DIFF`,
-  `SUM/AVG/MIN/MAX`, arithmetic and comparisons.
-- **Link-to-Record** fields; **global search** (Ctrl/Cmd+K).
-- **Field roles** — My Work, OKR progress and Put All Things On find a table's
-  Status / Priority / Category / Start / Due / Owner / Duration / Output /
-  Execution-plan fields by an explicit **Role** set in the field editor, or
-  else by an English *or Vietnamese* name match ("Trạng thái", "Hạn chót",
-  "Người phụ trách"...). See `src/lib/field-roles.ts`.
+## Access model
 
-**Views** (all saved server-side, each with its own filters/sorts/grouping/
-hidden columns/formatting; rename, duplicate, reorder, "Save as View")
-- Grid (inline editing, resize/reorder/freeze columns, row drag, bulk delete,
-  record drawer with comments, row height incl. auto-fit), Kanban, Calendar,
-  Gantt, Gallery, Eisenhower matrix, and Form (public link at `/form/[viewId]`).
-- CSV/Excel export; CSV import (columns matched to fields by name).
+- **No self-service sign-up.** A system **Admin** creates accounts in the
+  Admin console (`/admin`). New accounts get a one-time temporary password and
+  must choose their own password at first sign-in.
+- Admins also create workspaces, reset passwords, deactivate or delete
+  accounts. Deactivation takes effect on the very next request.
+- Inside a workspace, roles are `owner`, `admin`, `editor`, `contributor`,
+  `viewer`. They are enforced by the API (`src/lib/authz.ts`), and database
+  triggers block cross-workspace references. See Settings → Permissions.
 
-**Work management**
-- **Task Base** — the HR Operations base is organised around one master task
-  table; legacy per-domain tables are archived, not deleted.
-- **Team OKRs** — Teams, Objectives, Key Results (task-based, numeric,
-  percentage, manual); tasks link to KRs through `okr_objective` /
-  `okr_key_result` fields. Progress is computed at read time, never stored.
-  Pages: Team OKRs, My OKRs, Objective detail, OKR dashboard.
-- **My Work** — personal hub: my tasks, OKRs, key results, Eisenhower summary,
-  upcoming deadlines.
-- **Put All Things On** — quick-capture inbox with duration + planned time, a
-  time-ring visualization (Today / This Week / Next / Later / Unplanned) and a
-  clarify flow that turns a thought into a task linked to a Key Result.
-- **Dashboards** — multi-widget builder (KPI + chart types, filter bar) and a
-  workspace-wide dashboard index.
-- **Settings** — workspace info, members & roles, permission matrix, task
-  statuses/priorities/categories, default fields, views, notifications,
-  appearance, import/export, integrations, audit log (record create/update/
-  delete is logged), security.
+## Features
 
-**Not built yet:** the Workflow/Automation builder (schema only: `Workflow`,
-`WorkflowNode`, `WorkflowExecution`), Lookup/Rollup fields, field-level
-permissions, SSO — see "Roadmap".
+- **Projects → Tasks** with status, category, priority, assignees (many-to-many),
+  start/due dates, progress, estimate, dependencies (self-referencing
+  many-to-many, cycle-checked), subtasks, importance/urgency, key-result link.
+- **Custom fields per project** (text, number, currency, percent, rating,
+  checkbox, date/time, single/multi select, person, URL, email, phone,
+  formula), stored as typed values with normalized options.
+- **Views**: Grid, Kanban, Calendar, Gantt, Gallery, Eisenhower, Form (optional
+  public link). Filters, sorts, grouping, conditional formatting, saved views.
+- **Comments**, **attachments** (Vercel Blob, private, served through an
+  authorized download route), **activity log** on every important change.
+- **Goals (OKR)**: objectives → key results → tasks; progress derived at read
+  time. My Work, OKR dashboard, workspace dashboards, quick capture inbox,
+  CSV import (transactional) and CSV/Excel export.
+- **Soft delete** for users, workspaces, projects, tasks, custom fields,
+  comments, attachments, objectives; tasks can be restored.
 
-## Getting started
+## Getting started (local)
 
 Requires Node 20+ and PostgreSQL 14+.
 
 ```bash
 npm install
-cp .env.example .env            # set DATABASE_URL / DIRECT_URL and AUTH_SECRET
-docker compose up postgres -d   # optional: local Postgres matching .env.example
-npx prisma migrate deploy       # apply migrations (use `migrate dev` when changing the schema)
-npm run db:seed                 # BESTARION / HR Operations demo data
-npm run dev
+cp .env.example .env              # DATABASE_URL / DIRECT_URL / AUTH_SECRET / ADMIN_EMAIL
+docker compose up postgres -d     # optional local Postgres matching .env.example
+npm run db:migrate                # prisma migrate deploy
+npm run admin:bootstrap           # creates the first admin from ADMIN_* (prints a temp password)
+npm run dev                       # http://localhost:3000
 ```
 
-Open http://localhost:3000 and sign in with the seeded demo account:
+Sign in with the admin account, set your password, then in the Admin console
+create a workspace and the accounts for your team. Add categories under
+Settings → Categories and create the first project from the sidebar.
 
-- **Email:** `demo@basework.local`
-- **Password:** `password123`
+Optional, local only: `npm run db:seed` loads a small, clearly-labelled
+`[DEV]` sample workspace for UI work. It refuses to run against a non-local
+database or in production.
 
-Set `SEED_USER_EMAIL` / `SEED_USER_PASSWORD` in `.env` before seeding to create
-the demo account under your own login instead. Or register from the login page
-— you'll get your own empty workspace.
-
-### Scripts
+## Scripts
 
 | Command | What it does |
 |---|---|
-| `npm run dev` | Dev server on :3000 |
-| `npm run build` / `npm start` | Production build / serve |
-| `npm test` | Unit tests (Node test runner via `tsx`) for the formula engine, query engine, OKR math and field-role detection |
+| `npm run dev` / `build` / `start` | Next.js dev server / production build / serve |
+| `npm test` | Unit tests: formula engine, query engine, OKR math |
+| `npm run test:integration` | Creates a throwaway database, applies migrations, starts the built app and runs HTTP tests for auth, roles, constraints, triggers, soft delete and activity logs (run `npm run build` first) |
 | `npm run lint` | ESLint |
-| `npm run db:seed` | `prisma db seed` (loads `.env`) |
+| `npm run db:migrate` | `prisma migrate deploy` |
+| `npm run admin:bootstrap` | Create the first admin if none exists |
+| `npm run db:seed` | Development sample data (local only) |
 
-## Architecture
+To change the schema: edit `prisma/schema.prisma`, run
+`npx prisma migrate dev --name <change>`, commit the generated migration.
+Never alter the database by hand.
 
-```
-Workspace
-  └── Base
-       ├── Table (Field[], Record[], View[])
-       ├── Dashboard (schema only, Phase 4)
-       └── Workflow (schema only, Phase 5)
-```
+## Deploying to Vercel
 
-### Dynamic-field storage strategy
+1. Environment variables (Production and Preview): `DATABASE_URL`,
+   `DIRECT_URL`, `AUTH_SECRET`, `ADMIN_EMAIL`, `ADMIN_NAME`, optionally
+   `ADMIN_PASSWORD`, and `BLOB_READ_WRITE_TOKEN` (connect a Blob store to the
+   project).
+2. The `vercel-build` script runs `prisma migrate deploy` and the admin
+   bootstrap on **production** builds only, then `next build`. Preview builds
+   skip migrations unless `MIGRATE_ON_PREVIEW=1`, so a feature branch can't
+   migrate a shared production database.
+3. After the first production deploy, sign in as the admin and remove
+   `ADMIN_PASSWORD` from the environment.
 
-The spec calls for a schema that supports arbitrary custom fields **without**
-a new physical SQL column per field, without collapsing to a single JSON
-blob, and while preserving indexing/relationships/aggregation potential.
-This app uses a **hybrid relational + JSON** model:
-
-- `Workspace`, `Base`, `TableDef`, `Field`, `View` are fully relational rows.
-  Creating a custom field inserts a `Field` row (id, name, type, config,
-  order, visibility...) — there is never a schema migration for user-defined
-  columns.
-- `Record.data` is a single JSON column keyed by `Field.id`
-  (`{ [fieldId]: value }`). This is the standard Airtable/Baserow-style cell
-  store: one row read = one full record (no N-way join against a
-  value-per-cell table), while every field's *type, validation and
-  relationships* stay fully relational and queryable through `Field`.
-- This is **not** "one giant blob": the blob is scoped to a single record's
-  cells, driven by strongly-typed field metadata that lives in real rows.
-  Filtering, sorting, grouping and conditional formatting are implemented as
-  a shared query engine (`src/lib/query-engine.ts`) operating on this shape.
-
-**Known v1 simplification:** filter/sort/group run in the application layer
-over a table's already-fetched records, not pushed down to SQL. This is
-correct and fast at the scale of a single table's rows (hundreds–low
-thousands) but is the first thing to change for very large tables — the
-natural next step is a denormalized `RecordValue` index table (typed columns
-per field, indexed by `fieldId` + value) written alongside `Record.data` for
-the specific fields a query needs to filter/sort on. The schema comment in
-`prisma/schema.prisma` documents this path; it wasn't built now to avoid
-over-engineering a v1 with no scale problem yet.
-
-### Database provider: PostgreSQL
-
-`prisma/schema.prisma` targets PostgreSQL, with a separate `directUrl` for
-migrations. This matters when the database sits behind a connection pooler
-(e.g. Supabase's Supavisor, or any serverless deployment target like Vercel):
-`DATABASE_URL` should point at the pooled/transaction-mode endpoint (used by
-Prisma Client at runtime), and `DIRECT_URL` at an unpooled/session-mode
-endpoint (used only by Prisma Migrate). See `.env.example` for both a local
-Docker Compose setup and a hosted-Postgres (Supabase) setup.
-
-`docker-compose.yml` and the `Dockerfile` build the production image against
-Postgres; `docker compose up` will build the app, run migrations, and serve
-it on port 3000.
-
-### Folder structure
+## Project structure
 
 ```
 prisma/
-  schema.prisma        # data model (see above)
-  seed.ts               # HR Operations demo data
+  schema.prisma                 normalized schema (UUID PKs, snake_case tables)
+  migrations/                   the only way the schema changes
+  bootstrap-admin.ts            first admin, idempotent
+  seed.ts                       DEV-ONLY sample data (guarded)
 src/
-  app/
-    (app)/w/[workspaceSlug]/b/[baseId]/t/[tableId]/   # the main table+view page
-    api/                                              # REST-ish route handlers, one per resource
-    login/
-  components/
-    layout/             # sidebar/topbar shell, command palette (Ctrl+K)
-    views/               # view tabs, toolbar, the table-workspace orchestrator
-    grid/                # the data grid, per-field-type cell editor, record drawer
-    kanban/ calendar/ gantt/ gallery/ eisenhower/ form/   # the other view types
-    okr/ capture/ dashboard/ settings/                     # OKRs, Put All Things On, dashboards, settings
-    filters/             # filter/sort/group/conditional-format popovers
-    fields/              # add/edit field dialog
-    ui/                   # small Radix-based primitives (button, dialog, popover, ...)
-  lib/
-    query-engine.ts      # filter / sort / group / conditional-formatting (shared by every view type)
-    formula.ts           # formula field tokenizer/parser/evaluator
-    field-types.ts        # the field type registry (drives the add-field picker)
-    field-roles.ts        # maps conceptual roles (status, due date, owner...) to a table's real fields
-    okr-engine.ts, okr-resolver.ts   # OKR progress math + read-side aggregation
-    capture-engine.ts     # Put All Things On field mapping + time-ring math
-    dashboard-engine.ts   # dashboard widget aggregation
-    __tests__/            # unit tests (`npm test`)
-    auth.ts, prisma.ts, permissions.ts, api-client.ts, utils.ts
-  types/                  # shared TS types for API payloads
+  app/api/                      route handlers, one folder per resource
+  app/(app)/                    signed-in pages (workspace, project, OKRs, settings, admin)
+  lib/authz.ts                  session → active user → workspace role checks
+  lib/task-grid.ts              tasks ⇄ field/record adapter used by all views
+  lib/activity.ts               activity log writer (same transaction as the change)
+  lib/storage.ts                Vercel Blob upload/download/delete
+  lib/validation.ts             zod schemas for request bodies
+  components/                   views (grid, kanban, ...), OKR, admin, settings
+tests/integration/              HTTP tests against a real database
+docs/DATABASE.md                ERD, constraints, indexes, risks
 ```
-
-## Roadmap
-
-Done: Phase 1–2 (foundation, data interaction), Phase 3 views (Kanban,
-Calendar, Gantt, Gallery, Form, Eisenhower), Phase 4 dashboards, Team OKRs,
-audit log.
-
-- **Automation:** visual trigger → condition → action workflow editor and
-  execution history (schema exists). Start with concrete HR triggers — overdue
-  tasks, social-insurance deadlines, expiring training certificates.
-- **Task depth:** subtasks, dependencies, watchers.
-- **Advanced data:** two-way relationships, Lookup, Rollup fields (field-type
-  entries exist, marked "coming soon").
-- **Enterprise:** field-level permissions, SSO (Entra ID/Google — the NextAuth
-  provider list is the extension point), public API, SQL push-down for the
-  query engine described above.
-
-Each phase should start by inspecting the current code; the schema was built
-to absorb these without a restructure.

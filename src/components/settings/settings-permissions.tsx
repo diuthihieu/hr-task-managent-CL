@@ -1,14 +1,16 @@
 import { Check, Minus } from "lucide-react";
 import { SettingsSection } from "./settings-shell";
 
+// Mirrors the checks in src/lib/authz.ts and the route handlers - these are
+// enforced by the API, not just hidden in the UI.
 const CAPABILITIES = [
-  { label: "View records & dashboards", owner: true, admin: true, editor: true, contributor: true, viewer: true },
-  { label: "Create / edit / delete records", owner: true, admin: true, editor: true, contributor: true, viewer: false },
-  { label: "Create & edit views", owner: true, admin: true, editor: true, contributor: false, viewer: false },
-  { label: "Add / edit fields", owner: true, admin: true, editor: true, contributor: false, viewer: false },
-  { label: "Create bases, tables & dashboards", owner: true, admin: true, editor: true, contributor: false, viewer: false },
-  { label: "Manage members & roles", owner: true, admin: true, editor: false, contributor: false, viewer: false },
-  { label: "Rename / archive workspace & bases", owner: true, admin: true, editor: false, contributor: false, viewer: false },
+  { label: "View projects, tasks, OKRs & dashboards", owner: true, admin: true, editor: true, contributor: true, viewer: true },
+  { label: "Comment on tasks", owner: true, admin: true, editor: true, contributor: true, viewer: true },
+  { label: "Create tasks; edit/delete tasks they created or are assigned to", owner: true, admin: true, editor: true, contributor: true, viewer: false },
+  { label: "Edit / delete any task, restore deleted tasks", owner: true, admin: true, editor: true, contributor: false, viewer: false },
+  { label: "Custom fields, views, dashboards, objectives & key results", owner: true, admin: true, editor: true, contributor: false, viewer: false },
+  { label: "Projects, statuses, categories, audit log", owner: true, admin: true, editor: false, contributor: false, viewer: false },
+  { label: "Add members & change roles (admins can't grant owner)", owner: true, admin: true, editor: false, contributor: false, viewer: false },
 ];
 
 const ROLES = ["owner", "admin", "editor", "contributor", "viewer"] as const;
@@ -41,9 +43,8 @@ export function SettingsPermissions() {
         </table>
       </div>
       <p className="text-xs text-neutral-400 mt-3 max-w-2xl">
-        Enforcement today happens at the workspace level (membership required to read or write anything). Per-capability
-        enforcement for contributor/viewer is the next increment - roles are already assignable and visible everywhere so
-        that layer can land without another data migration.
+        Accounts themselves are created only by a system administrator (Admin console). System admins act as owners in
+        every workspace. Deactivated accounts lose access immediately.
       </p>
     </SettingsSection>
   );

@@ -1,35 +1,40 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getMembership, getWorkspaceIdForDashboard } from "@/lib/permissions";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfDashboard } from "@/lib/authz";
+import { serializeWidget } from "@/lib/dashboard-serialize";
 
-export async function POST(req: Request, { params }: { params: Promise<{ dashboardId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+type P = { dashboardId: string };
+
+const widgetSchema = z.object({
+  type: z.string().min(1).max(30),
+  title: z.string().max(200).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  w: z.number().int().min(1).max(12).optional(),
+  h: z.number().int().min(1).max(40).optional(),
+});
+
+export const POST = route<P>(async (req, { params }) => {
+  const user = await requireUser();
   const { dashboardId } = await params;
-  const workspaceId = await getWorkspaceIdForDashboard(dashboardId);
-  if (!workspaceId) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const body = await req.json();
-  const count = await prisma.dashboardBlock.count({ where: { dashboardId } });
-  // Stack new blocks below the tallest existing one so they never overlap.
-  const existing = await prisma.dashboardBlock.findMany({ where: { dashboardId }, select: { y: true, h: true } });
+  await requireWorkspaceRole(user, await workspaceOfDashboard(dashboardId), "editor");
+  const body = widgetSchema.parse(await readJson(req));
+  const existing = await prisma.dashboardWidget.findMany({ where: { dashboardId }, select: { y: true, h: true } });
+  // Stack new widgets below the tallest existing one so they never overlap.
   const maxY = existing.reduce((m, b) => Math.max(m, b.y + b.h), 0);
-
-  const block = await prisma.dashboardBlock.create({
+  const w = await prisma.dashboardWidget.create({
     data: {
       dashboardId,
       type: body.type,
-      title: body.title || "",
-      config: JSON.stringify(body.config || {}),
+      title: body.title ?? "",
+      config: (body.config ?? {}) as Prisma.InputJsonValue,
       x: 0,
       y: maxY,
       w: body.w ?? (body.type === "kpi" ? 3 : 6),
       h: body.h ?? (body.type === "kpi" ? 2 : 4),
-      order: count,
+      sortOrder: existing.length,
     },
   });
-  return NextResponse.json(block, { status: 201 });
-}
+  return NextResponse.json(serializeWidget(w), { status: 201 });
+});

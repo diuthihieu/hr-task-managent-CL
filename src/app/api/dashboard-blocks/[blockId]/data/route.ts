@@ -1,51 +1,44 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getMembership, getWorkspaceIdForDashboardBlock } from "@/lib/permissions";
+import { requireUser, requireWorkspaceRole, route, workspaceOfWidget } from "@/lib/authz";
 import { computeSeries, computeStackedSeries, computeScatterPoints, computeKpi, mergeFilters, parseBlockConfig, resolveCrossFilterConditions, type CrossFilter } from "@/lib/dashboard-engine";
 import { applyFilters, applySorts, getCellValue } from "@/lib/query-engine";
 import { formatDisplayValue } from "@/lib/format";
-import type { FieldRow, RecordRow } from "@/types";
+import { loadProjectGrid } from "@/lib/task-grid";
+import type { FieldRow } from "@/types";
 
-// Computes a single widget's data fresh from the Base's live records every
-// call - dashboards never persist a snapshot of chart data, only the widget
-// *configuration* (data source + dimension/measure/filters), so editing a
-// Grid row is reflected the next time this endpoint is polled.
-export async function POST(req: Request, { params }: { params: Promise<{ blockId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+type P = { blockId: string };
+
+// Computes a widget's data fresh from the project's live tasks on every call -
+// dashboards persist only widget configuration, never a snapshot of data.
+export const POST = route<P>(async (req, { params }) => {
+  const user = await requireUser();
   const { blockId } = await params;
-  const workspaceId = await getWorkspaceIdForDashboardBlock(blockId);
-  if (!workspaceId) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const userId = (session.user as { id: string }).id;
+  const ctx = await requireWorkspaceRole(user, await workspaceOfWidget(blockId), "viewer");
+  const userId = user.id;
 
-  const block = await prisma.dashboardBlock.findUnique({ where: { id: blockId } });
-  if (!block) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const config = parseBlockConfig(block.config);
-  const tableId = config.dataSource?.tableId;
-  if (!tableId) return NextResponse.json({ error: "No data source configured", series: [], rows: [], fields: [] });
+  const block = await prisma.dashboardWidget.findUniqueOrThrow({ where: { id: blockId } });
+  const config = parseBlockConfig(JSON.stringify(block.config ?? {}));
+  const projectId = config.dataSource?.projectId;
+  if (!projectId) return NextResponse.json({ error: "No data source configured", series: [], rows: [], fields: [] });
 
   const body = await req.json().catch(() => ({}));
   const { slicers, crossFilter } = body as { slicers?: CrossFilter[]; crossFilter?: CrossFilter };
 
-  const [fields, recordRows, view, members] = await Promise.all([
-    prisma.field.findMany({ where: { tableId }, orderBy: { order: "asc" } }),
-    prisma.record.findMany({ where: { tableId } }),
-    config.dataSource?.viewId ? prisma.view.findUnique({ where: { id: config.dataSource.viewId } }) : Promise.resolve(null),
-    prisma.workspaceMember.findMany({ where: { workspaceId }, include: { user: { select: { id: true, name: true, avatarColor: true } } } }),
-  ]);
+  // The data source must be a project in this dashboard's own workspace.
+  const project = await prisma.project.findFirst({ where: { id: projectId, workspaceId: ctx.workspaceId, deletedAt: null }, select: { id: true } });
+  if (!project) return NextResponse.json({ error: "Data source no longer exists", series: [], rows: [], fields: [] });
 
-  const records: RecordRow[] = recordRows.map((r) => ({
-    ...r,
-    data: JSON.parse(r.data || "{}"),
-    createdAt: r.createdAt.toISOString(),
-    updatedAt: r.updatedAt.toISOString(),
-  }));
+  const [grid, view, members] = await Promise.all([
+    loadProjectGrid(projectId),
+    config.dataSource?.viewId ? prisma.view.findFirst({ where: { id: config.dataSource.viewId, projectId } }) : Promise.resolve(null),
+    prisma.workspaceMember.findMany({ where: { workspaceId: ctx.workspaceId }, include: { user: { select: { id: true, name: true, avatarColor: true } } } }),
+  ]);
+  const fields = grid!.fields;
+  const records = grid!.records;
   const memberList = members.map((m) => m.user);
 
-  const viewConfig = view ? (JSON.parse(view.config || "{}") as { filters?: typeof config.filters }) : null;
+  const viewConfig = view ? (view.config as { filters?: typeof config.filters }) : null;
   const slicerConditions = resolveCrossFilterConditions(fields, memberList, slicers);
   const clickConditions = resolveCrossFilterConditions(fields, memberList, crossFilter ? [crossFilter] : undefined);
   const namedGroup = { conjunction: "AND" as const, conditions: [...slicerConditions, ...clickConditions] };
@@ -84,4 +77,4 @@ export async function POST(req: Request, { params }: { params: Promise<{ blockId
 
   const series = computeSeries(records, fields, configWithMergedFilters, memberList, userId);
   return NextResponse.json({ series });
-}
+});

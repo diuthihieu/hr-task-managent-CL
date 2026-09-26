@@ -3,7 +3,7 @@ import type { FieldRow, RecordRow } from "@/types";
 export function field(id: string, name: string, type: string, config?: object, extra: Partial<FieldRow> = {}): FieldRow {
   return {
     id,
-    tableId: "t1",
+    projectId: "p1",
     name,
     type,
     config: config ? JSON.stringify(config) : null,
@@ -17,5 +17,5 @@ export function field(id: string, name: string, type: string, config?: object, e
 }
 
 export function record(id: string, data: Record<string, unknown>, order = 0): RecordRow {
-  return { id, tableId: "t1", data, order, createdById: null, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" };
+  return { id, projectId: "p1", data, order, createdById: null, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" };
 }

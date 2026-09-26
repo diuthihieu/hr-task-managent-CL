@@ -192,7 +192,7 @@ export function GridView(props: GridViewProps) {
         onClick={() => props.onAddRecord()}
         className="flex items-center gap-2 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-900 w-full text-left border-b border-neutral-100 dark:border-neutral-900"
       >
-        <Plus size={14} /> Add record
+        <Plus size={14} /> Add task
       </button>
     </div>
   );

@@ -1,7 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { computeKeyResultProgress, computeObjectiveProgress, resolveTaskOkrWeight, resolveTaskProgress } from "../okr-engine";
-import { field } from "./helpers";
+import { computeKeyResultProgress, computeObjectiveProgress, resolveTaskProgress } from "../okr-engine";
 
 const kr = (type: string, extra: Partial<{ startValue: number; targetValue: number; currentValue: number; manualProgress: number | null }> = {}) => ({
   type,
@@ -37,30 +36,9 @@ test("objective progress is weighted over KRs", () => {
   assert.equal(computeObjectiveProgress([]), 0);
 });
 
-const statusOptions = {
-  options: [
-    { id: "a", label: "Đang làm", color: "#000" },
-    { id: "b", label: "Hoàn thành", color: "#000" },
-    { id: "c", label: "Done", color: "#000" },
-  ],
-};
-
-test("task progress: progress field wins", () => {
-  const fields = [field("p", "Progress", "progress"), field("s", "Status", "status", statusOptions)];
-  assert.equal(resolveTaskProgress(fields, { p: 60, s: "c" }), 60);
-});
-
-test("task progress: done status in English or Vietnamese counts as 100%", () => {
-  const en = [field("s", "Status", "status", statusOptions)];
-  assert.equal(resolveTaskProgress(en, { s: "c" }), 100);
-  assert.equal(resolveTaskProgress(en, { s: "a" }), 0);
-  const vi = [field("s", "Trạng thái", "status", statusOptions)];
-  assert.equal(resolveTaskProgress(vi, { s: "b" }), 100);
-});
-
-test("task weight falls back to 1", () => {
-  const fields = [field("w", "OKR Contribution Weight", "percent")];
-  assert.equal(resolveTaskOkrWeight(fields, { w: 40 }), 40);
-  assert.equal(resolveTaskOkrWeight(fields, {}), 1);
-  assert.equal(resolveTaskOkrWeight([], {}), 1);
+test("task progress: a done-category status counts as 100%, otherwise the task's own progress", () => {
+  assert.equal(resolveTaskProgress({ progress: 40, statusCategory: "done" }), 100);
+  assert.equal(resolveTaskProgress({ progress: 40, statusCategory: "in_progress" }), 40);
+  assert.equal(resolveTaskProgress({ progress: 140, statusCategory: "todo" }), 100);
+  assert.equal(resolveTaskProgress({ progress: -5, statusCategory: null }), 0);
 });

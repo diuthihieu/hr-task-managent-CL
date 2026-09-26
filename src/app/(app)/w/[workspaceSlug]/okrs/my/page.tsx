@@ -1,14 +1,9 @@
-import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
+import { requireWorkspacePage } from "@/lib/page-context";
 import { OkrListWorkspace } from "@/components/okr/okr-list-workspace";
 
 export default async function MyOkrsPage({ params }: { params: Promise<{ workspaceSlug: string }> }) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
   const { workspaceSlug } = await params;
-  const workspace = await prisma.workspace.findUnique({ where: { slug: workspaceSlug } });
-  if (!workspace) redirect("/");
+  const { workspace } = await requireWorkspacePage(workspaceSlug);
 
   return <OkrListWorkspace workspaceId={workspace.id} workspaceSlug={workspaceSlug} scope="mine" />;
 }

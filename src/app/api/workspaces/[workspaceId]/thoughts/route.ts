@@ -1,74 +1,65 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { getMembership } from "@/lib/permissions";
-import { parseFieldConfig } from "@/lib/field-types";
+import { requireUser, requireWorkspaceRole, route, readJson, badRequest } from "@/lib/authz";
+import { uuid } from "@/lib/validation";
 import type { CapturedThoughtRow } from "@/types";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ workspaceId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { workspaceId } = await params;
-  const userId = (session.user as { id: string }).id;
-  const membership = await getMembership(userId, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+type P = { workspaceId: string };
 
+/** The caller's own open thoughts (captures are personal). */
+export const GET = route<P>(async (_req, { params }) => {
+  const user = await requireUser();
+  const { workspaceId } = await params;
+  await requireWorkspaceRole(user, workspaceId, "contributor");
   const thoughts = await prisma.capturedThought.findMany({
-    where: { workspaceId, userId, status: { in: ["captured", "clarifying"] } },
+    where: { workspaceId, userId: user.id, status: "captured", project: { deletedAt: null } },
+    include: { project: { select: { name: true } }, category: { select: { name: true, color: true } } },
     orderBy: { createdAt: "asc" },
   });
-
-  const tableIds = [...new Set(thoughts.map((t) => t.tableId))];
-  const tables = await prisma.tableDef.findMany({ where: { id: { in: tableIds } }, include: { fields: true } });
-  const tableById = new Map(tables.map((t) => [t.id, t]));
-
-  const rows: CapturedThoughtRow[] = thoughts.map((t) => {
-    const table = tableById.get(t.tableId);
-    const categoryField = table?.fields.find((f) => f.type === "single_select" || f.type === "status");
-    const cfg = categoryField ? parseFieldConfig(categoryField.config) : null;
-    const option = cfg?.options?.find((o) => o.id === t.categoryOptionId);
-    return {
-      id: t.id,
-      taskName: t.taskName,
-      tableId: t.tableId,
-      tableName: table?.name ?? "",
-      baseId: table?.baseId ?? "",
-      categoryOptionId: t.categoryOptionId,
-      categoryLabel: option?.label ?? null,
-      categoryColor: option?.color ?? null,
-      estimatedDurationMinutes: t.estimatedDurationMinutes,
-      plannedAt: t.plannedAt ? t.plannedAt.toISOString() : null,
-      status: t.status,
-      createdAt: t.createdAt.toISOString(),
-    };
-  });
-
+  const rows: CapturedThoughtRow[] = thoughts.map((t) => ({
+    id: t.id,
+    taskName: t.taskName,
+    projectId: t.projectId,
+    projectName: t.project.name,
+    categoryId: t.categoryId,
+    categoryLabel: t.category?.name ?? null,
+    categoryColor: t.category?.color ?? null,
+    estimatedDurationMinutes: t.estimatedDurationMinutes,
+    plannedAt: t.plannedAt ? t.plannedAt.toISOString() : null,
+    status: t.status,
+    createdAt: t.createdAt.toISOString(),
+  }));
   return NextResponse.json(rows);
-}
+});
 
-export async function POST(req: Request, { params }: { params: Promise<{ workspaceId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+const createSchema = z.object({
+  taskName: z.string().trim().min(1).max(500),
+  projectId: uuid,
+  categoryId: uuid.nullable().optional(),
+  estimatedDurationMinutes: z.number().int().min(0).max(60 * 24 * 30).nullable().optional(),
+  plannedAt: z.string().max(40).nullable().optional(),
+});
+
+export const POST = route<P>(async (req, { params }) => {
+  const user = await requireUser();
   const { workspaceId } = await params;
-  const userId = (session.user as { id: string }).id;
-  const membership = await getMembership(userId, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const body = await req.json();
-  if (!body.taskName?.trim() || !body.tableId) {
-    return NextResponse.json({ error: "taskName and tableId are required" }, { status: 400 });
-  }
-
-  const thought = await prisma.capturedThought.create({
+  await requireWorkspaceRole(user, workspaceId, "contributor");
+  const body = createSchema.parse(await readJson(req));
+  if (!(await prisma.project.findFirst({ where: { id: body.projectId, workspaceId, deletedAt: null } }))) throw badRequest("Unknown project");
+  if (body.categoryId && !(await prisma.category.findFirst({ where: { id: body.categoryId, workspaceId } }))) throw badRequest("Unknown category");
+  const plannedAt = body.plannedAt ? new Date(body.plannedAt) : null;
+  if (plannedAt && Number.isNaN(plannedAt.getTime())) throw badRequest("Invalid planned time");
+  const t = await prisma.capturedThought.create({
     data: {
       workspaceId,
-      userId,
-      taskName: body.taskName.trim(),
-      tableId: body.tableId,
-      categoryOptionId: body.categoryOptionId || null,
+      userId: user.id,
+      projectId: body.projectId,
+      taskName: body.taskName,
+      categoryId: body.categoryId ?? null,
       estimatedDurationMinutes: body.estimatedDurationMinutes ?? null,
-      plannedAt: body.plannedAt ? new Date(body.plannedAt) : null,
+      plannedAt,
     },
   });
-  return NextResponse.json(thought, { status: 201 });
-}
+  return NextResponse.json({ id: t.id }, { status: 201 });
+});

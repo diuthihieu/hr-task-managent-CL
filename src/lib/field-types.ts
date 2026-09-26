@@ -87,6 +87,12 @@ export const FIELD_TYPES: FieldTypeDef[] = [
   { type: "api_result", label: "API Result", category: "calculated", icon: "Cloud", editable: false, comingSoon: true },
 ];
 
+/** Types a project custom field can have (mirrors the `custom_field_type` Postgres enum). */
+export const CUSTOM_FIELD_TYPE_IDS = [
+  "text", "long_text", "number", "currency", "percent", "rating", "checkbox", "date", "datetime",
+  "single_select", "multi_select", "person", "url", "email", "phone", "formula",
+];
+
 export const FIELD_TYPE_MAP = Object.fromEntries(FIELD_TYPES.map((f) => [f.type, f]));
 
 export const FIELD_CATEGORY_LABELS: Record<FieldCategory, string> = {
@@ -157,7 +163,8 @@ export interface FieldConfig {
   rollupFn?: "sum" | "avg" | "min" | "max" | "count";
   maxRating?: number;
   startNumber?: number;
-  role?: string; // explicit conceptual role (see field-roles.ts), set from the field editor
+  linkProjectId?: string; // system link fields (Depends On / Parent Task)
+  maxLinks?: number;
 }
 
 export function parseFieldConfig(raw: string | null | undefined): FieldConfig {

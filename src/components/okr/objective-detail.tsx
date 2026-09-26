@@ -18,11 +18,10 @@ interface MemberLite {
   name: string;
 }
 interface TaskCandidate {
-  tableId: string;
-  tableName: string;
-  baseName: string;
-  recordId: string;
+  taskId: string;
   title: string;
+  projectId: string;
+  projectName: string;
 }
 
 export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug }: { objectiveId: string; workspaceId: string; workspaceSlug: string }) {
@@ -226,7 +225,7 @@ export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug }: { o
                         {kr.tasks.map((t) => (
                           <div key={t.id} className="flex items-center gap-2 py-1 group/task">
                             <Link
-                              href={`/w/${workspaceSlug}/b/${t.baseId}/t/${t.tableId}?record=${t.recordId}`}
+                              href={`/w/${workspaceSlug}/p/${t.projectId}?record=${t.taskId}`}
                               className="flex-1 min-w-0 flex items-center gap-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:text-indigo-600 dark:hover:text-indigo-400"
                             >
                               <ExternalLink size={11} className="shrink-0 opacity-0 group-hover/task:opacity-100" />
@@ -278,10 +277,10 @@ function LinkTaskPopover({ keyResultId, onLinked }: { keyResultId: string; onLin
 
   async function link(candidate: TaskCandidate) {
     try {
-      await api.post(`/api/key-results/${keyResultId}/tasks`, { tableId: candidate.tableId, recordId: candidate.recordId });
+      await api.post(`/api/key-results/${keyResultId}/tasks`, { taskId: candidate.taskId });
       onLinked();
-    } catch {
-      toast.error("Failed to link task");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to link task");
     }
   }
 
@@ -295,15 +294,15 @@ function LinkTaskPopover({ keyResultId, onLinked }: { keyResultId: string; onLin
       <PopoverContent className="w-72 p-2">
         <div className="flex items-center gap-1.5 mb-2">
           <Search size={13} className="text-neutral-400 shrink-0" />
-          <Input autoFocus value={query} onChange={(e) => search(e.target.value)} placeholder="Search tasks across all tables…" className="h-7 flex-1" />
+          <Input autoFocus value={query} onChange={(e) => search(e.target.value)} placeholder="Search tasks across all projects…" className="h-7 flex-1" />
         </div>
         <div className="max-h-56 overflow-y-auto thin-scroll space-y-0.5">
           {loading && <div className="text-xs text-neutral-400 px-2 py-2">Searching…</div>}
           {!loading && results.length === 0 && <div className="text-xs text-neutral-400 px-2 py-2">No matching tasks</div>}
           {results.map((r) => (
-            <button key={`${r.tableId}-${r.recordId}`} onClick={() => link(r)} className="w-full flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-left">
+            <button key={r.taskId} onClick={() => link(r)} className="w-full flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-left">
               <span className="flex-1 truncate text-sm">{r.title || "(untitled)"}</span>
-              <span className="text-[10px] text-neutral-400 shrink-0">{r.tableName}</span>
+              <span className="text-[10px] text-neutral-400 shrink-0">{r.projectName}</span>
             </button>
           ))}
         </div>

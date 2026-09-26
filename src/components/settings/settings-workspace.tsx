@@ -7,12 +7,9 @@ import {
   ShieldCheck,
   Flag,
   Tags,
-  Columns3,
   LayoutList,
-  Bell,
   Palette,
   ArrowDownUp,
-  Plug,
   History,
   Lock,
 } from "lucide-react";
@@ -22,10 +19,8 @@ import { SettingsMembers } from "./settings-members";
 import { SettingsPermissions } from "./settings-permissions";
 import { SettingsTaskConfig } from "./settings-task-config";
 import { SettingsViews } from "./settings-views";
-import { SettingsNotifications } from "./settings-notifications";
 import { SettingsAppearance } from "./settings-appearance";
 import { SettingsDataIO } from "./settings-data-io";
-import { SettingsIntegrations } from "./settings-integrations";
 import { SettingsAuditLog } from "./settings-audit-log";
 import { SettingsSecurity } from "./settings-security";
 
@@ -33,14 +28,11 @@ const SECTIONS = [
   { key: "general", label: "Workspace", icon: Building2, group: "Workspace" },
   { key: "members", label: "Members & Roles", icon: Users, group: "Workspace" },
   { key: "permissions", label: "Permissions", icon: ShieldCheck, group: "Workspace" },
-  { key: "statuses", label: "Task Statuses & Priorities", icon: Flag, group: "Task configuration" },
+  { key: "statuses", label: "Task Statuses", icon: Flag, group: "Task configuration" },
   { key: "categories", label: "Categories", icon: Tags, group: "Task configuration" },
-  { key: "fields", label: "Default Fields", icon: Columns3, group: "Task configuration" },
   { key: "views", label: "View Management", icon: LayoutList, group: "Task configuration" },
-  { key: "notifications", label: "Notification Preferences", icon: Bell, group: "Personal" },
   { key: "appearance", label: "Appearance / Theme", icon: Palette, group: "Personal" },
   { key: "data-io", label: "Import / Export", icon: ArrowDownUp, group: "Data" },
-  { key: "integrations", label: "Integrations", icon: Plug, group: "Data" },
   { key: "audit", label: "Audit Log", icon: History, group: "Data" },
   { key: "security", label: "Data & Security", icon: Lock, group: "Data" },
 ] as const;
@@ -53,11 +45,13 @@ export function SettingsWorkspace({
   workspaceSlug,
   currentUserId,
   currentUserRole,
+  isSystemAdmin,
 }: {
   workspaceId: string;
   workspaceSlug: string;
   currentUserId: string;
   currentUserRole: string;
+  isSystemAdmin: boolean;
 }) {
   const [section, setSection] = useState<SectionKey>("general");
 
@@ -94,16 +88,12 @@ export function SettingsWorkspace({
 
       <div className="flex-1 overflow-y-auto thin-scroll">
         {section === "general" && <SettingsGeneral workspaceId={workspaceId} workspaceSlug={workspaceSlug} currentUserRole={currentUserRole} />}
-        {section === "members" && <SettingsMembers workspaceId={workspaceId} currentUserId={currentUserId} currentUserRole={currentUserRole} />}
+        {section === "members" && <SettingsMembers workspaceId={workspaceId} currentUserId={currentUserId} currentUserRole={currentUserRole} isSystemAdmin={isSystemAdmin} />}
         {section === "permissions" && <SettingsPermissions />}
-        {(section === "statuses" || section === "categories" || section === "fields") && (
-          <SettingsTaskConfig workspaceId={workspaceId} mode={section} />
-        )}
+        {(section === "statuses" || section === "categories") && <SettingsTaskConfig workspaceId={workspaceId} mode={section} canEdit={currentUserRole === "owner" || currentUserRole === "admin"} />}
         {section === "views" && <SettingsViews workspaceId={workspaceId} workspaceSlug={workspaceSlug} />}
-        {section === "notifications" && <SettingsNotifications />}
         {section === "appearance" && <SettingsAppearance />}
         {section === "data-io" && <SettingsDataIO workspaceId={workspaceId} />}
-        {section === "integrations" && <SettingsIntegrations />}
         {section === "audit" && <SettingsAuditLog workspaceId={workspaceId} />}
         {section === "security" && <SettingsSecurity />}
       </div>

@@ -1,53 +1,29 @@
-import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { requireWorkspacePage } from "@/lib/page-context";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
 
-export default async function WorkspaceLayout({
-  children,
-  params,
-}: {
-  children: React.ReactNode;
-  params: Promise<{ workspaceSlug: string }>;
-}) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+export default async function WorkspaceLayout({ children, params }: { children: React.ReactNode; params: Promise<{ workspaceSlug: string }> }) {
   const { workspaceSlug } = await params;
-  const userId = (session.user as { id: string }).id;
+  const { user, workspace, role } = await requireWorkspacePage(workspaceSlug);
 
-  const workspace = await prisma.workspace.findUnique({ where: { slug: workspaceSlug } });
-  if (!workspace) redirect("/");
+  const workspaces =
+    user.systemRole === "ADMIN"
+      ? await prisma.workspace.findMany({ where: { deletedAt: null }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, slug: true } })
+      : (await prisma.workspaceMember.findMany({ where: { userId: user.id, workspace: { deletedAt: null } }, include: { workspace: true }, orderBy: { createdAt: "asc" } })).map((m) => ({ id: m.workspace.id, name: m.workspace.name, slug: m.workspace.slug }));
 
-  const membership = await prisma.workspaceMember.findUnique({
-    where: { workspaceId_userId: { workspaceId: workspace.id, userId } },
-  });
-  if (!membership) redirect("/");
-
-  const allMemberships = await prisma.workspaceMember.findMany({
-    where: { userId },
-    include: { workspace: true },
-    orderBy: { createdAt: "asc" },
-  });
-
-  const bases = await prisma.base.findMany({
-    where: { workspaceId: workspace.id, archived: false },
-    orderBy: { order: "asc" },
-    include: {
-      tables: {
-        where: { archived: false },
-        orderBy: { order: "asc" },
-        select: { id: true, name: true, icon: true, views: { orderBy: { order: "asc" }, select: { id: true, name: true, type: true } } },
-      },
-      dashboards: { orderBy: { createdAt: "asc" }, select: { id: true, name: true } },
-    },
+  const projects = await prisma.project.findMany({
+    where: { workspaceId: workspace.id, deletedAt: null },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    select: { id: true, name: true, color: true, views: { orderBy: { sortOrder: "asc" }, select: { id: true, name: true, type: true } } },
   });
 
   return (
     <WorkspaceShell
       workspace={{ id: workspace.id, name: workspace.name, slug: workspace.slug }}
-      workspaces={allMemberships.map((m) => ({ id: m.workspace.id, name: m.workspace.name, slug: m.workspace.slug }))}
-      bases={bases}
-      user={{ id: userId, name: session.user.name || session.user.email || "User", email: session.user.email || "" }}
+      workspaces={workspaces}
+      projects={projects}
+      user={{ id: user.id, name: user.name, email: user.email, systemRole: user.systemRole, avatarColor: user.avatarColor }}
+      role={role}
     >
       {children}
     </WorkspaceShell>

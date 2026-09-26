@@ -8,7 +8,11 @@
     "start": "next start",
     "lint": "eslint",
     "db:seed": "prisma db seed",
-    "test": "node --import tsx --test \"src/**/*.test.ts\""
+    "test": "node --import tsx --test \"src/**/*.test.ts\"",
+    "test:integration": "bash scripts/test-integration.sh",
+    "vercel-build": "bash scripts/vercel-build.sh",
+    "admin:bootstrap": "tsx prisma/bootstrap-admin.ts",
+    "db:migrate": "prisma migrate deploy"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -30,6 +34,7 @@
     "@radix-ui/react-tooltip": "^1.2.16",
     "@tanstack/react-table": "^9.2.4",
     "@tanstack/react-virtual": "^3.14.12",
+    "@vercel/blob": "^2.8.0",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
@@ -42,8 +47,10 @@
     "react-dom": "19.2.8",
     "react-grid-layout": "^1.5.4",
     "recharts": "^3.10.1",
+    "server-only": "^0.0.1",
     "tailwind-merge": "^3.6.0",
     "xlsx": "^0.18.5",
+    "zod": "^4.6.5",
     "zustand": "^5.0.15"
   },
   "devDependencies": {

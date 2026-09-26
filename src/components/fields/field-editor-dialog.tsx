@@ -5,9 +5,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
-import { FIELD_TYPES, FIELD_CATEGORY_LABELS, carryOverConfig, type FieldCategory, type FieldConfig, type SelectOption } from "@/lib/field-types";
-import { FIELD_ROLE_SPECS, rolesForType, type FieldRole } from "@/lib/field-roles";
-import { nanoid } from "nanoid";
+import { FIELD_TYPES, FIELD_CATEGORY_LABELS, CUSTOM_FIELD_TYPE_IDS, getFieldType, type FieldCategory, type FieldConfig, type SelectOption } from "@/lib/field-types";
 import type { FieldRow } from "@/types";
 
 const CATEGORIES: FieldCategory[] = ["basic", "selection", "people", "contact", "files", "calculated", "relational", "system", "action"];
@@ -24,17 +22,11 @@ export function FieldEditorDialog({
   open,
   onOpenChange,
   field,
-  tableId,
-  tableName,
-  otherTables,
   onSave,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  field: Pick<FieldRow, "name" | "type" | "description"> & { config: FieldConfig } | null;
-  tableId: string;
-  tableName: string;
-  otherTables: { id: string; name: string }[];
+  field: (Pick<FieldRow, "name" | "type" | "description"> & { config: FieldConfig }) | null;
   onSave: (draft: FieldDraft) => void;
 }) {
   function makeDraft(): FieldDraft {
@@ -63,7 +55,7 @@ export function FieldEditorDialog({
     patchConfig({ options: options.map((o) => (o.id === id ? { ...o, ...patch } : o)) });
   }
   function addOption() {
-    patchConfig({ options: [...options, { id: nanoid(6), label: "New option", color: OPTION_COLORS[options.length % OPTION_COLORS.length] }] });
+    patchConfig({ options: [...options, { id: crypto.randomUUID(), label: "New option", color: OPTION_COLORS[options.length % OPTION_COLORS.length] }] });
   }
   function removeOption(id: string) {
     patchConfig({ options: options.filter((o) => o.id !== id) });
@@ -80,49 +72,24 @@ export function FieldEditorDialog({
           </div>
           <div>
             <label className="text-xs font-medium text-neutral-500 mb-1 block">Type</label>
-            <Select
-              value={draft.type}
-              onValueChange={(v) =>
-                setDraft((d) => {
-                  const config = carryOverConfig(d.type, v, d.config);
-                  // Keep a pinned role only if the new type can still play it.
-                  if (d.config.role && rolesForType(v).includes(d.config.role as FieldRole)) config.role = d.config.role;
-                  return { ...d, type: v, config };
-                })
-              }
-              options={CATEGORIES.flatMap((cat) => [
-                ...FIELD_TYPES.filter((f) => f.category === cat && !f.comingSoon).map((f) => ({ value: f.type, label: `${FIELD_CATEGORY_LABELS[cat]} · ${f.label}` })),
-              ])}
-              className="w-full"
-            />
-            {field && field.type !== draft.type && (
-              <p className="text-[11px] text-amber-600 dark:text-amber-500 mt-1">
-                Existing values will be converted where possible (e.g. number ↔ text, single ↔ multi select); anything that
-                can&apos;t be safely converted is kept as-is, not deleted.
-              </p>
+            {field ? (
+              <div className="text-sm text-neutral-700 dark:text-neutral-300 px-2.5 py-1.5 rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950">
+                {getFieldType(draft.type).label}
+                <span className="text-[11px] text-neutral-400"> · the type is fixed once a field is created</span>
+              </div>
+            ) : (
+              <Select
+                value={draft.type}
+                onValueChange={(v) => setDraft((d) => ({ ...d, type: v, config: {} }))}
+                options={CATEGORIES.flatMap((cat) =>
+                  FIELD_TYPES.filter((f) => f.category === cat && CUSTOM_FIELD_TYPE_IDS.includes(f.type)).map((f) => ({ value: f.type, label: `${FIELD_CATEGORY_LABELS[cat]} · ${f.label}` }))
+                )}
+                className="w-full"
+              />
             )}
           </div>
 
-          {rolesForType(draft.type).length > 0 && (
-            <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">Role</label>
-              <Select
-                className="w-full"
-                value={draft.config.role ?? "auto"}
-                onValueChange={(v) => patchConfig({ role: v === "auto" ? undefined : v })}
-                options={[
-                  { value: "auto", label: "Auto-detect from name" },
-                  ...rolesForType(draft.type).map((r) => ({ value: r, label: FIELD_ROLE_SPECS[r].label })),
-                ]}
-              />
-              <p className="text-[11px] text-neutral-400 mt-1">
-                Tells My Work, OKR progress and Put All Things On what this field means, whatever its name. Auto-detect
-                understands English and Vietnamese names (e.g. &quot;Trạng thái&quot;, &quot;Hạn chót&quot;).
-              </p>
-            </div>
-          )}
-
-          {["single_select", "multi_select", "status"].includes(draft.type) && (
+          {["single_select", "multi_select"].includes(draft.type) && (
             <div>
               <label className="text-xs font-medium text-neutral-500 mb-1 block">Options</label>
               <div className="space-y-1.5 max-h-48 overflow-y-auto thin-scroll">
@@ -163,42 +130,6 @@ export function FieldEditorDialog({
               />
               <p className="text-[11px] text-neutral-400 mt-1">Reference fields with {"{Field Name}"}. Supports IF, AND, OR, NOT, CONCAT, UPPER, LOWER, LEN, TODAY, DATE_DIFF, SUM, AVG, MIN, MAX and arithmetic.</p>
             </div>
-          )}
-
-          {draft.type === "link" && (
-            <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">Link to table</label>
-              <Select
-                className="w-full"
-                value={draft.config.linkTableId ?? ""}
-                onValueChange={(v) => patchConfig({ linkTableId: v })}
-                options={[
-                  { value: tableId, label: `${tableName} (this table)` },
-                  ...otherTables.map((t) => ({ value: t.id, label: t.name })),
-                ]}
-                placeholder="Choose a table"
-              />
-              <p className="text-[11px] text-neutral-400 mt-1">
-                Link to this table to model dependencies between records (e.g. a &quot;Depends On&quot; field for Gantt).
-              </p>
-            </div>
-          )}
-
-          {draft.type === "attachment" && (
-            <p className="text-[11px] text-neutral-400 -mt-1">Attach files by URL - paste a link and give it a name from the cell.</p>
-          )}
-
-          {(draft.type === "importance" || draft.type === "urgency") && (
-            <p className="text-[11px] text-neutral-400 -mt-1">
-              {draft.type === "importance" ? "Important / Not Important" : "Urgent / Not Urgent"} - a fixed pair used by
-              the Eisenhower view to place cards in quadrants.
-            </p>
-          )}
-
-          {(draft.type === "okr_objective" || draft.type === "okr_key_result") && (
-            <p className="text-[11px] text-neutral-400 -mt-1">
-              Pick from this workspace&apos;s live {draft.type === "okr_objective" ? "Objectives" : "Key Results"} - manage them from the OKRs section.
-            </p>
           )}
 
           {draft.type === "currency" && (

@@ -1,29 +1,24 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { getMembership } from "@/lib/permissions";
+import { requireUser, requireWorkspaceRole, route, readJson } from "@/lib/authz";
+import { colorSchema } from "@/lib/validation";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ workspaceId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+type P = { workspaceId: string };
+
+export const GET = route<P>(async (_req, { params }) => {
+  const user = await requireUser();
   const { workspaceId } = await params;
-  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
+  await requireWorkspaceRole(user, workspaceId, "viewer");
   const teams = await prisma.team.findMany({ where: { workspaceId }, orderBy: { name: "asc" } });
-  return NextResponse.json(teams);
-}
+  return NextResponse.json(teams.map((t) => ({ id: t.id, workspaceId: t.workspaceId, name: t.name, color: t.color })));
+});
 
-export async function POST(req: Request, { params }: { params: Promise<{ workspaceId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const POST = route<P>(async (req, { params }) => {
+  const user = await requireUser();
   const { workspaceId } = await params;
-  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const body = await req.json();
-  const team = await prisma.team.create({
-    data: { workspaceId, name: body.name || "New Team", color: body.color || "#6366f1" },
-  });
-  return NextResponse.json(team, { status: 201 });
-}
+  await requireWorkspaceRole(user, workspaceId, "editor");
+  const body = z.object({ name: z.string().trim().min(1).max(120), color: colorSchema.optional() }).parse(await readJson(req));
+  const t = await prisma.team.create({ data: { workspaceId, name: body.name, color: body.color, createdById: user.id } });
+  return NextResponse.json({ id: t.id, workspaceId: t.workspaceId, name: t.name, color: t.color }, { status: 201 });
+});

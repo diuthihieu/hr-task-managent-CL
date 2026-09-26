@@ -1,33 +1,34 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getMembership } from "@/lib/permissions";
-import { resolveObjectives, OBJECTIVE_INCLUDE_ARG } from "@/lib/okr-resolver";
+import { requireUser, requireWorkspaceRole, route } from "@/lib/authz";
+import { resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 
-export async function GET(req: Request, { params }: { params: Promise<{ workspaceId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+type P = { workspaceId: string };
+
+export const GET = route<P>(async (req, { params }) => {
+  const user = await requireUser();
   const { workspaceId } = await params;
-  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  await requireWorkspaceRole(user, workspaceId, "viewer");
 
   const url = new URL(req.url);
   const teamId = url.searchParams.get("teamId");
   const ownerId = url.searchParams.get("ownerId");
-  const status = url.searchParams.get("status");
-  const cycleType = url.searchParams.get("cycleType");
+  const status = url.searchParams.get("status") as Prisma.ObjectiveWhereInput["status"] | null;
+  const cycleType = url.searchParams.get("cycleType") as Prisma.ObjectiveWhereInput["cycleType"] | null;
 
   const objectives = await prisma.objective.findMany({
     where: {
       workspaceId,
+      deletedAt: null,
       ...(teamId ? { teamId } : {}),
       ...(ownerId ? { ownerId } : {}),
       ...(status ? { status } : {}),
       ...(cycleType ? { cycleType } : {}),
     },
-    include: OBJECTIVE_INCLUDE_ARG,
+    include: OBJECTIVE_INCLUDE,
   });
-  const rows = await resolveObjectives(objectives);
+  const rows = resolveObjectives(objectives);
 
   const total = rows.length;
   const byStatus = { not_started: 0, on_track: 0, at_risk: 0, off_track: 0, completed: 0 } as Record<string, number>;
@@ -88,4 +89,4 @@ export async function GET(req: Request, { params }: { params: Promise<{ workspac
     tasksContributing,
     upcomingDeadlines,
   });
-}
+});

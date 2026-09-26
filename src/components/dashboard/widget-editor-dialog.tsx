@@ -27,13 +27,13 @@ function defaultDraft(): BlockDraft {
 export function WidgetEditorDialog({
   open,
   onOpenChange,
-  tables,
+  projects,
   initial,
   onSave,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  tables: { id: string; name: string }[];
+  projects: { id: string; name: string }[];
   initial: BlockDraft | null;
   onSave: (draft: BlockDraft) => void;
 }) {
@@ -53,13 +53,13 @@ export function WidgetEditorDialog({
     setWasOpen(false);
   }
 
-  const tableId = draft.config.dataSource?.tableId;
+  const projectId = draft.config.dataSource?.projectId;
 
   useEffect(() => {
-    if (!open || !tableId) return;
+    if (!open || !projectId) return;
     let cancelled = false;
     api
-      .get<{ fields: FieldRow[]; views: ViewRow[] }>(`/api/tables/${tableId}`)
+      .get<{ fields: FieldRow[]; views: ViewRow[] }>(`/api/projects/${projectId}`)
       .then((detail) => {
         if (cancelled) return;
         setFields(detail.fields);
@@ -74,7 +74,7 @@ export function WidgetEditorDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, tableId]);
+  }, [open, projectId]);
 
   function patchConfig(patch: Partial<DashboardBlockConfig>) {
     setDraft((d) => ({ ...d, config: { ...d.config, ...patch } }));
@@ -110,15 +110,15 @@ export function WidgetEditorDialog({
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">Base table</label>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">Project</label>
               <Select
                 className="w-full"
-                value={tableId ?? ""}
+                value={projectId ?? ""}
                 onValueChange={(v) => {
-                  patchConfig({ dataSource: { tableId: v, viewId: undefined }, dimensionFieldId: undefined, measureFieldId: undefined });
+                  patchConfig({ dataSource: { projectId: v, viewId: undefined }, dimensionFieldId: undefined, measureFieldId: undefined });
                 }}
-                options={tables.map((t) => ({ value: t.id, label: t.name }))}
-                placeholder="Choose a table"
+                options={projects.map((t) => ({ value: t.id, label: t.name }))}
+                placeholder="Choose a project"
               />
             </div>
             <div>
@@ -126,7 +126,7 @@ export function WidgetEditorDialog({
               <Select
                 className="w-full"
                 value={draft.config.dataSource?.viewId ?? ""}
-                onValueChange={(v) => patchConfig({ dataSource: { tableId, viewId: v || undefined } })}
+                onValueChange={(v) => patchConfig({ dataSource: { projectId, viewId: v || undefined } })}
                 options={[{ value: "", label: "All records" }, ...views.map((v) => ({ value: v.id, label: v.name }))]}
                 placeholder="All records"
               />
@@ -264,7 +264,7 @@ export function WidgetEditorDialog({
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={() => onSave(draft)} disabled={!tableId}>
+          <Button onClick={() => onSave(draft)} disabled={!projectId}>
             Save
           </Button>
         </div>

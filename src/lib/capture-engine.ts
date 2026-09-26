@@ -1,66 +1,8 @@
-// Put All Things On needs to write a clarified thought into whatever
-// "Task Name / Category / Status / ..." fields a table actually has, without
-// hardcoding field ids (every workspace's task table has its own field ids).
-// Each conceptual role resolves through field-roles.ts (explicit role, then
-// bilingual name match, then first field of a compatible type) - so a table
-// just needs a Category-like field to be capturable, everything else degrades
-// gracefully if absent.
-
-import { findFieldByRole } from "./field-roles";
-import type { FieldRow } from "@/types";
-
-export interface CaptureFieldRoles {
-  primaryField: FieldRow | null;
-  categoryField: FieldRow | null;
-  durationField: FieldRow | null; // number-like, hours
-  startField: FieldRow | null;
-  dueField: FieldRow | null;
-  statusField: FieldRow | null;
-  priorityField: FieldRow | null;
-  outputField: FieldRow | null; // long_text
-  processField: FieldRow | null; // long_text
-  ownerField: FieldRow | null; // person
-  objectiveField: FieldRow | null; // okr_objective
-  keyResultField: FieldRow | null; // okr_key_result
-}
-
-export function detectCaptureFieldRoles(fields: FieldRow[]): CaptureFieldRoles {
-  const primaryField = fields.find((f) => f.isPrimary) ?? null;
-  const categoryField = findFieldByRole(fields, "category", { fallbackToType: true });
-  const statusField = findFieldByRole(fields, "status", { exclude: [categoryField], fallbackToType: true });
-  const priorityField = findFieldByRole(fields, "priority", { exclude: [categoryField, statusField], fallbackToType: true });
-  const durationField = findFieldByRole(fields, "duration", { fallbackToType: true });
-  const startField = findFieldByRole(fields, "start_date", { fallbackToType: true });
-  const dueField = findFieldByRole(fields, "due_date", { exclude: [startField], fallbackToType: true });
-  const outputField = findFieldByRole(fields, "output", { fallbackToType: true });
-  const processField = findFieldByRole(fields, "process", { exclude: [outputField], fallbackToType: true });
-  const ownerField = findFieldByRole(fields, "owner", { fallbackToType: true });
-  const objectiveField = fields.find((f) => f.type === "okr_objective") ?? null;
-  const keyResultField = fields.find((f) => f.type === "okr_key_result") ?? null;
-
-  return {
-    primaryField,
-    categoryField,
-    durationField,
-    startField,
-    dueField,
-    statusField,
-    priorityField,
-    outputField,
-    processField,
-    ownerField,
-    objectiveField,
-    keyResultField,
-  };
-}
-
-// ---------------------------------------------------------------------------
 // Put All Things On - dot visualization math. A captured thought's exact
 // `plannedAt` (or its absence) is bucketed into a concentric time ring so the
 // canvas stays a handful of legible bands instead of a literal timeline; the
 // bucket boundaries are computed from the real gap-to-now, not a manually
 // chosen enum, so the rings stay accurate as time passes.
-// ---------------------------------------------------------------------------
 
 export const TIME_BUCKETS = ["today", "this_week", "next", "later", "unscheduled"] as const;
 export type TimeBucket = (typeof TIME_BUCKETS)[number];

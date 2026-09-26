@@ -20,7 +20,8 @@ export type EntityType =
   | "view"
   | "objective"
   | "key_result"
-  | "dashboard";
+  | "dashboard"
+  | "desktop_release";
 
 export type ActivityAction =
   | "created"
@@ -33,7 +34,9 @@ export type ActivityAction =
   | "password_reset"
   | "deactivated"
   | "activated"
-  | "role_changed";
+  | "role_changed"
+  | "published"
+  | "unpublished";
 
 export interface ActivityInput {
   workspaceId: string | null;

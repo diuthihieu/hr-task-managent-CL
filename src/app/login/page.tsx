@@ -5,7 +5,9 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
-import { LayoutGrid } from "lucide-react";
+import Link from "next/link";
+import { LayoutGrid, MonitorDown } from "lucide-react";
+import { useDesktopVersion } from "@/components/desktop/use-desktop";
 
 // Sign-in only. Accounts are created by a system administrator (Admin console);
 // there is intentionally no self-service registration.
@@ -14,6 +16,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const desktopVersion = useDesktopVersion();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -58,6 +61,11 @@ export default function LoginPage() {
           </Button>
         </form>
         <p className="text-xs text-neutral-400 mt-4 text-center">No account? Contact your administrator.</p>
+        {!desktopVersion && (
+          <Link href="/download" className="mt-3 flex items-center justify-center gap-1.5 text-xs text-indigo-600 hover:underline">
+            <MonitorDown size={13} /> Get the Windows desktop app
+          </Link>
+        )}
       </div>
     </div>
   );

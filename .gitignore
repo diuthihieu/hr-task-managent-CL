@@ -46,3 +46,10 @@ next-env.d.ts
 # local sqlite dev database
 /prisma/dev.db
 /prisma/dev.db-journal
+
+# desktop (Tauri)
+/desktop/node_modules
+/desktop/src-tauri/target
+/desktop/src-tauri/gen
+/desktop/shell/config.js
+/desktop/src-tauri/tauri.updater.generated.json

@@ -6,6 +6,7 @@ Every piece of business data lives in PostgreSQL and is entered by users; the
 app ships with no pre-loaded business data.
 
 - Database design, ER diagram, constraints, indexes and risks: **[docs/DATABASE.md](docs/DATABASE.md)**
+- Windows desktop app (Tauri), releases and auto-updates: **[docs/DESKTOP.md](docs/DESKTOP.md)**
 - Schema: [`prisma/schema.prisma`](prisma/schema.prisma) · Migrations: [`prisma/migrations/`](prisma/migrations)
 
 ## Access model
@@ -36,6 +37,16 @@ app ships with no pre-loaded business data.
   CSV import (transactional) and CSV/Excel export.
 - **Soft delete** for users, workspaces, projects, tasks, custom fields,
   comments, attachments, objectives; tasks can be restored.
+
+## Web and Desktop
+
+The same app runs in the browser and as a Windows desktop app
+(`desktop/`, Tauri 2 + WebView2). The desktop app is a native window onto
+the same web app, so both share one backend, one login, one set of
+permissions and one PostgreSQL database - no business data is stored on the
+PC. Users download it from `/download` (linked in the sidebar and on the
+sign-in page); the button always serves the latest published installer.
+Releasing a new version is a tag push - see [docs/DESKTOP.md](docs/DESKTOP.md).
 
 ## Getting started (local)
 
@@ -69,6 +80,7 @@ database or in production.
 | `npm run db:migrate` | `prisma migrate deploy` |
 | `npm run admin:bootstrap` | Create the first admin if none exists |
 | `npm run db:seed` | Development sample data (local only) |
+| `cd desktop && npm run dev` / `npm run build` | Run / package the Windows desktop app (see docs/DESKTOP.md) |
 
 To change the schema: edit `prisma/schema.prisma`, run
 `npx prisma migrate dev --name <change>`, commit the generated migration.
@@ -78,8 +90,8 @@ Never alter the database by hand.
 
 1. Environment variables (Production and Preview): `DATABASE_URL`,
    `DIRECT_URL`, `AUTH_SECRET`, `ADMIN_EMAIL`, `ADMIN_NAME`, optionally
-   `ADMIN_PASSWORD`, and `BLOB_READ_WRITE_TOKEN` (connect a Blob store to the
-   project).
+   `ADMIN_PASSWORD`, `BLOB_READ_WRITE_TOKEN` (connect a Blob store to the
+   project) and `DESKTOP_RELEASE_TOKEN` (desktop release registration).
 2. The `vercel-build` script runs `prisma migrate deploy` and the admin
    bootstrap on **production** builds only, then `next build`. Preview builds
    skip migrations unless `MIGRATE_ON_PREVIEW=1`, so a feature branch can't

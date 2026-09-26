@@ -19,6 +19,7 @@ import {
   FolderKanban,
   ShieldCheck,
   KeyRound,
+  MonitorDown,
   LayoutGrid,
   LayoutDashboard,
   Plus,
@@ -51,6 +52,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { initials, cn } from "@/lib/utils";
 import { CommandPalette } from "./command-palette";
+import { useDesktopVersion } from "@/components/desktop/use-desktop";
 
 const VIEW_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   grid: Sheet,
@@ -101,6 +103,7 @@ export function WorkspaceShell({
   const [newProjectName, setNewProjectName] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const isAdmin = user.systemRole === "ADMIN";
+  const desktopVersion = useDesktopVersion();
   const canManage = (ROLE_RANK[role] ?? -1) >= ROLE_RANK.admin;
   const canEditViews = (ROLE_RANK[role] ?? -1) >= ROLE_RANK.editor;
 
@@ -400,6 +403,12 @@ export function WorkspaceShell({
           ))}
 
           <div className="mt-3 pt-2 border-t border-neutral-200 dark:border-neutral-800 space-y-0.5">
+            {!desktopVersion && (
+              <Link href="/download" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800" data-testid="sidebar-download-desktop">
+                <MonitorDown size={14} />
+                <span className="flex-1 text-left">Download desktop app</span>
+              </Link>
+            )}
             <Link
               href={`/w/${workspace.slug}/settings`}
               className={cn(
@@ -426,7 +435,10 @@ export function WorkspaceShell({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-52">
-              <DropdownMenuLabel>{user.email}</DropdownMenuLabel>
+              <DropdownMenuLabel>
+                {user.email}
+                {desktopVersion && <div className="text-[10px] font-normal text-neutral-400">Desktop app v{desktopVersion}</div>}
+              </DropdownMenuLabel>
               <DropdownMenuItem onSelect={() => router.push("/account/password")}>
                 <KeyRound size={14} /> Change password
               </DropdownMenuItem>

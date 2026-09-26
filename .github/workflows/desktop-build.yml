@@ -1,0 +1,127 @@
+# Reusable: builds the Windows installers (NSIS .exe + .msi) and optionally
+# publishes them. Called by desktop-ci.yml (build check) and
+# desktop-release.yml (tagged release).
+name: Desktop build (reusable)
+
+on:
+  workflow_call:
+    inputs:
+      publish:
+        description: Create a GitHub Release and register it with the Basework server
+        type: boolean
+        default: false
+      version:
+        description: Release version (without "v"); required when publish is true
+        type: string
+        default: ""
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      # Public origin of the web app (not a secret). Set it as a repository variable.
+      BASEWORK_SERVER_URL: ${{ vars.BASEWORK_SERVER_URL || 'https://hr-task-managent-cl-o1sz.vercel.app' }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+
+      - run: npm ci
+
+      - name: Check version matches the release tag
+        if: inputs.publish
+        run: |
+          pkg=$(node -p "require('./package.json').version")
+          if [ "$pkg" != "${{ inputs.version }}" ]; then
+            echo "::error::desktop/package.json version ($pkg) != release version (${{ inputs.version }}). Bump the version first (docs/DESKTOP.md)."
+            exit 1
+          fi
+
+      - name: Rust tests (navigation policy)
+        working-directory: desktop/src-tauri
+        run: |
+          node ../scripts/prepare-shell.mjs
+          cargo test --locked
+
+      - name: Build installers
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -n "$TAURI_UPDATER_PUBKEY" ]; then
+            echo "Auto-update signing enabled"
+            npm run build:updater
+          else
+            echo "::notice::Auto-update signing not configured - building without updater artifacts"
+            npm run build
+          fi
+
+      - name: Collect installers
+        id: files
+        run: |
+          nsis=$(ls src-tauri/target/release/bundle/nsis/*-setup.exe | head -1)
+          msi=$(ls src-tauri/target/release/bundle/msi/*.msi | head -1)
+          echo "nsis=desktop/$nsis" >> "$GITHUB_OUTPUT"
+          echo "nsis_name=$(basename "$nsis")" >> "$GITHUB_OUTPUT"
+          echo "msi=desktop/$msi" >> "$GITHUB_OUTPUT"
+          sig="$nsis.sig"
+          if [ -f "$sig" ]; then echo "sig=desktop/$sig" >> "$GITHUB_OUTPUT"; fi
+          ls -la src-tauri/target/release/bundle/nsis src-tauri/target/release/bundle/msi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: basework-desktop-windows
+          path: |
+            ${{ steps.files.outputs.nsis }}
+            ${{ steps.files.outputs.msi }}
+            ${{ steps.files.outputs.sig }}
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: inputs.publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-v${{ inputs.version }}
+          name: Basework Desktop v${{ inputs.version }}
+          body: |
+            Windows desktop client for Basework. Same account, server and data as the web app.
+            - **Basework_…-setup.exe** - per-user install, no admin rights (recommended; used by the web Download button)
+            - **.msi** - per-machine install for IT deployment (Intune / GPO)
+          files: |
+            ${{ steps.files.outputs.nsis }}
+            ${{ steps.files.outputs.msi }}
+            ${{ steps.files.outputs.sig }}
+
+      - name: Register release with the Basework server
+        if: inputs.publish
+        working-directory: .
+        env:
+          DESKTOP_RELEASE_TOKEN: ${{ secrets.DESKTOP_RELEASE_TOKEN }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          INSTALLER_PATH: ${{ steps.files.outputs.nsis }}
+          INSTALLER_URL: https://github.com/${{ github.repository }}/releases/download/desktop-v${{ inputs.version }}/${{ steps.files.outputs.nsis_name }}
+          UPDATER_SIG_PATH: ${{ steps.files.outputs.sig }}
+          RELEASE_NOTES: ${{ github.event.head_commit.message || '' }}
+        run: |
+          if [ -z "$DESKTOP_RELEASE_TOKEN" ]; then
+            echo "::warning::DESKTOP_RELEASE_TOKEN secret not set - release uploaded to GitHub but not registered; register it in Admin console → Desktop releases."
+            exit 0
+          fi
+          node scripts/desktop/publish-release.mjs

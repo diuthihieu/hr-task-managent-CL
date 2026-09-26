@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Basework</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <!--
+      Local bootstrap page bundled into the desktop app. It only checks that the
+      Basework server is reachable and then hands the window over to the web
+      app, which provides all UI, data and authentication. No business data is
+      stored here.
+    -->
+    <main>
+      <div class="logo" aria-hidden="true">B</div>
+      <h1>Basework</h1>
+      <p id="status" role="status">Connecting…</p>
+      <button id="retry" type="button" hidden>Try again</button>
+      <p id="server" class="muted"></p>
+    </main>
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

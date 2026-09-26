@@ -762,3 +762,45 @@ model CapturedThought {
   @@index([workspaceId, userId, status])
   @@map("captured_thoughts")
 }
+
+// ---------------------------------------------------------------------------
+// Desktop client distribution. Installers are hosted as release assets
+// (GitHub Releases); this table is the single source of truth for which
+// build is "latest" (Download page) and for the Tauri updater manifest.
+// ---------------------------------------------------------------------------
+
+enum ReleaseChannel {
+  stable
+  beta
+
+  @@map("release_channel")
+}
+
+model DesktopRelease {
+  id                 String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  /// Semantic version without a leading "v", e.g. "1.2.0".
+  version            String         @db.VarChar(40)
+  /// Tauri target triple family + arch, e.g. "windows-x86_64".
+  platform           String         @default("windows-x86_64") @db.VarChar(40)
+  channel            ReleaseChannel @default(stable)
+  installerUrl       String         @map("installer_url")
+  installerFileName  String         @map("installer_file_name") @db.VarChar(255)
+  installerSizeBytes BigInt?        @map("installer_size_bytes")
+  sha256             String?        @db.VarChar(64)
+  /// Updater payload + minisign signature (Tauri updater). Null until updates are enabled.
+  updaterUrl         String?        @map("updater_url")
+  updaterSignature   String?        @map("updater_signature")
+  minOsVersion       String         @default("Windows 10 (1803+) / Windows 11, 64-bit") @map("min_os_version") @db.VarChar(120)
+  releaseNotes       String?        @map("release_notes")
+  isPublished        Boolean        @default(true) @map("is_published")
+  publishedAt        DateTime       @default(now()) @map("published_at") @db.Timestamptz(6)
+  createdAt          DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime       @updatedAt @map("updated_at") @db.Timestamptz(6)
+  /// Null when registered by CI with the release token.
+  createdById        String?        @map("created_by") @db.Uuid
+  updatedById        String?        @map("updated_by") @db.Uuid
+
+  @@unique([platform, channel, version])
+  @@index([platform, channel, isPublished, publishedAt(sort: Desc)])
+  @@map("desktop_releases")
+}

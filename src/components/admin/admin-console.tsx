@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { formatDate, cn } from "@/lib/utils";
 import type { AdminUserRow } from "@/types";
+import { DesktopReleasesPanel } from "./desktop-releases-panel";
 
 interface WorkspaceItem {
   id: string;
@@ -22,7 +23,7 @@ interface WorkspaceItem {
 const ROLE_OPTIONS = ["owner", "admin", "editor", "contributor", "viewer"].map((r) => ({ value: r, label: r }));
 
 export function AdminConsole({ currentUserId }: { currentUserId: string }) {
-  const [tab, setTab] = useState<"users" | "workspaces">("users");
+  const [tab, setTab] = useState<"users" | "workspaces" | "desktop">("users");
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -106,13 +107,13 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
 
       <div className="max-w-6xl mx-auto p-6">
         <div className="flex items-center gap-1 mb-4 border-b border-neutral-200 dark:border-neutral-800">
-          {(["users", "workspaces"] as const).map((t) => (
+          {(["users", "workspaces", "desktop"] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={cn("px-3 py-2 -mb-px border-b-2 capitalize", tab === t ? "border-indigo-600 text-indigo-700 dark:text-indigo-300 font-medium" : "border-transparent text-neutral-500")}
             >
-              {t} {t === "users" ? `(${users.length})` : `(${workspaces.length})`}
+              {t === "desktop" ? "Desktop releases" : `${t} (${t === "users" ? users.length : workspaces.length})`}
             </button>
           ))}
           <div className="ml-auto pb-1.5">
@@ -120,7 +121,7 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
               <Button onClick={() => setCreateOpen(true)}>
                 <UserPlus size={14} /> Create account
               </Button>
-            ) : (
+            ) : tab === "desktop" ? null : (
               <Button onClick={createWorkspace}>
                 <Plus size={14} /> New workspace
               </Button>
@@ -130,6 +131,8 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
 
         {loading ? (
           <div className="text-neutral-400 py-10 text-center">Loading…</div>
+        ) : tab === "desktop" ? (
+          <DesktopReleasesPanel />
         ) : tab === "users" ? (
           <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-x-auto">
             <table className="w-full">

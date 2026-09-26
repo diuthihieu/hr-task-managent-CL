@@ -18,8 +18,7 @@ on:
 jobs:
   windows:
     runs-on: windows-latest
-    permissions:
-      contents: write
+    # Permissions come from the caller: read-only for CI, contents:write for releases.
     env:
       # Public origin of the web app (not a secret). Set it as a repository variable.
       BASEWORK_SERVER_URL: ${{ vars.BASEWORK_SERVER_URL || 'https://hr-task-managent-cl-o1sz.vercel.app' }}

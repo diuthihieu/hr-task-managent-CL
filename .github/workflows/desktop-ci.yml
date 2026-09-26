@@ -12,6 +12,9 @@ on:
       - "desktop/**"
       - ".github/workflows/desktop-*.yml"
 
+permissions:
+  contents: read
+
 concurrency:
   group: desktop-ci-${{ github.ref }}
   cancel-in-progress: true

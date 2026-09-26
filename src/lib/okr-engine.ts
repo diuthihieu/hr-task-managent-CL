@@ -4,10 +4,9 @@
 // own value fields - so a Task edit is reflected the instant it's read back,
 // with nothing to keep in sync and no write-fanout.
 
-import { parseFieldConfig, SELECT_SINGLE_TYPES } from "./field-types";
+import { parseFieldConfig } from "./field-types";
+import { findFieldByRole, isDoneLabel } from "./field-roles";
 import type { FieldRow } from "@/types";
-
-const DONE_LABEL_RE = /^(done|completed|complete|closed|resolved)$/i;
 
 function clamp(n: number): number {
   if (!Number.isFinite(n)) return 0;
@@ -21,11 +20,11 @@ export function resolveTaskProgress(fields: FieldRow[], data: Record<string, unk
     const v = Number(data[progressField.id]);
     return Number.isFinite(v) ? clamp(v) : 0;
   }
-  const statusField = fields.find((f) => SELECT_SINGLE_TYPES.includes(f.type) && /status/i.test(f.name));
+  const statusField = findFieldByRole(fields, "status");
   if (statusField) {
     const cfg = parseFieldConfig(statusField.config);
     const label = cfg.options?.find((o) => o.id === data[statusField.id])?.label ?? "";
-    return DONE_LABEL_RE.test(label.trim()) ? 100 : 0;
+    return isDoneLabel(label) ? 100 : 0;
   }
   const checkboxField = fields.find((f) => f.type === "checkbox");
   if (checkboxField) return data[checkboxField.id] ? 100 : 0;

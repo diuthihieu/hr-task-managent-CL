@@ -26,6 +26,11 @@ const CATEGORY_OPTIONS = [
   "Employee Evaluation", "HR Reporting", "Audit", "Policy", "Offboarding", "Onboarding",
 ].map((label, i) => ({ id: `cat_${i}`, label, color: ["#6366f1", "#0ea5e9", "#22c55e", "#f97316", "#ec4899", "#8b5cf6", "#eab308", "#ef4444", "#14b8a6", "#a855f7", "#64748b"][i] }));
 
+// Demo login. Override with SEED_USER_EMAIL / SEED_USER_PASSWORD (e.g. to seed
+// a hosted database under your own account) instead of editing this file.
+const SEED_USER_EMAIL = process.env.SEED_USER_EMAIL || "demo@basework.local";
+const SEED_USER_PASSWORD = process.env.SEED_USER_PASSWORD || "password123";
+
 function daysFromNow(n: number) {
   const d = new Date();
   d.setDate(d.getDate() + n);
@@ -35,11 +40,11 @@ function daysFromNow(n: number) {
 async function main() {
   console.log("Seeding database...");
 
-  const passwordHash = await bcrypt.hash("password123", 10);
+  const passwordHash = await bcrypt.hash(SEED_USER_PASSWORD, 10);
   const demoUser = await prisma.user.upsert({
-    where: { email: "diuthihieu@gmail.com" },
+    where: { email: SEED_USER_EMAIL },
     update: {},
-    create: { email: "diuthihieu@gmail.com", name: "Hieu Diu", passwordHash, avatarColor: "#6366f1" },
+    create: { email: SEED_USER_EMAIL, name: "Hieu Diu", passwordHash, avatarColor: "#6366f1" },
   });
 
   const teammates = await Promise.all(
@@ -266,7 +271,7 @@ async function main() {
     empFields[f.name] = field.id;
   }
   const EMPLOYEES = [
-    ["Hieu Diu", 0, "HR Business Partner", "diuthihieu@gmail.com", -400, "active", 1800],
+    ["Hieu Diu", 0, "HR Business Partner", SEED_USER_EMAIL, -400, "active", 1800],
     ["An Tran", 0, "HR Generalist", "an.tran@bestarion.com", -300, "active", 1200],
     ["Linh Pham", 4, "Support Team Lead", "linh.pham@bestarion.com", -600, "active", 1500],
     ["Minh Nguyen", 5, "Operations Manager", "minh.nguyen@bestarion.com", -900, "active", 2200],
@@ -448,7 +453,7 @@ async function main() {
   }
   await prisma.view.create({ data: { tableId: auditTable.id, name: "Grid", type: "grid", isDefault: true, order: 0, config: "{}" } });
 
-  console.log("Seed complete. Demo login: diuthihieu@gmail.com / password123");
+  console.log(`Seed complete. Demo login: ${SEED_USER_EMAIL} / ${process.env.SEED_USER_PASSWORD ? "(SEED_USER_PASSWORD)" : SEED_USER_PASSWORD}`);
 }
 
 main()

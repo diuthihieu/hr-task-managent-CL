@@ -6,6 +6,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
 import { FIELD_TYPES, FIELD_CATEGORY_LABELS, carryOverConfig, type FieldCategory, type FieldConfig, type SelectOption } from "@/lib/field-types";
+import { FIELD_ROLE_SPECS, rolesForType, type FieldRole } from "@/lib/field-roles";
 import { nanoid } from "nanoid";
 import type { FieldRow } from "@/types";
 
@@ -81,7 +82,14 @@ export function FieldEditorDialog({
             <label className="text-xs font-medium text-neutral-500 mb-1 block">Type</label>
             <Select
               value={draft.type}
-              onValueChange={(v) => setDraft((d) => ({ ...d, type: v, config: carryOverConfig(d.type, v, d.config) }))}
+              onValueChange={(v) =>
+                setDraft((d) => {
+                  const config = carryOverConfig(d.type, v, d.config);
+                  // Keep a pinned role only if the new type can still play it.
+                  if (d.config.role && rolesForType(v).includes(d.config.role as FieldRole)) config.role = d.config.role;
+                  return { ...d, type: v, config };
+                })
+              }
               options={CATEGORIES.flatMap((cat) => [
                 ...FIELD_TYPES.filter((f) => f.category === cat && !f.comingSoon).map((f) => ({ value: f.type, label: `${FIELD_CATEGORY_LABELS[cat]} · ${f.label}` })),
               ])}
@@ -94,6 +102,25 @@ export function FieldEditorDialog({
               </p>
             )}
           </div>
+
+          {rolesForType(draft.type).length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">Role</label>
+              <Select
+                className="w-full"
+                value={draft.config.role ?? "auto"}
+                onValueChange={(v) => patchConfig({ role: v === "auto" ? undefined : v })}
+                options={[
+                  { value: "auto", label: "Auto-detect from name" },
+                  ...rolesForType(draft.type).map((r) => ({ value: r, label: FIELD_ROLE_SPECS[r].label })),
+                ]}
+              />
+              <p className="text-[11px] text-neutral-400 mt-1">
+                Tells My Work, OKR progress and Put All Things On what this field means, whatever its name. Auto-detect
+                understands English and Vietnamese names (e.g. &quot;Trạng thái&quot;, &quot;Hạn chót&quot;).
+              </p>
+            </div>
+          )}
 
           {["single_select", "multi_select", "status"].includes(draft.type) && (
             <div>

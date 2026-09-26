@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getMembership } from "@/lib/permissions";
-import { parseFieldConfig, SELECT_SINGLE_TYPES } from "@/lib/field-types";
+import { parseFieldConfig } from "@/lib/field-types";
+import { findFieldByRole } from "@/lib/field-roles";
 import { resolveTaskProgress } from "@/lib/okr-engine";
 import { getMyObjectiveRows } from "@/lib/okr-resolver";
 import type { FieldRow } from "@/types";
@@ -49,15 +50,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ workspa
   const tasks: MyTaskRow[] = [];
   for (const table of tables) {
     const fields = table.fields as unknown as FieldRow[];
-    const personField = fields.find((f) => f.type === "person");
+    const personField = findFieldByRole(fields, "owner", { fallbackToType: true });
     const peopleField = fields.find((f) => f.type === "people");
     if (!personField && !peopleField) continue;
 
     const records = await prisma.record.findMany({ where: { tableId: table.id } });
     const primaryField = fields.find((f) => f.isPrimary);
-    const statusField = fields.find((f) => SELECT_SINGLE_TYPES.includes(f.type) && /status/i.test(f.name));
-    const priorityField = fields.find((f) => SELECT_SINGLE_TYPES.includes(f.type) && /priority/i.test(f.name));
-    const dueDateField = fields.find((f) => (f.type === "date" || f.type === "datetime") && /due/i.test(f.name)) ?? fields.find((f) => f.type === "date" || f.type === "datetime");
+    const statusField = findFieldByRole(fields, "status");
+    const priorityField = findFieldByRole(fields, "priority", { exclude: [statusField] });
+    const dueDateField = findFieldByRole(fields, "due_date", { fallbackToType: true });
     const importanceField = fields.find((f) => f.type === "importance");
     const urgencyField = fields.find((f) => f.type === "urgency");
     const objectiveField = fields.find((f) => f.type === "okr_objective");

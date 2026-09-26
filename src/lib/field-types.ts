@@ -157,6 +157,7 @@ export interface FieldConfig {
   rollupFn?: "sum" | "avg" | "min" | "max" | "count";
   maxRating?: number;
   startNumber?: number;
+  role?: string; // explicit conceptual role (see field-roles.ts), set from the field editor
 }
 
 export function parseFieldConfig(raw: string | null | undefined): FieldConfig {

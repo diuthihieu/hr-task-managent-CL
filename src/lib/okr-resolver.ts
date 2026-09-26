@@ -5,7 +5,8 @@
 // actually gets computed; see src/lib/okr-engine.ts for the pure math.
 
 import { prisma } from "./prisma";
-import { parseFieldConfig, SELECT_SINGLE_TYPES } from "./field-types";
+import { parseFieldConfig } from "./field-types";
+import { findFieldByRole } from "./field-roles";
 import { computeKeyResultProgress, computeObjectiveProgress, resolveTaskProgress } from "./okr-engine";
 import type { FieldRow, KeyResultRow, KeyResultTaskRow, ObjectiveRow, OkrUserLite } from "@/types";
 import type { Prisma } from "@prisma/client";
@@ -61,14 +62,14 @@ export async function resolveObjectives(objectives: ObjectiveWithIncludes[]): Pr
     const primaryField = tableFields.find((f) => f.isPrimary);
     const title = primaryField ? String(data[primaryField.id] ?? "") : "";
 
-    const statusField = tableFields.find((f) => SELECT_SINGLE_TYPES.includes(f.type) && /status/i.test(f.name));
+    const statusField = findFieldByRole(tableFields, "status");
     const statusCfg = statusField ? parseFieldConfig(statusField.config) : null;
     const statusLabel = statusField ? statusCfg?.options?.find((o) => o.id === data[statusField.id])?.label ?? null : null;
 
-    const dueDateField = tableFields.find((f) => f.type === "date" || f.type === "datetime");
+    const dueDateField = findFieldByRole(tableFields, "due_date", { fallbackToType: true });
     const dueDate = dueDateField ? (data[dueDateField.id] as string | null) ?? null : null;
 
-    const personField = tableFields.find((f) => f.type === "person");
+    const personField = findFieldByRole(tableFields, "owner", { fallbackToType: true });
     const assigneeId = personField ? (data[personField.id] as string | null) : null;
     const assignee = assigneeId ? toUserLite(memberById.get(assigneeId) ?? null) : null;
 

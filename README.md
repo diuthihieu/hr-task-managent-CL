@@ -1,64 +1,89 @@
 # Basework — Internal Work Management Platform
 
-An Airtable/Lark-Base-style workspace → base → table → view engine, built as a
-production-oriented foundation for an internal work management platform. This
-is **Phase 1 (Foundation) and Phase 2 (Data Interaction)** of the roadmap
-below — a fully working vertical slice, not a mockup.
+An Airtable/Lark-Base-style workspace → base → table → view engine, built as an
+internal work management platform for an HR Operations team: one master task
+table viewed many ways, aligned to Team OKRs, with a quick-capture inbox in
+front of it.
 
 ## What's implemented
 
+**Data engine**
 - **Auth** — email/password (NextAuth v5, credentials + JWT sessions).
 - **Workspace → Base → Table → Field → Record** — fully dynamic schema; adding
   a field never touches SQL DDL.
-- **Grid view** — inline editing per field type, column resize/reorder/freeze,
-  hide fields, row drag-to-reorder, bulk select + delete, record drawer with
-  comments, add-field type picker (grouped by category, matching the spec's
-  field taxonomy).
-- **Saved views** — multiple Grid views per table, each with its own filters,
-  sorts, grouping, hidden columns, column order/widths and conditional
-  formatting, persisted server-side.
-- **Filter engine** — AND/OR condition groups, per-type operators (text,
-  number, date, select, person, current-user).
-- **Group engine** — collapsible groups with count/sum/avg/min/max summaries.
-- **Conditional formatting** — cell or row highlight rules.
-- **Formula fields** — small real expression engine (`IF`, `AND`, `OR`, `NOT`,
-  `CONCAT`, `LEFT/RIGHT/MID/LEN/UPPER/LOWER`, `TODAY/NOW/YEAR/MONTH/DAY/DATE_DIFF`,
-  `SUM/AVG/MIN/MAX`, arithmetic and comparisons) evaluated live against a
-  record's current field values.
-- **Relational (basic)** — Link-to-Record fields with a picker over the
-  target table's records.
-- **Global search** — Ctrl/Cmd+K across bases, tables and records.
-- **Light/dark theme**, toasts, empty states, keyboard-friendly inputs.
-- **Seed data** — a "BESTARION" workspace with an "HR Operations" base:
-  All Tasks, Employee, Social Insurance, Training, Audit Log, with realistic
-  linked records and several saved views (All Tasks, My Tasks, Overdue Tasks,
-  Completed Tasks, By Category).
+- **Filter engine** (AND/OR groups, per-type operators incl. current user),
+  **sorts**, **grouping** with count/sum/avg/min/max, **conditional formatting**.
+- **Formula fields** — `IF`, `AND`, `OR`, `NOT`, `CONCAT`,
+  `LEFT/RIGHT/MID/LEN/UPPER/LOWER`, `TODAY/NOW/YEAR/MONTH/DAY/DATE_DIFF`,
+  `SUM/AVG/MIN/MAX`, arithmetic and comparisons.
+- **Link-to-Record** fields; **global search** (Ctrl/Cmd+K).
+- **Field roles** — My Work, OKR progress and Put All Things On find a table's
+  Status / Priority / Category / Start / Due / Owner / Duration / Output /
+  Execution-plan fields by an explicit **Role** set in the field editor, or
+  else by an English *or Vietnamese* name match ("Trạng thái", "Hạn chót",
+  "Người phụ trách"...). See `src/lib/field-roles.ts`.
 
-Kanban/Calendar/Gantt/Gallery/Form views, the Dashboard builder, the Workflow
-builder, and fine-grained permissions are **intentionally not built yet** —
-see "Roadmap" below. Their schema is already in place (`View.type`,
-`Dashboard`, `DashboardBlock`, `Workflow`, `WorkflowNode`,
-`WorkflowExecution`) so adding them is additive, not a rewrite. The sidebar
-and view-type picker show these as disabled "soon" entries so the full
-information architecture is visible today.
+**Views** (all saved server-side, each with its own filters/sorts/grouping/
+hidden columns/formatting; rename, duplicate, reorder, "Save as View")
+- Grid (inline editing, resize/reorder/freeze columns, row drag, bulk delete,
+  record drawer with comments, row height incl. auto-fit), Kanban, Calendar,
+  Gantt, Gallery, Eisenhower matrix, and Form (public link at `/form/[viewId]`).
+- CSV/Excel export; CSV import (columns matched to fields by name).
+
+**Work management**
+- **Task Base** — the HR Operations base is organised around one master task
+  table; legacy per-domain tables are archived, not deleted.
+- **Team OKRs** — Teams, Objectives, Key Results (task-based, numeric,
+  percentage, manual); tasks link to KRs through `okr_objective` /
+  `okr_key_result` fields. Progress is computed at read time, never stored.
+  Pages: Team OKRs, My OKRs, Objective detail, OKR dashboard.
+- **My Work** — personal hub: my tasks, OKRs, key results, Eisenhower summary,
+  upcoming deadlines.
+- **Put All Things On** — quick-capture inbox with duration + planned time, a
+  time-ring visualization (Today / This Week / Next / Later / Unplanned) and a
+  clarify flow that turns a thought into a task linked to a Key Result.
+- **Dashboards** — multi-widget builder (KPI + chart types, filter bar) and a
+  workspace-wide dashboard index.
+- **Settings** — workspace info, members & roles, permission matrix, task
+  statuses/priorities/categories, default fields, views, notifications,
+  appearance, import/export, integrations, audit log (record create/update/
+  delete is logged), security.
+
+**Not built yet:** the Workflow/Automation builder (schema only: `Workflow`,
+`WorkflowNode`, `WorkflowExecution`), Lookup/Rollup fields, field-level
+permissions, SSO — see "Roadmap".
 
 ## Getting started
 
+Requires Node 20+ and PostgreSQL 14+.
+
 ```bash
 npm install
-cp .env.example .env     # fill in DATABASE_URL / DIRECT_URL (Postgres) and AUTH_SECRET
-npx prisma migrate dev   # applies the schema to your Postgres database
-npm run db:seed          # seeds the BESTARION / HR Operations demo data
+cp .env.example .env            # set DATABASE_URL / DIRECT_URL and AUTH_SECRET
+docker compose up postgres -d   # optional: local Postgres matching .env.example
+npx prisma migrate deploy       # apply migrations (use `migrate dev` when changing the schema)
+npm run db:seed                 # BESTARION / HR Operations demo data
 npm run dev
 ```
 
 Open http://localhost:3000 and sign in with the seeded demo account:
 
-- **Email:** `diuthihieu@gmail.com`
+- **Email:** `demo@basework.local`
 - **Password:** `password123`
 
-Or register a new account from the login page — you'll get your own empty
-workspace.
+Set `SEED_USER_EMAIL` / `SEED_USER_PASSWORD` in `.env` before seeding to create
+the demo account under your own login instead. Or register from the login page
+— you'll get your own empty workspace.
+
+### Scripts
+
+| Command | What it does |
+|---|---|
+| `npm run dev` | Dev server on :3000 |
+| `npm run build` / `npm start` | Production build / serve |
+| `npm test` | Unit tests (Node test runner via `tsx`) for the formula engine, query engine, OKR math and field-role detection |
+| `npm run lint` | ESLint |
+| `npm run db:seed` | `prisma db seed` (loads `.env`) |
 
 ## Architecture
 
@@ -130,6 +155,8 @@ src/
     layout/             # sidebar/topbar shell, command palette (Ctrl+K)
     views/               # view tabs, toolbar, the table-workspace orchestrator
     grid/                # the data grid, per-field-type cell editor, record drawer
+    kanban/ calendar/ gantt/ gallery/ eisenhower/ form/   # the other view types
+    okr/ capture/ dashboard/ settings/                     # OKRs, Put All Things On, dashboards, settings
     filters/             # filter/sort/group/conditional-format popovers
     fields/              # add/edit field dialog
     ui/                   # small Radix-based primitives (button, dialog, popover, ...)
@@ -137,25 +164,30 @@ src/
     query-engine.ts      # filter / sort / group / conditional-formatting (shared by every view type)
     formula.ts           # formula field tokenizer/parser/evaluator
     field-types.ts        # the field type registry (drives the add-field picker)
+    field-roles.ts        # maps conceptual roles (status, due date, owner...) to a table's real fields
+    okr-engine.ts, okr-resolver.ts   # OKR progress math + read-side aggregation
+    capture-engine.ts     # Put All Things On field mapping + time-ring math
+    dashboard-engine.ts   # dashboard widget aggregation
+    __tests__/            # unit tests (`npm test`)
     auth.ts, prisma.ts, permissions.ts, api-client.ts, utils.ts
   types/                  # shared TS types for API payloads
 ```
 
-## Roadmap (see the product spec for full detail)
+## Roadmap
 
-- **Phase 3 — Task experience:** Kanban (drag between status groups),
-  Calendar, Gantt, Gallery, Form view; subtasks/dependencies/watchers.
-- **Phase 4 — Analytics:** dashboard builder, chart blocks, KPI cards,
-  page/chart-level filters.
-- **Phase 5 — Automation:** visual trigger → condition → action workflow
-  editor, execution history.
-- **Phase 6 — Advanced data:** two-way relationships, Lookup, Rollup fields
-  (schema and field-type entries already exist, marked "coming soon" in the
-  UI).
-- **Phase 7 — Enterprise:** field-level permissions, audit log UI (the
-  `AuditLog` model exists, unused so far), SSO (Entra ID/Google — the
-  NextAuth provider list is the extension point), API, perf work on the
+Done: Phase 1–2 (foundation, data interaction), Phase 3 views (Kanban,
+Calendar, Gantt, Gallery, Form, Eisenhower), Phase 4 dashboards, Team OKRs,
+audit log.
+
+- **Automation:** visual trigger → condition → action workflow editor and
+  execution history (schema exists). Start with concrete HR triggers — overdue
+  tasks, social-insurance deadlines, expiring training certificates.
+- **Task depth:** subtasks, dependencies, watchers.
+- **Advanced data:** two-way relationships, Lookup, Rollup fields (field-type
+  entries exist, marked "coming soon").
+- **Enterprise:** field-level permissions, SSO (Entra ID/Google — the NextAuth
+  provider list is the extension point), public API, SQL push-down for the
   query engine described above.
 
-Each phase should start by inspecting the current code, since the schema was
-deliberately built to absorb these without a restructure.
+Each phase should start by inspecting the current code; the schema was built
+to absorb these without a restructure.

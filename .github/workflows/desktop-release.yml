@@ -1,0 +1,35 @@
+# Publishes a desktop release. Trigger by pushing a tag "desktop-vX.Y.Z"
+# (see docs/DESKTOP.md) or manually from the Actions tab.
+name: Desktop release
+
+on:
+  push:
+    tags: ["desktop-v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release (must equal desktop/package.json), e.g. 1.2.0
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      value: ${{ steps.v.outputs.value }}
+    steps:
+      - id: v
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then v="${{ inputs.version }}"; else v="${GITHUB_REF_NAME#desktop-v}"; fi
+          if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then echo "::error::Invalid version '$v'"; exit 1; fi
+          echo "value=$v" >> "$GITHUB_OUTPUT"
+
+  release:
+    needs: version
+    uses: ./.github/workflows/desktop-build.yml
+    with:
+      publish: true
+      version: ${{ needs.version.outputs.value }}
+    secrets: inherit

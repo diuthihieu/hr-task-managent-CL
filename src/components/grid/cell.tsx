@@ -50,6 +50,68 @@ function estimateRows(value: string, columnWidthPx: number | undefined, maxRows:
   return Math.max(1, Math.min(maxRows, lines));
 }
 
+// Text-like cells keep a local draft and only commit on blur / Enter, so the
+// server sees one update per edit (one activity-log entry, one validation)
+// instead of one request per keystroke.
+type DraftProps<T extends HTMLInputElement | HTMLTextAreaElement> = Omit<React.InputHTMLAttributes<T> & React.TextareaHTMLAttributes<T>, "value" | "onChange"> & {
+  value: string | number;
+  onCommit: (raw: string) => void;
+};
+
+function useDraft(value: string | number, onCommit: (raw: string) => void) {
+  const external = value === null || value === undefined ? "" : String(value);
+  const [draft, setDraft] = useState(external);
+  const [focused, setFocused] = useState(false);
+  const [lastExternal, setLastExternal] = useState(external);
+  if (!focused && external !== lastExternal) {
+    setLastExternal(external);
+    setDraft(external);
+  }
+  const commit = () => {
+    if (draft !== external) onCommit(draft);
+  };
+  return { draft, setDraft, setFocused, commit, external };
+}
+
+function DraftInput({ value, onCommit, ...rest }: DraftProps<HTMLInputElement>) {
+  const d = useDraft(value, onCommit);
+  return (
+    <input
+      {...(rest as React.InputHTMLAttributes<HTMLInputElement>)}
+      value={d.draft}
+      onFocus={() => d.setFocused(true)}
+      onChange={(e) => d.setDraft(e.target.value)}
+      onBlur={() => {
+        d.setFocused(false);
+        d.commit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+        if (e.key === "Escape") {
+          d.setDraft(d.external);
+          setTimeout(() => (e.target as HTMLInputElement).blur());
+        }
+      }}
+    />
+  );
+}
+
+function DraftTextarea({ value, onCommit, ...rest }: DraftProps<HTMLTextAreaElement>) {
+  const d = useDraft(value, onCommit);
+  return (
+    <textarea
+      {...(rest as React.TextareaHTMLAttributes<HTMLTextAreaElement>)}
+      value={d.draft}
+      onFocus={() => d.setFocused(true)}
+      onChange={(e) => d.setDraft(e.target.value)}
+      onBlur={() => {
+        d.setFocused(false);
+        d.commit();
+      }}
+    />
+  );
+}
+
 function OptionBadge({ option }: { option: SelectOption }) {
   return (
     <span
@@ -61,10 +123,14 @@ function OptionBadge({ option }: { option: SelectOption }) {
   );
 }
 
-export function Cell({ field, value, members, linkTargets, okrOptions, wrapText, maxHeight, columnWidth, onChange }: CellProps) {
+export function Cell({ field, value, members, linkTargets, okrOptions, wrapText, maxHeight, columnWidth, onChange, readOnlyOverride }: CellProps) {
   const typeDef = getFieldType(field.type);
   const config = parseFieldConfig(field.config);
   const base = "h-full w-full flex items-center px-2 text-sm";
+
+  if (readOnlyOverride) {
+    return <div className={cn(base, "text-neutral-700 dark:text-neutral-300 truncate")}>{CellDisplayValue(field, value) || <span className="text-neutral-300">—</span>}</div>;
+  }
 
   if (typeDef.comingSoon) {
     return <div className={cn(base, "text-neutral-300 dark:text-neutral-700")}>—</div>;
@@ -77,27 +143,27 @@ export function Cell({ field, value, members, linkTargets, okrOptions, wrapText,
         const maxRows = field.type === "long_text" ? 10 : 6;
         const rows = estimateRows((value as string) ?? "", columnWidth, maxRows);
         return (
-          <textarea
+          <DraftTextarea
             rows={rows}
             className="w-full bg-transparent outline-none resize-none text-sm text-neutral-800 dark:text-neutral-100 focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40 px-2 py-1.5 leading-5"
             style={{ maxHeight, overflowY: "auto" }}
             value={(value as string) ?? ""}
-            onChange={(e) => onChange(e.target.value)}
+            onCommit={(v) => onChange(v)}
           />
         );
       }
       return field.type === "long_text" ? (
-        <textarea
+        <DraftTextarea
           rows={1}
           className={cn(base, "bg-transparent outline-none resize-none text-neutral-800 dark:text-neutral-100 focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40 py-1.5")}
           value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)}
+          onCommit={(v) => onChange(v)}
         />
       ) : (
-        <input
+        <DraftInput
           className={cn(base, "bg-transparent outline-none text-neutral-800 dark:text-neutral-100 focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40")}
           value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)}
+          onCommit={(v) => onChange(v)}
           placeholder=""
         />
       );
@@ -106,43 +172,43 @@ export function Cell({ field, value, members, linkTargets, okrOptions, wrapText,
     case "phone":
     case "url":
       return (
-        <input
+        <DraftInput
           className={cn(base, "bg-transparent outline-none text-neutral-800 dark:text-neutral-100 focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40")}
           value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)}
+          onCommit={(v) => onChange(v)}
           placeholder=""
         />
       );
     case "number":
     case "integer":
       return (
-        <input
+        <DraftInput
           type="number"
           className={cn(base, "bg-transparent outline-none text-neutral-800 dark:text-neutral-100 focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40 tabular-nums")}
           value={value === null || value === undefined ? "" : (value as number)}
-          onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+          onCommit={(v) => onChange(v === "" ? null : Number(v))}
         />
       );
     case "currency":
       return (
         <div className={cn(base, "gap-0.5")}>
           <span className="text-neutral-400">{config.currencySymbol ?? "$"}</span>
-          <input
+          <DraftInput
             type="number"
             className="flex-1 bg-transparent outline-none text-neutral-800 dark:text-neutral-100 tabular-nums focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40 h-full"
             value={value === null || value === undefined ? "" : (value as number)}
-            onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+            onCommit={(v) => onChange(v === "" ? null : Number(v))}
           />
         </div>
       );
     case "percent":
       return (
         <div className={cn(base, "gap-0.5")}>
-          <input
+          <DraftInput
             type="number"
             className="flex-1 bg-transparent outline-none text-neutral-800 dark:text-neutral-100 tabular-nums focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40 h-full"
             value={value === null || value === undefined ? "" : (value as number)}
-            onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+            onCommit={(v) => onChange(v === "" ? null : Number(v))}
           />
           <span className="text-neutral-400">%</span>
         </div>
@@ -150,11 +216,11 @@ export function Cell({ field, value, members, linkTargets, okrOptions, wrapText,
     case "duration": {
       const minutes = (value as number) ?? 0;
       return (
-        <input
+        <DraftInput
           type="number"
           className={cn(base, "bg-transparent outline-none text-neutral-800 dark:text-neutral-100 tabular-nums focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40")}
           value={minutes || ""}
-          onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+          onCommit={(v) => onChange(v === "" ? null : Number(v))}
           placeholder="minutes"
           title={`${Math.floor(minutes / 60)}h ${minutes % 60}m`}
         />
@@ -258,13 +324,13 @@ export function Cell({ field, value, members, linkTargets, okrOptions, wrapText,
           <div className="flex-1 h-1.5 rounded-full bg-neutral-200 dark:bg-neutral-800 overflow-hidden">
             <div className="h-full bg-indigo-500" style={{ width: `${pct}%` }} />
           </div>
-          <input
+          <DraftInput
             type="number"
             min={0}
             max={100}
             className="w-10 bg-transparent outline-none text-xs text-neutral-500 tabular-nums"
             value={pct}
-            onChange={(e) => onChange(Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
+            onCommit={(v) => onChange(Math.max(0, Math.min(100, Number(v) || 0)))}
           />
         </div>
       );

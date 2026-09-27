@@ -1,30 +1,31 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { nanoid } from "nanoid";
+import { requireAdmin, requireUser, route, readJson } from "@/lib/authz";
+import { createWorkspace } from "@/lib/workspace-setup";
+import { nameSchema } from "@/lib/validation";
 
-export async function GET() {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+/** Workspaces the caller can open (admins see all). */
+export const GET = route(async () => {
+  const user = await requireUser();
+  if (user.systemRole === "ADMIN") {
+    const all = await prisma.workspace.findMany({ where: { deletedAt: null }, orderBy: { createdAt: "asc" } });
+    return NextResponse.json(all.map((w) => ({ id: w.id, name: w.name, slug: w.slug, role: "owner" })));
+  }
   const memberships = await prisma.workspaceMember.findMany({
-    where: { userId: (session.user as { id: string }).id },
+    where: { userId: user.id, workspace: { deletedAt: null } },
     include: { workspace: true },
     orderBy: { createdAt: "asc" },
   });
-  return NextResponse.json(memberships.map((m) => ({ ...m.workspace, role: m.role })));
-}
+  return NextResponse.json(memberships.map((m) => ({ id: m.workspace.id, name: m.workspace.name, slug: m.workspace.slug, role: m.role })));
+});
 
-export async function POST(req: Request) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { name } = await req.json();
-  if (!name) return NextResponse.json({ error: "Name is required" }, { status: 400 });
-  const workspace = await prisma.workspace.create({
-    data: {
-      name,
-      slug: `${name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${nanoid(6)}`,
-      members: { create: { userId: (session.user as { id: string }).id, role: "owner" } },
-    },
-  });
-  return NextResponse.json(workspace, { status: 201 });
-}
+const createSchema = z.object({ name: nameSchema, description: z.string().max(2000).nullable().optional() });
+
+/** Only system admins create workspaces. */
+export const POST = route(async (req) => {
+  const admin = await requireAdmin();
+  const body = createSchema.parse(await readJson(req));
+  const workspace = await prisma.$transaction((tx) => createWorkspace(tx, { name: body.name, description: body.description, ownerId: admin.id }));
+  return NextResponse.json({ id: workspace.id, name: workspace.name, slug: workspace.slug }, { status: 201 });
+});

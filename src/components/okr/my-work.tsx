@@ -7,7 +7,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/misc";
 import { ProgressBar, StatusBadge, DeadlineLabel } from "./okr-ui";
 import { PutAllThingsOn } from "@/components/capture/put-all-things-on";
 import type { ObjectiveRow, KeyResultRow } from "@/types";
-import type { MyTaskRow } from "@/app/api/workspaces/[workspaceId]/my-work/route";
+import type { MyTaskRow } from "@/types";
 
 interface MyWorkData {
   tasks: MyTaskRow[];
@@ -34,7 +34,7 @@ export function MyWork({ workspaceId, workspaceSlug }: { workspaceId: string; wo
     if (!data) return [];
     const taskItems = data.tasks
       .filter((t) => t.dueDate && new Date(t.dueDate).getTime() >= now)
-      .map((t) => ({ kind: "task" as const, id: `${t.tableId}-${t.recordId}`, title: t.title, date: t.dueDate!, href: `/w/${workspaceSlug}/b/${t.baseId}/t/${t.tableId}?record=${t.recordId}` }));
+      .map((t) => ({ kind: "task" as const, id: t.taskId, title: t.title, date: t.dueDate!, href: `/w/${workspaceSlug}/p/${t.projectId}?record=${t.taskId}` }));
     const objectiveItems = data.objectives
       .filter((o) => o.endDate && new Date(o.endDate).getTime() >= now)
       .map((o) => ({ kind: "objective" as const, id: o.id, title: o.title, date: o.endDate!, href: `/w/${workspaceSlug}/okrs/${o.id}` }));
@@ -79,12 +79,12 @@ export function MyWork({ workspaceId, workspaceSlug }: { workspaceId: string; wo
             {data.tasks.length === 0 && <p className="text-sm text-neutral-400">No tasks assigned to you.</p>}
             {data.tasks.map((t) => (
               <Link
-                key={`${t.tableId}-${t.recordId}`}
-                href={`/w/${workspaceSlug}/b/${t.baseId}/t/${t.tableId}?record=${t.recordId}`}
+                key={t.taskId}
+                href={`/w/${workspaceSlug}/p/${t.projectId}?record=${t.taskId}`}
                 className="flex items-center gap-3 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 hover:border-neutral-300 dark:hover:border-neutral-700"
               >
                 <span className="flex-1 min-w-0 truncate text-sm text-neutral-800 dark:text-neutral-100">{t.title || "(untitled)"}</span>
-                <span className="text-[10px] text-neutral-400 shrink-0">{t.tableName}</span>
+                <span className="text-[10px] text-neutral-400 shrink-0">{t.projectName}</span>
                 {t.status && <span className="text-[11px] text-neutral-500 shrink-0">{t.status}</span>}
                 <div className="w-20 shrink-0"><ProgressBar value={t.progress} height={4} /></div>
                 {t.contributesToOkr && (
@@ -140,7 +140,7 @@ export function MyWork({ workspaceId, workspaceSlug }: { workspaceId: string; wo
                 </div>
                 <div className="flex-1 overflow-y-auto thin-scroll p-1.5 space-y-1.5">
                   {(quadrantTasks.get(q.key) ?? []).map((t) => (
-                    <Link key={`${t.tableId}-${t.recordId}`} href={`/w/${workspaceSlug}/b/${t.baseId}/t/${t.tableId}?record=${t.recordId}`} className="block rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2 py-1.5 text-xs hover:border-neutral-300 dark:hover:border-neutral-700 truncate">
+                    <Link key={t.taskId} href={`/w/${workspaceSlug}/p/${t.projectId}?record=${t.taskId}`} className="block rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2 py-1.5 text-xs hover:border-neutral-300 dark:hover:border-neutral-700 truncate">
                       {t.title || "(untitled)"}
                     </Link>
                   ))}

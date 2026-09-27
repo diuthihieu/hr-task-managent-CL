@@ -1,91 +1,63 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { getMembership, getWorkspaceIdForThought } from "@/lib/permissions";
-import { detectCaptureFieldRoles } from "@/lib/capture-engine";
-import type { FieldRow } from "@/types";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfThought, notFound, badRequest } from "@/lib/authz";
+import { logActivity } from "@/lib/activity";
+import { createTask, SYS } from "@/lib/task-grid";
+import { uuid } from "@/lib/validation";
 
-// Clarify -> Convert to Task: the one place a captured thought turns into a
-// real Record in its target Task table. The thought row is kept (marked
-// converted) rather than deleted, so there's an audit trail from thought to
-// task; the dot disappears purely because the client stops listing
-// non-"captured"/"clarifying" thoughts.
-export async function POST(req: Request, { params }: { params: Promise<{ thoughtId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const userId = (session.user as { id: string }).id;
+type P = { thoughtId: string };
+
+const schema = z.object({
+  status: uuid.optional(),
+  priority: z.enum(["low", "medium", "high", "critical"]).optional(),
+  startAt: z.string().nullable().optional(),
+  dueAt: z.string().nullable().optional(),
+  output: z.string().max(5000).optional(),
+  process: z.string().max(5000).optional(),
+  ownerId: uuid.nullable().optional(),
+  objectiveId: uuid.nullable().optional(),
+  newObjectiveTitle: z.string().max(300).optional(),
+  keyResultId: uuid.nullable().optional(),
+});
+
+// Clarify -> Convert: the captured thought becomes a real task in its target
+// project, in one transaction. The thought row is kept (status=converted,
+// converted_task_id) as the audit trail from idea to task.
+export const POST = route<P>(async (req, { params }) => {
+  const user = await requireUser();
   const { thoughtId } = await params;
-  const workspaceId = await getWorkspaceIdForThought(thoughtId);
-  if (!workspaceId) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const membership = await getMembership(userId, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
+  const ctx = await requireWorkspaceRole(user, await workspaceOfThought(thoughtId), "contributor");
   const thought = await prisma.capturedThought.findUnique({ where: { id: thoughtId } });
-  if (!thought || thought.userId !== userId) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (thought.status === "converted") return NextResponse.json({ error: "Already converted" }, { status: 400 });
+  if (!thought || thought.userId !== user.id) throw notFound("Thought");
+  if (thought.status !== "captured") throw badRequest("This thought was already converted or archived");
+  const body = schema.parse(await readJson(req));
 
-  const body = await req.json();
-  const table = await prisma.tableDef.findUnique({ where: { id: thought.tableId }, include: { fields: true } });
-  if (!table) return NextResponse.json({ error: "Target table no longer exists" }, { status: 404 });
-  const fields = table.fields as unknown as FieldRow[];
-  const roles = detectCaptureFieldRoles(fields);
+  const result = await prisma.$transaction(async (tx) => {
+    let objectiveCreated: string | null = null;
+    if (!body.objectiveId && body.newObjectiveTitle?.trim()) {
+      const o = await tx.objective.create({ data: { workspaceId: ctx.workspaceId, title: body.newObjectiveTitle.trim(), ownerId: user.id, status: "not_started", createdById: user.id, updatedById: user.id } });
+      await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "objective", entityId: o.id, action: "created", summary: `Created objective "${o.title}" from quick capture` });
+      objectiveCreated = o.id;
+    }
+    const description = [body.output?.trim() && `Output:\n${body.output.trim()}`, body.process?.trim() && `Execution plan:\n${body.process.trim()}`].filter(Boolean).join("\n\n");
+    const data: Record<string, unknown> = {
+      [SYS.title]: thought.taskName,
+      [SYS.assignees]: [body.ownerId || user.id],
+    };
+    if (thought.categoryId) data[SYS.category] = thought.categoryId;
+    if (thought.estimatedDurationMinutes) data[SYS.estimate] = thought.estimatedDurationMinutes / 60;
+    if (body.startAt) data[SYS.startDate] = body.startAt.slice(0, 10);
+    if (body.dueAt) data[SYS.dueDate] = body.dueAt.slice(0, 10);
+    if (body.status) data[SYS.status] = body.status;
+    if (body.priority) data[SYS.priority] = body.priority;
+    if (description) data[SYS.description] = description;
+    if (body.keyResultId) data[SYS.keyResult] = body.keyResultId;
 
-  let objectiveId: string | null = body.objectiveId || null;
-  if (!objectiveId && body.newObjectiveTitle?.trim()) {
-    const created = await prisma.objective.create({
-      data: { workspaceId, title: body.newObjectiveTitle.trim(), ownerId: userId, status: "not_started" },
-    });
-    objectiveId = created.id;
-  }
-
-  const data: Record<string, unknown> = {};
-  if (roles.primaryField) data[roles.primaryField.id] = thought.taskName;
-  if (roles.categoryField && thought.categoryOptionId) data[roles.categoryField.id] = thought.categoryOptionId;
-  if (roles.durationField && thought.estimatedDurationMinutes) {
-    data[roles.durationField.id] = roles.durationField.type === "duration" ? thought.estimatedDurationMinutes : Math.round((thought.estimatedDurationMinutes / 60) * 10) / 10;
-  }
-  if (roles.startField && body.startAt) data[roles.startField.id] = body.startAt;
-  if (roles.dueField && body.dueAt) data[roles.dueField.id] = body.dueAt;
-  if (roles.statusField && body.status) data[roles.statusField.id] = body.status;
-  if (roles.priorityField && body.priority) data[roles.priorityField.id] = body.priority;
-  if (roles.outputField && body.output) data[roles.outputField.id] = body.output;
-  if (roles.processField && body.process) data[roles.processField.id] = body.process;
-  if (roles.ownerField) data[roles.ownerField.id] = body.ownerId || userId;
-  if (roles.objectiveField && objectiveId) data[roles.objectiveField.id] = objectiveId;
-  if (roles.keyResultField && body.keyResultId) data[roles.keyResultField.id] = body.keyResultId;
-
-  const autoNumberFields = fields.filter((f) => f.type === "auto_number");
-  if (autoNumberFields.length) {
-    const count = await prisma.record.count({ where: { tableId: table.id } });
-    for (const f of autoNumberFields) data[f.id] = count + 1;
-  }
-
-  const maxOrder = await prisma.record.aggregate({ where: { tableId: table.id }, _max: { order: true } });
-  const record = await prisma.record.create({
-    data: {
-      tableId: table.id,
-      data: JSON.stringify(data),
-      order: (maxOrder._max.order ?? 0) + 1,
-      createdById: userId,
-    },
+    const taskId = await createTask(tx, { projectId: thought.projectId, workspaceId: ctx.workspaceId, actorId: user.id, data });
+    await tx.capturedThought.update({ where: { id: thoughtId }, data: { status: "converted", convertedTaskId: taskId, convertedAt: new Date() } });
+    await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "task", entityId: taskId, action: "created", summary: `Created task "${thought.taskName}" from quick capture` });
+    return { taskId, objectiveCreated };
   });
-
-  if (body.keyResultId) {
-    await prisma.keyResultTask.upsert({
-      where: { keyResultId_recordId: { keyResultId: body.keyResultId, recordId: record.id } },
-      create: { keyResultId: body.keyResultId, tableId: table.id, recordId: record.id, weight: 1 },
-      update: {},
-    });
-  }
-
-  await prisma.auditLog.create({
-    data: { workspaceId, userId, action: "create", objectType: "record", objectId: record.id, newValue: JSON.stringify({ convertedFromThought: thoughtId }) },
-  });
-
-  const updatedThought = await prisma.capturedThought.update({
-    where: { id: thoughtId },
-    data: { status: "converted", convertedRecordId: record.id, convertedAt: new Date() },
-  });
-
-  return NextResponse.json({ record, thought: updatedThought, baseId: table.baseId, tableId: table.id });
-}
+  return NextResponse.json({ taskId: result.taskId, projectId: thought.projectId });
+});

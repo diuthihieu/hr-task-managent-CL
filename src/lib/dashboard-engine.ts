@@ -14,7 +14,7 @@ export type Aggregation = "count" | "distinct" | "sum" | "avg" | "min" | "max";
 export type DateBucket = "day" | "week" | "month";
 
 export interface DashboardBlockConfig {
-  dataSource?: { tableId?: string; viewId?: string };
+  dataSource?: { projectId?: string; viewId?: string };
   dimensionFieldId?: string;
   dimension2FieldId?: string; // combo chart's line series, or funnel/treemap secondary
   measureFieldId?: string;

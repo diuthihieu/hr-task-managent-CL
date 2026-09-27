@@ -1,54 +1,45 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getMembership, getWorkspaceIdForDashboard } from "@/lib/permissions";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfDashboard } from "@/lib/authz";
+import { logActivity } from "@/lib/activity";
+import { serializeDashboard } from "@/lib/dashboard-serialize";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ dashboardId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+type P = { dashboardId: string };
+
+export const GET = route<P>(async (_req, { params }) => {
+  const user = await requireUser();
   const { dashboardId } = await params;
-  const workspaceId = await getWorkspaceIdForDashboard(dashboardId);
-  if (!workspaceId) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const ctx = await requireWorkspaceRole(user, await workspaceOfDashboard(dashboardId), "viewer");
+  const [d, projects] = await Promise.all([
+    prisma.dashboard.findUniqueOrThrow({ where: { id: dashboardId }, include: { widgets: { orderBy: { sortOrder: "asc" } } } }),
+    prisma.project.findMany({ where: { workspaceId: ctx.workspaceId, deletedAt: null }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true } }),
+  ]);
+  return NextResponse.json({ ...serializeDashboard(d), projects, myRole: ctx.role });
+});
 
-  const dashboard = await prisma.dashboard.findUnique({
+const patchSchema = z.object({ name: z.string().trim().min(1).max(120).optional(), filters: z.record(z.string(), z.unknown()).optional() });
+
+export const PATCH = route<P>(async (req, { params }) => {
+  const user = await requireUser();
+  const { dashboardId } = await params;
+  await requireWorkspaceRole(user, await workspaceOfDashboard(dashboardId), "editor");
+  const body = patchSchema.parse(await readJson(req));
+  const d = await prisma.dashboard.update({
     where: { id: dashboardId },
-    include: {
-      blocks: { orderBy: { order: "asc" } },
-      base: { select: { id: true, name: true, tables: { orderBy: { order: "asc" }, select: { id: true, name: true } } } },
-    },
+    data: { name: body.name, filters: body.filters as Prisma.InputJsonValue | undefined, updatedById: user.id },
   });
-  if (!dashboard) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(dashboard);
-}
+  return NextResponse.json(serializeDashboard(d));
+});
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ dashboardId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const DELETE = route<P>(async (_req, { params }) => {
+  const user = await requireUser();
   const { dashboardId } = await params;
-  const workspaceId = await getWorkspaceIdForDashboard(dashboardId);
-  if (!workspaceId) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const body = await req.json();
-  const data: Record<string, unknown> = {};
-  if (body.name !== undefined) data.name = body.name;
-  if (body.filters !== undefined) data.filters = JSON.stringify(body.filters);
-  const dashboard = await prisma.dashboard.update({ where: { id: dashboardId }, data });
-  return NextResponse.json(dashboard);
-}
-
-export async function DELETE(_req: Request, { params }: { params: Promise<{ dashboardId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { dashboardId } = await params;
-  const workspaceId = await getWorkspaceIdForDashboard(dashboardId);
-  if (!workspaceId) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
-  if (!membership || !["owner", "admin", "editor"].includes(membership.role))
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  await prisma.dashboard.delete({ where: { id: dashboardId } });
-  return NextResponse.json({ ok: true });
-}
+  const ctx = await requireWorkspaceRole(user, await workspaceOfDashboard(dashboardId), "editor");
+  await prisma.$transaction(async (tx) => {
+    const d = await tx.dashboard.delete({ where: { id: dashboardId } });
+    await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "dashboard", entityId: dashboardId, action: "deleted", summary: `Deleted dashboard "${d.name}"` });
+  });
+  return new NextResponse(null, { status: 204 });
+});

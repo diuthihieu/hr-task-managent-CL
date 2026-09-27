@@ -1,161 +1,121 @@
-# Basework — Internal Work Management Platform
+# Basework — HR Work Management
 
-An Airtable/Lark-Base-style workspace → base → table → view engine, built as a
-production-oriented foundation for an internal work management platform. This
-is **Phase 1 (Foundation) and Phase 2 (Data Interaction)** of the roadmap
-below — a fully working vertical slice, not a mockup.
+A relational web app for an HR team's projects, tasks and goals (OKRs).
+**Browser → Next.js route handlers (auth + authorization) → Prisma → PostgreSQL.**
+Every piece of business data lives in PostgreSQL and is entered by users; the
+app ships with no pre-loaded business data.
 
-## What's implemented
+- Database design, ER diagram, constraints, indexes and risks: **[docs/DATABASE.md](docs/DATABASE.md)**
+- Windows desktop app (Tauri), releases and auto-updates: **[docs/DESKTOP.md](docs/DESKTOP.md)**
+- Schema: [`prisma/schema.prisma`](prisma/schema.prisma) · Migrations: [`prisma/migrations/`](prisma/migrations)
 
-- **Auth** — email/password (NextAuth v5, credentials + JWT sessions).
-- **Workspace → Base → Table → Field → Record** — fully dynamic schema; adding
-  a field never touches SQL DDL.
-- **Grid view** — inline editing per field type, column resize/reorder/freeze,
-  hide fields, row drag-to-reorder, bulk select + delete, record drawer with
-  comments, add-field type picker (grouped by category, matching the spec's
-  field taxonomy).
-- **Saved views** — multiple Grid views per table, each with its own filters,
-  sorts, grouping, hidden columns, column order/widths and conditional
-  formatting, persisted server-side.
-- **Filter engine** — AND/OR condition groups, per-type operators (text,
-  number, date, select, person, current-user).
-- **Group engine** — collapsible groups with count/sum/avg/min/max summaries.
-- **Conditional formatting** — cell or row highlight rules.
-- **Formula fields** — small real expression engine (`IF`, `AND`, `OR`, `NOT`,
-  `CONCAT`, `LEFT/RIGHT/MID/LEN/UPPER/LOWER`, `TODAY/NOW/YEAR/MONTH/DAY/DATE_DIFF`,
-  `SUM/AVG/MIN/MAX`, arithmetic and comparisons) evaluated live against a
-  record's current field values.
-- **Relational (basic)** — Link-to-Record fields with a picker over the
-  target table's records.
-- **Global search** — Ctrl/Cmd+K across bases, tables and records.
-- **Light/dark theme**, toasts, empty states, keyboard-friendly inputs.
-- **Seed data** — a "BESTARION" workspace with an "HR Operations" base:
-  All Tasks, Employee, Social Insurance, Training, Audit Log, with realistic
-  linked records and several saved views (All Tasks, My Tasks, Overdue Tasks,
-  Completed Tasks, By Category).
+## Access model
 
-Kanban/Calendar/Gantt/Gallery/Form views, the Dashboard builder, the Workflow
-builder, and fine-grained permissions are **intentionally not built yet** —
-see "Roadmap" below. Their schema is already in place (`View.type`,
-`Dashboard`, `DashboardBlock`, `Workflow`, `WorkflowNode`,
-`WorkflowExecution`) so adding them is additive, not a rewrite. The sidebar
-and view-type picker show these as disabled "soon" entries so the full
-information architecture is visible today.
+- **No self-service sign-up.** A system **Admin** creates accounts in the
+  Admin console (`/admin`). New accounts get a one-time temporary password and
+  must choose their own password at first sign-in.
+- Admins also create workspaces, reset passwords, deactivate or delete
+  accounts. Deactivation takes effect on the very next request.
+- Inside a workspace, roles are `owner`, `admin`, `editor`, `contributor`,
+  `viewer`. They are enforced by the API (`src/lib/authz.ts`), and database
+  triggers block cross-workspace references. See Settings → Permissions.
 
-## Getting started
+## Features
+
+- **Projects → Tasks** with status, category, priority, assignees (many-to-many),
+  start/due dates, progress, estimate, dependencies (self-referencing
+  many-to-many, cycle-checked), subtasks, importance/urgency, key-result link.
+- **Custom fields per project** (text, number, currency, percent, rating,
+  checkbox, date/time, single/multi select, person, URL, email, phone,
+  formula), stored as typed values with normalized options.
+- **Views**: Grid, Kanban, Calendar, Gantt, Gallery, Eisenhower, Form (optional
+  public link). Filters, sorts, grouping, conditional formatting, saved views.
+- **Comments**, **attachments** (Vercel Blob, private, served through an
+  authorized download route), **activity log** on every important change.
+- **Goals (OKR)**: objectives → key results → tasks; progress derived at read
+  time. My Work, OKR dashboard, workspace dashboards, quick capture inbox,
+  CSV import (transactional) and CSV/Excel export.
+- **Soft delete** for users, workspaces, projects, tasks, custom fields,
+  comments, attachments, objectives; tasks can be restored.
+
+## Web and Desktop
+
+The same app runs in the browser and as a Windows desktop app
+(`desktop/`, Tauri 2 + WebView2). The desktop app is a native window onto
+the same web app, so both share one backend, one login, one set of
+permissions and one PostgreSQL database - no business data is stored on the
+PC. Users download it from `/download` (linked in the sidebar and on the
+sign-in page); the button always serves the latest published installer.
+Releasing a new version is a tag push - see [docs/DESKTOP.md](docs/DESKTOP.md).
+
+## Getting started (local)
+
+Requires Node 20+ and PostgreSQL 14+.
 
 ```bash
 npm install
-cp .env.example .env     # fill in DATABASE_URL / DIRECT_URL (Postgres) and AUTH_SECRET
-npx prisma migrate dev   # applies the schema to your Postgres database
-npm run db:seed          # seeds the BESTARION / HR Operations demo data
-npm run dev
+cp .env.example .env              # DATABASE_URL / DIRECT_URL / AUTH_SECRET / ADMIN_EMAIL
+docker compose up postgres -d     # optional local Postgres matching .env.example
+npm run db:migrate                # prisma migrate deploy
+npm run admin:bootstrap           # creates the first admin from ADMIN_* (prints a temp password)
+npm run dev                       # http://localhost:3000
 ```
 
-Open http://localhost:3000 and sign in with the seeded demo account:
+Sign in with the admin account, set your password, then in the Admin console
+create a workspace and the accounts for your team. Add categories under
+Settings → Categories and create the first project from the sidebar.
 
-- **Email:** `diuthihieu@gmail.com`
-- **Password:** `password123`
+Optional, local only: `npm run db:seed` loads a small, clearly-labelled
+`[DEV]` sample workspace for UI work. It refuses to run against a non-local
+database or in production.
 
-Or register a new account from the login page — you'll get your own empty
-workspace.
+## Scripts
 
-## Architecture
+| Command | What it does |
+|---|---|
+| `npm run dev` / `build` / `start` | Next.js dev server / production build / serve |
+| `npm test` | Unit tests: formula engine, query engine, OKR math |
+| `npm run test:integration` | Creates a throwaway database, applies migrations, starts the built app and runs HTTP tests for auth, roles, constraints, triggers, soft delete and activity logs (run `npm run build` first) |
+| `npm run lint` | ESLint |
+| `npm run db:migrate` | `prisma migrate deploy` |
+| `npm run admin:bootstrap` | Create the first admin if none exists |
+| `npm run db:seed` | Development sample data (local only) |
+| `cd desktop && npm run dev` / `npm run build` | Run / package the Windows desktop app (see docs/DESKTOP.md) |
 
-```
-Workspace
-  └── Base
-       ├── Table (Field[], Record[], View[])
-       ├── Dashboard (schema only, Phase 4)
-       └── Workflow (schema only, Phase 5)
-```
+To change the schema: edit `prisma/schema.prisma`, run
+`npx prisma migrate dev --name <change>`, commit the generated migration.
+Never alter the database by hand.
 
-### Dynamic-field storage strategy
+## Deploying to Vercel
 
-The spec calls for a schema that supports arbitrary custom fields **without**
-a new physical SQL column per field, without collapsing to a single JSON
-blob, and while preserving indexing/relationships/aggregation potential.
-This app uses a **hybrid relational + JSON** model:
+1. Environment variables (Production and Preview): `DATABASE_URL`,
+   `DIRECT_URL`, `AUTH_SECRET`, `ADMIN_EMAIL`, `ADMIN_NAME`, optionally
+   `ADMIN_PASSWORD`, `BLOB_READ_WRITE_TOKEN` (connect a Blob store to the
+   project) and `DESKTOP_RELEASE_TOKEN` (desktop release registration).
+2. The `vercel-build` script runs `prisma migrate deploy` and the admin
+   bootstrap on **production** builds only, then `next build`. Preview builds
+   skip migrations unless `MIGRATE_ON_PREVIEW=1`, so a feature branch can't
+   migrate a shared production database.
+3. After the first production deploy, sign in as the admin and remove
+   `ADMIN_PASSWORD` from the environment.
 
-- `Workspace`, `Base`, `TableDef`, `Field`, `View` are fully relational rows.
-  Creating a custom field inserts a `Field` row (id, name, type, config,
-  order, visibility...) — there is never a schema migration for user-defined
-  columns.
-- `Record.data` is a single JSON column keyed by `Field.id`
-  (`{ [fieldId]: value }`). This is the standard Airtable/Baserow-style cell
-  store: one row read = one full record (no N-way join against a
-  value-per-cell table), while every field's *type, validation and
-  relationships* stay fully relational and queryable through `Field`.
-- This is **not** "one giant blob": the blob is scoped to a single record's
-  cells, driven by strongly-typed field metadata that lives in real rows.
-  Filtering, sorting, grouping and conditional formatting are implemented as
-  a shared query engine (`src/lib/query-engine.ts`) operating on this shape.
-
-**Known v1 simplification:** filter/sort/group run in the application layer
-over a table's already-fetched records, not pushed down to SQL. This is
-correct and fast at the scale of a single table's rows (hundreds–low
-thousands) but is the first thing to change for very large tables — the
-natural next step is a denormalized `RecordValue` index table (typed columns
-per field, indexed by `fieldId` + value) written alongside `Record.data` for
-the specific fields a query needs to filter/sort on. The schema comment in
-`prisma/schema.prisma` documents this path; it wasn't built now to avoid
-over-engineering a v1 with no scale problem yet.
-
-### Database provider: PostgreSQL
-
-`prisma/schema.prisma` targets PostgreSQL, with a separate `directUrl` for
-migrations. This matters when the database sits behind a connection pooler
-(e.g. Supabase's Supavisor, or any serverless deployment target like Vercel):
-`DATABASE_URL` should point at the pooled/transaction-mode endpoint (used by
-Prisma Client at runtime), and `DIRECT_URL` at an unpooled/session-mode
-endpoint (used only by Prisma Migrate). See `.env.example` for both a local
-Docker Compose setup and a hosted-Postgres (Supabase) setup.
-
-`docker-compose.yml` and the `Dockerfile` build the production image against
-Postgres; `docker compose up` will build the app, run migrations, and serve
-it on port 3000.
-
-### Folder structure
+## Project structure
 
 ```
 prisma/
-  schema.prisma        # data model (see above)
-  seed.ts               # HR Operations demo data
+  schema.prisma                 normalized schema (UUID PKs, snake_case tables)
+  migrations/                   the only way the schema changes
+  bootstrap-admin.ts            first admin, idempotent
+  seed.ts                       DEV-ONLY sample data (guarded)
 src/
-  app/
-    (app)/w/[workspaceSlug]/b/[baseId]/t/[tableId]/   # the main table+view page
-    api/                                              # REST-ish route handlers, one per resource
-    login/
-  components/
-    layout/             # sidebar/topbar shell, command palette (Ctrl+K)
-    views/               # view tabs, toolbar, the table-workspace orchestrator
-    grid/                # the data grid, per-field-type cell editor, record drawer
-    filters/             # filter/sort/group/conditional-format popovers
-    fields/              # add/edit field dialog
-    ui/                   # small Radix-based primitives (button, dialog, popover, ...)
-  lib/
-    query-engine.ts      # filter / sort / group / conditional-formatting (shared by every view type)
-    formula.ts           # formula field tokenizer/parser/evaluator
-    field-types.ts        # the field type registry (drives the add-field picker)
-    auth.ts, prisma.ts, permissions.ts, api-client.ts, utils.ts
-  types/                  # shared TS types for API payloads
+  app/api/                      route handlers, one folder per resource
+  app/(app)/                    signed-in pages (workspace, project, OKRs, settings, admin)
+  lib/authz.ts                  session → active user → workspace role checks
+  lib/task-grid.ts              tasks ⇄ field/record adapter used by all views
+  lib/activity.ts               activity log writer (same transaction as the change)
+  lib/storage.ts                Vercel Blob upload/download/delete
+  lib/validation.ts             zod schemas for request bodies
+  components/                   views (grid, kanban, ...), OKR, admin, settings
+tests/integration/              HTTP tests against a real database
+docs/DATABASE.md                ERD, constraints, indexes, risks
 ```
-
-## Roadmap (see the product spec for full detail)
-
-- **Phase 3 — Task experience:** Kanban (drag between status groups),
-  Calendar, Gantt, Gallery, Form view; subtasks/dependencies/watchers.
-- **Phase 4 — Analytics:** dashboard builder, chart blocks, KPI cards,
-  page/chart-level filters.
-- **Phase 5 — Automation:** visual trigger → condition → action workflow
-  editor, execution history.
-- **Phase 6 — Advanced data:** two-way relationships, Lookup, Rollup fields
-  (schema and field-type entries already exist, marked "coming soon" in the
-  UI).
-- **Phase 7 — Enterprise:** field-level permissions, audit log UI (the
-  `AuditLog` model exists, unused so far), SSO (Entra ID/Google — the
-  NextAuth provider list is the extension point), API, perf work on the
-  query engine described above.
-
-Each phase should start by inspecting the current code, since the schema was
-deliberately built to absorb these without a restructure.

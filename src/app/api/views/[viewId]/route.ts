@@ -1,57 +1,66 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getMembership } from "@/lib/permissions";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfView, badRequest } from "@/lib/authz";
+import { logActivity } from "@/lib/activity";
+import { serializeView } from "@/lib/serializers";
 
-async function workspaceIdForView(viewId: string) {
-  const view = await prisma.view.findUnique({
-    where: { id: viewId },
-    select: { table: { select: { base: { select: { workspaceId: true } } } } },
+type P = { viewId: string };
+
+export const GET = route<P>(async (_req, { params }) => {
+  const user = await requireUser();
+  const { viewId } = await params;
+  await requireWorkspaceRole(user, await workspaceOfView(viewId), "viewer");
+  return NextResponse.json(serializeView(await prisma.view.findUniqueOrThrow({ where: { id: viewId } })));
+});
+
+const patchSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  order: z.number().int().optional(),
+  isDefault: z.boolean().optional(),
+  isPublic: z.boolean().optional(),
+});
+
+export const PATCH = route<P>(async (req, { params }) => {
+  const user = await requireUser();
+  const { viewId } = await params;
+  const ctx = await requireWorkspaceRole(user, await workspaceOfView(viewId), "editor");
+  const body = patchSchema.parse(await readJson(req));
+  const before = await prisma.view.findUniqueOrThrow({ where: { id: viewId } });
+  if (body.isPublic && before.type !== "form") throw badRequest("Only form views can be public");
+  const view = await prisma.$transaction(async (tx) => {
+    if (body.isDefault) await tx.view.updateMany({ where: { projectId: before.projectId, id: { not: viewId } }, data: { isDefault: false } });
+    const v = await tx.view.update({
+      where: { id: viewId },
+      data: {
+        name: body.name,
+        config: body.config as Prisma.InputJsonValue | undefined,
+        sortOrder: body.order,
+        isDefault: body.isDefault,
+        isPublic: body.isPublic,
+        updatedById: user.id,
+      },
+    });
+    // Config edits (filters, widths...) are UI state - only log structural changes.
+    if (body.name || body.isPublic !== undefined) {
+      await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "view", entityId: viewId, action: "updated", changes: { ...(body.name ? { name: { from: before.name, to: body.name } } : {}), ...(body.isPublic !== undefined ? { isPublic: { from: before.isPublic, to: body.isPublic } } : {}) } });
+    }
+    return v;
   });
-  return view?.table.base.workspaceId ?? null;
-}
+  return NextResponse.json(serializeView(view));
+});
 
-export async function GET(_req: Request, { params }: { params: Promise<{ viewId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const DELETE = route<P>(async (_req, { params }) => {
+  const user = await requireUser();
   const { viewId } = await params;
-  const workspaceId = await workspaceIdForView(viewId);
-  if (!workspaceId) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  const view = await prisma.view.findUnique({ where: { id: viewId } });
-  if (!view) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json(view);
-}
-
-export async function PATCH(req: Request, { params }: { params: Promise<{ viewId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { viewId } = await params;
-  const workspaceId = await workspaceIdForView(viewId);
-  if (!workspaceId) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const body = await req.json();
-  const data: Record<string, unknown> = {};
-  if (body.name !== undefined) data.name = body.name;
-  if (body.config !== undefined) data.config = JSON.stringify(body.config);
-  if (body.order !== undefined) data.order = body.order;
-  if (body.isPublic !== undefined) data.isPublic = body.isPublic;
-
-  const view = await prisma.view.update({ where: { id: viewId }, data });
-  return NextResponse.json(view);
-}
-
-export async function DELETE(_req: Request, { params }: { params: Promise<{ viewId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { viewId } = await params;
-  const workspaceId = await workspaceIdForView(viewId);
-  if (!workspaceId) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  await prisma.view.delete({ where: { id: viewId } });
-  return NextResponse.json({ ok: true });
-}
+  const ctx = await requireWorkspaceRole(user, await workspaceOfView(viewId), "editor");
+  const view = await prisma.view.findUniqueOrThrow({ where: { id: viewId } });
+  if ((await prisma.view.count({ where: { projectId: view.projectId } })) <= 1) throw badRequest("A project needs at least one view");
+  await prisma.$transaction(async (tx) => {
+    await tx.view.delete({ where: { id: viewId } });
+    await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "view", entityId: viewId, action: "deleted", summary: `Deleted view "${view.name}"` });
+  });
+  return new NextResponse(null, { status: 204 });
+});

@@ -23,21 +23,19 @@ interface DashboardDetail {
   name: string;
   filters: string;
   blocks: (DashboardBlockLite & { x: number; y: number; w: number; h: number })[];
-  base: { id: string; name: string; tables: { id: string; name: string }[] };
+  projects: { id: string; name: string }[];
 }
 
 type Slicer = CrossFilter & { id: string };
 
 export function DashboardWorkspace({
   dashboardId,
-  baseId,
   workspaceSlug,
   breadcrumb,
 }: {
   dashboardId: string;
-  baseId: string;
   workspaceSlug: string;
-  breadcrumb: { workspace: string; base: string; dashboard: string };
+  breadcrumb: { workspace: string; dashboard: string };
 }) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<DashboardDetail | null>(null);
@@ -77,7 +75,7 @@ export function DashboardWorkspace({
   useEffect(() => {
     if (!dashboard) return;
     let cancelled = false;
-    Promise.all(dashboard.base.tables.map((t) => api.get<{ fields: FieldRow[] }>(`/api/tables/${t.id}`).catch(() => ({ fields: [] }))))
+    Promise.all(dashboard.projects.map((p) => api.get<{ fields: FieldRow[] }>(`/api/projects/${p.id}`).catch(() => ({ fields: [] }))))
       .then((results) => {
         if (!cancelled) setAllFields(results.flatMap((r) => r.fields));
       });
@@ -109,7 +107,8 @@ export function DashboardWorkspace({
     if (!dashboard || !confirm(`Delete dashboard "${dashboard.name}"? This cannot be undone.`)) return;
     try {
       await api.delete(`/api/dashboards/${dashboardId}`);
-      router.push(`/w/${workspaceSlug}/b/${baseId}`);
+      router.push(`/w/${workspaceSlug}/dashboards`);
+      router.refresh();
       router.refresh();
     } catch {
       toast.error("Failed to delete dashboard");
@@ -192,8 +191,6 @@ export function DashboardWorkspace({
       <div className="flex items-center gap-1.5 h-12 px-4 border-b border-neutral-200 dark:border-neutral-800 shrink-0 text-sm">
         <span className="text-neutral-400">{breadcrumb.workspace}</span>
         <ChevronRight size={13} className="text-neutral-300" />
-        <span className="text-neutral-400">{breadcrumb.base}</span>
-        <ChevronRight size={13} className="text-neutral-300" />
         <LayoutDashboard size={14} className="text-indigo-500" />
         {renaming ? (
           <input
@@ -259,7 +256,7 @@ export function DashboardWorkspace({
         {dashboard.blocks.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center text-neutral-400 gap-2">
             <LayoutDashboard size={32} className="opacity-40" />
-            <p>No widgets yet. Add a KPI card, chart or table backed by any table in this base.</p>
+            <p>No widgets yet. Add a KPI card, chart or table backed by any project in this workspace.</p>
             <Button onClick={addWidget}>
               <Plus size={14} /> Add your first widget
             </Button>
@@ -297,7 +294,7 @@ export function DashboardWorkspace({
       <WidgetEditorDialog
         open={widgetDialog.open}
         onOpenChange={(v) => setWidgetDialog((d) => ({ ...d, open: v }))}
-        tables={dashboard.base.tables}
+        projects={dashboard.projects}
         initial={widgetDialog.block ? { type: widgetDialog.block.type as BlockDraft["type"], title: widgetDialog.block.title, config: parseBlockConfig(widgetDialog.block.config) } : null}
         onSave={saveWidget}
       />

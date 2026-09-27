@@ -56,10 +56,10 @@ export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: st
   const [thoughts, setThoughts] = useState<CapturedThoughtRow[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [tableId, setTableId] = useState("");
+  const [projectId, setProjectId] = useState("");
   const [taskName, setTaskName] = useState("");
   const [duration, setDuration] = useState<number | "">(30);
-  const [categoryOptionId, setCategoryOptionId] = useState("");
+  const [categoryId, setCategoryId] = useState("");
   const [plannedAt, setPlannedAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -75,8 +75,8 @@ export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: st
       ]);
       setTargets(t);
       setThoughts(th);
-      setTableId((prev) => prev || t[0]?.tableId || "");
-      setCategoryOptionId((prev) => prev || t[0]?.categoryOptions[0]?.id || "");
+      setProjectId((prev) => prev || t[0]?.projectId || "");
+      setCategoryId((prev) => prev || t[0]?.categoryOptions[0]?.id || "");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to load Put All Things On");
     } finally {
@@ -90,32 +90,29 @@ export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: st
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [workspaceId]);
 
-  const activeTarget = targets.find((t) => t.tableId === tableId) ?? targets[0];
+  const activeTarget = targets.find((t) => t.projectId === projectId) ?? targets[0];
 
   useEffect(() => {
-    if (activeTarget && !activeTarget.categoryOptions.some((o) => o.id === categoryOptionId)) {
+    if (activeTarget && categoryId && !activeTarget.categoryOptions.some((o) => o.id === categoryId)) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- keep the category selector valid when the target table changes
-      setCategoryOptionId(activeTarget.categoryOptions[0]?.id ?? "");
+      setCategoryId(activeTarget.categoryOptions[0]?.id ?? "");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTarget?.tableId]);
+  }, [activeTarget?.projectId]);
 
   async function submitCapture() {
-    if (!taskName.trim() || !tableId) return;
+    if (!taskName.trim() || !projectId) return;
     setSubmitting(true);
     try {
-      const created = await api.post<CapturedThoughtRow>(`/api/workspaces/${workspaceId}/thoughts`, {
+      await api.post(`/api/workspaces/${workspaceId}/thoughts`, {
         taskName: taskName.trim(),
-        tableId,
-        categoryOptionId: categoryOptionId || null,
+        projectId,
+        categoryId: categoryId || null,
         estimatedDurationMinutes: duration === "" ? null : duration,
-        plannedAt: plannedAt || null,
+        // datetime-local has no zone: convert in the browser so the server stores the user's intended instant.
+        plannedAt: plannedAt ? new Date(plannedAt).toISOString() : null,
       });
-      const cat = activeTarget?.categoryOptions.find((o) => o.id === categoryOptionId);
-      setThoughts((prev) => [
-        ...prev,
-        { ...created, plannedAt: plannedAt ? new Date(plannedAt).toISOString() : null, categoryLabel: cat?.label ?? null, categoryColor: cat?.color ?? null, tableName: activeTarget?.tableName ?? "", baseId: activeTarget?.baseId ?? "" },
-      ]);
+      setThoughts(await api.get<CapturedThoughtRow[]>(`/api/workspaces/${workspaceId}/thoughts`));
       setTaskName("");
       setPlannedAt("");
       nameInputRef.current?.focus();
@@ -162,12 +159,12 @@ export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: st
         </div>
         <div className="flex flex-wrap items-center gap-2 pl-6">
           {targets.length > 1 && (
-            <Select className="w-40" value={tableId} onValueChange={setTableId} options={targets.map((t) => ({ value: t.tableId, label: `${t.baseName} · ${t.tableName}` }))} />
+            <Select className="w-40" value={projectId} onValueChange={setProjectId} options={targets.map((t) => ({ value: t.projectId, label: t.projectName }))} />
           )}
           <Select
             className="w-40"
-            value={categoryOptionId}
-            onValueChange={setCategoryOptionId}
+            value={categoryId}
+            onValueChange={setCategoryId}
             options={(activeTarget?.categoryOptions ?? []).map((o) => ({ value: o.id, label: o.label }))}
             placeholder="Category"
           />
@@ -199,7 +196,7 @@ export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: st
       {clarifying && (
         <ClarificationPanel
           thought={clarifying}
-          target={targets.find((t) => t.tableId === clarifying.tableId) ?? activeTarget!}
+          target={targets.find((t) => t.projectId === clarifying.projectId) ?? activeTarget!}
           workspaceId={workspaceId}
           workspaceSlug={workspaceSlug}
           onClose={() => setClarifying(null)}
@@ -376,7 +373,7 @@ function ClarificationPanel({
   async function submit() {
     setSubmitting(true);
     try {
-      const res = await api.post<{ tableId: string; baseId: string }>(`/api/thoughts/${thought.id}/convert`, {
+      const res = await api.post<{ taskId: string; projectId: string }>(`/api/thoughts/${thought.id}/convert`, {
         objectiveId: objectiveId || undefined,
         newObjectiveTitle: !objectiveId ? newGoal.trim() || undefined : undefined,
         keyResultId: keyResultId || undefined,
@@ -390,7 +387,7 @@ function ClarificationPanel({
       });
       toast.success("Converted to task");
       onConverted(thought.id);
-      router.push(`/w/${workspaceSlug}/b/${res.baseId}/t/${res.tableId}`);
+      router.push(`/w/${workspaceSlug}/p/${res.projectId}?record=${res.taskId}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to convert");
     } finally {

@@ -1,0 +1,10 @@
+:root { color-scheme: light dark; --bg: #fafafa; --fg: #171717; --muted: #737373; --accent: #4f46e5; }
+@media (prefers-color-scheme: dark) { :root { --bg: #0a0a0a; --fg: #fafafa; --muted: #a3a3a3; } }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.5 "Segoe UI", system-ui, sans-serif; display: grid; place-items: center; }
+main { text-align: center; padding: 24px; max-width: 360px; }
+.logo { width: 48px; height: 48px; border-radius: 12px; background: var(--accent); color: #fff; font-weight: 700; font-size: 22px; display: grid; place-items: center; margin: 0 auto 12px; }
+h1 { font-size: 20px; margin: 0 0 8px; }
+.muted { color: var(--muted); font-size: 12px; word-break: break-all; }
+button { margin-top: 12px; background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 8px 16px; font: inherit; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }

@@ -1,66 +1,72 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getMembership, getWorkspaceIdForObjective } from "@/lib/permissions";
-import { resolveObjectives, OBJECTIVE_INCLUDE_ARG } from "@/lib/okr-resolver";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfObjective } from "@/lib/authz";
+import { logActivity, diff } from "@/lib/activity";
+import { resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
+import { assertObjectiveRefs } from "@/lib/okr-write";
+import { objectiveSchema, dateOnlyToDate, lenientDateOnly } from "@/lib/validation";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ objectiveId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+type P = { objectiveId: string };
+
+export const GET = route<P>(async (_req, { params }) => {
+  const user = await requireUser();
   const { objectiveId } = await params;
-  const workspaceId = await getWorkspaceIdForObjective(objectiveId);
-  if (!workspaceId) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  await requireWorkspaceRole(user, await workspaceOfObjective(objectiveId), "viewer");
+  const o = await prisma.objective.findUniqueOrThrow({ where: { id: objectiveId }, include: OBJECTIVE_INCLUDE });
+  return NextResponse.json(resolveObjectives([o])[0]);
+});
 
-  const objective = await prisma.objective.findUnique({ where: { id: objectiveId }, include: OBJECTIVE_INCLUDE_ARG });
-  if (!objective) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const [row] = await resolveObjectives([objective]);
-  return NextResponse.json(row);
-}
-
-export async function PATCH(req: Request, { params }: { params: Promise<{ objectiveId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const PATCH = route<P>(async (req, { params }) => {
+  const user = await requireUser();
   const { objectiveId } = await params;
-  const workspaceId = await getWorkspaceIdForObjective(objectiveId);
-  if (!workspaceId) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const body = await req.json();
-  const data: Record<string, unknown> = {};
-  for (const key of ["title", "description", "cycleType", "cycleLabel", "status", "priority"] as const) {
-    if (body[key] !== undefined) data[key] = body[key];
-  }
-  if (body.teamId !== undefined) data.teamId = body.teamId || null;
-  if (body.ownerId !== undefined) data.ownerId = body.ownerId || null;
-  if (body.confidence !== undefined) data.confidence = body.confidence;
-  if (body.startDate !== undefined) data.startDate = body.startDate ? new Date(body.startDate) : null;
-  if (body.endDate !== undefined) data.endDate = body.endDate ? new Date(body.endDate) : null;
-
-  if (body.contributorIds !== undefined) {
-    await prisma.objectiveContributor.deleteMany({ where: { objectiveId } });
-    if ((body.contributorIds as string[]).length) {
-      await prisma.objectiveContributor.createMany({
-        data: (body.contributorIds as string[]).map((userId) => ({ objectiveId, userId })),
-      });
+  const ctx = await requireWorkspaceRole(user, await workspaceOfObjective(objectiveId), "editor");
+  const raw = await readJson<Record<string, unknown>>(req);
+  const body = objectiveSchema.partial().parse({ ...raw, startDate: lenientDateOnly(raw.startDate), endDate: lenientDateOnly(raw.endDate) });
+  const objective = await prisma.$transaction(async (tx) => {
+    await assertObjectiveRefs(tx, ctx.workspaceId, body, objectiveId);
+    const before = await tx.objective.findUniqueOrThrow({ where: { id: objectiveId } });
+    if (body.contributorIds) {
+      await tx.objectiveContributor.deleteMany({ where: { objectiveId } });
+      if (body.contributorIds.length) await tx.objectiveContributor.createMany({ data: body.contributorIds.map((userId) => ({ objectiveId, userId })) });
     }
-  }
+    const after = await tx.objective.update({
+      where: { id: objectiveId },
+      data: {
+        title: body.title,
+        description: body.description,
+        teamId: body.teamId,
+        parentObjectiveId: body.parentObjectiveId,
+        ownerId: body.ownerId,
+        cycleType: body.cycleType,
+        cycleLabel: body.cycleLabel,
+        startDate: dateOnlyToDate(body.startDate),
+        endDate: dateOnlyToDate(body.endDate),
+        status: body.status,
+        confidence: body.confidence,
+        priority: body.priority,
+        updatedById: user.id,
+      },
+      include: OBJECTIVE_INCLUDE,
+    });
+    const changes = diff(before, after, ["title", "description", "teamId", "ownerId", "cycleType", "cycleLabel", "startDate", "endDate", "status", "confidence", "priority"]);
+    if (changes) await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "objective", entityId: objectiveId, action: "updated", changes });
+    return after;
+  });
+  return NextResponse.json(resolveObjectives([objective])[0]);
+});
 
-  const objective = await prisma.objective.update({ where: { id: objectiveId }, data, include: OBJECTIVE_INCLUDE_ARG });
-  const [row] = await resolveObjectives([objective]);
-  return NextResponse.json(row);
-}
-
-export async function DELETE(_req: Request, { params }: { params: Promise<{ objectiveId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+/** Soft delete (objective + its key results). Linked tasks stay and are unlinked. */
+export const DELETE = route<P>(async (_req, { params }) => {
+  const user = await requireUser();
   const { objectiveId } = await params;
-  const workspaceId = await getWorkspaceIdForObjective(objectiveId);
-  if (!workspaceId) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  await prisma.objective.delete({ where: { id: objectiveId } });
-  return NextResponse.json({ ok: true });
-}
+  const ctx = await requireWorkspaceRole(user, await workspaceOfObjective(objectiveId), "editor");
+  await prisma.$transaction(async (tx) => {
+    const now = new Date();
+    const o = await tx.objective.update({ where: { id: objectiveId }, data: { deletedAt: now, updatedById: user.id } });
+    // Unlink tasks so they don't point at a hidden key result.
+    await tx.task.updateMany({ where: { keyResult: { objectiveId } }, data: { keyResultId: null } });
+    await tx.keyResult.updateMany({ where: { objectiveId, deletedAt: null }, data: { deletedAt: now } });
+    await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "objective", entityId: objectiveId, action: "deleted", summary: `Deleted objective "${o.title}"` });
+  });
+  return new NextResponse(null, { status: 204 });
+});

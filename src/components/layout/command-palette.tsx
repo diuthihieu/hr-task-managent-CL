@@ -3,13 +3,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Database, Sheet, FileText, Search } from "lucide-react";
+import { FolderKanban, FileText, Search } from "lucide-react";
 import { api } from "@/lib/api-client";
 
 interface SearchResult {
-  bases: { id: string; name: string }[];
-  tables: { id: string; name: string; base: { id: string; name: string } }[];
-  records: { id: string; tableId: string; tableName: string; baseId: string; baseName: string; label: string }[];
+  projects: { id: string; name: string; color: string }[];
+  tasks: { id: string; label: string; projectId: string; projectName: string }[];
 }
 
 export function CommandPalette({
@@ -24,7 +23,7 @@ export function CommandPalette({
   workspaceSlug: string;
 }) {
   const [q, setQ] = useState("");
-  const [results, setResults] = useState<SearchResult>({ bases: [], tables: [], records: [] });
+  const [results, setResults] = useState<SearchResult>({ projects: [], tasks: [] });
   const router = useRouter();
 
   useEffect(() => {
@@ -51,7 +50,7 @@ export function CommandPalette({
 
   function handleQueryChange(value: string) {
     setQ(value);
-    if (!value.trim()) setResults({ bases: [], tables: [], records: [] });
+    if (!value.trim()) setResults({ projects: [], tasks: [] });
   }
 
   function go(path: string) {
@@ -60,7 +59,7 @@ export function CommandPalette({
     router.push(path);
   }
 
-  const hasResults = results.bases.length + results.tables.length + results.records.length > 0;
+  const hasResults = results.projects.length + results.tasks.length > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -71,7 +70,7 @@ export function CommandPalette({
             autoFocus
             value={q}
             onChange={(e) => handleQueryChange(e.target.value)}
-            placeholder="Search bases, tables, records…"
+            placeholder="Search projects and tasks…"
             className="border-0 focus:ring-0 shadow-none px-1"
           />
         </div>
@@ -79,36 +78,17 @@ export function CommandPalette({
           {!q && <p className="text-xs text-neutral-400 px-2 py-4 text-center">Type to search this workspace</p>}
           {q && !hasResults && <p className="text-xs text-neutral-400 px-2 py-4 text-center">No results</p>}
 
-          {results.bases.length > 0 && (
-            <Group label="Bases">
-              {results.bases.map((b) => (
-                <Row key={b.id} icon={<Database size={14} />} label={b.name} onClick={() => go(`/w/${workspaceSlug}/b/${b.id}`)} />
+          {results.projects.length > 0 && (
+            <Group label="Projects">
+              {results.projects.map((p) => (
+                <Row key={p.id} icon={<FolderKanban size={14} style={{ color: p.color }} />} label={p.name} onClick={() => go(`/w/${workspaceSlug}/p/${p.id}`)} />
               ))}
             </Group>
           )}
-          {results.tables.length > 0 && (
-            <Group label="Tables">
-              {results.tables.map((t) => (
-                <Row
-                  key={t.id}
-                  icon={<Sheet size={14} />}
-                  label={t.name}
-                  sub={t.base.name}
-                  onClick={() => go(`/w/${workspaceSlug}/b/${t.base.id}/t/${t.id}`)}
-                />
-              ))}
-            </Group>
-          )}
-          {results.records.length > 0 && (
-            <Group label="Records">
-              {results.records.map((r) => (
-                <Row
-                  key={r.id}
-                  icon={<FileText size={14} />}
-                  label={r.label || "(untitled)"}
-                  sub={`${r.baseName} / ${r.tableName}`}
-                  onClick={() => go(`/w/${workspaceSlug}/b/${r.baseId}/t/${r.tableId}?record=${r.id}`)}
-                />
+          {results.tasks.length > 0 && (
+            <Group label="Tasks">
+              {results.tasks.map((t) => (
+                <Row key={t.id} icon={<FileText size={14} />} label={t.label || "(untitled)"} sub={t.projectName} onClick={() => go(`/w/${workspaceSlug}/p/${t.projectId}?record=${t.id}`)} />
               ))}
             </Group>
           )}

@@ -1,76 +1,72 @@
 import { NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { getMembership } from "@/lib/permissions";
-import { resolveObjectives, getMyObjectiveRows, OBJECTIVE_INCLUDE_ARG } from "@/lib/okr-resolver";
+import { requireUser, requireWorkspaceRole, route, readJson } from "@/lib/authz";
+import { logActivity } from "@/lib/activity";
+import { resolveObjectives, getMyObjectiveRows, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
+import { assertObjectiveRefs } from "@/lib/okr-write";
+import { objectiveSchema, dateOnlyToDate, lenientDateOnly } from "@/lib/validation";
 
-export async function GET(req: Request, { params }: { params: Promise<{ workspaceId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+type P = { workspaceId: string };
+
+export const GET = route<P>(async (req, { params }) => {
+  const user = await requireUser();
   const { workspaceId } = await params;
-  const userId = (session.user as { id: string }).id;
-  const membership = await getMembership(userId, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
+  await requireWorkspaceRole(user, workspaceId, "viewer");
   const url = new URL(req.url);
   const teamId = url.searchParams.get("teamId");
   const ownerId = url.searchParams.get("ownerId");
-  const status = url.searchParams.get("status");
-  const cycleType = url.searchParams.get("cycleType");
-  const mine = url.searchParams.get("mine") === "1";
+  const status = url.searchParams.get("status") as Prisma.ObjectiveWhereInput["status"] | null;
+  const cycleType = url.searchParams.get("cycleType") as Prisma.ObjectiveWhereInput["cycleType"] | null;
 
-  let rows: Awaited<ReturnType<typeof resolveObjectives>>;
-  if (mine) {
-    rows = await getMyObjectiveRows(workspaceId, userId);
+  let rows = url.searchParams.get("mine") === "1"
+    ? await getMyObjectiveRows(workspaceId, user.id)
+    : resolveObjectives(
+        await prisma.objective.findMany({
+          where: { workspaceId, deletedAt: null, ...(teamId ? { teamId } : {}), ...(ownerId ? { ownerId } : {}), ...(status ? { status } : {}), ...(cycleType ? { cycleType } : {}) },
+          include: OBJECTIVE_INCLUDE,
+          orderBy: { createdAt: "desc" },
+        })
+      );
+  if (url.searchParams.get("mine") === "1") {
     if (teamId) rows = rows.filter((o) => o.teamId === teamId);
     if (status) rows = rows.filter((o) => o.status === status);
     if (cycleType) rows = rows.filter((o) => o.cycleType === cycleType);
-  } else {
-    const objectives = await prisma.objective.findMany({
-      where: {
-        workspaceId,
-        ...(teamId ? { teamId } : {}),
-        ...(ownerId ? { ownerId } : {}),
-        ...(status ? { status } : {}),
-        ...(cycleType ? { cycleType } : {}),
-      },
-      include: OBJECTIVE_INCLUDE_ARG,
-      orderBy: { createdAt: "desc" },
-    });
-    rows = await resolveObjectives(objectives);
   }
-
   return NextResponse.json(rows);
-}
+});
 
-export async function POST(req: Request, { params }: { params: Promise<{ workspaceId: string }> }) {
-  const session = await auth();
-  if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+export const POST = route<P>(async (req, { params }) => {
+  const user = await requireUser();
   const { workspaceId } = await params;
-  const membership = await getMembership((session.user as { id: string }).id, workspaceId);
-  if (!membership) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-
-  const body = await req.json();
-  const objective = await prisma.objective.create({
-    data: {
-      workspaceId,
-      teamId: body.teamId || null,
-      title: body.title || "New Objective",
-      description: body.description || null,
-      ownerId: body.ownerId || null,
-      cycleType: body.cycleType || "quarter",
-      cycleLabel: body.cycleLabel || null,
-      startDate: body.startDate ? new Date(body.startDate) : null,
-      endDate: body.endDate ? new Date(body.endDate) : null,
-      status: body.status || "not_started",
-      confidence: body.confidence ?? 70,
-      priority: body.priority || "medium",
-      contributors: body.contributorIds?.length
-        ? { create: (body.contributorIds as string[]).map((userId) => ({ userId })) }
-        : undefined,
-    },
-    include: OBJECTIVE_INCLUDE_ARG,
+  await requireWorkspaceRole(user, workspaceId, "editor");
+  const raw = await readJson<Record<string, unknown>>(req);
+  const body = objectiveSchema.parse({ ...raw, startDate: lenientDateOnly(raw.startDate), endDate: lenientDateOnly(raw.endDate) });
+  const objective = await prisma.$transaction(async (tx) => {
+    await assertObjectiveRefs(tx, workspaceId, body);
+    const o = await tx.objective.create({
+      data: {
+        workspaceId,
+        title: body.title,
+        description: body.description ?? null,
+        teamId: body.teamId ?? null,
+        parentObjectiveId: body.parentObjectiveId ?? null,
+        ownerId: body.ownerId ?? null,
+        cycleType: body.cycleType,
+        cycleLabel: body.cycleLabel ?? null,
+        startDate: dateOnlyToDate(body.startDate),
+        endDate: dateOnlyToDate(body.endDate),
+        status: body.status ?? "not_started",
+        confidence: body.confidence,
+        priority: body.priority,
+        createdById: user.id,
+        updatedById: user.id,
+        contributors: body.contributorIds?.length ? { create: body.contributorIds.map((userId) => ({ userId })) } : undefined,
+      },
+      include: OBJECTIVE_INCLUDE,
+    });
+    await logActivity(tx, { workspaceId, actorId: user.id, entityType: "objective", entityId: o.id, action: "created", summary: `Created objective "${o.title}"` });
+    return o;
   });
-  const [row] = await resolveObjectives([objective]);
-  return NextResponse.json(row, { status: 201 });
-}
+  return NextResponse.json(resolveObjectives([objective])[0], { status: 201 });
+});

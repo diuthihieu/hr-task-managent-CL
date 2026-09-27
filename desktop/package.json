@@ -1,0 +1,17 @@
+{
+  "name": "basework-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Windows desktop client for Basework (Tauri shell around the web app; same backend and database).",
+  "scripts": {
+    "prepare-shell": "node scripts/prepare-shell.mjs",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "build:updater": "node scripts/prepare-updater-config.mjs && tauri build --features updater --config src-tauri/tauri.updater.generated.json",
+    "icons": "tauri icon src-tauri/icons/app-icon.png",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.11.5"
+  }
+}

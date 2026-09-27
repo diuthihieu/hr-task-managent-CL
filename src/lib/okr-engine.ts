@@ -4,40 +4,15 @@
 // own value fields - so a Task edit is reflected the instant it's read back,
 // with nothing to keep in sync and no write-fanout.
 
-import { parseFieldConfig, SELECT_SINGLE_TYPES } from "./field-types";
-import type { FieldRow } from "@/types";
-
-const DONE_LABEL_RE = /^(done|completed|complete|closed|resolved)$/i;
-
 function clamp(n: number): number {
   if (!Number.isFinite(n)) return 0;
   return Math.max(0, Math.min(100, Math.round(n * 10) / 10));
 }
 
-/** A task record's own completion percentage, read from whichever field on its table represents progress. */
-export function resolveTaskProgress(fields: FieldRow[], data: Record<string, unknown>): number {
-  const progressField = fields.find((f) => f.type === "progress");
-  if (progressField) {
-    const v = Number(data[progressField.id]);
-    return Number.isFinite(v) ? clamp(v) : 0;
-  }
-  const statusField = fields.find((f) => SELECT_SINGLE_TYPES.includes(f.type) && /status/i.test(f.name));
-  if (statusField) {
-    const cfg = parseFieldConfig(statusField.config);
-    const label = cfg.options?.find((o) => o.id === data[statusField.id])?.label ?? "";
-    return DONE_LABEL_RE.test(label.trim()) ? 100 : 0;
-  }
-  const checkboxField = fields.find((f) => f.type === "checkbox");
-  if (checkboxField) return data[checkboxField.id] ? 100 : 0;
-  return 0;
-}
-
-/** A task's contribution weight toward its linked Key Result - the "OKR Contribution Weight" percent field if present, else equal weight (1). */
-export function resolveTaskOkrWeight(fields: FieldRow[], data: Record<string, unknown>): number {
-  const weightField = fields.find((f) => f.type === "percent" && f.name.trim().toLowerCase() === "okr contribution weight");
-  if (!weightField) return 1;
-  const v = Number(data[weightField.id]);
-  return Number.isFinite(v) && v > 0 ? v : 1;
+/** A task's completion: 100 once its status is in the "done" category, otherwise its own progress value. */
+export function resolveTaskProgress(task: { progress: number; statusCategory: string | null | undefined }): number {
+  if (task.statusCategory === "done") return 100;
+  return clamp(task.progress);
 }
 
 export interface KeyResultValueShape {

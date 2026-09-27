@@ -1,177 +1,165 @@
 "use client";
-import { useEffect, useState } from "react";
-import { Plus, X, GripVertical } from "lucide-react";
-import { nanoid } from "nanoid";
+import { useCallback, useEffect, useState } from "react";
+import { Plus, Trash2, Star } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/misc";
-import { getFieldType } from "@/lib/field-types";
-import { detectCaptureFieldRoles } from "@/lib/capture-engine";
-import type { FieldRow } from "@/types";
+import { Select } from "@/components/ui/misc";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
+import type { CategoryRow, StatusRow } from "@/types";
 import { SettingsSection } from "./settings-shell";
 
-const OPTION_COLORS = ["#94a3b8", "#3b82f6", "#22c55e", "#eab308", "#f97316", "#ef4444", "#8b5cf6", "#ec4899"];
+const COLORS = ["#94a3b8", "#3b82f6", "#22c55e", "#eab308", "#f97316", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#6366f1"];
+const STATUS_CATEGORIES = [
+  { value: "todo", label: "To do" },
+  { value: "in_progress", label: "In progress" },
+  { value: "done", label: "Done (counts as complete)" },
+  { value: "cancelled", label: "Cancelled (excluded from OKR progress)" },
+];
 
-interface MasterTable {
-  baseId: string;
-  baseName: string;
-  tableId: string;
-  tableName: string;
-  fields: FieldRow[];
-}
+type Row = (StatusRow | CategoryRow) & { category?: StatusRow["category"]; isDefault?: boolean };
 
-export function SettingsTaskConfig({ workspaceId, mode }: { workspaceId: string; mode: "statuses" | "categories" | "fields" }) {
-  const [table, setTable] = useState<MasterTable | null>(null);
+/**
+ * Statuses and categories are workspace-level rows in PostgreSQL shared by
+ * every project. Each edit is saved immediately through the API.
+ */
+export function SettingsTaskConfig({ workspaceId, mode, canEdit }: { workspaceId: string; mode: "statuses" | "categories"; canEdit: boolean }) {
+  const base = mode === "statuses" ? "statuses" : "categories";
+  const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [newName, setNewName] = useState("");
+
+  const load = useCallback(async () => {
+    try {
+      setRows(await api.get<Row[]>(`/api/workspaces/${workspaceId}/${base}`));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to load");
+    } finally {
+      setLoading(false);
+    }
+  }, [workspaceId, base]);
 
   useEffect(() => {
-    api
-      .get<MasterTable>(`/api/workspaces/${workspaceId}/master-table`)
-      .then(setTable)
-      .catch(() => setError(true))
-      .finally(() => setLoading(false));
-  }, [workspaceId]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch
+    load();
+  }, [load]);
 
-  if (loading) return <div className="p-6 text-sm text-neutral-400">Loading…</div>;
-  if (error || !table) return <div className="p-6 text-sm text-neutral-400">No task base found yet - create one first.</div>;
-
-  const roles = detectCaptureFieldRoles(table.fields);
-
-  function patchField(fieldId: string, next: FieldRow) {
-    setTable((t) => (t ? { ...t, fields: t.fields.map((f) => (f.id === fieldId ? next : f)) } : t));
-  }
-
-  if (mode === "statuses") {
-    return (
-      <SettingsSection title="Task Statuses & Priorities" description={`Editing the Status and Priority options used across ${table.tableName}. Changes apply everywhere - Grid, Kanban, filters and dashboards.`}>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl">
-          {roles.statusField ? (
-            <OptionsEditor field={roles.statusField} onSaved={(f) => patchField(f.id, f)} />
-          ) : (
-            <p className="text-sm text-neutral-400">No Status field found on {table.tableName}.</p>
-          )}
-          {roles.priorityField ? (
-            <OptionsEditor field={roles.priorityField} onSaved={(f) => patchField(f.id, f)} />
-          ) : (
-            <p className="text-sm text-neutral-400">No Priority field found on {table.tableName}.</p>
-          )}
-        </div>
-      </SettingsSection>
-    );
-  }
-
-  if (mode === "categories") {
-    return (
-      <SettingsSection title="Categories" description={`Editing the Category options used across ${table.tableName}. Every saved view filtered by category reads these live.`}>
-        <div className="max-w-md">
-          {roles.categoryField ? (
-            <OptionsEditor field={roles.categoryField} onSaved={(f) => patchField(f.id, f)} />
-          ) : (
-            <p className="text-sm text-neutral-400">No Category field found on {table.tableName}.</p>
-          )}
-        </div>
-      </SettingsSection>
-    );
-  }
-
-  return (
-    <SettingsSection title="Default Fields" description={`Every field defined on ${table.tableName}, the workspace's master task table. Toggle visibility to hide a field from the Grid by default.`}>
-      <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg divide-y divide-neutral-100 dark:divide-neutral-900 max-w-2xl">
-        {table.fields.map((f) => (
-          <div key={f.id} className="flex items-center gap-3 px-3 py-2">
-            <span className="flex-1 min-w-0 truncate text-sm text-neutral-800 dark:text-neutral-100">
-              {f.name}
-              {f.isPrimary && <span className="ml-2 text-[10px] text-indigo-500 font-medium uppercase tracking-wide">Primary</span>}
-            </span>
-            <span className="text-xs text-neutral-400 shrink-0">{getFieldType(f.type).label}</span>
-            <Switch
-              checked={f.visible}
-              onCheckedChange={async (v) => {
-                patchField(f.id, { ...f, visible: v });
-                try {
-                  await api.patch(`/api/fields/${f.id}`, { visible: v });
-                } catch {
-                  toast.error("Failed to update field visibility");
-                  patchField(f.id, f);
-                }
-              }}
-            />
-          </div>
-        ))}
-      </div>
-    </SettingsSection>
-  );
-}
-
-function OptionsEditor({ field, onSaved }: { field: FieldRow; onSaved: (field: FieldRow) => void }) {
-  const initialOptions = (JSON.parse(field.config || "{}").options ?? []) as { id: string; label: string; color: string }[];
-  const [options, setOptions] = useState(initialOptions);
-  const [saving, setSaving] = useState(false);
-  const [dirty, setDirty] = useState(false);
-
-  function update(id: string, patch: Partial<{ label: string; color: string }>) {
-    setOptions((prev) => prev.map((o) => (o.id === id ? { ...o, ...patch } : o)));
-    setDirty(true);
-  }
-  function add() {
-    setOptions((prev) => [...prev, { id: nanoid(6), label: "New option", color: OPTION_COLORS[prev.length % OPTION_COLORS.length] }]);
-    setDirty(true);
-  }
-  function remove(id: string) {
-    setOptions((prev) => prev.filter((o) => o.id !== id));
-    setDirty(true);
-  }
-
-  async function save() {
-    setSaving(true);
+  async function create() {
+    const name = newName.trim();
+    if (!name) return;
     try {
-      const updated = await api.patch<FieldRow>(`/api/fields/${field.id}`, { config: { options } });
-      onSaved(updated);
-      setDirty(false);
-      toast.success(`${field.name} options saved`);
+      await api.post(`/api/workspaces/${workspaceId}/${base}`, { name, color: COLORS[rows.length % COLORS.length] });
+      setNewName("");
+      load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save options");
-    } finally {
-      setSaving(false);
+      toast.error(e instanceof Error ? e.message : "Failed to add");
+    }
+  }
+
+  async function patch(row: Row, body: Record<string, unknown>) {
+    try {
+      await api.patch(`/api/${base}/${row.id}`, body);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to save");
+      load();
+    }
+  }
+
+  async function remove(row: Row) {
+    let query = "";
+    if (mode === "statuses" && row.taskCount) {
+      const others = rows.filter((r) => r.id !== row.id);
+      const target = prompt(`${row.taskCount} task(s) use "${row.name}". Type the name of the status to move them to:\n${others.map((o) => o.name).join(", ")}`);
+      if (!target) return;
+      const match = others.find((o) => o.name.toLowerCase() === target.trim().toLowerCase());
+      if (!match) {
+        toast.error("No status with that name");
+        return;
+      }
+      query = `?reassignTo=${match.id}`;
+    } else if (!confirm(mode === "categories" && row.taskCount ? `Delete "${row.name}"? ${row.taskCount} task(s) will become uncategorized.` : `Delete "${row.name}"?`)) {
+      return;
+    }
+    try {
+      await api.delete(`/api/${base}/${row.id}${query}`);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete");
     }
   }
 
   return (
-    <div>
-      <label className="text-xs font-medium text-neutral-500 mb-1.5 block">{field.name}</label>
-      <div className="space-y-1.5 max-h-64 overflow-y-auto thin-scroll">
-        {options.map((o) => (
-          <div key={o.id} className="flex items-center gap-1.5">
-            <GripVertical size={12} className="text-neutral-300 shrink-0" />
-            <div className="flex gap-1 shrink-0">
-              {OPTION_COLORS.map((c) => (
-                <button
-                  key={c}
-                  onClick={() => update(o.id, { color: c })}
-                  className="h-4 w-4 rounded-full border"
-                  style={{ backgroundColor: c, borderColor: o.color === c ? "#000" : "transparent" }}
+    <SettingsSection
+      title={mode === "statuses" ? "Task Statuses" : "Categories"}
+      description={
+        mode === "statuses"
+          ? "Workflow states shared by every project. The category decides what counts as done for progress and OKRs; the starred status is given to new tasks."
+          : "Task categories shared by every project in this workspace. Created by your team - the app ships with none."
+      }
+    >
+      {loading ? (
+        <div className="text-sm text-neutral-400">Loading…</div>
+      ) : (
+        <div className="max-w-2xl">
+          <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg divide-y divide-neutral-100 dark:divide-neutral-900">
+            {rows.length === 0 && <div className="px-3 py-4 text-sm text-neutral-400">None yet{canEdit ? " - add the first one below." : "."}</div>}
+            {rows.map((row) => (
+              <div key={row.id} className="flex items-center gap-2 px-3 py-2">
+                <div className="flex gap-0.5 shrink-0">
+                  {COLORS.map((c) => (
+                    <button
+                      key={c}
+                      disabled={!canEdit}
+                      onClick={() => patch(row, { color: c })}
+                      className={cn("h-3.5 w-3.5 rounded-full border", row.color === c ? "border-neutral-900 dark:border-white" : "border-transparent")}
+                      style={{ backgroundColor: c }}
+                      aria-label={`Color ${c}`}
+                    />
+                  ))}
+                </div>
+                <Input
+                  defaultValue={row.name}
+                  disabled={!canEdit}
+                  onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== row.name && patch(row, { name: e.target.value.trim() })}
+                  className="flex-1 h-7"
+                  aria-label="Name"
                 />
-              ))}
-            </div>
-            <Input value={o.label} onChange={(e) => update(o.id, { label: e.target.value })} className="flex-1 h-7" />
-            <button onClick={() => remove(o.id)} className="text-neutral-400 hover:text-red-600 shrink-0">
-              <X size={13} />
-            </button>
+                {mode === "statuses" && (
+                  <>
+                    <Select className="w-44 h-7 text-xs" value={row.category ?? "todo"} onValueChange={(v) => canEdit && patch(row, { category: v })} options={STATUS_CATEGORIES} />
+                    <button
+                      disabled={!canEdit || row.isDefault}
+                      onClick={() => patch(row, { isDefault: true })}
+                      title={row.isDefault ? "Default for new tasks" : "Make default for new tasks"}
+                      className={cn("shrink-0", row.isDefault ? "text-amber-500" : "text-neutral-300 hover:text-amber-500")}
+                    >
+                      <Star size={14} fill={row.isDefault ? "currentColor" : "none"} />
+                    </button>
+                  </>
+                )}
+                <span className="text-xs text-neutral-400 w-14 text-right shrink-0">{row.taskCount ?? 0} tasks</span>
+                {canEdit && (
+                  <button onClick={() => remove(row)} className="text-neutral-400 hover:text-red-600 shrink-0" aria-label={`Delete ${row.name}`}>
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
-        ))}
-      </div>
-      <div className="flex items-center gap-3 mt-2">
-        <button onClick={add} className="flex items-center gap-1 text-xs text-indigo-600 hover:underline">
-          <Plus size={12} /> Add option
-        </button>
-        {dirty && (
-          <button onClick={save} disabled={saving} className="text-xs font-medium text-white bg-indigo-600 hover:bg-indigo-500 rounded-md px-2 py-1 disabled:opacity-50">
-            Save changes
-          </button>
-        )}
-      </div>
-    </div>
+          {canEdit ? (
+            <div className="flex gap-2 mt-3">
+              <Input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && create()} placeholder={mode === "statuses" ? "New status name" : "New category name"} className="flex-1" />
+              <Button onClick={create} disabled={!newName.trim()}>
+                <Plus size={13} /> Add
+              </Button>
+            </div>
+          ) : (
+            <p className="text-xs text-neutral-400 mt-3">Only workspace owners and admins can change these.</p>
+          )}
+        </div>
+      )}
+    </SettingsSection>
   );
 }

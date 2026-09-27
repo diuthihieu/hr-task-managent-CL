@@ -15,14 +15,8 @@ import { GripVertical, Pencil, Copy, Trash2, ExternalLink, Sheet, Kanban, Calend
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { SettingsSection } from "./settings-shell";
+import { useProjectPicker } from "./project-picker";
 import type { ViewRow } from "@/types";
-
-interface MasterTable {
-  baseId: string;
-  tableId: string;
-  tableName: string;
-  views: ViewRow[];
-}
 
 const VIEW_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
   grid: Sheet,
@@ -35,19 +29,19 @@ const VIEW_ICONS: Record<string, React.ComponentType<{ size?: number; className?
 };
 
 export function SettingsViews({ workspaceId, workspaceSlug }: { workspaceId: string; workspaceSlug: string }) {
-  const [table, setTable] = useState<MasterTable | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { projects, projectId, project, picker } = useProjectPicker(workspaceId);
+  const [views, setViews] = useState<ViewRow[]>([]);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
   useEffect(() => {
-    api
-      .get<MasterTable>(`/api/workspaces/${workspaceId}/master-table`)
-      .then(setTable)
-      .finally(() => setLoading(false));
-  }, [workspaceId]);
+    if (!projectId) return;
+    api.get<ViewRow[]>(`/api/projects/${projectId}/views`).then(setViews).catch(() => setViews([]));
+  }, [projectId]);
 
-  if (loading) return <div className="p-6 text-sm text-neutral-400">Loading…</div>;
-  if (!table) return <div className="p-6 text-sm text-neutral-400">No task base found yet - create one first.</div>;
+  if (!projects) return <div className="p-6 text-sm text-neutral-400">Loading…</div>;
+  if (!project) return <div className="p-6 text-sm text-neutral-400">No projects yet - create one first.</div>;
+  const table = { views };
+  const setTable = (fn: (t: { views: ViewRow[] }) => { views: ViewRow[] } | null) => setViews((prev) => fn({ views: prev })?.views ?? prev);
 
   async function rename(view: ViewRow) {
     const name = prompt("Rename view", view.name);
@@ -64,7 +58,7 @@ export function SettingsViews({ workspaceId, workspaceSlug }: { workspaceId: str
     if (!table) return;
     try {
       const source = await api.get<{ config: string }>(`/api/views/${view.id}`);
-      const copy = await api.post<ViewRow>(`/api/tables/${table.tableId}/views`, { name: `${view.name} copy`, type: view.type, config: JSON.parse(source.config || "{}") });
+      const copy = await api.post<ViewRow>(`/api/projects/${projectId}/views`, { name: `${view.name} copy`, type: view.type, config: JSON.parse(source.config || "{}") });
       setTable((t) => (t ? { ...t, views: [...t.views, copy] } : t));
       toast.success("View duplicated");
     } catch {
@@ -74,7 +68,7 @@ export function SettingsViews({ workspaceId, workspaceSlug }: { workspaceId: str
 
   async function remove(view: ViewRow) {
     if (!table || table.views.length <= 1) {
-      toast.error("A table needs at least one view");
+      toast.error("A project needs at least one view");
       return;
     }
     if (!confirm(`Delete view "${view.name}"?`)) return;
@@ -87,19 +81,19 @@ export function SettingsViews({ workspaceId, workspaceSlug }: { workspaceId: str
   }
 
   function handleDragEnd(e: DragEndEvent) {
-    if (!table) return;
     const { active, over } = e;
     if (!over || active.id === over.id) return;
     const ids = table.views.map((v) => v.id);
     const oldIndex = ids.indexOf(String(active.id));
     const newIndex = ids.indexOf(String(over.id));
     const reordered = arrayMove(table.views, oldIndex, newIndex);
-    setTable({ ...table, views: reordered });
+    setViews(reordered);
     Promise.all(reordered.map((v, i) => api.patch(`/api/views/${v.id}`, { order: i }))).catch(() => toast.error("Failed to save order"));
   }
 
   return (
-    <SettingsSection title="View Management" description={`Every saved view on ${table.tableName} - rename, duplicate, reorder or delete. Each view is a filter/sort/field configuration on the same master table, never a copy of the data.`}>
+    <SettingsSection title="View Management" description={`Saved views of ${project.name} - rename, duplicate, reorder or delete. A view is a filter/sort/column configuration over the project's tasks, never a copy of the data.`}>
+      {picker}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={table.views.map((v) => v.id)} strategy={verticalListSortingStrategy}>
           <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg divide-y divide-neutral-100 dark:divide-neutral-900 max-w-2xl">
@@ -107,7 +101,7 @@ export function SettingsViews({ workspaceId, workspaceSlug }: { workspaceId: str
               <ViewSettingsRow
                 key={view.id}
                 view={view}
-                href={`/w/${workspaceSlug}/b/${table.baseId}/t/${table.tableId}?view=${view.id}`}
+                href={`/w/${workspaceSlug}/p/${projectId}?view=${view.id}`}
                 onRename={() => rename(view)}
                 onDuplicate={() => duplicate(view)}
                 onDelete={() => remove(view)}

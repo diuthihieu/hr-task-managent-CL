@@ -8,16 +8,13 @@ import { ExportDialog } from "@/components/views/export-dialog";
 import { parseFieldConfig, SELECT_SINGLE_TYPES } from "@/lib/field-types";
 import type { FieldRow, RecordRow } from "@/types";
 import { SettingsSection } from "./settings-shell";
+import { useProjectPicker } from "./project-picker";
 
-interface MasterTable {
-  baseId: string;
-  tableId: string;
-  tableName: string;
-  fields: FieldRow[];
-}
 interface MemberLite {
   id: string;
   name: string;
+  email: string;
+  avatarColor: string;
 }
 
 function parseCsv(text: string): string[][] {
@@ -59,7 +56,8 @@ function parseCsv(text: string): string[][] {
 }
 
 export function SettingsDataIO({ workspaceId }: { workspaceId: string }) {
-  const [table, setTable] = useState<MasterTable | null>(null);
+  const { projects, projectId, project, picker } = useProjectPicker(workspaceId);
+  const [fields, setFields] = useState<FieldRow[]>([]);
   const [records, setRecords] = useState<RecordRow[]>([]);
   const [members, setMembers] = useState<MemberLite[]>([]);
   const [exportOpen, setExportOpen] = useState(false);
@@ -67,70 +65,92 @@ export function SettingsDataIO({ workspaceId }: { workspaceId: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    api.get<MasterTable>(`/api/workspaces/${workspaceId}/master-table`).then((t) => {
-      setTable(t);
-      api.get<RecordRow[]>(`/api/tables/${t.tableId}/records`).then(setRecords);
-    });
-    api.get<MemberLite[]>(`/api/workspaces/${workspaceId}/members`).then(setMembers);
+    api.get<MemberLite[]>(`/api/workspaces/${workspaceId}/members`).then(setMembers).catch(() => {});
   }, [workspaceId]);
 
+  useEffect(() => {
+    if (!projectId) return;
+    api.get<{ fields: FieldRow[] }>(`/api/projects/${projectId}`).then((d) => setFields(d.fields)).catch(() => {});
+    api.get<RecordRow[]>(`/api/projects/${projectId}/tasks`).then(setRecords).catch(() => {});
+  }, [projectId]);
+
+  function cellToValue(field: FieldRow, raw: string): unknown {
+    const cell = raw.trim();
+    if (!cell) return undefined;
+    const options = parseFieldConfig(field.config).options ?? [];
+    if ([...SELECT_SINGLE_TYPES, "single_select"].includes(field.type)) return options.find((o) => o.label.toLowerCase() === cell.toLowerCase())?.id;
+    if (field.type === "multi_select") return cell.split(/[;,]/).map((p) => options.find((o) => o.label.toLowerCase() === p.trim().toLowerCase())?.id).filter(Boolean);
+    if (field.type === "person" || field.type === "people") {
+      const ids = cell.split(/[;,]/).map((p) => members.find((m) => m.email.toLowerCase() === p.trim().toLowerCase() || m.name.toLowerCase() === p.trim().toLowerCase())?.id).filter(Boolean);
+      return field.type === "person" ? ids[0] : ids;
+    }
+    if (["number", "percent", "currency", "rating", "progress"].includes(field.type)) {
+      const n = Number(cell.replace(/[^0-9.-]/g, ""));
+      return Number.isNaN(n) ? undefined : n;
+    }
+    if (field.type === "checkbox") return ["true", "yes", "1", "x"].includes(cell.toLowerCase());
+    if (field.type === "date") {
+      const d = new Date(cell);
+      return Number.isNaN(d.getTime()) ? undefined : new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())).toISOString().slice(0, 10);
+    }
+    return cell;
+  }
+
   async function handleImport(file: File) {
-    if (!table) return;
-    const text = await file.text();
-    const rows = parseCsv(text);
+    if (!projectId) return;
+    const rows = parseCsv(await file.text());
     if (rows.length < 2) {
       toast.error("CSV has no data rows");
       return;
     }
     const [header, ...dataRows] = rows;
-    const fieldByHeader = header.map((h) => table.fields.find((f) => f.name.toLowerCase() === h.trim().toLowerCase()) ?? null);
+    const writable = fields.filter((f) => !f.readOnly && f.type !== "formula" && f.type !== "link");
+    const fieldByHeader = header.map((h) => writable.find((f) => f.name.toLowerCase() === h.trim().toLowerCase()) ?? null);
     if (fieldByHeader.every((f) => !f)) {
-      toast.error("No CSV column matched a field on this table by name");
+      toast.error("No CSV column matched a field of this project by name");
       return;
     }
-    const capped = dataRows.slice(0, 500);
-    setImporting(true);
-    let created = 0;
-    try {
-      for (const row of capped) {
+    if (dataRows.length > 1000) {
+      toast.error("Import up to 1000 rows at a time");
+      return;
+    }
+    const payload = dataRows
+      .filter((row) => row.some((c) => c.trim()))
+      .map((row) => {
         const data: Record<string, unknown> = {};
         row.forEach((cell, i) => {
           const field = fieldByHeader[i];
-          if (!field || !cell.trim()) return;
-          if (SELECT_SINGLE_TYPES.includes(field.type)) {
-            const options = parseFieldConfig(field.config).options ?? [];
-            const match = options.find((o) => o.label.toLowerCase() === cell.trim().toLowerCase());
-            if (match) data[field.id] = match.id;
-          } else if (["number", "integer", "percent", "currency"].includes(field.type)) {
-            const n = Number(cell);
-            if (!Number.isNaN(n)) data[field.id] = n;
-          } else if (field.type === "checkbox") {
-            data[field.id] = ["true", "yes", "1"].includes(cell.trim().toLowerCase());
-          } else {
-            data[field.id] = cell;
-          }
+          if (!field) return;
+          const v = cellToValue(field, cell);
+          if (v !== undefined) data[field.id] = v;
         });
-        const record = await api.post<RecordRow>(`/api/tables/${table.tableId}/records`, { data });
-        created++;
-        setRecords((prev) => [...prev, record]);
-      }
-      toast.success(`Imported ${created} record${created === 1 ? "" : "s"}${dataRows.length > 500 ? " (capped at 500 per import)" : ""}`);
+        return data;
+      });
+    setImporting(true);
+    try {
+      const res = await api.post<{ created: number }>(`/api/projects/${projectId}/tasks/import`, { rows: payload });
+      toast.success(`Imported ${res.created} task${res.created === 1 ? "" : "s"}`);
+      setRecords(await api.get<RecordRow[]>(`/api/projects/${projectId}/tasks`));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : `Import failed after ${created} record(s)`);
+      toast.error(e instanceof Error ? `Nothing was imported - ${e.message}` : "Import failed");
     } finally {
       setImporting(false);
       if (fileRef.current) fileRef.current.value = "";
     }
   }
 
-  if (!table) return <div className="p-6 text-sm text-neutral-400">Loading…</div>;
+  if (!projects) return <div className="p-6 text-sm text-neutral-400">Loading…</div>;
+  if (!project) return <div className="p-6 text-sm text-neutral-400">No projects yet - create one first.</div>;
+  const table = { tableName: project.name, fields };
+
 
   return (
-    <SettingsSection title="Import / Export" description={`Bring data into ${table.tableName} or take a copy out.`}>
+    <SettingsSection title="Import / Export" description={`Bring tasks into ${table.tableName} or take a copy out.`}>
+      {picker}
       <div className="space-y-4 max-w-lg">
         <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3">
           <div className="text-sm font-medium text-neutral-800 dark:text-neutral-100 mb-1">Export</div>
-          <p className="text-xs text-neutral-400 mb-2">Download all records from {table.tableName} as CSV or Excel.</p>
+          <p className="text-xs text-neutral-400 mb-2">Download all tasks of {table.tableName} as CSV or Excel.</p>
           <Button size="sm" variant="secondary" onClick={() => setExportOpen(true)}>
             <Download size={13} /> Export {table.tableName}
           </Button>
@@ -139,7 +159,7 @@ export function SettingsDataIO({ workspaceId }: { workspaceId: string }) {
         <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3">
           <div className="text-sm font-medium text-neutral-800 dark:text-neutral-100 mb-1">Import</div>
           <p className="text-xs text-neutral-400 mb-2">
-            Upload a CSV file. Columns are matched to fields on {table.tableName} by name (case-insensitive); unmatched columns are ignored.
+            Upload a CSV (max 1000 rows). Columns are matched to fields of {table.tableName} by name; people by email or name, options by label. All rows are validated and saved in one transaction - if any row is invalid, nothing is imported.
           </p>
           <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={(e) => e.target.files?.[0] && handleImport(e.target.files[0])} />
           <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()} disabled={importing}>

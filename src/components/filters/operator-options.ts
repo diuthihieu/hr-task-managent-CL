@@ -1,5 +1,6 @@
 import type { FilterOperator } from "@/lib/query-engine";
 import { SELECT_SINGLE_TYPES } from "@/lib/field-types";
+import type { MessageKey } from "@/lib/i18n/core";
 
 const TEXT_OPS: { value: FilterOperator; label: string }[] = [
   { value: "contains", label: "contains" },
@@ -55,7 +56,16 @@ const PERSON_OPS: { value: FilterOperator; label: string }[] = [
   { value: "is_empty", label: "is empty" },
 ];
 
-export function operatorsForType(type: string) {
+type Translate = (key: MessageKey) => string;
+
+/** Operators for a field type; labels are translated when a `t` function is given (symbols like ≥ stay as they are). */
+export function operatorsForType(type: string, t?: Translate) {
+  const ops = rawOperators(type);
+  if (!t) return ops;
+  return ops.map((o) => (/^[a-z]/.test(o.label) ? { ...o, label: t(`op.${o.value}` as MessageKey) } : o));
+}
+
+function rawOperators(type: string) {
   if (["number", "integer", "percent", "currency", "duration", "progress", "rating"].includes(type)) return NUMBER_OPS;
   if (["date", "datetime", "created_time", "modified_time"].includes(type)) return DATE_OPS;
   if (SELECT_SINGLE_TYPES.includes(type)) return SELECT_OPS;

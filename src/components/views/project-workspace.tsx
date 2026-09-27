@@ -2,7 +2,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { ChevronRight } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { nanoid } from "nanoid";
@@ -19,8 +18,12 @@ import { FieldEditorDialog, type FieldDraft } from "@/components/fields/field-ed
 import { ExportDialog } from "./export-dialog";
 import type { LinkTarget, Member } from "@/components/grid/cell";
 import { applyFilters, applySorts, applyGroup, getCellValue, type ViewConfig, type FilterCondition } from "@/lib/query-engine";
-import { parseFieldConfig, getFieldType } from "@/lib/field-types";
+import { parseFieldConfig, getFieldType, CUSTOM_FIELD_TYPE_IDS } from "@/lib/field-types";
 import { EisenhowerView } from "@/components/eisenhower/eisenhower-view";
+import { ReportView } from "@/components/report/report-view";
+import { ProjectHeader } from "@/components/projects/project-tabs";
+import { useT } from "@/components/i18n-provider";
+import type { MessageKey } from "@/lib/i18n/core";
 import type { OkrOptions } from "@/components/grid/cell";
 import type { FieldRow, RecordRow, ViewRow } from "@/types";
 
@@ -38,6 +41,7 @@ const ROLE_RANK: Record<string, number> = { viewer: 0, contributor: 1, editor: 2
 
 export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string; breadcrumb: { workspace: string; project: string } }) {
   const searchParams = useSearchParams();
+  const { t } = useT();
   const { data: session } = useSession();
   const currentUserId = (session?.user as { id?: string } | undefined)?.id;
   const [table, setTable] = useState<ProjectDetail | null>(null);
@@ -65,7 +69,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       const requestedViewValid = requestedViewId && detail.views.some((v) => v.id === requestedViewId);
       setActiveViewId((prev) => (requestedViewValid ? requestedViewId! : prev || detail.views.find((v) => v.isDefault)?.id || detail.views[0]?.id || ""));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to load project");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
       setLoading(false);
     }
@@ -107,7 +111,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
     setTable((t) => (t ? { ...t, views: t.views.map((v) => (v.id === activeView.id ? { ...v, config: JSON.stringify(next) } : v)) } : t));
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      api.patch(`/api/views/${activeView.id}`, { config: next }).catch(() => toast.error("Failed to save view"));
+      api.patch(`/api/views/${activeView.id}`, { config: next }).catch(() => toast.error(t("common.failed")));
     }, 400);
   }
 
@@ -120,11 +124,11 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
 
   // "Depends On" / "Parent Task" pick from this project's own tasks.
   const linkTargets = useMemo(() => {
-    const target: LinkTarget = { records: records.map((r) => ({ id: r.id, label: String(r.data.sys_title ?? "") || "Untitled task" })) };
+    const target: LinkTarget = { records: records.map((r) => ({ id: r.id, label: String(r.data.sys_title ?? "") || t("task.untitled") })) };
     const out: Record<string, LinkTarget> = {};
     for (const f of fields) if (f.type === "link") out[f.id] = target;
     return out;
-  }, [records, fields]);
+  }, [records, fields, t]);
   const members = useMemo(() => table?.members ?? [], [table]);
 
   const searched = useMemo(() => {
@@ -157,7 +161,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       const saved = await api.patch<RecordRow>(`/api/tasks/${recordId}`, { data: patch });
       setRecords((prev) => prev.map((r) => (r.id === recordId ? saved : r)));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save change");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
       load();
     }
   }
@@ -167,7 +171,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       const record = await api.post<RecordRow>(`/api/projects/${projectId}/tasks`, { data: initialData ?? {} });
       setRecords((prev) => [...prev, record]);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to add task");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
@@ -177,7 +181,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
     try {
       await api.delete(`/api/tasks/${id}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to delete task");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
       load();
     }
   }
@@ -189,7 +193,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
     try {
       await api.post(`/api/projects/${projectId}/tasks/bulk-delete`, { ids });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to delete tasks");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
       load();
     }
   }
@@ -208,14 +212,14 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
 
   async function handleAddField(_afterFieldId: string | undefined, type: string) {
     const typeDef = getFieldType(type);
-    const defaultConfig = ["single_select", "multi_select"].includes(type) ? { options: [{ id: crypto.randomUUID(), label: "Option 1", color: "#3b82f6" }] } : {};
+    const defaultConfig = ["single_select", "multi_select"].includes(type) ? { options: [{ id: crypto.randomUUID(), label: `${t("fe.newOption")} 1`, color: "#3b82f6" }] } : {};
     try {
-      const created = await api.post<{ id: string }>(`/api/projects/${projectId}/custom-fields`, { name: typeDef.label, type, config: defaultConfig });
+      const created = await api.post<{ id: string }>(`/api/projects/${projectId}/custom-fields`, { name: CUSTOM_FIELD_TYPE_IDS.includes(type) ? t(`ft.${type}` as MessageKey) : typeDef.label, type, config: defaultConfig });
       const detail = await api.get<ProjectDetail>(`/api/projects/${projectId}`);
       setTable(detail);
       setFieldDialog({ open: true, field: detail.fields.find((f) => f.id === created.id) ?? null });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to add field");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
@@ -224,7 +228,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       await api.post(`/api/projects/${projectId}/custom-fields`, body);
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to create field");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
@@ -234,7 +238,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
     const idx = fields.findIndex((f) => f.id === fieldId);
 
     if (action.startsWith("type:")) {
-      toast.info("A field's type can't be changed once created - add a new field instead");
+      toast.info(t("pw2.typeLocked"))
       return;
     }
 
@@ -242,7 +246,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       case "edit":
       case "description":
         if (field.system) {
-          toast.info(field.id === "sys_status" || field.id === "sys_category" ? "Manage statuses and categories in Settings → Task Configuration" : "Built-in task fields can't be edited");
+          toast.info(field.id === "sys_status" ? t("pw2.statusHint") : field.id === "sys_category" ? t("pw2.categoryHint") : t("pw2.builtinEdit"));
           return;
         }
         setFieldDialog({ open: true, field });
@@ -255,12 +259,12 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
             { id: nanoid(8), fieldId, operator: ops === "checkbox" ? "equals" : "equals", target: "cell", color: "#f97316" },
           ],
         });
-        toast.info("Rule added — refine it from the Colors menu");
+        toast.info(t("pw2.ruleAdded"));
         return;
       }
       case "duplicate":
         if (field.system) {
-          toast.info("Built-in task fields can't be duplicated");
+          toast.info(t("pw2.builtinDup"));
           return;
         }
         await createCustomField({ name: `${field.name} copy`, type: field.type, config: { ...parseFieldConfig(field.config), options: parseFieldConfig(field.config).options?.map((o) => ({ label: o.label, color: o.color })) } });
@@ -270,7 +274,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         return;
       case "insert_left":
       case "insert_right":
-        await createCustomField({ name: "New Field", type: "text" });
+        await createCustomField({ name: t("fe.new"), type: "text" });
         return;
       case "freeze":
         updateConfig({ frozenCount: idx + 1 });
@@ -291,15 +295,15 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       }
       case "delete":
         if (field.system) {
-          toast.info("Built-in task fields can't be deleted - hide the column instead");
+          toast.info(t("pw2.builtinDel"));
           return;
         }
-        if (!confirm(`Delete field "${field.name}"? It disappears from every view (values are kept in the database).`)) return;
+        if (!confirm(t("pw2.deleteField", { name: field.name }))) return;
         try {
           await api.delete(`/api/custom-fields/${fieldId}`);
           load();
         } catch (e) {
-          toast.error(e instanceof Error ? e.message : "Failed to delete field");
+          toast.error(e instanceof Error ? e.message : t("common.failed"));
         }
         return;
     }
@@ -314,7 +318,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       setFieldDialog({ open: false, field: null });
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save field");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
@@ -332,7 +336,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
     try {
       await Promise.all(orderedIds.map((id, i) => api.patch(`/api/tasks/${id}`, { order: i })));
     } catch {
-      toast.error("Failed to reorder");
+      toast.error(t("common.failed"));
     }
   }
 
@@ -342,7 +346,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       setTable((t) => (t ? { ...t, views: [...t.views, view] } : t));
       setActiveViewId(view.id);
     } catch {
-      toast.error("Failed to create view");
+      toast.error(t("common.failed"));
     }
   }
   async function handleRenameView(id: string, name: string) {
@@ -355,12 +359,12 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       setTable((t) => (t ? { ...t, views: t.views.filter((v) => v.id !== id) } : t));
       setActiveViewId((prev) => (prev === id ? table?.views.find((v) => v.id !== id)?.id ?? "" : prev));
     } catch {
-      toast.error("Failed to delete view");
+      toast.error(t("common.failed"));
     }
   }
   async function handleSaveAsView() {
     if (!activeView) return;
-    const name = prompt("Name for this saved view", `${activeView.name} (filtered)`);
+    const name = prompt(t("view.namePrompt"), `${activeView.name} (2)`);
     if (!name) return;
     try {
       const view = await api.post<ViewRow>(`/api/projects/${projectId}/views`, {
@@ -372,7 +376,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       setActiveViewId(view.id);
       toast.success(`Saved as "${name}"`);
     } catch {
-      toast.error("Failed to save view");
+      toast.error(t("common.failed"));
     }
   }
 
@@ -388,7 +392,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       setTable((t) => (t ? { ...t, views: [...t.views, view] } : t));
       setActiveViewId(view.id);
     } catch {
-      toast.error("Failed to duplicate view");
+      toast.error(t("common.failed"));
     }
   }
   async function handleReorderViews(orderedIds: string[]) {
@@ -397,7 +401,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
     try {
       await Promise.all(orderedIds.map((id, i) => api.patch(`/api/views/${id}`, { order: i })));
     } catch {
-      toast.error("Failed to reorder views");
+      toast.error(t("common.failed"));
     }
   }
   async function handleTogglePublic(isPublic: boolean) {
@@ -406,7 +410,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
     try {
       await api.patch(`/api/views/${activeView.id}`, { isPublic });
     } catch {
-      toast.error("Failed to update public link");
+      toast.error(t("common.failed"));
     }
   }
 
@@ -414,19 +418,24 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
 
   if (loading && !table) {
     return (
-      <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm">Loading project…</div>
+      <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm">{t("common.loading")}</div>
     );
   }
   if (!table) return null;
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
-      <div className="flex items-center gap-1.5 h-12 px-4 border-b border-neutral-200 dark:border-neutral-800 shrink-0 text-sm">
-        <span className="text-neutral-400">{breadcrumb.workspace}</span>
-        <ChevronRight size={13} className="text-neutral-300" />
-        <span className="font-medium text-neutral-800 dark:text-neutral-100">{breadcrumb.project}</span>
-        <span className="ml-auto text-xs text-neutral-400">{records.length} task{records.length === 1 ? "" : "s"} · {table.myRole}</span>
-      </div>
+      <ProjectHeader
+        workspaceSlug={table.workspace.slug}
+        workspaceName={breadcrumb.workspace}
+        projectId={projectId}
+        projectName={breadcrumb.project}
+        right={
+          <>
+            {t("project.tasksCount", { count: records.length })} · {t(`role.${table.myRole}` as MessageKey)}
+          </>
+        }
+      />
 
       <ViewTabs
         views={table.views}
@@ -510,6 +519,8 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onCellChange={handleCellChange}
           onOpenRecord={setOpenRecordId}
         />
+      ) : activeView?.type === "report" ? (
+        <ReportView fields={fields} records={sorted} members={members} config={config.report ?? {}} canEdit={canEdit} onConfigChange={(next) => updateConfig({ report: next })} />
       ) : activeView?.type === "eisenhower" ? (
         <EisenhowerView
           fields={fields}
@@ -542,7 +553,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onCellChange={handleCellChange}
           onAddRecord={handleAddRecord}
           onOpenRecord={setOpenRecordId}
-          onAddField={canEdit ? handleAddField : () => toast.info("Only editors can add fields")}
+          onAddField={canEdit ? handleAddField : () => toast.info(t("pw2.editorsOnly"))}
           onFieldAction={handleFieldAction}
           onReorderFields={handleReorderFields}
           onResizeColumn={handleResizeColumn}
@@ -559,10 +570,11 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           members={members}
           linkTargets={linkTargets}
           okrOptions={okrOptions}
+          pageHref={`/w/${table.workspace.slug}/p/${projectId}/t/${openRecord.id}`}
           onClose={() => setOpenRecordId(null)}
           onChange={(fieldId, value) => handleCellChange(openRecord.id, fieldId, value)}
           onDelete={() => {
-            if (confirm("Delete this record?")) handleDeleteRecord(openRecord.id);
+            if (confirm(t("record.deleteConfirm"))) handleDeleteRecord(openRecord.id);
           }}
         />
       )}

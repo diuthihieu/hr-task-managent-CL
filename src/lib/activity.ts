@@ -21,7 +21,8 @@ export type EntityType =
   | "objective"
   | "key_result"
   | "dashboard"
-  | "desktop_release";
+  | "desktop_release"
+  | "wiki_page";
 
 export type ActivityAction =
   | "created"

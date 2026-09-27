@@ -10,9 +10,10 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, horizontalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Plus, Sheet, Kanban, Calendar, GanttChartSquare, GalleryHorizontal, FileInput, Grid2x2, Trash2, MoreHorizontal, Pencil, Copy } from "lucide-react";
+import { Plus, Sheet, Kanban, Calendar, GanttChartSquare, GalleryHorizontal, FileInput, Grid2x2, Trash2, MoreHorizontal, Pencil, Copy, BarChart3 } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
-import { toast } from "@/components/ui/toast";
+import { useT } from "@/components/i18n-provider";
+import type { MessageKey } from "@/lib/i18n/core";
 import type { ViewRow } from "@/types";
 import { cn } from "@/lib/utils";
 
@@ -24,16 +25,18 @@ const VIEW_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   gallery: GalleryHorizontal,
   form: FileInput,
   eisenhower: Grid2x2,
+  report: BarChart3,
 };
 
-const VIEW_TYPES = [
-  { type: "grid", label: "Grid", available: true },
-  { type: "kanban", label: "Kanban", available: true },
-  { type: "calendar", label: "Calendar", available: true },
-  { type: "gantt", label: "Gantt", available: true },
-  { type: "gallery", label: "Gallery", available: true },
-  { type: "form", label: "Form", available: true },
-  { type: "eisenhower", label: "Eisenhower", available: true },
+const VIEW_TYPES: { type: string; label: MessageKey }[] = [
+  { type: "grid", label: "view.type.grid" },
+  { type: "kanban", label: "view.type.kanban" },
+  { type: "calendar", label: "view.type.calendar" },
+  { type: "gantt", label: "view.type.gantt" },
+  { type: "gallery", label: "view.type.gallery" },
+  { type: "form", label: "view.type.form" },
+  { type: "eisenhower", label: "view.type.eisenhower" },
+  { type: "report", label: "view.type.report" },
 ];
 
 export function ViewTabs({
@@ -55,6 +58,7 @@ export function ViewTabs({
   onDuplicate: (id: string) => void;
   onReorder: (orderedIds: string[]) => void;
 }) {
+  const { t } = useT();
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
@@ -92,7 +96,7 @@ export function ViewTabs({
               }}
               onDuplicate={() => onDuplicate(view.id)}
               onDelete={() => {
-                if (confirm(`Delete view "${view.name}"?`)) onDelete(view.id);
+                if (confirm(t("common.confirmDelete", { name: view.name }))) onDelete(view.id);
               }}
             />
           ))}
@@ -102,26 +106,18 @@ export function ViewTabs({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button className="flex items-center gap-1 h-7 px-2 rounded-md text-sm text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-900 ml-1">
-            <Plus size={14} /> Add view
+            <Plus size={14} /> {t("nav.addView")}
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
-          {VIEW_TYPES.map((vt) => (
-            <DropdownMenuItem
-              key={vt.type}
-              disabled={!vt.available}
-              onSelect={() => {
-                if (!vt.available) {
-                  toast.info(`${vt.label} view is planned for a later phase`);
-                  return;
-                }
-                onCreate(vt.label, vt.type);
-              }}
-            >
-              {vt.label}
-              {!vt.available && <span className="text-[10px] text-neutral-400 ml-auto">soon</span>}
-            </DropdownMenuItem>
-          ))}
+          {VIEW_TYPES.map((vt) => {
+            const Icon = VIEW_ICONS[vt.type] ?? Sheet;
+            return (
+              <DropdownMenuItem key={vt.type} onSelect={() => onCreate(t(vt.label), vt.type)} data-testid={`add-view-${vt.type}`}>
+                <Icon size={13} /> {t(vt.label)}
+              </DropdownMenuItem>
+            );
+          })}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>
@@ -153,6 +149,7 @@ function ViewTab({
   onDuplicate: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useT();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: view.id });
   const Icon = VIEW_ICONS[view.type] ?? Sheet;
 
@@ -199,16 +196,16 @@ function ViewTab({
         </DropdownMenuTrigger>
         <DropdownMenuContent>
           <DropdownMenuItem onSelect={onStartRename}>
-            <Pencil size={13} /> Rename
+            <Pencil size={13} /> {t("common.rename")}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={onDuplicate}>
-            <Copy size={13} /> Duplicate view
+            <Copy size={13} /> {t("common.duplicate")}
           </DropdownMenuItem>
           {canDelete && (
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={onDelete} className="text-red-600 dark:text-red-400">
-                <Trash2 size={13} /> Delete view
+                <Trash2 size={13} /> {t("common.delete")}
               </DropdownMenuItem>
             </>
           )}

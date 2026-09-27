@@ -92,11 +92,14 @@ export function Select({
   placeholder?: string;
   className?: string;
 }) {
+  // Radix treats "" as "no value" (shows the placeholder), but our option
+  // lists use "" for "All ..." / "None" - map it to a sentinel internally.
+  const EMPTY = "__empty__";
   return (
-    <RSelect.Root value={value} onValueChange={onValueChange}>
+    <RSelect.Root value={value === "" ? EMPTY : value} onValueChange={(v) => onValueChange(v === EMPTY ? "" : v)}>
       <RSelect.Trigger
         className={cn(
-          "flex h-8 items-center justify-between gap-1 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 text-sm",
+          "flex h-8 items-center justify-between gap-1 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 text-sm whitespace-nowrap overflow-hidden [&>span]:truncate",
           className
         )}
       >
@@ -110,8 +113,8 @@ export function Select({
           <RSelect.Viewport className="p-1">
             {options.map((o) => (
               <RSelect.Item
-                key={o.value}
-                value={o.value}
+                key={o.value || EMPTY}
+                value={o.value || EMPTY}
                 className="flex items-center rounded-sm px-2 py-1.5 text-sm text-neutral-700 dark:text-neutral-200 outline-none cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 data-[state=checked]:font-medium"
               >
                 <RSelect.ItemText>{o.label}</RSelect.ItemText>

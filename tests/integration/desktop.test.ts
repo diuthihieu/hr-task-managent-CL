@@ -77,7 +77,7 @@ test("Download page shows version, supported OS and release date", async () => {
   assert.match(html, /data-testid="desktop-os">Windows 10/);
   assert.match(html, /data-testid="desktop-release-date">/);
   assert.match(html, /href="\/api\/desktop\/download\/latest"/);
-  const inApp = await (await fetch(`${BASE}/download`, { headers: { "user-agent": "Mozilla/5.0 Edg/131 BaseworkDesktop/1.9.0" } })).text();
+  const inApp = await (await fetch(`${BASE}/download`, { headers: { "user-agent": "Mozilla/5.0 Edg/131 BaseworkDesktop/1.9.0", cookie: "bw_locale=en" } })).text();
   assert.match(inApp, /You are using the desktop app/);
   assert.match(inApp, /Version 1\.10\.0 is available/);
 });

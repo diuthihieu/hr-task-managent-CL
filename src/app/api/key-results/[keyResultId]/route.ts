@@ -31,7 +31,9 @@ export const DELETE = route<P>(async (_req, { params }) => {
   const ctx = await requireWorkspaceRole(user, await workspaceOfKeyResult(keyResultId), "editor");
   const objective = await prisma.$transaction(async (tx) => {
     const kr = await tx.keyResult.update({ where: { id: keyResultId }, data: { deletedAt: new Date(), updatedById: user.id } });
+    // Linked tasks move up to the objective itself; cascaded objectives lose the alignment.
     await tx.task.updateMany({ where: { keyResultId }, data: { keyResultId: null } });
+    await tx.objective.updateMany({ where: { parentKeyResultId: keyResultId }, data: { parentKeyResultId: null, parentObjectiveId: null } });
     await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "key_result", entityId: keyResultId, action: "deleted", summary: `Deleted key result "${kr.title}"` });
     return tx.objective.findUniqueOrThrow({ where: { id: kr.objectiveId }, include: OBJECTIVE_INCLUDE });
   });

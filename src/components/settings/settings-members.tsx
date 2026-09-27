@@ -9,6 +9,8 @@ import { Select } from "@/components/ui/misc";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { initials } from "@/lib/utils";
 import { SettingsSection } from "./settings-shell";
+import { useT } from "@/components/i18n-provider";
+import type { MessageKey } from "@/lib/i18n/core";
 
 interface MemberRow {
   id: string;
@@ -19,15 +21,11 @@ interface MemberRow {
   isActive?: boolean;
 }
 
-const ROLES = [
-  { value: "owner", label: "Owner" },
-  { value: "admin", label: "Admin" },
-  { value: "editor", label: "Editor" },
-  { value: "contributor", label: "Contributor" },
-  { value: "viewer", label: "Viewer" },
-];
+const ROLE_KEYS = ["owner", "admin", "editor", "contributor", "viewer"] as const;
 
-export function SettingsMembers({ workspaceId, currentUserId, currentUserRole, isSystemAdmin }: { workspaceId: string; currentUserId: string; currentUserRole: string; isSystemAdmin: boolean }) {
+export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }: { workspaceId: string; currentUserId: string; currentUserRole: string; isSystemAdmin?: boolean }) {
+  const { t } = useT();
+  const ROLES = ROLE_KEYS.map((r) => ({ value: r, label: t(`role.${r}`) }));
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -49,18 +47,18 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole, i
     try {
       await api.patch(`/api/workspaces/${workspaceId}/members/${userId}`, { role });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to update role");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
       load();
     }
   }
 
   async function removeMember(userId: string, name: string) {
-    if (!confirm(`Remove ${name} from this workspace?`)) return;
+    if (!confirm(t("set.removeMember", { name }))) return;
     try {
       await api.delete(`/api/workspaces/${workspaceId}/members/${userId}`);
       setMembers((prev) => prev.filter((m) => m.id !== userId));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to remove member");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
@@ -70,26 +68,26 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole, i
       setMembers((prev) => [...prev, member]);
       setInviteOpen(false);
       setEmail("");
-      toast.success(`${member.name} added to the workspace`);
+      toast.success(t("set.memberAdded", { name: member.name }));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to add member");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
   return (
     <SettingsSection
-      title="Members & Roles"
-      description="Manage who has access to this workspace and what they can do."
+      title={t("set.members")}
+      description={t("set.membersDesc")}
       action={
         canManage && (
           <Button size="sm" onClick={() => setInviteOpen(true)}>
-            <UserPlus size={13} /> Add member
+            <UserPlus size={13} /> {t("set.addMember")}
           </Button>
         )
       }
     >
       {loading ? (
-        <p className="text-sm text-neutral-400">Loading…</p>
+        <p className="text-sm text-neutral-400">{t("common.loading")}</p>
       ) : (
         <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg divide-y divide-neutral-100 dark:divide-neutral-900 max-w-2xl">
           {members.map((m) => (
@@ -99,15 +97,15 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole, i
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate">
-                  {m.name} {m.id === currentUserId && <span className="text-neutral-400 font-normal">(you)</span>}
-                  {m.isActive === false && <span className="ml-1 text-[10px] uppercase text-neutral-400">deactivated</span>}
+                  {m.name} {m.id === currentUserId && <span className="text-neutral-400 font-normal">{t("set.you")}</span>}
+                  {m.isActive === false && <span className="ml-1 text-[10px] uppercase text-neutral-400">{t("set.deactivated")}</span>}
                 </div>
                 <div className="text-xs text-neutral-400 truncate">{m.email}</div>
               </div>
               {canManage ? (
                 <Select className="w-32" value={m.role} onValueChange={(v) => changeRole(m.id, v)} options={currentUserRole === "owner" ? ROLES : ROLES.filter((r) => r.value !== "owner" || m.role === "owner")} />
               ) : (
-                <span className="text-xs text-neutral-500 capitalize w-32 text-right">{m.role}</span>
+                <span className="text-xs text-neutral-500 w-32 text-right">{t(`role.${m.role}` as MessageKey)}</span>
               )}
               {canManage && m.id !== currentUserId && (
                 <button onClick={() => removeMember(m.id, m.name)} className="text-neutral-400 hover:text-red-600 shrink-0">
@@ -121,24 +119,21 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole, i
 
       <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
         <DialogContent>
-          <DialogTitle>Add member</DialogTitle>
+          <DialogTitle>{t("set.addMember")}</DialogTitle>
           <div className="space-y-3">
             <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">Email</label>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("common.email")}</label>
               <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" autoFocus />
-              <p className="text-[11px] text-neutral-400 mt-1">
-                The person must already have an account. New accounts are created by a system administrator
-                {isSystemAdmin ? <> in the <a href="/admin" className="text-indigo-600 hover:underline">Admin console</a></> : ""}.
-              </p>
+              <p className="text-[11px] text-neutral-400 mt-1">{t("set.addMemberHint")}</p>
             </div>
             <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">Role</label>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("common.role")}</label>
               <Select className="w-full" value={inviteRole} onValueChange={setInviteRole} options={currentUserRole === "owner" ? ROLES : ROLES.filter((r) => r.value !== "owner")} />
             </div>
           </div>
           <div className="flex justify-end gap-2 mt-4">
-            <Button variant="secondary" onClick={() => setInviteOpen(false)}>Cancel</Button>
-            <Button onClick={invite} disabled={!email.trim()}>Add member</Button>
+            <Button variant="secondary" onClick={() => setInviteOpen(false)}>{t("common.cancel")}</Button>
+            <Button onClick={invite} disabled={!email.trim()} data-testid="add-member-submit">{t("set.addMember")}</Button>
           </div>
         </DialogContent>
       </Dialog>

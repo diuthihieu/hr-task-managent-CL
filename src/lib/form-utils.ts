@@ -28,6 +28,8 @@ const NOT_FORMABLE_TYPES = [
   "api_result",
   "okr_objective",
   "okr_key_result",
+  "okr_target",
+  "task_attachments",
 ];
 
 export function isFieldFormable(field: FieldRow): boolean {

@@ -7,6 +7,7 @@ import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useT } from "@/components/i18n-provider";
 
 interface DashboardLite {
   id: string;
@@ -15,6 +16,7 @@ interface DashboardLite {
 }
 
 export function DashboardsIndex({ workspaceId, workspaceSlug, canEdit }: { workspaceId: string; workspaceSlug: string; canEdit: boolean }) {
+  const { t } = useT();
   const router = useRouter();
   const [dashboards, setDashboards] = useState<DashboardLite[]>([]);
   const [loading, setLoading] = useState(true);
@@ -26,11 +28,11 @@ export function DashboardsIndex({ workspaceId, workspaceSlug, canEdit }: { works
     try {
       setDashboards(await api.get<DashboardLite[]>(`/api/workspaces/${workspaceId}/dashboards`));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to load dashboards");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
       setLoading(false);
     }
-  }, [workspaceId]);
+  }, [workspaceId, t]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch
@@ -46,7 +48,7 @@ export function DashboardsIndex({ workspaceId, workspaceSlug, canEdit }: { works
       router.push(`/w/${workspaceSlug}/dash/${dashboard.id}`);
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to create dashboard");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
       setCreating(false);
     }
@@ -56,20 +58,20 @@ export function DashboardsIndex({ workspaceId, workspaceSlug, canEdit }: { works
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex items-center gap-2 h-12 px-4 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
         <LayoutDashboard size={15} className="text-indigo-500" />
-        <h1 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">Dashboards</h1>
+        <h1 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">{t("db.title")}</h1>
         <span className="text-xs text-neutral-400">{dashboards.length}</span>
         {canEdit && (
           <Button size="sm" className="ml-auto" onClick={() => setOpen(true)}>
-            <Plus size={13} /> New dashboard
+            <Plus size={13} /> {t("db.new")}
           </Button>
         )}
       </div>
 
       <div className="flex-1 overflow-y-auto thin-scroll p-4">
         {loading ? (
-          <div className="text-sm text-neutral-400">Loading…</div>
+          <div className="text-sm text-neutral-400">{t("common.loading")}</div>
         ) : dashboards.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-sm text-neutral-400">No dashboards yet. Widgets read live task data from any project in this workspace.</div>
+          <div className="h-full flex items-center justify-center text-sm text-neutral-400">{t("db.empty")}</div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-4xl">
             {dashboards.map((d) => (
@@ -91,12 +93,12 @@ export function DashboardsIndex({ workspaceId, workspaceSlug, canEdit }: { works
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
-          <DialogTitle>New dashboard</DialogTitle>
-          <label className="text-xs font-medium text-neutral-500 mb-1 block">Name</label>
+          <DialogTitle>{t("db.new")}</DialogTitle>
+          <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("common.name")}</label>
           <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. HR Overview" onKeyDown={(e) => e.key === "Enter" && createDashboard()} />
           <div className="flex justify-end gap-2 mt-4">
-            <Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={createDashboard} disabled={creating}>Create dashboard</Button>
+            <Button variant="secondary" onClick={() => setOpen(false)}>{t("common.cancel")}</Button>
+            <Button onClick={createDashboard} disabled={creating}>{t("db.create")}</Button>
           </div>
         </DialogContent>
       </Dialog>

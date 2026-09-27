@@ -1,6 +1,8 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { X, Trash2, Send, Paperclip, Download, History, MessageSquare, ListChecks } from "lucide-react";
+import Link from "next/link";
+import { X, Trash2, Send, Paperclip, Download, History, MessageSquare, ListChecks, Maximize2 } from "lucide-react";
+import { useT } from "@/components/i18n-provider";
 import { Cell } from "./cell";
 import type { Member, LinkTarget, OkrOptions } from "./cell";
 import { getCellValue } from "@/lib/query-engine";
@@ -36,7 +38,9 @@ export function RecordDrawer({
   onClose,
   onChange,
   onDelete,
+  pageHref,
 }: {
+  pageHref?: string;
   record: RecordRow;
   fields: FieldRow[];
   members: Member[];
@@ -47,6 +51,7 @@ export function RecordDrawer({
   onChange: (fieldId: string, value: unknown) => void;
   onDelete: () => void;
 }) {
+  const { t } = useT();
   const [tab, setTab] = useState<Tab>("details");
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [attachments, setAttachments] = useState<AttachmentRow[]>([]);
@@ -73,7 +78,7 @@ export function RecordDrawer({
       setComments((prev) => [...prev, c]);
       setDraft("");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to post comment");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
@@ -86,7 +91,7 @@ export function RecordDrawer({
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || `Upload failed (${res.status})`);
       setAttachments((prev) => [body as AttachmentRow, ...prev]);
-      toast.success("File attached");
+      toast.success(t("common.saved"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Upload failed");
     } finally {
@@ -101,7 +106,7 @@ export function RecordDrawer({
       await api.delete(`/api/attachments/${a.id}`);
       setAttachments((prev) => prev.filter((x) => x.id !== a.id));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to remove file");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
@@ -116,6 +121,11 @@ export function RecordDrawer({
             {primary ? (getCellValue(record, primary, fields) as string) || "Untitled task" : "Task"}
           </span>
           <div className="flex items-center gap-1">
+            {pageHref && (
+              <Link href={pageHref} className="p-1.5 rounded-md text-neutral-400 hover:text-indigo-600 hover:bg-neutral-100 dark:hover:bg-neutral-800" title={t("record.openAsPage")} aria-label={t("record.openAsPage")} data-testid="drawer-open-page">
+                <Maximize2 size={15} />
+              </Link>
+            )}
             {canEdit && (
               <button onClick={onDelete} className="p-1.5 rounded-md text-neutral-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950" aria-label="Delete task">
                 <Trash2 size={15} />
@@ -130,10 +140,10 @@ export function RecordDrawer({
         <div className="flex items-center gap-1 px-3 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
           {(
             [
-              ["details", "Details", ListChecks],
-              ["comments", `Comments (${comments.length})`, MessageSquare],
-              ["files", `Files (${attachments.length})`, Paperclip],
-              ["activity", "Activity", History],
+              ["details", t("record.properties"), ListChecks],
+              ["comments", `${t("record.comments")} (${comments.length})`, MessageSquare],
+              ["files", `${t("record.attachments")} (${attachments.length})`, Paperclip],
+              ["activity", t("record.activity"), History],
             ] as const
           ).map(([key, label, Icon]) => (
             <button
@@ -188,7 +198,7 @@ export function RecordDrawer({
                   </div>
                 </div>
               ))}
-              {comments.length === 0 && <p className="text-xs text-neutral-400">No comments yet</p>}
+              {comments.length === 0 && <p className="text-xs text-neutral-400">{t("record.noComments")}</p>}
             </div>
           )}
 
@@ -198,7 +208,7 @@ export function RecordDrawer({
                 <div>
                   <input ref={fileRef} type="file" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
                   <Button variant="secondary" onClick={() => fileRef.current?.click()} disabled={uploading}>
-                    <Paperclip size={13} /> {uploading ? "Uploading…" : "Attach file (max 4 MB)"}
+                    <Paperclip size={13} /> {uploading ? t("common.loading") : t("record.attach")}
                   </Button>
                 </div>
               )}
@@ -221,7 +231,7 @@ export function RecordDrawer({
                   )}
                 </div>
               ))}
-              {attachments.length === 0 && <p className="text-xs text-neutral-400">No files attached</p>}
+              {attachments.length === 0 && <p className="text-xs text-neutral-400">{t("record.noAttachments")}</p>}
             </div>
           )}
 
@@ -230,7 +240,7 @@ export function RecordDrawer({
               {activity.map((a) => (
                 <div key={a.id} className="text-xs border-l-2 border-neutral-200 dark:border-neutral-800 pl-2">
                   <div className="text-neutral-700 dark:text-neutral-300">
-                    <span className="font-medium">{a.actor?.name ?? "System / public form"}</span> · {a.action.replace("_", " ")}{" "}
+                    <span className="font-medium">{a.actor?.name ?? t("record.system")}</span> · {a.action.replace("_", " ")}{" "}
                     <span className="text-neutral-400">{formatDate(a.createdAt, true)}</span>
                   </div>
                   {a.summary && <div className="text-neutral-500">{a.summary}</div>}
@@ -245,14 +255,14 @@ export function RecordDrawer({
                   )}
                 </div>
               ))}
-              {activity.length === 0 && <p className="text-xs text-neutral-400">No activity recorded</p>}
+              {activity.length === 0 && <p className="text-xs text-neutral-400">{t("record.noActivity")}</p>}
             </div>
           )}
         </div>
 
         {tab === "comments" && (
           <div className="border-t border-neutral-200 dark:border-neutral-800 p-3 shrink-0 flex gap-2">
-            <Textarea rows={1} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="Add a comment…" className="flex-1" aria-label="New comment" />
+            <Textarea rows={1} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={t("record.commentPlaceholder")} className="flex-1" aria-label="New comment" />
             <Button size="icon" onClick={postComment} aria-label="Post comment">
               <Send size={13} />
             </Button>

@@ -42,13 +42,20 @@ import {
   Copy,
   Trash2,
   GripVertical,
+  BarChart3,
+  Target as TargetIcon,
+  BookOpen,
+  SlidersHorizontal,
+  Palette,
+  Building2,
 } from "lucide-react";
+import { useT } from "@/components/i18n-provider";
+import { PreferencesDialog } from "@/components/preferences/preferences-dialog";
+import { NewProjectDialog } from "@/components/projects/new-project-dialog";
+import type { MessageKey } from "@/lib/i18n/core";
 import { useTheme } from "@/components/theme-provider";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { initials, cn } from "@/lib/utils";
 import { CommandPalette } from "./command-palette";
@@ -62,15 +69,17 @@ const VIEW_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   gallery: GalleryHorizontal,
   form: FileInput,
   eisenhower: Grid2x2,
+  report: BarChart3,
 };
-const NEW_VIEW_TYPES = [
-  { type: "grid", label: "Table" },
-  { type: "kanban", label: "Kanban" },
-  { type: "calendar", label: "Calendar" },
-  { type: "gantt", label: "Gantt" },
-  { type: "eisenhower", label: "Eisenhower" },
-  { type: "gallery", label: "Gallery" },
-  { type: "form", label: "Form" },
+export const NEW_VIEW_TYPES: { type: string; label: MessageKey }[] = [
+  { type: "grid", label: "view.type.grid" },
+  { type: "kanban", label: "view.type.kanban" },
+  { type: "calendar", label: "view.type.calendar" },
+  { type: "gantt", label: "view.type.gantt" },
+  { type: "eisenhower", label: "view.type.eisenhower" },
+  { type: "gallery", label: "view.type.gallery" },
+  { type: "form", label: "view.type.form" },
+  { type: "report", label: "view.type.report" },
 ];
 
 interface ViewLite { id: string; name: string; type: string }
@@ -98,17 +107,20 @@ export function WorkspaceShell({
   const searchParams = useSearchParams();
   const router = useRouter();
   const { theme, toggle } = useTheme();
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(projects.map((p) => p.id)));
+  const { t } = useT();
+  // Projects are expanded unless the user collapsed them (new projects show their sections right away).
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [newProjectOpen, setNewProjectOpen] = useState(false);
-  const [newProjectName, setNewProjectName] = useState("");
+  const [prefsOpen, setPrefsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const isAdmin = user.systemRole === "ADMIN";
   const desktopVersion = useDesktopVersion();
-  const canManage = (ROLE_RANK[role] ?? -1) >= ROLE_RANK.admin;
   const canEditViews = (ROLE_RANK[role] ?? -1) >= ROLE_RANK.editor;
+  const canCreateProject = canEditViews;
 
   const activeProjectId = pathname.match(/\/p\/([^/]+)/)?.[1];
   const activeViewId = searchParams.get("view");
+  const projectSection = pathname.match(/\/p\/[^/]+\/(objectives|wiki|settings|t)(?:\/|$)/)?.[1] ?? null;
   const isMyWork = pathname.includes("/my-work");
   const isDashboards = pathname.endsWith("/dashboards") || pathname.includes("/dash/");
   const isSettings = pathname.includes("/settings");
@@ -118,7 +130,7 @@ export function WorkspaceShell({
   const isOkrDetail = /\/okrs\/[^/]+$/.test(pathname) && !isMyOkrs && !isOkrDashboard && !isTeamOkrs;
 
   function toggleExpand(id: string) {
-    setExpanded((prev) => {
+    setCollapsed((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -126,62 +138,49 @@ export function WorkspaceShell({
     });
   }
 
-  async function createProject() {
-    const name = newProjectName.trim();
-    if (!name) return;
-    try {
-      const project = await api.post<{ id: string }>(`/api/workspaces/${workspace.id}/projects`, { name });
-      setNewProjectOpen(false);
-      setNewProjectName("");
-      router.push(`/w/${workspace.slug}/p/${project.id}`);
-      router.refresh();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to create project");
-    }
-  }
-
   async function renameProject(project: ProjectLite) {
-    const name = prompt("Rename project", project.name);
+    const name = prompt(t("common.rename"), project.name);
     if (!name || name === project.name) return;
     try {
       await api.patch(`/api/projects/${project.id}`, { name });
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to rename project");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
   async function deleteProject(project: ProjectLite) {
-    if (!confirm(`Delete project "${project.name}" and hide all its tasks? The data stays in the database (soft delete).`)) return;
+    if (!confirm(t("project.deleteConfirm", { name: project.name }))) return;
     try {
       await api.delete(`/api/projects/${project.id}`);
       if (activeProjectId === project.id) router.push(`/w/${workspace.slug}`);
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to delete project");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
   async function createView(projectId: string, type: string) {
-    const label = NEW_VIEW_TYPES.find((v) => v.type === type)?.label ?? "View";
-    const name = prompt(`Name for this ${label} view`, label) || label;
+    const labelKey = NEW_VIEW_TYPES.find((v) => v.type === type)?.label;
+    const label = labelKey ? t(labelKey) : "View";
+    const name = prompt(t("view.namePrompt"), label) || label;
     try {
       const view = await api.post<{ id: string }>(`/api/projects/${projectId}/views`, { name, type });
       router.push(`/w/${workspace.slug}/p/${projectId}?view=${view.id}`);
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to create view");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
   async function renameView(view: ViewLite) {
-    const name = prompt("Rename view", view.name);
+    const name = prompt(t("common.rename"), view.name);
     if (!name || name === view.name) return;
     try {
       await api.patch(`/api/views/${view.id}`, { name });
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to rename view");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
@@ -192,17 +191,17 @@ export function WorkspaceShell({
       router.push(`/w/${workspace.slug}/p/${projectId}?view=${copy.id}`);
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to duplicate view");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
   async function deleteView(view: ViewLite) {
-    if (!confirm(`Delete view "${view.name}"?`)) return;
+    if (!confirm(t("common.confirmDelete", { name: view.name }))) return;
     try {
       await api.delete(`/api/views/${view.id}`);
       router.refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to delete view");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
@@ -211,7 +210,7 @@ export function WorkspaceShell({
       await Promise.all(orderedIds.map((id, i) => api.patch(`/api/views/${id}`, { order: i })));
       router.refresh();
     } catch {
-      toast.error("Failed to reorder views");
+      toast.error(t("common.failed"));
     }
   }
 
@@ -231,20 +230,16 @@ export function WorkspaceShell({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56">
-              <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
+              <DropdownMenuLabel>{t("ws.switch")}</DropdownMenuLabel>
               {workspaces.map((w) => (
                 <DropdownMenuItem key={w.id} onSelect={() => router.push(`/w/${w.slug}`)}>
                   <span className={cn("truncate", w.slug === workspace.slug && "font-semibold")}>{w.name}</span>
                 </DropdownMenuItem>
               ))}
-              {isAdmin && (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onSelect={() => router.push("/admin")}>
-                    <ShieldCheck size={14} /> Admin console
-                  </DropdownMenuItem>
-                </>
-              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => router.push("/workspaces")}>
+                <Building2 size={14} /> {t("ws.all")}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -255,7 +250,7 @@ export function WorkspaceShell({
             className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 mb-2"
           >
             <Search size={14} />
-            <span className="flex-1 text-left">Search</span>
+            <span className="flex-1 text-left">{t("common.search")}</span>
             <kbd className="text-[10px] px-1 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-400">Ctrl K</kbd>
           </button>
 
@@ -267,12 +262,12 @@ export function WorkspaceShell({
             )}
           >
             <Briefcase size={14} />
-            <span className="flex-1 text-left">My Work</span>
+            <span className="flex-1 text-left">{t("nav.myWork")}</span>
           </Link>
 
           <div className="mb-2">
             <div className="px-2 mb-0.5 flex items-center gap-1.5 text-xs font-semibold text-neutral-400 uppercase tracking-wide">
-              <Target size={12} /> OKRs
+              <Target size={12} /> {t("nav.okrs")}
             </div>
             <Link
               href={`/w/${workspace.slug}/okrs`}
@@ -281,7 +276,7 @@ export function WorkspaceShell({
                 isTeamOkrs || isOkrDetail ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
               )}
             >
-              <span className="flex-1 text-left text-sm">Team OKRs</span>
+              <span className="flex-1 text-left text-sm">{t("nav.teamOkrs")}</span>
             </Link>
             <Link
               href={`/w/${workspace.slug}/okrs/my`}
@@ -290,7 +285,7 @@ export function WorkspaceShell({
                 isMyOkrs ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
               )}
             >
-              <span className="flex-1 text-left text-sm">My OKRs</span>
+              <span className="flex-1 text-left text-sm">{t("nav.myOkrs")}</span>
             </Link>
             <Link
               href={`/w/${workspace.slug}/okrs/dashboard`}
@@ -299,7 +294,7 @@ export function WorkspaceShell({
                 isOkrDashboard ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
               )}
             >
-              <span className="flex-1 text-left text-sm">Dashboard</span>
+              <span className="flex-1 text-left text-sm">{t("nav.okrDashboard")}</span>
             </Link>
           </div>
 
@@ -311,13 +306,13 @@ export function WorkspaceShell({
             )}
           >
             <LayoutDashboard size={14} />
-            <span className="flex-1 text-left">Dashboard</span>
+            <span className="flex-1 text-left">{t("nav.dashboards")}</span>
           </Link>
 
           <div className="mt-1 mb-1 px-2 flex items-center justify-between text-xs font-semibold text-neutral-400 uppercase tracking-wide">
-            <span>Projects</span>
-            {canManage && (
-              <button onClick={() => setNewProjectOpen(true)} className="hover:text-neutral-700 dark:hover:text-neutral-200" title="New project">
+            <span>{t("nav.projects")}</span>
+            {canCreateProject && (
+              <button onClick={() => setNewProjectOpen(true)} className="hover:text-neutral-700 dark:hover:text-neutral-200" title={t("nav.newProject")} data-testid="sidebar-new-project">
                 <Plus size={13} />
               </button>
             )}
@@ -325,10 +320,10 @@ export function WorkspaceShell({
 
           {projects.length === 0 && (
             <div className="px-2 py-1 text-xs text-neutral-400">
-              {canManage ? (
-                <button onClick={() => setNewProjectOpen(true)} className="hover:text-neutral-600">+ Create the first project</button>
+              {canCreateProject ? (
+                <button onClick={() => setNewProjectOpen(true)} className="hover:text-neutral-600">{t("nav.createFirstProject")}</button>
               ) : (
-                "No projects yet"
+                t("nav.noProjects")
               )}
             </div>
           )}
@@ -342,7 +337,7 @@ export function WorkspaceShell({
                 )}
               >
                 <button onClick={() => toggleExpand(project.id)} className="text-neutral-400 shrink-0">
-                  {expanded.has(project.id) ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                  {!collapsed.has(project.id) ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                 </button>
                 <Link href={`/w/${workspace.slug}/p/${project.id}`} className="flex items-center gap-1.5 flex-1 min-w-0">
                   <FolderKanban size={14} style={{ color: project.color }} className="shrink-0" />
@@ -351,45 +346,48 @@ export function WorkspaceShell({
                 {canEditViews && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <button className="opacity-0 group-hover:opacity-100 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title="Add view">
+                      <button className="opacity-0 group-hover:opacity-100 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title={t("nav.addView")}>
                         <Plus size={13} />
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent>
-                      <DropdownMenuLabel>New view</DropdownMenuLabel>
+                      <DropdownMenuLabel>{t("nav.newView")}</DropdownMenuLabel>
                       {NEW_VIEW_TYPES.map((vt) => (
                         <DropdownMenuItem key={vt.type} onSelect={() => createView(project.id, vt.type)}>
-                          {vt.label}
+                          {t(vt.label)}
                         </DropdownMenuItem>
                       ))}
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
-                {canManage && (
+                {canEditViews && (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <button className="opacity-0 group-hover:opacity-100 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title="Project options">
+                      <button className="opacity-0 group-hover:opacity-100 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title={t("nav.projectOptions")}>
                         <MoreHorizontal size={13} />
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent>
                       <DropdownMenuItem onSelect={() => renameProject(project)}>
-                        <Pencil size={13} /> Rename
+                        <Pencil size={13} /> {t("common.rename")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => router.push(`/w/${workspace.slug}/p/${project.id}/settings`)}>
+                        <SlidersHorizontal size={13} /> {t("nav.projectSettings")}
                       </DropdownMenuItem>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onSelect={() => deleteProject(project)} className="text-red-600 dark:text-red-400">
-                        <Trash2 size={13} /> Delete
+                        <Trash2 size={13} /> {t("common.delete")}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )}
               </div>
-              {expanded.has(project.id) && (
+              {!collapsed.has(project.id) && (
                 <div className="ml-5 border-l border-neutral-200 dark:border-neutral-800 pl-2 space-y-0.5 mb-1">
                   <ViewList
                     project={project}
                     workspaceSlug={workspace.slug}
-                    activeProjectId={activeProjectId}
+                    activeProjectId={projectSection && projectSection !== "t" ? undefined : activeProjectId}
                     activeViewId={activeViewId}
                     canEdit={canEditViews}
                     onRename={renameView}
@@ -397,6 +395,28 @@ export function WorkspaceShell({
                     onDelete={deleteView}
                     onReorder={reorderViews}
                   />
+                  {(
+                    [
+                      ["objectives", t("nav.objectives"), TargetIcon],
+                      ["wiki", t("nav.wiki"), BookOpen],
+                      ["settings", t("nav.projectSettings"), SlidersHorizontal],
+                    ] as const
+                  ).map(([section, label, Icon]) => (
+                    <Link
+                      key={section}
+                      href={`/w/${workspace.slug}/p/${project.id}/${section}`}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-md px-1.5 py-1 ml-2.5 truncate",
+                        activeProjectId === project.id && projectSection === section
+                          ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium"
+                          : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                      )}
+                      data-testid={`sidebar-${section}-${project.id}`}
+                    >
+                      <Icon size={13} />
+                      <span className="truncate">{label}</span>
+                    </Link>
+                  ))}
                 </div>
               )}
             </div>
@@ -406,7 +426,7 @@ export function WorkspaceShell({
             {!desktopVersion && (
               <Link href="/download" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800" data-testid="sidebar-download-desktop">
                 <MonitorDown size={14} />
-                <span className="flex-1 text-left">Download desktop app</span>
+                <span className="flex-1 text-left">{t("nav.download")}</span>
               </Link>
             )}
             <Link
@@ -417,7 +437,7 @@ export function WorkspaceShell({
               )}
             >
               <Settings size={14} />
-              <span className="flex-1 text-left">Settings</span>
+              <span className="flex-1 text-left">{t("nav.settings")}</span>
             </Link>
           </div>
         </nav>
@@ -437,23 +457,29 @@ export function WorkspaceShell({
             <DropdownMenuContent className="w-52">
               <DropdownMenuLabel>
                 {user.email}
-                {desktopVersion && <div className="text-[10px] font-normal text-neutral-400">Desktop app v{desktopVersion}</div>}
+                {desktopVersion && <div className="text-[10px] font-normal text-neutral-400">{t("nav.desktopVersion", { version: desktopVersion })}</div>}
               </DropdownMenuLabel>
+              <DropdownMenuItem onSelect={() => setPrefsOpen(true)}>
+                <Palette size={14} /> {t("nav.preferences")}
+              </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => router.push("/account/password")}>
-                <KeyRound size={14} /> Change password
+                <KeyRound size={14} /> {t("nav.changePassword")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => router.push("/workspaces")}>
+                <Building2 size={14} /> {t("ws.all")}
               </DropdownMenuItem>
               {isAdmin && (
                 <DropdownMenuItem onSelect={() => router.push("/admin")}>
-                  <ShieldCheck size={14} /> Admin console
+                  <ShieldCheck size={14} /> {t("nav.adminConsole")}
                 </DropdownMenuItem>
               )}
               <DropdownMenuItem onSelect={toggle}>
                 {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-                {theme === "dark" ? "Light mode" : "Dark mode"}
+                {theme === "dark" ? t("nav.lightMode") : t("nav.darkMode")}
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => signOut({ callbackUrl: "/login" })}>
-                <LogOut size={14} /> Sign out
+              <DropdownMenuItem onSelect={() => signOut({ callbackUrl: "/" })}>
+                <LogOut size={14} /> {t("auth.signOut")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -463,16 +489,8 @@ export function WorkspaceShell({
       {/* Main content column, top bar rendered per-page (breadcrumb depends on table) */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">{children}</div>
 
-      <Dialog open={newProjectOpen} onOpenChange={setNewProjectOpen}>
-        <DialogContent>
-          <DialogTitle>New project</DialogTitle>
-          <Input autoFocus value={newProjectName} onChange={(e) => setNewProjectName(e.target.value)} placeholder="e.g. Q4 Onboarding" onKeyDown={(e) => e.key === "Enter" && createProject()} />
-          <div className="flex justify-end gap-2 mt-4">
-            <Button variant="secondary" onClick={() => setNewProjectOpen(false)}>Cancel</Button>
-            <Button onClick={createProject} disabled={!newProjectName.trim()}>Create project</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} workspaceId={workspace.id} workspaceSlug={workspace.slug} />
+      <PreferencesDialog open={prefsOpen} onOpenChange={setPrefsOpen} />
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} workspaceId={workspace.id} workspaceSlug={workspace.slug} />
     </div>
@@ -548,6 +566,7 @@ function ViewRow({
   onDuplicate: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useT();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: view.id, disabled: !canEdit });
   const Icon = VIEW_ICONS[view.type] ?? Sheet;
   return (
@@ -574,14 +593,14 @@ function ViewRow({
           </DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuItem onSelect={onRename}>
-              <Pencil size={13} /> Rename
+              <Pencil size={13} /> {t("common.rename")}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={onDuplicate}>
-              <Copy size={13} /> Duplicate
+              <Copy size={13} /> {t("common.duplicate")}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={onDelete} className="text-red-600 dark:text-red-400">
-              <Trash2 size={13} /> Delete
+              <Trash2 size={13} /> {t("common.delete")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

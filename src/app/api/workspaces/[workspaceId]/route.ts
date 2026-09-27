@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireAdmin, requireWorkspaceRole, route, readJson } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson } from "@/lib/authz";
 import { logActivity, diff } from "@/lib/activity";
 import { nameSchema } from "@/lib/validation";
 
@@ -32,13 +32,14 @@ export const PATCH = route<P>(async (req, { params }) => {
   return NextResponse.json({ id: w.id, name: w.name, slug: w.slug, description: w.description });
 });
 
-/** Soft delete; system admins only. */
+/** Soft delete; workspace owners (or system admins). */
 export const DELETE = route<P>(async (_req, { params }) => {
-  const admin = await requireAdmin();
+  const user = await requireUser();
   const { workspaceId } = await params;
+  await requireWorkspaceRole(user, workspaceId, "owner");
   await prisma.$transaction(async (tx) => {
-    await tx.workspace.update({ where: { id: workspaceId }, data: { deletedAt: new Date(), updatedById: admin.id } });
-    await logActivity(tx, { workspaceId, actorId: admin.id, entityType: "workspace", entityId: workspaceId, action: "deleted" });
+    await tx.workspace.update({ where: { id: workspaceId }, data: { deletedAt: new Date(), updatedById: user.id } });
+    await logActivity(tx, { workspaceId, actorId: user.id, entityType: "workspace", entityId: workspaceId, action: "deleted" });
   });
   return new NextResponse(null, { status: 204 });
 });

@@ -13,6 +13,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { formatDate, cn } from "@/lib/utils";
 import type { AdminUserRow } from "@/types";
 import { DesktopReleasesPanel } from "./desktop-releases-panel";
+import { useT } from "@/components/i18n-provider";
 
 interface WorkspaceItem {
   id: string;
@@ -23,6 +24,7 @@ interface WorkspaceItem {
 const ROLE_OPTIONS = ["owner", "admin", "editor", "contributor", "viewer"].map((r) => ({ value: r, label: r }));
 
 export function AdminConsole({ currentUserId }: { currentUserId: string }) {
+  const { t: tr } = useT();
   const [tab, setTab] = useState<"users" | "workspaces" | "desktop">("users");
   const [users, setUsers] = useState<AdminUserRow[]>([]);
   const [workspaces, setWorkspaces] = useState<WorkspaceItem[]>([]);
@@ -36,11 +38,11 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
       setUsers(u);
       setWorkspaces(w);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to load");
+      toast.error(e instanceof Error ? e.message : tr("common.failed"));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tr]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial data fetch
@@ -54,54 +56,54 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
       toast.success(success);
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Update failed");
+      toast.error(e instanceof Error ? e.message : tr("common.failed"));
     }
   }
 
   async function deleteUser(user: AdminUserRow) {
-    if (!confirm(`Delete ${user.email}? They lose access immediately; their past activity stays in the audit log.`)) return;
+    if (!confirm(tr("adm.deleteConfirm", { email: user.email }))) return;
     try {
       await api.delete(`/api/admin/users/${user.id}`);
-      toast.success("Account deleted");
+      toast.success(tr("adm.deleted"));
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Delete failed");
+      toast.error(e instanceof Error ? e.message : tr("common.failed"));
     }
   }
 
   async function createWorkspace() {
-    const name = prompt("New workspace name");
+    const name = prompt(tr("adm.wsName"));
     if (!name?.trim()) return;
     try {
       await api.post("/api/workspaces", { name: name.trim() });
-      toast.success("Workspace created");
+      toast.success(tr("ws.created"));
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to create workspace");
+      toast.error(e instanceof Error ? e.message : tr("common.failed"));
     }
   }
 
   async function deleteWorkspace(w: WorkspaceItem) {
-    if (!confirm(`Delete workspace "${w.name}"? It disappears for every member (soft delete - data stays in the database).`)) return;
+    if (!confirm(tr("adm.wsDeleteConfirm", { name: w.name }))) return;
     try {
       await api.delete(`/api/workspaces/${w.id}`);
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to delete workspace");
+      toast.error(e instanceof Error ? e.message : tr("common.failed"));
     }
   }
 
   return (
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950 text-sm">
       <header className="h-12 flex items-center gap-3 px-6 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
-        <Link href="/" className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200" title="Back to app">
+        <Link href="/workspaces" className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200" title={tr("adm.back")}>
           <ArrowLeft size={16} />
         </Link>
         <ShieldCheck size={16} className="text-indigo-600" />
-        <span className="font-semibold text-neutral-900 dark:text-neutral-50">Admin console</span>
+        <span className="font-semibold text-neutral-900 dark:text-neutral-50">{tr("adm.title")}</span>
         <div className="ml-auto flex items-center gap-3">
-          <Link href="/account/password" className="text-neutral-500 hover:underline">Change password</Link>
-          <button onClick={() => signOut({ callbackUrl: "/login" })} className="text-neutral-500 hover:underline">Sign out</button>
+          <Link href="/account/password" className="text-neutral-500 hover:underline">{tr("nav.changePassword")}</Link>
+          <button onClick={() => signOut({ callbackUrl: "/" })} className="text-neutral-500 hover:underline">{tr("auth.signOut")}</button>
         </div>
       </header>
 
@@ -111,26 +113,26 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
             <button
               key={t}
               onClick={() => setTab(t)}
-              className={cn("px-3 py-2 -mb-px border-b-2 capitalize", tab === t ? "border-indigo-600 text-indigo-700 dark:text-indigo-300 font-medium" : "border-transparent text-neutral-500")}
+              className={cn("px-3 py-2 -mb-px border-b-2", tab === t ? "border-indigo-600 text-indigo-700 dark:text-indigo-300 font-medium" : "border-transparent text-neutral-500")}
             >
-              {t === "desktop" ? "Desktop releases" : `${t} (${t === "users" ? users.length : workspaces.length})`}
+              {t === "desktop" ? tr("adm.desktop") : t === "users" ? tr("adm.users", { count: users.length }) : tr("adm.workspaces", { count: workspaces.length })}
             </button>
           ))}
           <div className="ml-auto pb-1.5">
             {tab === "users" ? (
               <Button onClick={() => setCreateOpen(true)}>
-                <UserPlus size={14} /> Create account
+                <UserPlus size={14} /> {tr("adm.createAccount")}
               </Button>
             ) : tab === "desktop" ? null : (
               <Button onClick={createWorkspace}>
-                <Plus size={14} /> New workspace
+                <Plus size={14} /> {tr("ws.new")}
               </Button>
             )}
           </div>
         </div>
 
         {loading ? (
-          <div className="text-neutral-400 py-10 text-center">Loading…</div>
+          <div className="text-neutral-400 py-10 text-center">{tr("common.loading")}</div>
         ) : tab === "desktop" ? (
           <DesktopReleasesPanel />
         ) : tab === "users" ? (
@@ -138,11 +140,11 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
             <table className="w-full">
               <thead className="text-xs text-neutral-500 border-b border-neutral-200 dark:border-neutral-800">
                 <tr>
-                  <th className="text-left font-medium px-4 py-2">User</th>
-                  <th className="text-left font-medium px-4 py-2">System role</th>
-                  <th className="text-left font-medium px-4 py-2">Status</th>
-                  <th className="text-left font-medium px-4 py-2">Workspaces</th>
-                  <th className="text-left font-medium px-4 py-2">Last sign-in</th>
+                  <th className="text-left font-medium px-4 py-2">{tr("adm.user")}</th>
+                  <th className="text-left font-medium px-4 py-2">{tr("adm.systemRole")}</th>
+                  <th className="text-left font-medium px-4 py-2">{tr("adm.status")}</th>
+                  <th className="text-left font-medium px-4 py-2">Workspace</th>
+                  <th className="text-left font-medium px-4 py-2">{tr("adm.lastSignIn")}</th>
                   <th className="w-10" />
                 </tr>
               </thead>
@@ -154,21 +156,21 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
                       <div className="text-xs text-neutral-500">{u.email}</div>
                     </td>
                     <td className="px-4 py-2">
-                      {u.systemRole === "ADMIN" ? <Badge className="bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">Admin</Badge> : <span className="text-neutral-500">Member</span>}
+                      {u.systemRole === "ADMIN" ? <Badge className="bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300">{tr("adm.admin")}</Badge> : <span className="text-neutral-500">{tr("adm.member")}</span>}
                     </td>
                     <td className="px-4 py-2">
                       {!u.isActive ? (
-                        <Badge className="bg-neutral-100 text-neutral-600 dark:bg-neutral-800">Deactivated</Badge>
+                        <Badge className="bg-neutral-100 text-neutral-600 dark:bg-neutral-800">{tr("adm.deactivated")}</Badge>
                       ) : u.mustChangePassword ? (
-                        <Badge className="bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300">Pending first sign-in</Badge>
+                        <Badge className="bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300">{tr("adm.pending")}</Badge>
                       ) : (
-                        <Badge className="bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300">Active</Badge>
+                        <Badge className="bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300">{tr("adm.active")}</Badge>
                       )}
                     </td>
                     <td className="px-4 py-2 text-xs text-neutral-600 dark:text-neutral-400">
                       {u.workspaces.length ? u.workspaces.map((w) => `${w.name} (${w.role})`).join(", ") : <span className="text-neutral-400">—</span>}
                     </td>
-                    <td className="px-4 py-2 text-xs text-neutral-500">{u.lastLoginAt ? formatDate(u.lastLoginAt, true) : "Never"}</td>
+                    <td className="px-4 py-2 text-xs text-neutral-500">{u.lastLoginAt ? formatDate(u.lastLoginAt, true) : tr("adm.never")}</td>
                     <td className="px-2 py-2">
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -177,18 +179,18 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent>
-                          <DropdownMenuItem onSelect={() => confirm(`Reset password for ${u.email}? A new temporary password will be shown once.`) && patchUser(u, { resetPassword: true }, "Password reset")}>
-                            <KeyRound size={13} /> Reset password
+                          <DropdownMenuItem onSelect={() => confirm(tr("adm.resetConfirm", { email: u.email })) && patchUser(u, { resetPassword: true }, tr("adm.resetDone"))}>
+                            <KeyRound size={13} /> {tr("adm.reset")}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => patchUser(u, { systemRole: u.systemRole === "ADMIN" ? "MEMBER" : "ADMIN" }, "Role updated")}>
-                            <Crown size={13} /> {u.systemRole === "ADMIN" ? "Remove admin" : "Make admin"}
+                          <DropdownMenuItem onSelect={() => patchUser(u, { systemRole: u.systemRole === "ADMIN" ? "MEMBER" : "ADMIN" }, tr("adm.roleUpdated"))}>
+                            <Crown size={13} /> {u.systemRole === "ADMIN" ? tr("adm.removeAdmin") : tr("adm.makeAdmin")}
                           </DropdownMenuItem>
-                          <DropdownMenuItem onSelect={() => patchUser(u, { isActive: !u.isActive }, u.isActive ? "Account deactivated" : "Account reactivated")} disabled={u.id === currentUserId}>
-                            {u.isActive ? <UserX size={13} /> : <UserCheck size={13} />} {u.isActive ? "Deactivate" : "Reactivate"}
+                          <DropdownMenuItem onSelect={() => patchUser(u, { isActive: !u.isActive }, u.isActive ? tr("adm.deactivatedToast") : tr("adm.reactivatedToast"))} disabled={u.id === currentUserId}>
+                            {u.isActive ? <UserX size={13} /> : <UserCheck size={13} />} {u.isActive ? tr("adm.deactivate") : tr("adm.reactivate")}
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem onSelect={() => deleteUser(u)} disabled={u.id === currentUserId} className="text-red-600 dark:text-red-400">
-                            <Trash2 size={13} /> Delete account
+                            <Trash2 size={13} /> {tr("adm.deleteAccount")}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -200,15 +202,15 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {workspaces.length === 0 && <div className="text-neutral-400 py-10">No workspaces yet. Create the first one.</div>}
+            {workspaces.length === 0 && <div className="text-neutral-400 py-10">{tr("adm.noWorkspaces")}</div>}
             {workspaces.map((w) => (
               <div key={w.id} className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="font-medium text-neutral-900 dark:text-neutral-100 truncate">{w.name}</div>
                   <div className="text-xs text-neutral-500">{users.filter((u) => u.workspaces.some((x) => x.id === w.id)).length} members</div>
                 </div>
-                <Link href={`/w/${w.slug}`} className="text-indigo-600 hover:underline">Open</Link>
-                <Link href={`/w/${w.slug}/settings`} className="text-neutral-500 hover:underline">Settings</Link>
+                <Link href={`/w/${w.slug}`} className="text-indigo-600 hover:underline">{tr("common.open")}</Link>
+                <Link href={`/w/${w.slug}/settings`} className="text-neutral-500 hover:underline">{tr("nav.settings")}</Link>
                 <button onClick={() => deleteWorkspace(w)} className="text-neutral-400 hover:text-red-600" aria-label={`Delete ${w.name}`}>
                   <Trash2 size={14} />
                 </button>
@@ -231,22 +233,22 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
 
       <Dialog open={!!secret} onOpenChange={(v) => !v && setSecret(null)}>
         <DialogContent>
-          <DialogTitle>Temporary password</DialogTitle>
+          <DialogTitle>{tr("adm.tempPassword")}</DialogTitle>
           <p className="text-sm text-neutral-500">
-            Share this with <b>{secret?.email}</b> through a private channel. It is shown only once; they must change it at first sign-in.
+            {tr("adm.tempShare", { email: secret?.email ?? "" })}
           </p>
           <div className="mt-3 flex items-center gap-2 rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-3 py-2 font-mono">
             <span className="flex-1 select-all" data-testid="temp-password">{secret?.password}</span>
             <button
-              onClick={() => navigator.clipboard.writeText(secret?.password ?? "").then(() => toast.success("Copied"))}
+              onClick={() => navigator.clipboard.writeText(secret?.password ?? "").then(() => toast.success(tr("adm.copied")))}
               className="text-neutral-400 hover:text-neutral-700"
-              aria-label="Copy password"
+              aria-label={tr("adm.copyPassword")}
             >
               <Copy size={14} />
             </button>
           </div>
           <div className="flex justify-end mt-4">
-            <Button onClick={() => setSecret(null)}>Done</Button>
+            <Button onClick={() => setSecret(null)}>{tr("common.done")}</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -265,6 +267,7 @@ function CreateUserDialog({
   workspaces: WorkspaceItem[];
   onCreated: (email: string, temporaryPassword?: string) => void;
 }) {
+  const { t: tr } = useT();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [systemRole, setSystemRole] = useState("MEMBER");
@@ -288,7 +291,7 @@ function CreateUserDialog({
       setWorkspaceId("none");
       onCreated(res.email, res.temporaryPassword);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create account");
+      toast.error(err instanceof Error ? err.message : tr("common.failed"));
     } finally {
       setSaving(false);
     }
@@ -297,10 +300,10 @@ function CreateUserDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
-        <DialogTitle>Create account</DialogTitle>
+        <DialogTitle>{tr("adm.createAccount")}</DialogTitle>
         <form onSubmit={submit} className="space-y-3">
           <div>
-            <label htmlFor="new-name" className="text-xs font-medium text-neutral-500 mb-1 block">Full name</label>
+            <label htmlFor="new-name" className="text-xs font-medium text-neutral-500 mb-1 block">{tr("auth.fullName")}</label>
             <Input id="new-name" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
           </div>
           <div>
@@ -308,23 +311,23 @@ function CreateUserDialog({
             <Input id="new-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           </div>
           <div>
-            <label className="text-xs font-medium text-neutral-500 mb-1 block">System role</label>
-            <Select className="w-full" value={systemRole} onValueChange={setSystemRole} options={[{ value: "MEMBER", label: "Member" }, { value: "ADMIN", label: "Admin (manages accounts & workspaces)" }]} />
+            <label className="text-xs font-medium text-neutral-500 mb-1 block">{tr("adm.systemRole")}</label>
+            <Select className="w-full" value={systemRole} onValueChange={setSystemRole} options={[{ value: "MEMBER", label: tr("adm.member") }, { value: "ADMIN", label: tr("adm.adminRole") }]} />
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">Add to workspace</label>
-              <Select className="w-full" value={workspaceId} onValueChange={setWorkspaceId} options={[{ value: "none", label: "Not now" }, ...workspaces.map((w) => ({ value: w.id, label: w.name }))]} />
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">{tr("adm.addToWs")}</label>
+              <Select className="w-full" value={workspaceId} onValueChange={setWorkspaceId} options={[{ value: "none", label: tr("adm.notNow") }, ...workspaces.map((w) => ({ value: w.id, label: w.name }))]} />
             </div>
             <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">Workspace role</label>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">{tr("adm.wsRole")}</label>
               <Select className="w-full" value={workspaceRole} onValueChange={setWorkspaceRole} options={ROLE_OPTIONS} />
             </div>
           </div>
-          <p className="text-[11px] text-neutral-400">A temporary password is generated and shown once. The user must change it at first sign-in.</p>
+          <p className="text-[11px] text-neutral-400">{tr("adm.tempHint")}</p>
           <div className="flex justify-end gap-2 pt-2">
-            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? "Creating…" : "Create account"}</Button>
+            <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{tr("common.cancel")}</Button>
+            <Button type="submit" disabled={saving}>{saving ? tr("adm.creating") : tr("adm.createAccount")}</Button>
           </div>
         </form>
       </DialogContent>

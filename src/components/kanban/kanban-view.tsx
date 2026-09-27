@@ -11,6 +11,7 @@ import { formatDisplayValue } from "@/lib/format";
 import { cn, initials } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
 import type { Member } from "@/components/grid/cell";
+import { useT } from "@/components/i18n-provider";
 
 const GROUPABLE_TYPES = [...SELECT_SINGLE_TYPES, "multi_select", "person"];
 
@@ -158,6 +159,7 @@ function KanbanColumn({
   onOpenRecord: (id: string) => void;
   onAddCard: () => void;
 }) {
+  const { t } = useT();
   const { setNodeRef, isOver } = useDroppable({ id: column.key });
   return (
     <div
@@ -171,7 +173,7 @@ function KanbanColumn({
         {column.color && <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: column.color }} />}
         <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200 truncate">{column.label}</span>
         <span className="text-xs text-neutral-400">{column.records.length}</span>
-        <button onClick={onAddCard} className="ml-auto text-neutral-400 hover:text-indigo-600" title="Add card">
+        <button onClick={onAddCard} className="ml-auto text-neutral-400 hover:text-indigo-600" title={t("kb.addCard")}>
           <Plus size={14} />
         </button>
       </div>
@@ -300,16 +302,17 @@ function KanbanSettings({
   config: KanbanConfig;
   onChange: (patch: Partial<KanbanConfig>) => void;
 }) {
+  const { t } = useT();
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button className="flex items-center gap-1.5 h-7 px-2 rounded-md text-sm text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800">
-          <Settings2 size={13} /> Kanban settings
+          <Settings2 size={13} /> {t("kb.settings")}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-3 space-y-2.5">
         <div>
-          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">Group columns by</label>
+          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">{t("kb.groupBy")}</label>
           <Select
             className="w-full"
             value={config.groupFieldId ?? ""}
@@ -318,7 +321,7 @@ function KanbanSettings({
           />
         </div>
         <div>
-          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">Card fields</label>
+          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">{t("kb.cardFields")}</label>
           <div className="max-h-40 overflow-y-auto thin-scroll border border-neutral-200 dark:border-neutral-800 rounded-md p-1.5 space-y-1">
             {fields
               .filter((f) => f.id !== config.groupFieldId)

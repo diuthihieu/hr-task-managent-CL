@@ -11,32 +11,53 @@ app ships with no pre-loaded business data.
 
 ## Access model
 
-- **No self-service sign-up.** A system **Admin** creates accounts in the
-  Admin console (`/admin`). New accounts get a one-time temporary password and
-  must choose their own password at first sign-in.
-- Admins also create workspaces, reset passwords, deactivate or delete
-  accounts. Deactivation takes effect on the very next request.
-- Inside a workspace, roles are `owner`, `admin`, `editor`, `contributor`,
-  `viewer`. They are enforced by the API (`src/lib/authz.ts`), and database
-  triggers block cross-workspace references. See Settings → Permissions.
+- **Open sign-up.** Anyone can create an account on the home page (`/`);
+  the sign-in and sign-up forms sit at the top, with the how-to guide, the
+  benefits and the Windows download further down.
+- **Workspaces are self-service.** Whoever creates a workspace is its
+  **owner**. Owners and admins add other people *by the email they signed up
+  with* (unknown emails are rejected) and give them a role: `owner`, `admin`,
+  `editor`, `contributor`, `viewer`. A user can own and join many workspaces
+  and picks one on `/workspaces` after signing in. Members can leave; only
+  owners delete a workspace.
+- Roles are enforced by the API (`src/lib/authz.ts`) and database triggers
+  block cross-workspace references. See Settings → Permissions.
+- The system **Admin** console (`/admin`) still exists for support:
+  deactivate/reset/delete accounts and publish desktop releases. The first
+  admin is bootstrapped from `ADMIN_*` env vars.
 
 ## Features
 
 - **Projects → Tasks** with status, category, priority, assignees (many-to-many),
   start/due dates, progress, estimate, dependencies (self-referencing
-  many-to-many, cycle-checked), subtasks, importance/urgency, key-result link.
-- **Custom fields per project** (text, number, currency, percent, rating,
-  checkbox, date/time, single/multi select, person, URL, email, phone,
-  formula), stored as typed values with normalized options.
-- **Views**: Grid, Kanban, Calendar, Gantt, Gallery, Eisenhower, Form (optional
-  public link). Filters, sorts, grouping, conditional formatting, saved views.
-- **Comments**, **attachments** (Vercel Blob, private, served through an
-  authorized download route), **activity log** on every important change.
-- **Goals (OKR)**: objectives → key results → tasks; progress derived at read
-  time. My Work, OKR dashboard, workspace dashboards, quick capture inbox,
-  CSV import (transactional) and CSV/Excel export.
+  many-to-many, cycle-checked), subtasks, importance/urgency.
+- **Categories per project**, set up when the project is created (or later in
+  the project's Settings tab).
+- **Project objectives (OKRs).** A project can have objectives, each with any
+  number of key results. Once it has one, tasks get an **Objective** field:
+  pick the objective itself or one of its key results (the task then sits on
+  that key result's branch). Progress rolls up from tasks → key results →
+  objective (or from tasks directly when an objective has no key results).
+  Project objectives appear in **Team OKRs** (grouped by project or team);
+  **My OKRs** lists every objective where you are owner, contributor, key
+  result owner or assignee of a linked task. **Cascading**: a key result of a
+  higher objective can become someone else's objective.
+- **Record pages** (`/w/…/p/…/t/<task>`): every task opens as a full page with
+  its properties, a rich-text body (headings, checklists, tables, images),
+  attachments with image previews, threaded comments and history.
+- **Project wiki**: nested pages with the same editor, for processes,
+  guidelines and meeting notes.
+- **Views**: Table, Kanban, Calendar, Gantt, Gallery, Eisenhower, Form (optional
+  public link) and **Report** - a Power BI-style view where users add charts or
+  pivot tables (group by any field, split by another, count tasks or
+  sum/average hours and numbers). Filters of the view apply to every chart.
+- **Custom fields per project**, comments, attachments (Vercel Blob, private,
+  served through an authorized download route), activity log on every change.
+- **Personalization**: 24 accent colors, light/dark mode and Vietnamese /
+  English UI, saved to the user's profile (so they follow the user to the
+  desktop app).
 - **Soft delete** for users, workspaces, projects, tasks, custom fields,
-  comments, attachments, objectives; tasks can be restored.
+  comments, attachments, objectives and wiki pages; tasks can be restored.
 
 ## Web and Desktop
 
@@ -61,9 +82,9 @@ npm run admin:bootstrap           # creates the first admin from ADMIN_* (prints
 npm run dev                       # http://localhost:3000
 ```
 
-Sign in with the admin account, set your password, then in the Admin console
-create a workspace and the accounts for your team. Add categories under
-Settings → Categories and create the first project from the sidebar.
+Open http://localhost:3000, sign up, create a workspace and a project (with
+its categories and, optionally, objectives). Teammates sign up themselves and
+you add them in Settings → Members & roles.
 
 Optional, local only: `npm run db:seed` loads a small, clearly-labelled
 `[DEV]` sample workspace for UI work. It refuses to run against a non-local
@@ -89,9 +110,12 @@ Never alter the database by hand.
 ## Deploying to Vercel
 
 1. Environment variables (Production and Preview): `DATABASE_URL`,
-   `DIRECT_URL`, `AUTH_SECRET`, `ADMIN_EMAIL`, `ADMIN_NAME`, optionally
-   `ADMIN_PASSWORD`, `BLOB_READ_WRITE_TOKEN` (connect a Blob store to the
-   project) and `DESKTOP_RELEASE_TOKEN` (desktop release registration).
+   `DIRECT_URL`, `AUTH_SECRET`, optionally `ADMIN_EMAIL` / `ADMIN_NAME` /
+   `ADMIN_PASSWORD` (system admin for the support console),
+   `BLOB_READ_WRITE_TOKEN` (connect a Blob store to the project - needed for
+   attachments and images in pages) and `DESKTOP_RELEASE_TOKEN`.
+   Sign-up is rate-limited per server instance only; put a Vercel Firewall
+   rule on `POST /api/register` if the app is exposed to abuse.
 2. The `vercel-build` script runs `prisma migrate deploy` and the admin
    bootstrap on **production** builds only, then `next build`. Preview builds
    skip migrations unless `MIGRATE_ON_PREVIEW=1`, so a feature branch can't
@@ -114,6 +138,9 @@ src/
   lib/task-grid.ts              tasks ⇄ field/record adapter used by all views
   lib/activity.ts               activity log writer (same transaction as the change)
   lib/storage.ts                Vercel Blob upload/download/delete
+  lib/rich-text.ts              allow-list sanitizer for record/wiki page HTML
+  lib/i18n/                     message table (English + Vietnamese side by side)
+  lib/theme-colors.ts           accent palettes (see app/accent-palettes.css)
   lib/validation.ts             zod schemas for request bodies
   components/                   views (grid, kanban, ...), OKR, admin, settings
 tests/integration/              HTTP tests against a real database

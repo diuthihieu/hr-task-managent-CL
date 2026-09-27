@@ -57,10 +57,6 @@ async function main() {
   await prisma.$transaction(async (tx) => {
     const ws = await createWorkspace(tx, { name: "[DEV] Sample Workspace", ownerId: admin.id });
     await tx.workspaceMember.create({ data: { workspaceId: ws.id, userId: member.id, role: "editor", createdById: admin.id } });
-    const [catA, catB] = await Promise.all([
-      tx.category.create({ data: { workspaceId: ws.id, name: "Sample Category A", color: "#6366f1", sortOrder: 0, createdById: admin.id } }),
-      tx.category.create({ data: { workspaceId: ws.id, name: "Sample Category B", color: "#22c55e", sortOrder: 1, createdById: admin.id } }),
-    ]);
     const project = await tx.project.create({
       data: {
         workspaceId: ws.id,
@@ -70,7 +66,11 @@ async function main() {
         views: { create: [{ name: "All Tasks", type: "grid", isDefault: true, sortOrder: 0 }, { name: "Board", type: "kanban", sortOrder: 1, config: { kanban: { groupFieldId: SYS.status } } }] },
       },
     });
-    const objective = await tx.objective.create({ data: { workspaceId: ws.id, title: "[DEV] Sample objective", ownerId: admin.id, createdById: admin.id } });
+    const [catA, catB] = await Promise.all([
+      tx.category.create({ data: { workspaceId: ws.id, projectId: project.id, name: "Sample Category A", color: "#6366f1", sortOrder: 0, createdById: admin.id } }),
+      tx.category.create({ data: { workspaceId: ws.id, projectId: project.id, name: "Sample Category B", color: "#22c55e", sortOrder: 1, createdById: admin.id } }),
+    ]);
+    const objective = await tx.objective.create({ data: { workspaceId: ws.id, projectId: project.id, title: "[DEV] Sample objective", ownerId: admin.id, createdById: admin.id } });
     const kr = await tx.keyResult.create({ data: { objectiveId: objective.id, title: "[DEV] Sample key result", createdById: admin.id } });
     const inProgress = await tx.status.findFirstOrThrow({ where: { workspaceId: ws.id, category: "in_progress" } });
     const t1 = await createTask(tx, {

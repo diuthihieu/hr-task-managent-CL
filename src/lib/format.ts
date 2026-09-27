@@ -3,7 +3,7 @@
 // need the same human-readable text a user sees in the Grid, not the raw
 // option id / user id / ISO timestamp that's actually stored.
 
-import { parseFieldConfig, SELECT_SINGLE_TYPES, type AttachmentValue } from "./field-types";
+import { parseFieldConfig, resolveOkrTarget, SELECT_SINGLE_TYPES, type AttachmentValue } from "./field-types";
 import type { FieldRow } from "@/types";
 
 export interface FormatMember {
@@ -20,6 +20,13 @@ export function formatDisplayValue(field: FieldRow, value: unknown, members: For
   }
   if (field.type === "multi_select" && Array.isArray(value)) {
     return value.map((v) => config.options?.find((o) => o.id === v)?.label ?? String(v)).join(", ");
+  }
+  if (field.type === "okr_target") {
+    const t = resolveOkrTarget(config, value);
+    return t ? (t.kind === "kr" ? `${t.objectiveTitle} › ${t.title}` : t.title) : "";
+  }
+  if (field.type === "task_attachments" && Array.isArray(value)) {
+    return (value as { name: string }[]).map((a) => a.name).join(", ");
   }
   if (field.type === "attachment" && Array.isArray(value)) {
     return (value as AttachmentValue[]).map((a) => a.name).join(", ");

@@ -20,3 +20,11 @@ export async function requireWorkspacePage(slug: string) {
   if (!role) redirect("/");
   return { user, workspace, role };
 }
+
+/** Project page: workspace access + the project (must belong to that workspace and not be deleted). */
+export async function requireProjectPage(slug: string, projectId: string) {
+  const ctx = await requireWorkspacePage(slug);
+  const project = await prisma.project.findFirst({ where: { id: projectId, workspaceId: ctx.workspace.id, deletedAt: null } });
+  if (!project) redirect(`/w/${slug}`);
+  return { ...ctx, project };
+}

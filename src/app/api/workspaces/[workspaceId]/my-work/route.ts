@@ -36,9 +36,9 @@ export const GET = route<P>(async (_req, { params }) => {
     dueDate: fromDateOnly(t.dueDate),
     importance: t.importance,
     urgency: t.urgency,
-    objectiveId: t.keyResult?.objectiveId ?? null,
+    objectiveId: t.objectiveId,
     keyResultId: t.keyResultId,
-    contributesToOkr: Boolean(t.keyResultId),
+    contributesToOkr: Boolean(t.objectiveId),
   }));
 
   const objectives = await getMyObjectiveRows(workspaceId, user.id);

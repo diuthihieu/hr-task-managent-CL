@@ -33,14 +33,15 @@ export const PATCH = route<P>(async (req, { params }) => {
   return NextResponse.json({ ...updated.user, role: updated.role });
 });
 
+/** Remove a member (admins), or leave the workspace yourself (any member). */
 export const DELETE = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { workspaceId, userId } = await params;
-  const ctx = await requireWorkspaceRole(user, workspaceId, "admin");
+  const ctx = await requireWorkspaceRole(user, workspaceId, userId === user.id ? "viewer" : "admin");
   const target = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId } } });
   if (!target) throw notFound("Member");
   if (target.role === "owner") {
-    if (ctx.role !== "owner") throw forbidden("Only owners can remove an owner");
+    if (ctx.role !== "owner" && userId !== user.id) throw forbidden("Only owners can remove an owner");
     await assertKeepsAnOwner(workspaceId, userId);
   }
   await prisma.$transaction(async (tx) => {

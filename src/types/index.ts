@@ -229,7 +229,16 @@ export interface ObjectiveRow {
   createdAt: string;
   updatedAt: string;
   keyResults: KeyResultRow[];
-  progress: number; // 0-100, weighted average of key results
+  progress: number; // 0-100, weighted average of key results (or of directly linked tasks when there are none)
+  projectId: string | null;
+  project: { id: string; name: string; color: string } | null;
+  parentObjectiveId: string | null;
+  /** Cascading: the higher-level key result this objective delivers. */
+  parentKeyResult: { id: string; title: string; objectiveId: string; objectiveTitle: string } | null;
+  /** Tasks linked to the objective directly (no key result). */
+  tasks: KeyResultTaskRow[];
+  /** Objectives that were cascaded from this objective's key results. */
+  childObjectives: { id: string; title: string; parentKeyResultId: string; owner: OkrUserLite | null }[];
 }
 
 export interface MyTaskRow {

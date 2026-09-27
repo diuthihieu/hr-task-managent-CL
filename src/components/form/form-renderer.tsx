@@ -6,6 +6,7 @@ import { FormFieldInput, type FormMember } from "./form-field-input";
 import { getOrderedFormFields, isFieldVisible } from "@/lib/form-utils";
 import type { FormConfig } from "@/lib/query-engine";
 import type { FieldRow } from "@/types";
+import { useT } from "@/components/i18n-provider";
 
 // Renders the exact same field list the builder configured, whether it's
 // being previewed in-app or filled in anonymously on the public /form/[id]
@@ -23,6 +24,7 @@ export function FormRenderer({
   config: FormConfig;
   onSubmit: (data: Record<string, unknown>) => Promise<void>;
 }) {
+  const { t } = useT();
   const orderedFields = getOrderedFormFields(fields, config);
   const [values, setValues] = useState<Record<string, unknown>>(() => {
     const initial: Record<string, unknown> = {};
@@ -93,12 +95,12 @@ export function FormRenderer({
               </label>
               {formField.description && <p className="text-xs text-neutral-500 mb-1.5">{formField.description}</p>}
               <FormFieldInput field={field} value={values[field.id]} members={members} onChange={(v) => setValue(field.id, v)} />
-              {errors[field.id] && <p className="text-xs text-red-500 mt-1">This field is required.</p>}
+              {errors[field.id] && <p className="text-xs text-red-500 mt-1">{t("form.requiredError")}</p>}
             </div>
           );
         })}
       <Button type="submit" disabled={submitting} className="justify-center">
-        {submitting ? "Submitting…" : config.submitLabel || "Submit"}
+        {submitting ? t("form.submitting") : config.submitLabel || t("form.submit")}
       </Button>
     </form>
   );

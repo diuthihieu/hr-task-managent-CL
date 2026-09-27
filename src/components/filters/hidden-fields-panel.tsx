@@ -2,6 +2,7 @@
 import { Eye, EyeOff } from "lucide-react";
 import { Switch } from "@/components/ui/misc";
 import type { FieldRow } from "@/types";
+import { useT } from "@/components/i18n-provider";
 
 export function HiddenFieldsPanel({
   fields,
@@ -12,19 +13,20 @@ export function HiddenFieldsPanel({
   hiddenFieldIds: string[];
   onChange: (ids: string[]) => void;
 }) {
+  const { t } = useT();
   const visibleCount = fields.length - hiddenFieldIds.length;
   return (
     <div className="w-64 p-3">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2 text-xs font-semibold text-neutral-500">
-          <Eye size={13} /> Fields ({visibleCount}/{fields.length})
+          <Eye size={13} /> {t("hid.title", { visible: visibleCount, total: fields.length })}
         </div>
         <div className="flex gap-2 text-xs">
           <button onClick={() => onChange([])} className="text-indigo-600 hover:underline">
-            Show all
+            {t("hid.showAll")}
           </button>
           <button onClick={() => onChange(fields.filter((f) => !f.isPrimary).map((f) => f.id))} className="text-indigo-600 hover:underline">
-            Hide all
+            {t("hid.hideAll")}
           </button>
         </div>
       </div>

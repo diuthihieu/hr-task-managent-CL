@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import type { ActivityRow } from "@/types";
 import { SettingsSection } from "./settings-shell";
+import { useT } from "@/components/i18n-provider";
 
 const ACTION_ICON: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
   created: Plus,
@@ -25,6 +26,7 @@ const ACTION_COLOR: Record<string, string> = {
 
 /** Workspace activity log (append-only table `activity_logs`), newest first, paged by timestamp. */
 export function SettingsAuditLog({ workspaceId }: { workspaceId: string }) {
+  const { t } = useT();
   const [rows, setRows] = useState<ActivityRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [done, setDone] = useState(false);
@@ -36,12 +38,12 @@ export function SettingsAuditLog({ workspaceId }: { workspaceId: string }) {
         setRows((prev) => (before ? [...prev, ...page] : page));
         setDone(page.length < 100);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Failed to load activity");
+        toast.error(e instanceof Error ? e.message : t("common.failed"));
       } finally {
         setLoading(false);
       }
     },
-    [workspaceId]
+    [workspaceId, t]
   );
 
   useEffect(() => {
@@ -50,11 +52,11 @@ export function SettingsAuditLog({ workspaceId }: { workspaceId: string }) {
   }, [loadMore]);
 
   return (
-    <SettingsSection title="Audit Log" description="Every create, update, delete and permission change in this workspace, recorded in the same transaction as the change.">
+    <SettingsSection title={t("set.audit")} description={t("aud.desc")}>
       {loading ? (
-        <p className="text-sm text-neutral-400">Loading…</p>
+        <p className="text-sm text-neutral-400">{t("common.loading")}</p>
       ) : rows.length === 0 ? (
-        <p className="text-sm text-neutral-400">No activity recorded yet.</p>
+        <p className="text-sm text-neutral-400">{t("aud.none")}</p>
       ) : (
         <div className="max-w-3xl">
           <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg divide-y divide-neutral-100 dark:divide-neutral-900">

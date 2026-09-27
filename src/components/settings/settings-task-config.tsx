@@ -9,14 +9,9 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { CategoryRow, StatusRow } from "@/types";
 import { SettingsSection } from "./settings-shell";
+import { useT } from "@/components/i18n-provider";
 
 const COLORS = ["#94a3b8", "#3b82f6", "#22c55e", "#eab308", "#f97316", "#ef4444", "#8b5cf6", "#ec4899", "#14b8a6", "#6366f1"];
-const STATUS_CATEGORIES = [
-  { value: "todo", label: "To do" },
-  { value: "in_progress", label: "In progress" },
-  { value: "done", label: "Done (counts as complete)" },
-  { value: "cancelled", label: "Cancelled (excluded from OKR progress)" },
-];
 
 type Row = (StatusRow | CategoryRow) & { category?: StatusRow["category"]; isDefault?: boolean };
 
@@ -24,8 +19,10 @@ type Row = (StatusRow | CategoryRow) & { category?: StatusRow["category"]; isDef
  * Statuses and categories are workspace-level rows in PostgreSQL shared by
  * every project. Each edit is saved immediately through the API.
  */
-export function SettingsTaskConfig({ workspaceId, mode, canEdit }: { workspaceId: string; mode: "statuses" | "categories"; canEdit: boolean }) {
-  const base = mode === "statuses" ? "statuses" : "categories";
+export function SettingsTaskConfig({ workspaceId, mode, canEdit }: { workspaceId: string; mode: "statuses"; canEdit: boolean }) {
+  const { t } = useT();
+  const STATUS_CATEGORIES = (["todo", "in_progress", "done", "cancelled"] as const).map((v) => ({ value: v, label: t(`st.cat.${v}`) }));
+  const base = "statuses";
   const [rows, setRows] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [newName, setNewName] = useState("");
@@ -34,11 +31,11 @@ export function SettingsTaskConfig({ workspaceId, mode, canEdit }: { workspaceId
     try {
       setRows(await api.get<Row[]>(`/api/workspaces/${workspaceId}/${base}`));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to load");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
       setLoading(false);
     }
-  }, [workspaceId, base]);
+  }, [workspaceId, base, t]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch
@@ -53,7 +50,7 @@ export function SettingsTaskConfig({ workspaceId, mode, canEdit }: { workspaceId
       setNewName("");
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to add");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
@@ -62,7 +59,7 @@ export function SettingsTaskConfig({ workspaceId, mode, canEdit }: { workspaceId
       await api.patch(`/api/${base}/${row.id}`, body);
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
       load();
     }
   }
@@ -71,40 +68,36 @@ export function SettingsTaskConfig({ workspaceId, mode, canEdit }: { workspaceId
     let query = "";
     if (mode === "statuses" && row.taskCount) {
       const others = rows.filter((r) => r.id !== row.id);
-      const target = prompt(`${row.taskCount} task(s) use "${row.name}". Type the name of the status to move them to:\n${others.map((o) => o.name).join(", ")}`);
+      const target = prompt(`${t("st.moveTasks", { count: row.taskCount, name: row.name })}\n${others.map((o) => o.name).join(", ")}`);
       if (!target) return;
       const match = others.find((o) => o.name.toLowerCase() === target.trim().toLowerCase());
       if (!match) {
-        toast.error("No status with that name");
+        toast.error(t("st.noSuchStatus"));
         return;
       }
       query = `?reassignTo=${match.id}`;
-    } else if (!confirm(mode === "categories" && row.taskCount ? `Delete "${row.name}"? ${row.taskCount} task(s) will become uncategorized.` : `Delete "${row.name}"?`)) {
+    } else if (!confirm(t("common.confirmDelete", { name: row.name }))) {
       return;
     }
     try {
       await api.delete(`/api/${base}/${row.id}${query}`);
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to delete");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
   return (
     <SettingsSection
-      title={mode === "statuses" ? "Task Statuses" : "Categories"}
-      description={
-        mode === "statuses"
-          ? "Workflow states shared by every project. The category decides what counts as done for progress and OKRs; the starred status is given to new tasks."
-          : "Task categories shared by every project in this workspace. Created by your team - the app ships with none."
-      }
+      title={t("set.statuses")}
+      description={t("st.desc")}
     >
       {loading ? (
-        <div className="text-sm text-neutral-400">Loading…</div>
+        <div className="text-sm text-neutral-400">{t("common.loading")}</div>
       ) : (
         <div className="max-w-2xl">
           <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg divide-y divide-neutral-100 dark:divide-neutral-900">
-            {rows.length === 0 && <div className="px-3 py-4 text-sm text-neutral-400">None yet{canEdit ? " - add the first one below." : "."}</div>}
+            {rows.length === 0 && <div className="px-3 py-4 text-sm text-neutral-400">{t("common.none")}</div>}
             {rows.map((row) => (
               <div key={row.id} className="flex items-center gap-2 px-3 py-2">
                 <div className="flex gap-0.5 shrink-0">
@@ -132,14 +125,14 @@ export function SettingsTaskConfig({ workspaceId, mode, canEdit }: { workspaceId
                     <button
                       disabled={!canEdit || row.isDefault}
                       onClick={() => patch(row, { isDefault: true })}
-                      title={row.isDefault ? "Default for new tasks" : "Make default for new tasks"}
+                      title={t("st.default")}
                       className={cn("shrink-0", row.isDefault ? "text-amber-500" : "text-neutral-300 hover:text-amber-500")}
                     >
                       <Star size={14} fill={row.isDefault ? "currentColor" : "none"} />
                     </button>
                   </>
                 )}
-                <span className="text-xs text-neutral-400 w-14 text-right shrink-0">{row.taskCount ?? 0} tasks</span>
+                <span className="text-xs text-neutral-400 w-14 text-right shrink-0">{t("common.tasks", { count: row.taskCount ?? 0 })}</span>
                 {canEdit && (
                   <button onClick={() => remove(row)} className="text-neutral-400 hover:text-red-600 shrink-0" aria-label={`Delete ${row.name}`}>
                     <Trash2 size={13} />
@@ -150,13 +143,13 @@ export function SettingsTaskConfig({ workspaceId, mode, canEdit }: { workspaceId
           </div>
           {canEdit ? (
             <div className="flex gap-2 mt-3">
-              <Input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && create()} placeholder={mode === "statuses" ? "New status name" : "New category name"} className="flex-1" />
+              <Input value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && create()} placeholder={t("st.new")} className="flex-1" />
               <Button onClick={create} disabled={!newName.trim()}>
-                <Plus size={13} /> Add
+                <Plus size={13} /> {t("common.add")}
               </Button>
             </div>
           ) : (
-            <p className="text-xs text-neutral-400 mt-3">Only workspace owners and admins can change these.</p>
+            <p className="text-xs text-neutral-400 mt-3">{t("st.readOnly")}</p>
           )}
         </div>
       )}

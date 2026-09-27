@@ -24,6 +24,7 @@ import { AddFieldButton } from "./add-field-menu";
 import { getCellValue, getConditionalStyle, type RecordGroup, type ConditionalFormatRule } from "@/lib/query-engine";
 import type { FieldRow, RecordRow } from "@/types";
 import { cn } from "@/lib/utils";
+import { useT } from "@/components/i18n-provider";
 
 const ROW_HEIGHTS: Record<string, number> = { short: 32, medium: 40, tall: 64 };
 const DEFAULT_WIDTH = 180;
@@ -58,6 +59,7 @@ interface GridViewProps {
 }
 
 export function GridView(props: GridViewProps) {
+  const { t } = useT();
   const {
     fields,
     groups,
@@ -192,7 +194,7 @@ export function GridView(props: GridViewProps) {
         onClick={() => props.onAddRecord()}
         className="flex items-center gap-2 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-900 w-full text-left border-b border-neutral-100 dark:border-neutral-900"
       >
-        <Plus size={14} /> Add task
+        <Plus size={14} /> {t("grid.addTask")}
       </button>
     </div>
   );
@@ -289,6 +291,7 @@ function Row({
   widthOf: (f: FieldRow) => number;
   frozenCount: number;
 } & GridViewProps) {
+  const { t } = useT();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: record.id, disabled: !props.reorderable });
   const autoFit = props.rowHeight === "auto";
   const height = autoFit ? undefined : ROW_HEIGHTS[props.rowHeight] ?? 36;
@@ -338,7 +341,7 @@ function Row({
                 <button
                   onClick={() => props.onOpenRecord(record.id)}
                   className={cn("opacity-0 group-hover/row:opacity-100 shrink-0 ml-1 text-neutral-400 hover:text-indigo-600", autoFit && "mt-2")}
-                  title="Expand record"
+                  title={t("grid.expand")}
                 >
                   <Maximize2 size={12} />
                 </button>

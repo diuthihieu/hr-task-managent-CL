@@ -2,6 +2,8 @@
 import { useState } from "react";
 import { AlertTriangle, Circle } from "lucide-react";
 import { initials, cn } from "@/lib/utils";
+import { useT } from "@/components/i18n-provider";
+import type { MessageKey } from "@/lib/i18n/core";
 import type { ObjectiveStatus, OkrPriority, OkrUserLite } from "@/types";
 
 export const STATUS_META: Record<ObjectiveStatus, { label: string; color: string }> = {
@@ -28,7 +30,9 @@ export function ProgressBar({ value, color = "#6366f1", height = 6 }: { value: n
 }
 
 export function StatusBadge({ status }: { status: ObjectiveStatus | string }) {
-  const meta = STATUS_META[status as ObjectiveStatus] ?? { label: status, color: "#94a3b8" };
+  const { t } = useT();
+  const base = STATUS_META[status as ObjectiveStatus];
+  const meta = base ? { ...base, label: t(`okr.status.${status}` as MessageKey) } : { label: status, color: "#94a3b8" };
   return (
     <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium shrink-0" style={{ backgroundColor: `${meta.color}1a`, color: meta.color }}>
       <Circle size={6} fill={meta.color} className="shrink-0" style={{ color: meta.color }} />
@@ -38,7 +42,9 @@ export function StatusBadge({ status }: { status: ObjectiveStatus | string }) {
 }
 
 export function PriorityBadge({ priority }: { priority: OkrPriority | string }) {
-  const meta = PRIORITY_META[priority as OkrPriority] ?? { label: priority, color: "#94a3b8" };
+  const { t } = useT();
+  const base = PRIORITY_META[priority as OkrPriority];
+  const meta = base ? { ...base, label: t(`okr.priority.${priority}` as MessageKey) } : { label: priority, color: "#94a3b8" };
   return (
     <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium shrink-0" style={{ backgroundColor: `${meta.color}1a`, color: meta.color }}>
       {meta.label}
@@ -47,9 +53,10 @@ export function PriorityBadge({ priority }: { priority: OkrPriority | string }) 
 }
 
 export function ConfidenceDot({ confidence }: { confidence: number }) {
+  const { t } = useT();
   const color = confidence >= 70 ? "#22c55e" : confidence >= 40 ? "#eab308" : "#ef4444";
   return (
-    <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500 shrink-0" title={`Confidence: ${confidence}%`}>
+    <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500 shrink-0" title={t("okr.confidence", { value: confidence })}>
       {confidence < 40 && <AlertTriangle size={11} style={{ color }} />}
       <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
       {confidence}%
@@ -58,7 +65,8 @@ export function ConfidenceDot({ confidence }: { confidence: number }) {
 }
 
 export function UserChip({ user, size = 18 }: { user: OkrUserLite | null; size?: number }) {
-  if (!user) return <span className="text-neutral-300 dark:text-neutral-700 text-xs">Unassigned</span>;
+  const { t } = useT();
+  if (!user) return <span className="text-neutral-300 dark:text-neutral-700 text-xs">{t("okr.unassigned")}</span>;
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300 min-w-0">
       <span
@@ -93,17 +101,19 @@ export function UserStack({ users, size = 18 }: { users: OkrUserLite[]; size?: n
 
 export function DeadlineLabel({ endDate }: { endDate: string | null }) {
   const [now] = useState(() => Date.now());
-  if (!endDate) return <span className="text-xs text-neutral-300 dark:text-neutral-700">No deadline</span>;
+  const { t } = useT();
+  if (!endDate) return <span className="text-xs text-neutral-300 dark:text-neutral-700">{t("okr.noDeadline")}</span>;
   const days = Math.ceil((new Date(endDate).getTime() - now) / 86400000);
   const overdue = days < 0;
   const soon = days >= 0 && days <= 7;
   return (
     <span className={cn("text-xs shrink-0", overdue ? "text-red-600 dark:text-red-400 font-medium" : soon ? "text-amber-600 dark:text-amber-500 font-medium" : "text-neutral-500")}>
-      {overdue ? `${Math.abs(days)}d overdue` : days === 0 ? "Due today" : `${days}d left`}
+      {overdue ? t("okr.overdue", { days: Math.abs(days) }) : days === 0 ? t("okr.dueToday") : t("okr.daysLeft", { days })}
     </span>
   );
 }
 
 export function CycleLabel({ cycleType, cycleLabel }: { cycleType: string; cycleLabel: string | null }) {
-  return <span className="text-[11px] text-neutral-400 uppercase tracking-wide shrink-0">{cycleLabel || cycleType}</span>;
+  const { t } = useT();
+  return <span className="text-[11px] text-neutral-400 uppercase tracking-wide shrink-0">{cycleLabel || t(`okr.cycle.${cycleType}` as MessageKey)}</span>;
 }

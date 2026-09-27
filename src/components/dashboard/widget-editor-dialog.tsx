@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
 import { CHART_TYPES, AGGREGATION_LABELS, type DashboardBlockConfig, type ChartType, type Aggregation } from "@/lib/dashboard-engine";
 import type { FieldRow, ViewRow } from "@/types";
+import { useT } from "@/components/i18n-provider";
 
 export interface BlockDraft {
   type: ChartType;
@@ -37,6 +38,7 @@ export function WidgetEditorDialog({
   initial: BlockDraft | null;
   onSave: (draft: BlockDraft) => void;
 }) {
+  const { t } = useT();
   function makeDraft(): BlockDraft {
     return initial ? { ...initial, config: { ...initial.config } } : defaultDraft();
   }
@@ -91,15 +93,15 @@ export function WidgetEditorDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto thin-scroll">
-        <DialogTitle>{initial ? "Edit widget" : "Add widget"}</DialogTitle>
+        <DialogTitle>{initial ? t("db.editWidget") : t("db.addWidget")}</DialogTitle>
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-neutral-500 mb-1 block">Title</label>
+            <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.title")}</label>
             <Input value={draft.title} onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))} placeholder="e.g. Tasks by Status" />
           </div>
 
           <div>
-            <label className="text-xs font-medium text-neutral-500 mb-1 block">Widget type</label>
+            <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.type")}</label>
             <Select
               className="w-full"
               value={draft.type}
@@ -110,7 +112,7 @@ export function WidgetEditorDialog({
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">Project</label>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.project")}</label>
               <Select
                 className="w-full"
                 value={projectId ?? ""}
@@ -118,24 +120,24 @@ export function WidgetEditorDialog({
                   patchConfig({ dataSource: { projectId: v, viewId: undefined }, dimensionFieldId: undefined, measureFieldId: undefined });
                 }}
                 options={projects.map((t) => ({ value: t.id, label: t.name }))}
-                placeholder="Choose a project"
+                placeholder={t("db.w.chooseProject")}
               />
             </div>
             <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">Saved view (optional)</label>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.view")}</label>
               <Select
                 className="w-full"
                 value={draft.config.dataSource?.viewId ?? ""}
                 onValueChange={(v) => patchConfig({ dataSource: { projectId, viewId: v || undefined } })}
-                options={[{ value: "", label: "All records" }, ...views.map((v) => ({ value: v.id, label: v.name }))]}
-                placeholder="All records"
+                options={[{ value: "", label: t("db.w.allRecords") }, ...views.map((v) => ({ value: v.id, label: v.name }))]}
+                placeholder={t("db.w.allRecords")}
               />
             </div>
           </div>
 
           {isTable ? (
             <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">Columns to show</label>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.columns")}</label>
               <div className="max-h-32 overflow-y-auto thin-scroll border border-neutral-200 dark:border-neutral-800 rounded-md p-1.5 space-y-1">
                 {fields.map((f) => {
                   const selected = draft.config.tableFieldIds?.includes(f.id) ?? true;
@@ -160,23 +162,23 @@ export function WidgetEditorDialog({
               {needsDimension && (
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-xs font-medium text-neutral-500 mb-1 block">Dimension</label>
+                    <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.dimension")}</label>
                     <Select
                       className="w-full"
                       value={draft.config.dimensionFieldId ?? ""}
                       onValueChange={(v) => patchConfig({ dimensionFieldId: v })}
                       options={fields.map((f) => ({ value: f.id, label: f.name }))}
-                      placeholder="Choose a field"
+                      placeholder={t("form.chooseField")}
                     />
                   </div>
                   {showDateBucket && (
                     <div>
-                      <label className="text-xs font-medium text-neutral-500 mb-1 block">Bucket by</label>
+                      <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.bucket")}</label>
                       <Select
                         className="w-full"
                         value={draft.config.dateBucket ?? "day"}
                         onValueChange={(v) => patchConfig({ dateBucket: v as "day" | "week" | "month" })}
-                        options={[{ value: "day", label: "Day" }, { value: "week", label: "Week" }, { value: "month", label: "Month" }]}
+                        options={[{ value: "day", label: t("report.bucket.day") }, { value: "week", label: t("report.bucket.week") }, { value: "month", label: t("report.bucket.month") }]}
                       />
                     </div>
                   )}
@@ -185,13 +187,13 @@ export function WidgetEditorDialog({
 
               {needsSeries && (
                 <div>
-                  <label className="text-xs font-medium text-neutral-500 mb-1 block">Series (stacked by)</label>
+                  <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.series")}</label>
                   <Select
                     className="w-full"
                     value={draft.config.dimension2FieldId ?? ""}
                     onValueChange={(v) => patchConfig({ dimension2FieldId: v })}
                     options={fields.map((f) => ({ value: f.id, label: f.name }))}
-                    placeholder="Choose a field"
+                    placeholder={t("form.chooseField")}
                   />
                 </div>
               )}
@@ -199,17 +201,17 @@ export function WidgetEditorDialog({
               {needsMeasure && (
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-xs font-medium text-neutral-500 mb-1 block">Measure{needsMeasure2 ? " (Y)" : ""}</label>
+                    <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.measure")}{needsMeasure2 ? " (Y)" : ""}</label>
                     <Select
                       className="w-full"
                       value={draft.config.measureFieldId ?? ""}
                       onValueChange={(v) => patchConfig({ measureFieldId: v })}
                       options={fields.map((f) => ({ value: f.id, label: f.name }))}
-                      placeholder="Record count"
+                      placeholder={t("db.w.recordCount")}
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-neutral-500 mb-1 block">Aggregation</label>
+                    <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.aggregation")}</label>
                     <Select
                       className="w-full"
                       value={draft.config.aggregation ?? "count"}
@@ -222,20 +224,20 @@ export function WidgetEditorDialog({
 
               {needsMeasure2 && (
                 <div>
-                  <label className="text-xs font-medium text-neutral-500 mb-1 block">{draft.type === "scatter" ? "Measure (X)" : "Second measure (line)"}</label>
+                  <label className="text-xs font-medium text-neutral-500 mb-1 block">{draft.type === "scatter" ? t("db.w.measureX") : t("db.w.measure2")}</label>
                   <Select
                     className="w-full"
                     value={draft.config.measure2FieldId ?? ""}
                     onValueChange={(v) => patchConfig({ measure2FieldId: v })}
                     options={fields.map((f) => ({ value: f.id, label: f.name }))}
-                    placeholder="Choose a field"
+                    placeholder={t("form.chooseField")}
                   />
                 </div>
               )}
 
               {draft.type === "gauge" && (
                 <div>
-                  <label className="text-xs font-medium text-neutral-500 mb-1 block">Gauge max</label>
+                  <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.gaugeMax")}</label>
                   <Input
                     type="number"
                     className="w-28"
@@ -247,13 +249,13 @@ export function WidgetEditorDialog({
 
               {needsDimension && !needsSeries && (
                 <div>
-                  <label className="text-xs font-medium text-neutral-500 mb-1 block">Show top</label>
+                  <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.top")}</label>
                   <Input
                     type="number"
                     className="w-28"
                     value={draft.config.topN ?? ""}
                     onChange={(e) => patchConfig({ topN: e.target.value ? Number(e.target.value) : undefined })}
-                    placeholder="All"
+                    placeholder={t("report.f.all")}
                   />
                 </div>
               )}
@@ -262,10 +264,10 @@ export function WidgetEditorDialog({
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button onClick={() => onSave(draft)} disabled={!projectId}>
-            Save
+            {t("common.save")}
           </Button>
         </div>
       </DialogContent>

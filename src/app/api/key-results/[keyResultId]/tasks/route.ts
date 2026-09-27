@@ -38,9 +38,9 @@ export const POST = route<P>(async (req, { params }) => {
   const objective = await prisma.$transaction(async (tx) => {
     const task = await tx.task.findFirst({ where: { id: body.taskId, workspaceId: ctx.workspaceId, deletedAt: null } });
     if (!task) throw badRequest("Task not found in this workspace");
-    await tx.task.update({ where: { id: task.id }, data: { keyResultId, okrWeight: body.weight ?? task.okrWeight, updatedById: user.id } });
-    await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "task", entityId: task.id, action: "updated", changes: { keyResult: { from: task.keyResultId, to: keyResultId } } });
     const kr = await tx.keyResult.findUniqueOrThrow({ where: { id: keyResultId }, select: { objectiveId: true } });
+    await tx.task.update({ where: { id: task.id }, data: { keyResultId, objectiveId: kr.objectiveId, okrWeight: body.weight ?? task.okrWeight, updatedById: user.id } });
+    await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "task", entityId: task.id, action: "updated", changes: { keyResult: { from: task.keyResultId, to: keyResultId } } });
     return tx.objective.findUniqueOrThrow({ where: { id: kr.objectiveId }, include: OBJECTIVE_INCLUDE });
   });
   return NextResponse.json(resolveObjectives([objective])[0], { status: 201 });

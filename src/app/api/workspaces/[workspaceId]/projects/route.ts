@@ -4,8 +4,11 @@ import { requireUser, requireWorkspaceRole, route, readJson, badRequest } from "
 import { logActivity } from "@/lib/activity";
 import { dateOnlyToDate, projectInputSchema } from "@/lib/validation";
 import { serializeProject } from "@/lib/serializers";
+import { makeT, normalizeLocale } from "@/lib/i18n/core";
 
 type P = { workspaceId: string };
+
+const CATEGORY_COLORS = ["#6366f1", "#0ea5e9", "#22c55e", "#f97316", "#ec4899", "#eab308", "#14b8a6", "#8b5cf6"];
 
 export const GET = route<P>(async (_req, { params }) => {
   const user = await requireUser();
@@ -18,8 +21,9 @@ export const GET = route<P>(async (_req, { params }) => {
 export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { workspaceId } = await params;
-  await requireWorkspaceRole(user, workspaceId, "admin");
+  await requireWorkspaceRole(user, workspaceId, "editor");
   const body = projectInputSchema.parse(await readJson(req));
+  const t = makeT(normalizeLocale(user.locale));
   if (body.ownerId && !(await prisma.workspaceMember.findFirst({ where: { workspaceId, userId: body.ownerId } }))) throw badRequest("Owner must be a workspace member");
   const last = await prisma.project.aggregate({ where: { workspaceId }, _max: { sortOrder: true } });
   const project = await prisma.$transaction(async (tx) => {
@@ -39,12 +43,19 @@ export const POST = route<P>(async (req, { params }) => {
         // Starter views are UI configuration, not data.
         views: {
           create: [
-            { name: "All Tasks", type: "grid", isDefault: true, sortOrder: 0, createdById: user.id },
-            { name: "Board", type: "kanban", sortOrder: 1, createdById: user.id, config: { kanban: { groupFieldId: "sys_status" } } },
+            { name: t("view.default.all"), type: "grid", isDefault: true, sortOrder: 0, createdById: user.id },
+            { name: t("view.default.board"), type: "kanban", sortOrder: 1, createdById: user.id, config: { kanban: { groupFieldId: "sys_status" } } },
           ],
         },
       },
     });
+    const names = new Set<string>();
+    const categories = (body.categories ?? []).filter((c) => !names.has(c.name.toLowerCase()) && names.add(c.name.toLowerCase()));
+    if (categories.length) {
+      await tx.category.createMany({
+        data: categories.map((c, i) => ({ workspaceId, projectId: p.id, name: c.name, color: c.color ?? CATEGORY_COLORS[i % CATEGORY_COLORS.length], sortOrder: i, createdById: user.id, updatedById: user.id })),
+      });
+    }
     await logActivity(tx, { workspaceId, actorId: user.id, entityType: "project", entityId: p.id, action: "created", summary: `Created project "${p.name}"` });
     return p;
   });

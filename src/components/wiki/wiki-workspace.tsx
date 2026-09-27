@@ -1,0 +1,223 @@
+"use client";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { BookOpen, ChevronDown, ChevronRight, FileText, Plus, Trash2 } from "lucide-react";
+import { RichEditor, type SaveState } from "@/components/editor/rich-editor";
+import { Button } from "@/components/ui/button";
+import { toast } from "@/components/ui/toast";
+import { useT } from "@/components/i18n-provider";
+import { api } from "@/lib/api-client";
+import { formatDate, cn } from "@/lib/utils";
+import type { WikiPageSummary } from "@/lib/wiki";
+
+interface WikiPageFull extends WikiPageSummary {
+  content: string | null;
+}
+
+/** Project wiki: page tree on the left, the selected page (rich editor) on the right. */
+export function WikiWorkspace({ projectId, workspaceSlug, pageId, canEdit, canDeleteAny, currentUserName }: { projectId: string; workspaceSlug: string; pageId: string | null; canEdit: boolean; canDeleteAny: boolean; currentUserName: string }) {
+  const { t } = useT();
+  const router = useRouter();
+  const base = `/w/${workspaceSlug}/p/${projectId}/wiki`;
+  const [pages, setPages] = useState<WikiPageSummary[]>([]);
+  const [page, setPage] = useState<WikiPageFull | null>(null);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [saveState, setSaveState] = useState<SaveState>("idle");
+
+  const loadTree = useCallback(async () => {
+    try {
+      setPages(await api.get<WikiPageSummary[]>(`/api/projects/${projectId}/wiki`));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+    }
+  }, [projectId, t]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch
+    loadTree();
+  }, [loadTree]);
+
+  useEffect(() => {
+    if (!pageId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clearing the selection when the URL has no page
+      setPage(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .get<WikiPageFull>(`/api/wiki/${pageId}`)
+      .then((p) => !cancelled && setPage(p))
+      .catch(() => {
+        if (!cancelled) router.replace(base);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [pageId, base, router]);
+
+  const children = useMemo(() => {
+    const map = new Map<string | null, WikiPageSummary[]>();
+    for (const p of pages) {
+      const k = p.parentPageId;
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(p);
+    }
+    return map;
+  }, [pages]);
+
+  async function create(parentPageId: string | null) {
+    try {
+      const p = await api.post<WikiPageSummary>(`/api/projects/${projectId}/wiki`, { title: t("wiki.untitled"), parentPageId });
+      await loadTree();
+      router.push(`${base}/${p.id}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+    }
+  }
+
+  async function rename(title: string) {
+    if (!page || !title.trim() || title === page.title) return;
+    try {
+      await api.patch(`/api/wiki/${page.id}`, { title: title.trim() });
+      setPage({ ...page, title: title.trim() });
+      loadTree();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+    }
+  }
+
+  async function remove() {
+    if (!page || !confirm(t("wiki.deleteConfirm", { name: page.title }))) return;
+    try {
+      await api.delete(`/api/wiki/${page.id}`);
+      await loadTree();
+      router.push(base);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+    }
+  }
+
+  async function uploadImage(file: File): Promise<string> {
+    if (!page) throw new Error(t("common.failed"));
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(`/api/wiki/${page.id}/attachments`, { method: "POST", body: form });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error || `Upload failed (${res.status})`);
+    return body.inlineUrl as string;
+  }
+
+  function renderTree(parent: string | null, depth: number): React.ReactNode {
+    const list = children.get(parent) ?? [];
+    return (
+      <>
+        {list.map((p) => {
+          const kids = children.get(p.id) ?? [];
+          const open = !collapsed.has(p.id);
+          return (
+            <div key={p.id}>
+              <div className={cn("group flex items-center gap-1 rounded-md pr-1 text-sm", p.id === pageId ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium" : "text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800")} style={{ paddingLeft: 4 + depth * 14 }}>
+                <button
+                  onClick={() => setCollapsed((prev) => {
+                    const next = new Set(prev);
+                    if (next.has(p.id)) next.delete(p.id);
+                    else next.add(p.id);
+                    return next;
+                  })}
+                  className={cn("text-neutral-400 w-4 shrink-0", !kids.length && "invisible")}
+                  aria-label={t("common.open")}
+                >
+                  {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                </button>
+                <Link href={`${base}/${p.id}`} className="flex items-center gap-1.5 flex-1 min-w-0 py-1" data-testid="wiki-tree-item">
+                  {p.icon ? <span>{p.icon}</span> : <FileText size={13} className="shrink-0 opacity-60" />}
+                  <span className="truncate">{p.title}</span>
+                </Link>
+                {canEdit && (
+                  <button onClick={() => create(p.id)} className="opacity-0 group-hover:opacity-100 text-neutral-400 hover:text-neutral-700" title={t("wiki.newSubpage")}>
+                    <Plus size={12} />
+                  </button>
+                )}
+              </div>
+              {open && kids.length > 0 && renderTree(p.id, depth + 1)}
+            </div>
+          );
+        })}
+      </>
+    );
+  }
+
+  return (
+    <div className="flex-1 flex overflow-hidden">
+      <aside className="w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col">
+        <div className="flex items-center gap-2 px-3 h-11 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+          <BookOpen size={14} className="text-indigo-500" />
+          <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">{t("wiki.title")}</span>
+          {canEdit && (
+            <button onClick={() => create(null)} className="ml-auto text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200" title={t("wiki.newPage")} data-testid="wiki-new-page">
+              <Plus size={15} />
+            </button>
+          )}
+        </div>
+        <div className="flex-1 overflow-y-auto thin-scroll p-2">
+          {renderTree(null, 0)}
+        </div>
+      </aside>
+
+      <div className="flex-1 overflow-y-auto thin-scroll">
+        {!page ? (
+          <div className="h-full flex flex-col items-center justify-center text-center p-8 text-neutral-500">
+            <BookOpen size={36} className="text-indigo-400 mb-3" />
+            {pages.length === 0 ? (
+              <>
+                <h2 className="font-semibold text-neutral-800 dark:text-neutral-100">{t("wiki.empty.title")}</h2>
+                <p className="text-sm mt-1 max-w-md">{t("wiki.empty.body")}</p>
+              </>
+            ) : (
+              <p className="text-sm">{t("wiki.select")}</p>
+            )}
+            {canEdit && (
+              <Button className="mt-4" onClick={() => create(null)}>
+                <Plus size={14} /> {t("wiki.newPage")}
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="max-w-4xl mx-auto px-8 py-8" key={page.id}>
+            <div className="flex items-center gap-2 text-[11px] text-neutral-400 mb-2">
+              <span>{t("wiki.lastEdited", { name: page.updatedBy ?? currentUserName, when: formatDate(page.updatedAt, true) })}</span>
+              <span className="ml-auto" data-testid="wiki-save-state">
+                {saveState === "saving" ? t("editor.saving") : saveState === "saved" ? t("editor.saved") : saveState === "error" ? t("editor.error") : ""}
+              </span>
+              {(canDeleteAny || canEdit) && (
+                <button onClick={remove} className="flex items-center gap-1 hover:text-red-600">
+                  <Trash2 size={12} /> {t("common.delete")}
+                </button>
+              )}
+            </div>
+            <input
+              defaultValue={page.title}
+              disabled={!canEdit}
+              onBlur={(e) => rename(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
+              placeholder={t("wiki.pageTitle")}
+              className="w-full bg-transparent text-3xl font-bold text-neutral-900 dark:text-neutral-50 outline-none mb-4"
+              data-testid="wiki-title"
+            />
+            <RichEditor
+              content={page.content}
+              editable={canEdit}
+              onSaveStateChange={setSaveState}
+              onUploadImage={uploadImage}
+              minHeight={420}
+              onSave={async (html) => {
+                await api.patch(`/api/wiki/${page.id}`, { content: html || null });
+              }}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

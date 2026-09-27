@@ -15,6 +15,7 @@ import { DashboardFilterBar } from "./filter-bar";
 import type { CrossFilter, SeriesPoint } from "@/lib/dashboard-engine";
 import { parseBlockConfig } from "@/lib/dashboard-engine";
 import type { FieldRow } from "@/types";
+import { useT } from "@/components/i18n-provider";
 
 const GridLayout = WidthProvider(RGL);
 
@@ -37,6 +38,7 @@ export function DashboardWorkspace({
   workspaceSlug: string;
   breadcrumb: { workspace: string; dashboard: string };
 }) {
+  const { t } = useT();
   const router = useRouter();
   const [dashboard, setDashboard] = useState<DashboardDetail | null>(null);
   const [allFields, setAllFields] = useState<FieldRow[]>([]);
@@ -58,11 +60,11 @@ export function DashboardWorkspace({
       const filters = JSON.parse(detail.filters || "{}") as { slicers?: Slicer[] };
       setSlicers(filters.slicers ?? []);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to load dashboard");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
       setLoading(false);
     }
-  }, [dashboardId]);
+  }, [dashboardId, t]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching dashboard data on mount is exactly what this effect is for
@@ -89,7 +91,7 @@ export function DashboardWorkspace({
 
   function persistSlicers(next: Slicer[]) {
     setSlicers(next);
-    api.patch(`/api/dashboards/${dashboardId}`, { filters: { slicers: next } }).catch(() => toast.error("Failed to save slicers"));
+    api.patch(`/api/dashboards/${dashboardId}`, { filters: { slicers: next } }).catch(() => toast.error(t("common.failed")));
   }
 
   async function renameDashboard() {
@@ -99,19 +101,19 @@ export function DashboardWorkspace({
     try {
       await api.patch(`/api/dashboards/${dashboardId}`, { name: nameDraft.trim() });
     } catch {
-      toast.error("Failed to rename dashboard");
+      toast.error(t("common.failed"));
     }
   }
 
   async function deleteDashboard() {
-    if (!dashboard || !confirm(`Delete dashboard "${dashboard.name}"? This cannot be undone.`)) return;
+    if (!dashboard || !confirm(t("db.deleteConfirm", { name: dashboard.name }))) return;
     try {
       await api.delete(`/api/dashboards/${dashboardId}`);
       router.push(`/w/${workspaceSlug}/dashboards`);
       router.refresh();
       router.refresh();
     } catch {
-      toast.error("Failed to delete dashboard");
+      toast.error(t("common.failed"));
     }
   }
 
@@ -139,17 +141,17 @@ export function DashboardWorkspace({
       }
       setWidgetDialog({ open: false, block: null });
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to save widget");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
   async function deleteWidget(blockId: string) {
-    if (!confirm("Delete this widget?")) return;
+    if (!confirm(t("db.deleteWidgetConfirm"))) return;
     setDashboard((d) => (d ? { ...d, blocks: d.blocks.filter((b) => b.id !== blockId) } : d));
     try {
       await api.delete(`/api/dashboard-blocks/${blockId}`);
     } catch {
-      toast.error("Failed to delete widget");
+      toast.error(t("common.failed"));
       load();
     }
   }
@@ -180,7 +182,7 @@ export function DashboardWorkspace({
   }
 
   if (loading && !dashboard) {
-    return <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm">Loading dashboard…</div>;
+    return <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm">{t("db.loading")}</div>;
   }
   if (!dashboard) return null;
 
@@ -214,7 +216,7 @@ export function DashboardWorkspace({
         )}
         <div className="ml-auto flex items-center gap-1.5">
           <Button size="sm" onClick={addWidget}>
-            <Plus size={13} /> Add widget
+            <Plus size={13} /> {t("db.addWidget")}
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -229,10 +231,10 @@ export function DashboardWorkspace({
                   setRenaming(true);
                 }}
               >
-                <Pencil size={13} /> Rename dashboard
+                <Pencil size={13} /> {t("db.rename")}
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={deleteDashboard} className="text-red-600 dark:text-red-400">
-                <Trash2 size={13} /> Delete dashboard
+                <Trash2 size={13} /> {t("db.delete")}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -256,9 +258,9 @@ export function DashboardWorkspace({
         {dashboard.blocks.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-center text-neutral-400 gap-2">
             <LayoutDashboard size={32} className="opacity-40" />
-            <p>No widgets yet. Add a KPI card, chart or table backed by any project in this workspace.</p>
+            <p>{t("db.noWidgets")}</p>
             <Button onClick={addWidget}>
-              <Plus size={14} /> Add your first widget
+              <Plus size={14} /> {t("db.firstWidget")}
             </Button>
           </div>
         ) : (

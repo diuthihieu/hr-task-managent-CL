@@ -14,6 +14,7 @@ import { prisma } from "./prisma";
 import { badRequest } from "./http-errors";
 import { IMPORTANCE_OPTIONS, URGENCY_OPTIONS, PRIORITY_OPTIONS_DEFAULT } from "./field-types";
 import type { FieldRow, RecordRow } from "@/types";
+import { makeT, type MessageKey, type TFunction } from "./i18n/core";
 
 type Tx = Prisma.TransactionClient;
 
@@ -28,6 +29,8 @@ export const SYS = {
   progress: "sys_progress",
   estimate: "sys_estimate",
   keyResult: "sys_key_result",
+  objective: "sys_objective",
+  attachments: "sys_attachments",
   importance: "sys_importance",
   urgency: "sys_urgency",
   dependsOn: "sys_depends_on",
@@ -40,7 +43,14 @@ export const SYS = {
 
 export const PRIORITIES = ["low", "medium", "high", "critical"] as const;
 
-const READ_ONLY_SYS = new Set<string>([SYS.createdAt, SYS.updatedAt, SYS.createdBy]);
+const READ_ONLY_SYS = new Set<string>([SYS.createdAt, SYS.updatedAt, SYS.createdBy, SYS.attachments]);
+
+/** Value of the "Objective" task field: `kr:<id>` (key result, objective implied) or `obj:<id>` (objective only). */
+export function okrTargetToken(task: { keyResultId: string | null; objectiveId: string | null }): string | null {
+  if (task.keyResultId) return `kr:${task.keyResultId}`;
+  if (task.objectiveId) return `obj:${task.objectiveId}`;
+  return null;
+}
 
 // ---------------------------------------------------------------------------
 // Value helpers
@@ -104,6 +114,7 @@ const TASK_INCLUDE = {
   assignees: { select: { userId: true } },
   dependencies: { select: { dependsOnTaskId: true } },
   customValues: true,
+  attachments: { where: { deletedAt: null }, select: { id: true, fileName: true, contentType: true }, orderBy: { createdAt: "asc" } },
 } satisfies Prisma.TaskInclude;
 
 export type TaskWithRelations = Prisma.TaskGetPayload<{ include: typeof TASK_INCLUDE }>;
@@ -113,50 +124,61 @@ interface ProjectMeta {
   statuses: { id: string; name: string; color: string; category: string; isDefault: boolean }[];
   categories: { id: string; name: string; color: string }[];
   customFields: Prisma.CustomFieldGetPayload<{ include: { options: true } }>[];
+  /** Objectives set up in this project; the "Objective" field only appears when there is at least one. */
+  objectives: { id: string; title: string; keyResults: { id: string; title: string }[] }[];
 }
 
 export async function loadProjectMeta(projectId: string, db: Tx | typeof prisma = prisma): Promise<ProjectMeta | null> {
   const project = await db.project.findFirst({ where: { id: projectId, deletedAt: null }, select: { id: true, workspaceId: true, name: true } });
   if (!project) return null;
-  const [statuses, categories, customFields] = await Promise.all([
+  const [statuses, categories, customFields, objectives] = await Promise.all([
     db.status.findMany({ where: { workspaceId: project.workspaceId }, orderBy: { sortOrder: "asc" } }),
-    db.category.findMany({ where: { workspaceId: project.workspaceId }, orderBy: { sortOrder: "asc" } }),
+    db.category.findMany({ where: { projectId }, orderBy: { sortOrder: "asc" } }),
     db.customField.findMany({
       where: { projectId, deletedAt: null },
       include: { options: { orderBy: { sortOrder: "asc" } } },
       orderBy: { sortOrder: "asc" },
     }),
+    db.objective.findMany({
+      where: { projectId, deletedAt: null },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, title: true, keyResults: { where: { deletedAt: null }, orderBy: { sortOrder: "asc" }, select: { id: true, title: true } } },
+    }),
   ]);
-  return { project, statuses, categories, customFields };
+  return { project, statuses, categories, customFields, objectives };
 }
 
 function sysField(projectId: string, id: string, name: string, type: string, order: number, extra: Partial<FieldRow> = {}): FieldRow {
   return { id, projectId, name, type, config: null, order, isPrimary: false, visible: true, description: null, defaultValue: null, system: true, ...extra };
 }
 
-export function buildFields(meta: ProjectMeta): FieldRow[] {
+export function buildFields(meta: ProjectMeta, t: TFunction = makeT("en")): FieldRow[] {
   const pid = meta.project.id;
+  const n = (id: string) => t(`field.${id}` as MessageKey);
   const opts = (o: object) => JSON.stringify(o);
   const sys: FieldRow[] = [
-    sysField(pid, SYS.title, "Task Name", "text", 0, { isPrimary: true }),
-    sysField(pid, SYS.status, "Status", "status", 1, {
+    sysField(pid, SYS.title, n(SYS.title), "text", 0, { isPrimary: true }),
+    sysField(pid, SYS.status, n(SYS.status), "status", 1, {
       config: opts({ options: meta.statuses.map((s) => ({ id: s.id, label: s.name, color: s.color, category: s.category })) }),
     }),
-    sysField(pid, SYS.assignees, "Assignees", "people", 2),
-    sysField(pid, SYS.priority, "Priority", "single_select", 3, { config: opts({ options: PRIORITY_OPTIONS_DEFAULT }) }),
-    sysField(pid, SYS.category, "Category", "single_select", 4, {
+    sysField(pid, SYS.assignees, n(SYS.assignees), "people", 2),
+    sysField(pid, SYS.priority, n(SYS.priority), "single_select", 3, { config: opts({ options: PRIORITY_OPTIONS_DEFAULT }) }),
+    sysField(pid, SYS.category, n(SYS.category), "single_select", 4, {
       config: opts({ options: meta.categories.map((c) => ({ id: c.id, label: c.name, color: c.color })) }),
     }),
-    sysField(pid, SYS.startDate, "Start Date", "date", 5),
-    sysField(pid, SYS.dueDate, "Due Date", "date", 6),
-    sysField(pid, SYS.progress, "Progress", "progress", 7),
-    sysField(pid, SYS.estimate, "Estimate (h)", "number", 8, { config: opts({ precision: 2 }) }),
-    sysField(pid, SYS.keyResult, "Key Result", "okr_key_result", 9),
-    sysField(pid, SYS.importance, "Importance", "importance", 10, { config: opts({ options: IMPORTANCE_OPTIONS }) }),
-    sysField(pid, SYS.urgency, "Urgency", "urgency", 11, { config: opts({ options: URGENCY_OPTIONS }) }),
-    sysField(pid, SYS.dependsOn, "Depends On", "link", 12, { config: opts({ linkProjectId: pid }) }),
-    sysField(pid, SYS.parent, "Parent Task", "link", 13, { config: opts({ linkProjectId: pid, maxLinks: 1 }) }),
-    sysField(pid, SYS.description, "Description", "long_text", 14),
+    sysField(pid, SYS.startDate, n(SYS.startDate), "date", 5),
+    sysField(pid, SYS.dueDate, n(SYS.dueDate), "date", 6),
+    sysField(pid, SYS.progress, n(SYS.progress), "progress", 7),
+    sysField(pid, SYS.estimate, n(SYS.estimate), "number", 8, { config: opts({ precision: 2 }) }),
+    ...(meta.objectives.length
+      ? [sysField(pid, SYS.objective, n(SYS.objective), "okr_target", 9, { config: opts({ objectives: meta.objectives }) })]
+      : []),
+    sysField(pid, SYS.importance, n(SYS.importance), "importance", 10, { config: opts({ options: IMPORTANCE_OPTIONS }) }),
+    sysField(pid, SYS.urgency, n(SYS.urgency), "urgency", 11, { config: opts({ options: URGENCY_OPTIONS }) }),
+    sysField(pid, SYS.dependsOn, n(SYS.dependsOn), "link", 12, { config: opts({ linkProjectId: pid }) }),
+    sysField(pid, SYS.parent, n(SYS.parent), "link", 13, { config: opts({ linkProjectId: pid, maxLinks: 1 }) }),
+    sysField(pid, SYS.description, n(SYS.description), "long_text", 14),
+    sysField(pid, SYS.attachments, n(SYS.attachments), "task_attachments", 15, { readOnly: true }),
   ];
   const custom: FieldRow[] = meta.customFields.map((f, i) => {
     const settings = (f.settings ?? {}) as Record<string, unknown>;
@@ -179,9 +201,9 @@ export function buildFields(meta: ProjectMeta): FieldRow[] {
     };
   });
   const tail: FieldRow[] = [
-    sysField(pid, SYS.createdAt, "Created", "created_time", 1000, { readOnly: true }),
-    sysField(pid, SYS.updatedAt, "Last Modified", "modified_time", 1001, { readOnly: true }),
-    sysField(pid, SYS.createdBy, "Created By", "created_by", 1002, { readOnly: true }),
+    sysField(pid, SYS.createdAt, n(SYS.createdAt), "created_time", 1000, { readOnly: true }),
+    sysField(pid, SYS.updatedAt, n(SYS.updatedAt), "modified_time", 1001, { readOnly: true }),
+    sysField(pid, SYS.createdBy, n(SYS.createdBy), "created_by", 1002, { readOnly: true }),
   ];
   return [...sys, ...custom, ...tail];
 }
@@ -223,12 +245,13 @@ export function toRecord(task: TaskWithRelations, fieldTypes: Map<string, Custom
     [SYS.dueDate]: fromDateOnly(task.dueDate),
     [SYS.progress]: task.progress,
     [SYS.estimate]: task.estimateMinutes === null ? null : Math.round((task.estimateMinutes / 60) * 100) / 100,
-    [SYS.keyResult]: task.keyResultId,
+    [SYS.objective]: okrTargetToken(task),
     [SYS.importance]: task.importance,
     [SYS.urgency]: task.urgency,
     [SYS.dependsOn]: task.dependencies.map((d) => d.dependsOnTaskId),
     [SYS.parent]: task.parentTaskId ? [task.parentTaskId] : [],
     [SYS.description]: task.description,
+    [SYS.attachments]: task.attachments.map((a) => ({ id: a.id, name: a.fileName, type: a.contentType })),
     [SYS.createdAt]: task.createdAt.toISOString(),
     [SYS.updatedAt]: task.updatedAt.toISOString(),
     [SYS.createdBy]: task.createdById,
@@ -364,7 +387,7 @@ export async function applyTaskPatch(
       case SYS.category: {
         const categoryId = toIdOrNull(value, "Category");
         if (categoryId) {
-          if (!isUuid(categoryId) || !(await tx.category.findFirst({ where: { id: categoryId, workspaceId }, select: { id: true } }))) throw badRequest("Unknown category");
+          if (!isUuid(categoryId) || !(await tx.category.findFirst({ where: { id: categoryId, projectId }, select: { id: true } }))) throw badRequest("Unknown category");
         }
         update.categoryId = categoryId;
         record("category", before.categoryId, categoryId);
@@ -396,14 +419,30 @@ export async function applyTaskPatch(
         record("estimateMinutes", before.estimateMinutes, update.estimateMinutes);
         break;
       }
-      case SYS.keyResult: {
-        const krId = toIdOrNull(value, "Key result");
-        if (krId) {
-          const kr = isUuid(krId) && (await tx.keyResult.findFirst({ where: { id: krId, deletedAt: null, objective: { workspaceId, deletedAt: null } }, select: { id: true } }));
-          if (!kr) throw badRequest("Unknown key result");
+      case SYS.keyResult:
+      case SYS.objective: {
+        // sys_key_result takes a bare key-result id (legacy / imports);
+        // sys_objective takes "kr:<id>" or "obj:<id>".
+        const raw = toIdOrNull(value, "Objective");
+        let objectiveId: string | null = null;
+        let keyResultId: string | null = null;
+        if (raw) {
+          const [kind, id] = key === SYS.keyResult ? ["kr", raw] : raw.includes(":") ? raw.split(":", 2) : ["obj", raw];
+          if (!isUuid(id) || (kind !== "kr" && kind !== "obj")) throw badRequest("Invalid objective");
+          if (kind === "kr") {
+            const kr = await tx.keyResult.findFirst({ where: { id, deletedAt: null, objective: { workspaceId, deletedAt: null } }, select: { id: true, objectiveId: true } });
+            if (!kr) throw badRequest("Unknown key result");
+            keyResultId = kr.id;
+            objectiveId = kr.objectiveId;
+          } else {
+            const o = await tx.objective.findFirst({ where: { id, workspaceId, deletedAt: null }, select: { id: true } });
+            if (!o) throw badRequest("Unknown objective");
+            objectiveId = o.id;
+          }
         }
-        update.keyResultId = krId;
-        record("keyResult", before.keyResultId, krId);
+        update.keyResultId = keyResultId;
+        update.objectiveId = objectiveId;
+        record("objective", okrTargetToken(before), okrTargetToken({ keyResultId, objectiveId }));
         break;
       }
       case SYS.importance: {

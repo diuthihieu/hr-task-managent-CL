@@ -9,27 +9,29 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { getCellValue } from "@/lib/query-engine";
 import type { EisenhowerConfig } from "@/lib/query-engine";
-import { parseFieldConfig, SELECT_SINGLE_TYPES, type SelectOption } from "@/lib/field-types";
+import { parseFieldConfig, SELECT_SINGLE_TYPES, type SelectOption, resolveOkrTarget } from "@/lib/field-types";
 import { deriveUrgencyFromDueDate } from "@/lib/okr-engine";
 import { formatDisplayValue } from "@/lib/format";
 import { cn, initials } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
 import type { Member, OkrOptions } from "@/components/grid/cell";
+import { useT } from "@/components/i18n-provider";
+import type { MessageKey } from "@/lib/i18n/core";
 
 interface Quadrant {
   key: string;
   importance: string;
   urgency: string;
-  title: string;
-  subtitle: string;
+  title: MessageKey;
+  subtitle: MessageKey;
   accent: string;
 }
 
 const QUADRANTS: Quadrant[] = [
-  { key: "urgent_important", importance: "important", urgency: "urgent", title: "Urgent & Important", subtitle: "DO", accent: "#ef4444" },
-  { key: "not_urgent_important", importance: "important", urgency: "not_urgent", title: "Important, Not Urgent", subtitle: "SCHEDULE", accent: "#3b82f6" },
-  { key: "urgent_not_important", importance: "not_important", urgency: "urgent", title: "Urgent, Not Important", subtitle: "DELEGATE", accent: "#f97316" },
-  { key: "not_urgent_not_important", importance: "not_important", urgency: "not_urgent", title: "Not Urgent, Not Important", subtitle: "ELIMINATE / LOW PRIORITY", accent: "#94a3b8" },
+  { key: "urgent_important", importance: "important", urgency: "urgent", title: "eh.q1", subtitle: "eh.s1", accent: "#ef4444" },
+  { key: "not_urgent_important", importance: "important", urgency: "not_urgent", title: "eh.q2", subtitle: "eh.s2", accent: "#3b82f6" },
+  { key: "urgent_not_important", importance: "not_important", urgency: "urgent", title: "eh.q3", subtitle: "eh.s3", accent: "#f97316" },
+  { key: "not_urgent_not_important", importance: "not_important", urgency: "not_urgent", title: "eh.q4", subtitle: "eh.s4", accent: "#94a3b8" },
 ];
 
 export function EisenhowerView({
@@ -53,6 +55,7 @@ export function EisenhowerView({
   onOpenRecord: (id: string) => void;
   okrOptions?: OkrOptions;
 }) {
+  const { t } = useT();
   const importanceField = fields.find((f) => f.id === config.importanceFieldId) ?? fields.find((f) => f.type === "importance");
   const urgencyField = fields.find((f) => f.id === config.urgencyFieldId) ?? fields.find((f) => f.type === "urgency");
   const dateFields = fields.filter((f) => f.type === "date" || f.type === "datetime");
@@ -97,7 +100,7 @@ export function EisenhowerView({
         count++;
       }
     }
-    toast.success(count ? `Updated urgency on ${count} task${count === 1 ? "" : "s"}` : "Everything already matches the rule");
+    toast.success(count ? t("eh.updated", { count }) : t("eh.nothing"));
   }
 
   if (!importanceField || !urgencyField) {
@@ -161,6 +164,7 @@ function QuadrantColumn({
   activeId: string | null;
   onOpenRecord: (id: string) => void;
 }) {
+  const { t } = useT();
   const { setNodeRef, isOver } = useDroppable({ id: quadrant.key });
   return (
     <div
@@ -175,9 +179,9 @@ function QuadrantColumn({
         <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: quadrant.accent }} />
         <div className="min-w-0">
           <div className="text-xs font-semibold truncate" style={{ color: quadrant.accent }}>
-            {quadrant.subtitle}
+            {t(quadrant.subtitle)}
           </div>
-          <div className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">{quadrant.title}</div>
+          <div className="text-[10px] text-neutral-500 dark:text-neutral-400 truncate">{t(quadrant.title)}</div>
         </div>
         <span className="ml-auto text-xs text-neutral-400 shrink-0">{records.length}</span>
       </div>
@@ -195,7 +199,7 @@ function QuadrantColumn({
             onOpen={() => onOpenRecord(record.id)}
           />
         ))}
-        {records.length === 0 && <div className="text-xs text-neutral-300 dark:text-neutral-700 text-center py-6">Drop tasks here</div>}
+        {records.length === 0 && <div className="text-xs text-neutral-300 dark:text-neutral-700 text-center py-6">{t("eh.drop")}</div>}
       </div>
     </div>
   );
@@ -276,6 +280,10 @@ function EisenhowerFieldChip({ field, value, members, okrOptions }: { field: Fie
     const title = okrOptions?.objectives.find((o) => o.id === value)?.title;
     return title ? <div className="text-xs text-indigo-600 dark:text-indigo-400 truncate">🎯 {title}</div> : null;
   }
+  if (field.type === "okr_target") {
+    const target = resolveOkrTarget(cfg, value);
+    return target ? <div className={target.kind === "kr" ? "text-xs text-teal-600 dark:text-teal-400 truncate" : "text-xs text-indigo-600 dark:text-indigo-400 truncate"}>{target.kind === "kr" ? "🔑" : "🎯"} {target.title}</div> : null;
+  }
   if (field.type === "okr_key_result") {
     const title = okrOptions?.keyResults.find((k) => k.id === value)?.title;
     return title ? <div className="text-xs text-teal-600 dark:text-teal-400 truncate">🔑 {title}</div> : null;
@@ -308,17 +316,18 @@ function EisenhowerSettings({
   onChange: (patch: Partial<EisenhowerConfig>) => void;
   onAutoSetUrgency?: () => void;
 }) {
+  const { t } = useT();
   const dateFields = fields.filter((f) => f.type === "date" || f.type === "datetime");
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button className="flex items-center gap-1.5 h-7 px-2 rounded-md text-sm text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800">
-          <Settings2 size={13} /> Eisenhower settings
+          <Settings2 size={13} /> {t("eh.settings")}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-72 p-3 space-y-3">
         <div>
-          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">Card fields</label>
+          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">{t("kb.cardFields")}</label>
           <div className="max-h-32 overflow-y-auto thin-scroll border border-neutral-200 dark:border-neutral-800 rounded-md p-1.5 space-y-1">
             {fields
               .filter((f) => !f.isPrimary && !["importance", "urgency"].includes(f.type))
@@ -342,14 +351,14 @@ function EisenhowerSettings({
         </div>
         <div className="pt-2 border-t border-neutral-100 dark:border-neutral-800">
           <label className="text-[11px] font-medium text-neutral-500 mb-1 block flex items-center gap-1">
-            <Zap size={11} /> Auto-set Urgency from due date
+            <Zap size={11} /> {t("eh.auto")}
           </label>
           <div className="flex items-center gap-1.5">
-            <Select className="flex-1" value={config.dueDateFieldId ?? ""} onValueChange={(v) => onChange({ dueDateFieldId: v || undefined })} options={[{ value: "", label: "None" }, ...dateFields.map((f) => ({ value: f.id, label: f.name }))]} placeholder="Due date field" />
+            <Select className="flex-1" value={config.dueDateFieldId ?? ""} onValueChange={(v) => onChange({ dueDateFieldId: v || undefined })} options={[{ value: "", label: t("common.none") }, ...dateFields.map((f) => ({ value: f.id, label: f.name }))]} placeholder={t("eh.dueField")} />
             <Input type="number" min={0} className="w-16" value={config.urgentWithinDays ?? 3} onChange={(e) => onChange({ urgentWithinDays: Number(e.target.value) })} />
             <span className="text-[11px] text-neutral-400 shrink-0">days</span>
           </div>
-          <p className="text-[11px] text-neutral-400 mt-1">Tasks due within this many days are marked Urgent.</p>
+          <p className="text-[11px] text-neutral-400 mt-1">{t("eh.autoHint")}</p>
           <Button size="sm" variant="secondary" className="w-full mt-2" disabled={!onAutoSetUrgency} onClick={onAutoSetUrgency}>
             Apply now
           </Button>

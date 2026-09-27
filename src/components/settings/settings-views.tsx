@@ -11,12 +11,13 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Pencil, Copy, Trash2, ExternalLink, Sheet, Kanban, Calendar, GanttChartSquare, GalleryHorizontal, FileInput, Grid2x2 } from "lucide-react";
+import { GripVertical, Pencil, Copy, Trash2, ExternalLink, Sheet, Kanban, Calendar, GanttChartSquare, GalleryHorizontal, FileInput, Grid2x2, BarChart3 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { SettingsSection } from "./settings-shell";
 import { useProjectPicker } from "./project-picker";
 import type { ViewRow } from "@/types";
+import { useT } from "@/components/i18n-provider";
 
 const VIEW_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
   grid: Sheet,
@@ -26,9 +27,11 @@ const VIEW_ICONS: Record<string, React.ComponentType<{ size?: number; className?
   gallery: GalleryHorizontal,
   form: FileInput,
   eisenhower: Grid2x2,
+  report: BarChart3,
 };
 
 export function SettingsViews({ workspaceId, workspaceSlug }: { workspaceId: string; workspaceSlug: string }) {
+  const { t } = useT();
   const { projects, projectId, project, picker } = useProjectPicker(workspaceId);
   const [views, setViews] = useState<ViewRow[]>([]);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
@@ -38,8 +41,8 @@ export function SettingsViews({ workspaceId, workspaceSlug }: { workspaceId: str
     api.get<ViewRow[]>(`/api/projects/${projectId}/views`).then(setViews).catch(() => setViews([]));
   }, [projectId]);
 
-  if (!projects) return <div className="p-6 text-sm text-neutral-400">Loading…</div>;
-  if (!project) return <div className="p-6 text-sm text-neutral-400">No projects yet - create one first.</div>;
+  if (!projects) return <div className="p-6 text-sm text-neutral-400">{t("common.loading")}</div>;
+  if (!project) return <div className="p-6 text-sm text-neutral-400">{t("sv.noProjects")}</div>;
   const table = { views };
   const setTable = (fn: (t: { views: ViewRow[] }) => { views: ViewRow[] } | null) => setViews((prev) => fn({ views: prev })?.views ?? prev);
 
@@ -50,7 +53,7 @@ export function SettingsViews({ workspaceId, workspaceSlug }: { workspaceId: str
       await api.patch(`/api/views/${view.id}`, { name });
       setTable((t) => (t ? { ...t, views: t.views.map((v) => (v.id === view.id ? { ...v, name } : v)) } : t));
     } catch {
-      toast.error("Failed to rename view");
+      toast.error(t("common.failed"));
     }
   }
 
@@ -60,23 +63,23 @@ export function SettingsViews({ workspaceId, workspaceSlug }: { workspaceId: str
       const source = await api.get<{ config: string }>(`/api/views/${view.id}`);
       const copy = await api.post<ViewRow>(`/api/projects/${projectId}/views`, { name: `${view.name} copy`, type: view.type, config: JSON.parse(source.config || "{}") });
       setTable((t) => (t ? { ...t, views: [...t.views, copy] } : t));
-      toast.success("View duplicated");
+      toast.success(t("sv.duplicated"));
     } catch {
-      toast.error("Failed to duplicate view");
+      toast.error(t("common.failed"));
     }
   }
 
   async function remove(view: ViewRow) {
     if (!table || table.views.length <= 1) {
-      toast.error("A project needs at least one view");
+      toast.error(t("sv.needOne"));
       return;
     }
-    if (!confirm(`Delete view "${view.name}"?`)) return;
+    if (!confirm(t("common.confirmDelete", { name: view.name }))) return;
     try {
       await api.delete(`/api/views/${view.id}`);
       setTable((t) => (t ? { ...t, views: t.views.filter((v) => v.id !== view.id) } : t));
     } catch {
-      toast.error("Failed to delete view");
+      toast.error(t("common.failed"));
     }
   }
 
@@ -88,11 +91,11 @@ export function SettingsViews({ workspaceId, workspaceSlug }: { workspaceId: str
     const newIndex = ids.indexOf(String(over.id));
     const reordered = arrayMove(table.views, oldIndex, newIndex);
     setViews(reordered);
-    Promise.all(reordered.map((v, i) => api.patch(`/api/views/${v.id}`, { order: i }))).catch(() => toast.error("Failed to save order"));
+    Promise.all(reordered.map((v, i) => api.patch(`/api/views/${v.id}`, { order: i }))).catch(() => toast.error(t("common.failed")));
   }
 
   return (
-    <SettingsSection title="View Management" description={`Saved views of ${project.name} - rename, duplicate, reorder or delete. A view is a filter/sort/column configuration over the project's tasks, never a copy of the data.`}>
+    <SettingsSection title={t("set.views")} description={t("sv.desc", { project: project.name })}>
       {picker}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={table.views.map((v) => v.id)} strategy={verticalListSortingStrategy}>
@@ -115,6 +118,7 @@ export function SettingsViews({ workspaceId, workspaceSlug }: { workspaceId: str
 }
 
 function ViewSettingsRow({ view, href, onRename, onDuplicate, onDelete }: { view: ViewRow; href: string; onRename: () => void; onDuplicate: () => void; onDelete: () => void }) {
+  const { t } = useT();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: view.id });
   const Icon = VIEW_ICONS[view.type] ?? Sheet;
   return (
@@ -126,16 +130,16 @@ function ViewSettingsRow({ view, href, onRename, onDuplicate, onDelete }: { view
         <Icon size={14} className="text-neutral-400 shrink-0" />
         <span className="flex-1 min-w-0 truncate text-sm text-neutral-800 dark:text-neutral-100">{view.name}</span>
         <span className="text-[11px] text-neutral-400 shrink-0 capitalize">{view.type}</span>
-        <Link href={href} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title="Open view">
+        <Link href={href} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title={t("sv.open")}>
           <ExternalLink size={13} />
         </Link>
-        <button onClick={onRename} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title="Rename">
+        <button onClick={onRename} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title={t("common.rename")}>
           <Pencil size={13} />
         </button>
-        <button onClick={onDuplicate} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title="Duplicate">
+        <button onClick={onDuplicate} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title={t("common.duplicate")}>
           <Copy size={13} />
         </button>
-        <button onClick={onDelete} className="text-neutral-400 hover:text-red-600 shrink-0" title="Delete">
+        <button onClick={onDelete} className="text-neutral-400 hover:text-red-600 shrink-0" title={t("common.delete")}>
           <Trash2 size={13} />
         </button>
       </div>

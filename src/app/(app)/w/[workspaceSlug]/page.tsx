@@ -2,10 +2,13 @@ import Link from "next/link";
 import { FolderKanban } from "lucide-react";
 import { prisma } from "@/lib/prisma";
 import { requireWorkspacePage } from "@/lib/page-context";
+import { getServerT } from "@/lib/prefs";
+import { NewProjectButton } from "@/components/projects/new-project-button";
+import type { MessageKey } from "@/lib/i18n/core";
 
 export default async function WorkspaceHomePage({ params }: { params: Promise<{ workspaceSlug: string }> }) {
   const { workspaceSlug } = await params;
-  const { user, workspace, role } = await requireWorkspacePage(workspaceSlug);
+  const [{ user, workspace, role }, { t, locale }] = await Promise.all([requireWorkspacePage(workspaceSlug), getServerT()]);
   const [projects, openTaskCounts] = await Promise.all([
     prisma.project.findMany({ where: { workspaceId: workspace.id, deletedAt: null }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.task.groupBy({
@@ -15,14 +18,17 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
     }),
   ]);
   const openByProject = new Map(openTaskCounts.map((c) => [c.projectId, c._count._all]));
-  const canCreate = role === "owner" || role === "admin";
+  const canCreate = ["owner", "admin", "editor"].includes(role);
 
   return (
     <div className="flex-1 overflow-y-auto p-8">
-      <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">Welcome, {user.name.split(" ")[0]}</h1>
-      <p className="text-sm text-neutral-500 mt-1 mb-6">
-        {workspace.name} · {projects.length} project{projects.length === 1 ? "" : "s"} · your role: {role}
-      </p>
+      <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
+        <div>
+          <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">{t("home.welcome", { name: locale === "vi" ? user.name.split(" ").slice(-1)[0] : user.name.split(" ")[0] })}</h1>
+          <p className="text-sm text-neutral-500 mt-1">{t("home.summary", { workspace: workspace.name, count: projects.length, role: t(`role.${role}` as MessageKey) })}</p>
+        </div>
+        {canCreate && <NewProjectButton workspaceId={workspace.id} workspaceSlug={workspace.slug} />}
+      </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
         {projects.map((p) => (
@@ -35,9 +41,7 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
               <FolderKanban size={18} />
             </div>
             <div className="font-medium text-neutral-900 dark:text-neutral-100 truncate">{p.name}</div>
-            <div className="text-xs text-neutral-500 mt-0.5">
-              {openByProject.get(p.id) ?? 0} open task{openByProject.get(p.id) === 1 ? "" : "s"} · {p.status.replace("_", " ")}
-            </div>
+            <div className="text-xs text-neutral-500 mt-0.5">{t("project.openTasks", { count: openByProject.get(p.id) ?? 0 })}</div>
           </Link>
         ))}
       </div>
@@ -45,12 +49,8 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
       {projects.length === 0 && (
         <div className="text-center py-20 text-neutral-400">
           <FolderKanban size={32} className="mx-auto mb-3 opacity-40" />
-          <p>No projects yet.</p>
-          <p className="text-xs mt-1">
-            {canCreate
-              ? "Create one with the + next to Projects in the sidebar. Add your task categories under Settings → Task Configuration."
-              : "A workspace admin needs to create a project first."}
-          </p>
+          <p>{t("home.noProjects")}</p>
+          <p className="text-xs mt-1">{canCreate ? t("home.noProjectsHint") : t("home.noProjectsViewer")}</p>
         </div>
       )}
     </div>

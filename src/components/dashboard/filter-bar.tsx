@@ -7,6 +7,7 @@ import { Select } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
 import type { CrossFilter } from "@/lib/dashboard-engine";
 import { nanoid } from "nanoid";
+import { useT } from "@/components/i18n-provider";
 
 // Dashboard-level "slicers": a persisted CrossFilter the user types in
 // directly instead of deriving from a chart click - see dashboard-engine.ts
@@ -20,6 +21,7 @@ export function DashboardFilterBar({
   slicers: (CrossFilter & { id: string })[];
   onChange: (slicers: (CrossFilter & { id: string })[]) => void;
 }) {
+  const { t } = useT();
   const [open, setOpen] = useState(false);
   const [fieldName, setFieldName] = useState("");
   const [mode, setMode] = useState<"value" | "before" | "after">("value");
@@ -44,7 +46,7 @@ export function DashboardFilterBar({
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
       <span className="flex items-center gap-1 text-xs text-neutral-400">
-        <SlidersHorizontal size={12} /> Slicers:
+        <SlidersHorizontal size={12} /> {t("db.slicers")}
       </span>
       {slicers.map((s) => (
         <span key={s.id} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 text-xs">
@@ -57,12 +59,12 @@ export function DashboardFilterBar({
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button className="flex items-center gap-1 text-xs text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-md px-2 py-1">
-            <Plus size={12} /> Add slicer
+            <Plus size={12} /> {t("db.addSlicer")}
           </button>
         </PopoverTrigger>
         <PopoverContent className="w-64 p-3 space-y-2">
           <div>
-            <label className="text-[11px] font-medium text-neutral-500 mb-1 block">Field name (e.g. Status, Category, Owner, Due Date)</label>
+            <label className="text-[11px] font-medium text-neutral-500 mb-1 block">{t("db.slicerField")}</label>
             <Input list="dashboard-field-names" value={fieldName} onChange={(e) => setFieldName(e.target.value)} placeholder="Status" />
             <datalist id="dashboard-field-names">
               {fieldNames.map((n) => (
@@ -71,20 +73,20 @@ export function DashboardFilterBar({
             </datalist>
           </div>
           <div>
-            <label className="text-[11px] font-medium text-neutral-500 mb-1 block">Condition</label>
+            <label className="text-[11px] font-medium text-neutral-500 mb-1 block">{t("db.condition")}</label>
             <Select
               className="w-full"
               value={mode}
               onValueChange={(v) => setMode(v as "value" | "before" | "after")}
               options={[
-                { value: "value", label: "is equal to" },
-                { value: "before", label: "date is before" },
-                { value: "after", label: "date is after" },
+                { value: "value", label: t("db.eq") },
+                { value: "before", label: t("db.before") },
+                { value: "after", label: t("db.after") },
               ]}
             />
           </div>
           <div>
-            <label className="text-[11px] font-medium text-neutral-500 mb-1 block">Value</label>
+            <label className="text-[11px] font-medium text-neutral-500 mb-1 block">{t("flt.value")}</label>
             <Input type={mode === "value" ? "text" : "date"} value={value} onChange={(e) => setValue(e.target.value)} placeholder={mode === "value" ? "Done" : undefined} />
           </div>
           <Button className="w-full justify-center" onClick={addSlicer} disabled={!fieldName.trim() || !value.trim()}>

@@ -5,7 +5,7 @@ import { Checkbox } from "@/components/ui/misc";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { getFieldType, parseFieldConfig, SELECT_SINGLE_TYPES, type SelectOption, type AttachmentValue } from "@/lib/field-types";
+import { getFieldType, parseFieldConfig, resolveOkrTarget, SELECT_SINGLE_TYPES, type SelectOption, type AttachmentValue } from "@/lib/field-types";
 import { cn, initials, formatDate } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
 
@@ -414,6 +414,77 @@ export function Cell({ field, value, members, linkTargets, okrOptions, wrapText,
         </Popover>
       );
     }
+    case "okr_target": {
+      const objectives = config.objectives ?? [];
+      const selected = resolveOkrTarget(config, value);
+      const pick = (token: string) => onChange(token === value ? null : token);
+      return (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button className={cn(base, "gap-1 cursor-pointer overflow-hidden")}>
+              {selected ? (
+                selected.kind === "kr" ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-teal-50 dark:bg-teal-950 text-teal-700 dark:text-teal-300 px-2 py-0.5 text-xs truncate max-w-full" title={`${selected.objectiveTitle} › ${selected.title}`}>
+                    <KeySquare size={10} className="shrink-0" /> <span className="truncate">{selected.title}</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 text-xs truncate max-w-full">
+                    <Target size={10} className="shrink-0" /> <span className="truncate">{selected.title}</span>
+                  </span>
+                )
+              ) : (
+                <span className="text-neutral-300">—</span>
+              )}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-72 p-1 max-h-80 overflow-y-auto thin-scroll">
+            {objectives.map((o) => (
+              <div key={o.id} className="mb-1">
+                <button
+                  onClick={() => pick(`obj:${o.id}`)}
+                  className="w-full flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm text-left font-medium"
+                >
+                  <Target size={12} className="text-indigo-500 shrink-0" />
+                  <span className="flex-1 truncate">{o.title}</span>
+                  {value === `obj:${o.id}` && <Check size={13} className="text-indigo-600" />}
+                </button>
+                {o.keyResults.map((k) => (
+                  <button
+                    key={k.id}
+                    onClick={() => pick(`kr:${k.id}`)}
+                    className="w-full flex items-center gap-2 rounded-sm pl-6 pr-2 py-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm text-left"
+                  >
+                    <KeySquare size={11} className="text-teal-500 shrink-0" />
+                    <span className="flex-1 truncate">{k.title}</span>
+                    {value === `kr:${k.id}` && <Check size={13} className="text-indigo-600" />}
+                  </button>
+                ))}
+              </div>
+            ))}
+          </PopoverContent>
+        </Popover>
+      );
+    }
+    case "task_attachments": {
+      const files = Array.isArray(value) ? (value as { id: string; name: string; type: string }[]) : [];
+      return (
+        <div className={cn(base, "gap-1 overflow-hidden")} title={files.map((f) => f.name).join("\n")}>
+          {files.length ? (
+            <>
+              {files.filter((f) => f.type.startsWith("image/")).slice(0, 3).map((f) => (
+                // eslint-disable-next-line @next/next/no-img-element -- authorized download route, not a static asset
+                <img key={f.id} src={`/api/attachments/${f.id}/download?inline=1`} alt={f.name} className="h-6 w-6 rounded object-cover border border-neutral-200 dark:border-neutral-700" />
+              ))}
+              <span className="inline-flex items-center gap-1 text-xs text-neutral-500">
+                <Paperclip size={11} /> {files.length}
+              </span>
+            </>
+          ) : (
+            <span className="text-neutral-300">—</span>
+          )}
+        </div>
+      );
+    }
     case "okr_objective": {
       const objectives = okrOptions?.objectives ?? [];
       const selected = objectives.find((o) => o.id === value);
@@ -588,6 +659,13 @@ export function CellDisplayValue(field: FieldRow, value: unknown): string {
   }
   if (field.type === "attachment" && Array.isArray(value)) {
     return (value as AttachmentValue[]).map((a) => a.name).join(", ");
+  }
+  if (field.type === "okr_target") {
+    const t = resolveOkrTarget(config, value);
+    return t ? (t.kind === "kr" ? `${t.objectiveTitle} › ${t.title}` : t.title) : "";
+  }
+  if (field.type === "task_attachments" && Array.isArray(value)) {
+    return value.length ? `📎 ${value.length}` : "";
   }
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (Array.isArray(value)) return value.join(", ");

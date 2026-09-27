@@ -9,6 +9,7 @@ import type { AttachmentValue } from "@/lib/field-types";
 import { formatDisplayValue } from "@/lib/format";
 import type { FieldRow, RecordRow } from "@/types";
 import type { Member } from "@/components/grid/cell";
+import { useT } from "@/components/i18n-provider";
 
 const IMAGE_EXT = /\.(png|jpe?g|gif|webp|svg|avif)(\?.*)?$/i;
 
@@ -27,6 +28,7 @@ export function GalleryView({
   onConfigChange: (patch: Partial<GalleryConfig>) => void;
   onOpenRecord: (id: string) => void;
 }) {
+  const { t } = useT();
   const attachmentFields = fields.filter((f) => f.type === "attachment");
   const coverField = fields.find((f) => f.id === config.coverFieldId);
   const primaryField = fields.find((f) => f.isPrimary);
@@ -39,7 +41,7 @@ export function GalleryView({
       </div>
       <div className="flex-1 overflow-y-auto thin-scroll p-4">
         {flatRecords.length === 0 ? (
-          <div className="h-full flex items-center justify-center text-sm text-neutral-400">No records to show.</div>
+          <div className="h-full flex items-center justify-center text-sm text-neutral-400">{t("gal.noRecords")}</div>
         ) : (
           <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
             {flatRecords.map((record) => (
@@ -132,27 +134,28 @@ function GallerySettings({
   config: GalleryConfig;
   onChange: (patch: Partial<GalleryConfig>) => void;
 }) {
+  const { t } = useT();
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button className="flex items-center gap-1.5 h-7 px-2 rounded-md text-sm text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800">
-          <Settings2 size={13} /> Gallery settings
+          <Settings2 size={13} /> {t("gal.settings")}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-3 space-y-2.5">
         <div>
-          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">Cover field</label>
+          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">{t("gal.cover")}</label>
           <Select
             className="w-full"
             value={config.coverFieldId ?? ""}
             onValueChange={(v) => onChange({ coverFieldId: v || undefined })}
-            options={[{ value: "", label: "None" }, ...attachmentFields.map((f) => ({ value: f.id, label: f.name }))]}
-            placeholder="None"
+            options={[{ value: "", label: t("common.none") }, ...attachmentFields.map((f) => ({ value: f.id, label: f.name }))]}
+            placeholder={t("common.none")}
           />
-          {attachmentFields.length === 0 && <p className="text-[11px] text-neutral-400 mt-1">Add an Attachment field to use as a cover image.</p>}
+          {attachmentFields.length === 0 && <p className="text-[11px] text-neutral-400 mt-1">{t("gal.coverHint")}</p>}
         </div>
         <div>
-          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">Card fields</label>
+          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">{t("kb.cardFields")}</label>
           <div className="max-h-40 overflow-y-auto thin-scroll border border-neutral-200 dark:border-neutral-800 rounded-md p-1.5 space-y-1">
             {fields.map((f) => {
               const checked = config.cardFieldIds?.includes(f.id) ?? false;

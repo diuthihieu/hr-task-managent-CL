@@ -47,7 +47,7 @@ export const POST = route<P>(async (req, { params }) => {
   await requireWorkspaceRole(user, workspaceId, "contributor");
   const body = createSchema.parse(await readJson(req));
   if (!(await prisma.project.findFirst({ where: { id: body.projectId, workspaceId, deletedAt: null } }))) throw badRequest("Unknown project");
-  if (body.categoryId && !(await prisma.category.findFirst({ where: { id: body.categoryId, workspaceId } }))) throw badRequest("Unknown category");
+  if (body.categoryId && !(await prisma.category.findFirst({ where: { id: body.categoryId, projectId: body.projectId } }))) throw badRequest("Unknown category");
   const plannedAt = body.plannedAt ? new Date(body.plannedAt) : null;
   if (plannedAt && Number.isNaN(plannedAt.getTime())) throw badRequest("Invalid planned time");
   const t = await prisma.capturedThought.create({

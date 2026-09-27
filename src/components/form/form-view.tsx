@@ -22,6 +22,7 @@ import type { FormConfig, FormFieldConfig, FilterOperator } from "@/lib/query-en
 import type { FieldRow, ViewRow } from "@/types";
 import type { Member } from "@/components/grid/cell";
 import { cn } from "@/lib/utils";
+import { useT } from "@/components/i18n-provider";
 
 export function FormView({
   view,
@@ -44,6 +45,7 @@ export function FormView({
   publicUrl: string;
   onSubmitRecord: (data: Record<string, unknown>) => Promise<void>;
 }) {
+  const { t } = useT();
   const orderedFields = getOrderedFormFields(fields, config);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
   const [copied, setCopied] = useState(false);
@@ -70,7 +72,7 @@ export function FormView({
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
-      toast.error("Couldn't copy link");
+      toast.error(t("form.copyFailed"));
     }
   }
 
@@ -79,7 +81,7 @@ export function FormView({
       <div className="w-[380px] shrink-0 border-r border-neutral-200 dark:border-neutral-800 flex flex-col overflow-hidden">
         <div className="px-3 py-2.5 border-b border-neutral-200 dark:border-neutral-800 space-y-2 shrink-0">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200">Public link</span>
+            <span className="text-sm font-medium text-neutral-700 dark:text-neutral-200">{t("form.publicLink")}</span>
             <Switch checked={view.isPublic ?? false} onCheckedChange={onTogglePublic} />
           </div>
           {view.isPublic && (
@@ -100,7 +102,7 @@ export function FormView({
               ))}
             </SortableContext>
           </DndContext>
-          {fields.filter(isFieldFormable).length === 0 && <p className="text-xs text-neutral-400 p-2">This table has no fields a form can collect yet.</p>}
+          {fields.filter(isFieldFormable).length === 0 && <p className="text-xs text-neutral-400 p-2">{t("form.noFields")}</p>}
         </div>
       </div>
 
@@ -126,6 +128,7 @@ function FieldRowEditor({
   onPatch: (patch: Partial<FormFieldConfig>) => void;
   onConfigChange: (patch: Partial<FormConfig>) => void;
 }) {
+  const { t } = useT();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: field.id });
   const [expanded, setExpanded] = useState(false);
   const rule = config.conditionalRules?.find((r) => r.targetFieldId === field.id);
@@ -150,8 +153,8 @@ function FieldRowEditor({
           {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
         </button>
         <span className="text-sm text-neutral-800 dark:text-neutral-100 truncate flex-1">{field.name}</span>
-        <label className="flex items-center gap-1 text-[11px] text-neutral-500 shrink-0" title="Required">
-          Req
+        <label className="flex items-center gap-1 text-[11px] text-neutral-500 shrink-0" title={t("form.required")}>
+          {t("form.req")}
           <Switch checked={formField.required} onCheckedChange={(v) => onPatch({ required: v })} />
         </label>
         <Switch checked={formField.visible} onCheckedChange={(v) => onPatch({ visible: v })} />
@@ -159,16 +162,16 @@ function FieldRowEditor({
       {expanded && (
         <div className="px-2 pb-2.5 space-y-2 border-t border-neutral-100 dark:border-neutral-800 pt-2">
           <div>
-            <label className="text-[11px] font-medium text-neutral-500 mb-1 block">Description / help text</label>
-            <Textarea rows={2} value={formField.description ?? ""} onChange={(e) => onPatch({ description: e.target.value })} placeholder="Shown under the field label" />
+            <label className="text-[11px] font-medium text-neutral-500 mb-1 block">{t("form.help")}</label>
+            <Textarea rows={2} value={formField.description ?? ""} onChange={(e) => onPatch({ description: e.target.value })} placeholder={t("form.helpPh")} />
           </div>
           <div>
-            <label className="text-[11px] font-medium text-neutral-500 mb-1 block">Default value</label>
+            <label className="text-[11px] font-medium text-neutral-500 mb-1 block">{t("form.default")}</label>
             <FormFieldInput field={field} value={formField.defaultValue} members={[]} onChange={(v) => onPatch({ defaultValue: v })} />
           </div>
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-[11px] font-medium text-neutral-500">Show only if…</label>
+              <label className="text-[11px] font-medium text-neutral-500">{t("form.showIf")}</label>
               {rule && (
                 <button onClick={removeRule} className="text-[11px] text-neutral-400 hover:text-red-600">
                   Remove
@@ -176,15 +179,15 @@ function FieldRowEditor({
               )}
             </div>
             {otherFields.length === 0 ? (
-              <p className="text-[11px] text-neutral-400">No other fields to condition on.</p>
+              <p className="text-[11px] text-neutral-400">{t("form.noOther")}</p>
             ) : (
               <div className="flex items-center gap-1.5">
-                <Select className="flex-1" value={rule?.whenFieldId ?? ""} onValueChange={(v) => setRule({ whenFieldId: v })} options={otherFields.map((f) => ({ value: f.id, label: f.name }))} placeholder="Choose a field" />
+                <Select className="flex-1" value={rule?.whenFieldId ?? ""} onValueChange={(v) => setRule({ whenFieldId: v })} options={otherFields.map((f) => ({ value: f.id, label: f.name }))} placeholder={t("form.chooseField")} />
                 <Select
                   className="w-24 shrink-0"
                   value={rule?.operator ?? "is"}
                   onValueChange={(v) => setRule({ operator: v as FilterOperator })}
-                  options={rule?.whenFieldId ? operatorsForType(allFields.find((f) => f.id === rule.whenFieldId)?.type ?? "text") : []}
+                  options={rule?.whenFieldId ? operatorsForType(allFields.find((f) => f.id === rule.whenFieldId)?.type ?? "text", t) : []}
                 />
                 {rule && !["is_empty", "is_not_empty"].includes(rule.operator) && (
                   <Input className="flex-1" value={(rule.value as string) ?? ""} onChange={(e) => setRule({ value: e.target.value })} placeholder="value" />

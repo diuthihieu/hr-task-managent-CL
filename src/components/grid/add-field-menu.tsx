@@ -1,15 +1,18 @@
 "use client";
 import { Plus } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
-import { FIELD_TYPES, FIELD_CATEGORY_LABELS, CUSTOM_FIELD_TYPE_IDS, type FieldCategory } from "@/lib/field-types";
+import { FIELD_TYPES, CUSTOM_FIELD_TYPE_IDS, type FieldCategory } from "@/lib/field-types";
+import type { MessageKey } from "@/lib/i18n/core";
+import { useT } from "@/components/i18n-provider";
 
 const CATEGORIES: FieldCategory[] = ["basic", "selection", "people", "contact", "files", "calculated", "relational", "system", "action"];
 
 export function AddFieldButton({ onSelect }: { onSelect: (type: string) => void }) {
+  const { t } = useT();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center justify-center h-8 w-full text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800" title="Add custom field">
+        <button className="flex items-center justify-center h-8 w-full text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800" title={t("fe.addCustom")}>
           <Plus size={15} />
         </button>
       </DropdownMenuTrigger>
@@ -20,10 +23,10 @@ export function AddFieldButton({ onSelect }: { onSelect: (type: string) => void 
           return (
             <div key={cat}>
               {i > 0 && <DropdownMenuSeparator />}
-              <DropdownMenuLabel>{FIELD_CATEGORY_LABELS[cat]}</DropdownMenuLabel>
+              <DropdownMenuLabel>{t(`fc.${cat}` as MessageKey)}</DropdownMenuLabel>
               {items.map((f) => (
                 <DropdownMenuItem key={f.type} onSelect={() => onSelect(f.type)}>
-                  <span className="flex-1">{f.label}</span>
+                  <span className="flex-1">{t(`ft.${f.type}` as MessageKey)}</span>
                 </DropdownMenuItem>
               ))}
             </div>

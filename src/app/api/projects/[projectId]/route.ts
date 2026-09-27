@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject, notFound, badRequest } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject, notFound, badRequest, assertCanManageProject } from "@/lib/authz";
 import { logActivity, diff } from "@/lib/activity";
 import { dateOnlyToDate, projectInputSchema } from "@/lib/validation";
 import { loadProjectMeta, buildFields } from "@/lib/task-grid";
 import { serializeProject, serializeView } from "@/lib/serializers";
+import { makeT, normalizeLocale } from "@/lib/i18n/core";
 
 type P = { projectId: string };
 
@@ -26,7 +27,7 @@ export const GET = route<P>(async (_req, { params }) => {
   ]);
   return NextResponse.json({
     ...serializeProject(project),
-    fields: buildFields(meta),
+    fields: buildFields(meta, makeT(normalizeLocale(user.locale))),
     views: views.map(serializeView),
     members: members.map((m) => m.user),
     myRole: ctx.role,
@@ -37,7 +38,8 @@ export const GET = route<P>(async (_req, { params }) => {
 export const PATCH = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { projectId } = await params;
-  const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "admin");
+  const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "editor");
+  await assertCanManageProject(ctx, projectId);
   const raw = await readJson<Record<string, unknown>>(req);
   const body = projectInputSchema.partial().parse(raw);
   const order = typeof raw.order === "number" ? Math.round(raw.order) : undefined;
@@ -69,7 +71,8 @@ export const PATCH = route<P>(async (req, { params }) => {
 export const DELETE = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { projectId } = await params;
-  const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "admin");
+  const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "editor");
+  await assertCanManageProject(ctx, projectId);
   await prisma.$transaction(async (tx) => {
     const p = await tx.project.update({ where: { id: projectId }, data: { deletedAt: new Date(), deletedById: user.id } });
     await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "project", entityId: projectId, action: "deleted", summary: `Deleted project "${p.name}"` });

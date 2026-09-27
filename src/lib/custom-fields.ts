@@ -10,7 +10,7 @@ export const CUSTOM_FIELD_TYPES = [
   "single_select", "multi_select", "person", "url", "email", "phone", "formula",
 ] as const satisfies readonly CustomFieldType[];
 
-export const viewTypeSchema = z.enum(["grid", "kanban", "calendar", "gantt", "gallery", "form", "eisenhower"]);
+export const viewTypeSchema = z.enum(["grid", "kanban", "calendar", "gantt", "gallery", "form", "eisenhower", "report"]);
 
 const optionSchema = z.object({ id: z.string().optional(), label: z.string().trim().min(1).max(120), color: colorSchema.catch("#94a3b8") });
 

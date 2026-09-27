@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { TIME_BUCKETS, TIME_BUCKET_DISTANCE, TIME_BUCKET_LABELS, bucketForPlannedAt, dotRadiusForDuration, type TimeBucket } from "@/lib/capture-engine";
 import type { CaptureTargetRow, CapturedThoughtRow } from "@/types";
+import { useT } from "@/components/i18n-provider";
 
 const CANVAS_SIZE = 460;
 const CENTER = CANVAS_SIZE / 2;
@@ -52,6 +53,7 @@ function toDatetimeLocal(iso: string | null | undefined): string {
 }
 
 export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: string; workspaceSlug: string }) {
+  const { t } = useT();
   const [targets, setTargets] = useState<CaptureTargetRow[]>([]);
   const [thoughts, setThoughts] = useState<CapturedThoughtRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -78,7 +80,7 @@ export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: st
       setProjectId((prev) => prev || t[0]?.projectId || "");
       setCategoryId((prev) => prev || t[0]?.categoryOptions[0]?.id || "");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to load Put All Things On");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
       setLoading(false);
     }
@@ -117,7 +119,7 @@ export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: st
       setPlannedAt("");
       nameInputRef.current?.focus();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to capture thought");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
       setSubmitting(false);
     }
@@ -128,7 +130,7 @@ export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: st
     setClarifying(null);
   }
 
-  if (loading) return <div className="flex-1 flex items-center justify-center text-sm text-neutral-400">Loading…</div>;
+  if (loading) return <div className="flex-1 flex items-center justify-center text-sm text-neutral-400">{t("common.loading")}</div>;
 
   if (!targets.length) {
     return (
@@ -150,11 +152,11 @@ export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: st
             value={taskName}
             onChange={(e) => setTaskName(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !submitting && submitCapture()}
-            placeholder="What's on your mind? e.g. Prepare payroll reconciliation"
+            placeholder={t("cap.placeholder")}
             className="flex-1"
           />
           <Button size="sm" onClick={submitCapture} disabled={!taskName.trim() || submitting}>
-            <Plus size={13} /> Capture
+            <Plus size={13} /> {t("cap.capture")}
           </Button>
         </div>
         <div className="flex flex-wrap items-center gap-2 pl-6">
@@ -166,10 +168,10 @@ export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: st
             value={categoryId}
             onValueChange={setCategoryId}
             options={(activeTarget?.categoryOptions ?? []).map((o) => ({ value: o.id, label: o.label }))}
-            placeholder="Category"
+            placeholder={t("cap.category")}
           />
           <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-neutral-400">Duration</span>
+            <span className="text-[11px] text-neutral-400">{t("cap.duration")}</span>
             <Input
               type="number"
               min={0}
@@ -182,7 +184,7 @@ export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: st
             <span className="text-[11px] text-neutral-400">min</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="text-[11px] text-neutral-400">Planned</span>
+            <span className="text-[11px] text-neutral-400">{t("cap.planned")}</span>
             <Input type="datetime-local" value={plannedAt} onChange={(e) => setPlannedAt(e.target.value)} className="h-7 text-xs w-[190px]" />
           </div>
         </div>
@@ -218,6 +220,7 @@ function DotCanvas({
   onHover: (id: string | null) => void;
   onClickDot: (t: CapturedThoughtRow) => void;
 }) {
+  const { t } = useT();
   const hovered = thoughts.find((t) => t.id === hoverId);
   const hoveredPos = hovered ? dotPosition(hovered) : null;
   const innerBuckets = TIME_BUCKETS.filter((b) => b !== "unscheduled");
@@ -306,7 +309,7 @@ function DotCanvas({
 
       {thoughts.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <p className="text-sm text-neutral-400 max-w-[220px] text-center">Capture a thought above - it&apos;ll appear here as a dot until you clarify it into a task.</p>
+          <p className="text-sm text-neutral-400 max-w-[220px] text-center">{t("cap.empty")}</p>
         </div>
       )}
 
@@ -342,6 +345,7 @@ function ClarificationPanel({
   onClose: () => void;
   onConverted: (id: string) => void;
 }) {
+  const { t } = useT();
   const router = useRouter();
   const [okr, setOkr] = useState<OkrOption>({ objectives: [], keyResults: [] });
   const [members, setMembers] = useState<MemberLite[]>([]);
@@ -385,11 +389,11 @@ function ClarificationPanel({
         output: output.trim() || undefined,
         process: process.trim() || undefined,
       });
-      toast.success("Converted to task");
+      toast.success(t("cap.converted"));
       onConverted(thought.id);
       router.push(`/w/${workspaceSlug}/p/${res.projectId}?record=${res.taskId}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to convert");
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
       setSubmitting(false);
     }
@@ -401,7 +405,7 @@ function ClarificationPanel({
         <DialogTitle>Clarify: {thought.taskName}</DialogTitle>
         <div className="space-y-3 max-h-[65vh] overflow-y-auto thin-scroll pr-1">
           <div>
-            <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">Objective / OKR</label>
+            <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">{t("cap.objective")}</label>
             <Select
               className="w-full"
               value={objectiveId}
@@ -410,8 +414,8 @@ function ClarificationPanel({
                 setKeyResultId("");
                 if (v) setNewGoal("");
               }}
-              options={[{ value: "", label: "None" }, ...okr.objectives.map((o) => ({ value: o.id, label: o.title }))]}
-              placeholder="Select an existing goal"
+              options={[{ value: "", label: t("common.none") }, ...okr.objectives.map((o) => ({ value: o.id, label: o.title }))]}
+              placeholder={t("cap.selectGoal")}
             />
             {!objectiveId && (
               <Input className="mt-1.5" value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder="...or type a new goal to create it" />
@@ -420,35 +424,35 @@ function ClarificationPanel({
 
           {objectiveId && availableKeyResults.length > 0 && (
             <div>
-              <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">Key Result</label>
+              <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">{t("cap.kr")}</label>
               <Select
                 className="w-full"
                 value={keyResultId}
                 onValueChange={setKeyResultId}
-                options={[{ value: "", label: "None" }, ...availableKeyResults.map((k) => ({ value: k.id, label: k.title }))]}
-                placeholder="Select a key result"
+                options={[{ value: "", label: t("common.none") }, ...availableKeyResults.map((k) => ({ value: k.id, label: k.title }))]}
+                placeholder={t("cap.selectKr")}
               />
             </div>
           )}
 
           <div>
-            <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">Owner</label>
+            <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">{t("cap.owner")}</label>
             <Select
               className="w-full"
               value={ownerId}
               onValueChange={setOwnerId}
-              options={[{ value: "", label: "Me" }, ...members.map((m) => ({ value: m.id, label: m.name }))]}
-              placeholder="Assign an owner"
+              options={[{ value: "", label: t("cap.me") }, ...members.map((m) => ({ value: m.id, label: m.name }))]}
+              placeholder={t("cap.assign")}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">Start date/time</label>
+              <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">{t("cap.start")}</label>
               <Input type="datetime-local" value={startAt} onChange={(e) => setStartAt(e.target.value)} />
             </div>
             <div>
-              <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">Due date/time</label>
+              <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">{t("cap.due")}</label>
               <Input type="datetime-local" value={dueAt} onChange={(e) => setDueAt(e.target.value)} />
             </div>
           </div>
@@ -456,32 +460,32 @@ function ClarificationPanel({
           <div className="grid grid-cols-2 gap-2">
             {target.statusOptions.length > 0 && (
               <div>
-                <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">Status</label>
+                <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">{t("okr.f.status")}</label>
                 <Select className="w-full" value={status} onValueChange={setStatus} options={target.statusOptions.map((o) => ({ value: o.id, label: o.label }))} />
               </div>
             )}
             {target.priorityOptions.length > 0 && (
               <div>
-                <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">Priority</label>
+                <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">{t("okr.f.priority")}</label>
                 <Select className="w-full" value={priority} onValueChange={setPriority} options={target.priorityOptions.map((o) => ({ value: o.id, label: o.label }))} />
               </div>
             )}
           </div>
 
           <div>
-            <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">Expected Output</label>
-            <Textarea rows={2} value={output} onChange={(e) => setOutput(e.target.value)} placeholder="What does done look like?" />
+            <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">{t("cap.output")}</label>
+            <Textarea rows={2} value={output} onChange={(e) => setOutput(e.target.value)} placeholder={t("cap.outputPh")} />
           </div>
 
           <div>
-            <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">Execution Plan</label>
-            <Textarea rows={3} value={process} onChange={(e) => setProcess(e.target.value)} placeholder="Roughly how will you get this done?" />
+            <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">{t("cap.plan")}</label>
+            <Textarea rows={3} value={process} onChange={(e) => setProcess(e.target.value)} placeholder={t("cap.planPh")} />
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-4">
-          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button variant="secondary" onClick={onClose}>{t("common.cancel")}</Button>
           <Button onClick={submit} disabled={submitting}>
-            <Target size={13} /> Convert to Task
+            <Target size={13} /> {t("cap.convert")}
           </Button>
         </div>
       </DialogContent>

@@ -72,6 +72,8 @@ export const FIELD_TYPES: FieldTypeDef[] = [
   { type: "rollup", label: "Rollup", category: "relational", icon: "Sigma", editable: false, comingSoon: true },
   { type: "okr_objective", label: "Objective", category: "relational", icon: "Target", editable: true },
   { type: "okr_key_result", label: "Key Result", category: "relational", icon: "KeySquare", editable: true },
+  { type: "okr_target", label: "Objective / Key Result", category: "relational", icon: "Target", editable: true },
+  { type: "task_attachments", label: "Attachments", category: "files", icon: "Paperclip", editable: false },
 
   // System
   { type: "created_time", label: "Created Time", category: "system", icon: "Clock", editable: false },
@@ -165,6 +167,28 @@ export interface FieldConfig {
   startNumber?: number;
   linkProjectId?: string; // system link fields (Depends On / Parent Task)
   maxLinks?: number;
+  objectives?: OkrTargetObjective[]; // okr_target (task "Objective" field)
+}
+
+export interface OkrTargetObjective {
+  id: string;
+  title: string;
+  keyResults: { id: string; title: string }[];
+}
+
+/** Resolves an okr_target value ("kr:<id>" / "obj:<id>") to what the UI shows. */
+export function resolveOkrTarget(
+  config: FieldConfig,
+  token: unknown
+): { kind: "kr" | "obj"; title: string; objectiveTitle: string } | null {
+  if (typeof token !== "string" || !token.includes(":")) return null;
+  const [kind, id] = token.split(":", 2);
+  for (const o of config.objectives ?? []) {
+    if (kind === "obj" && o.id === id) return { kind: "obj", title: o.title, objectiveTitle: o.title };
+    const kr = kind === "kr" ? o.keyResults.find((k) => k.id === id) : undefined;
+    if (kr) return { kind: "kr", title: kr.title, objectiveTitle: o.title };
+  }
+  return null;
 }
 
 export function parseFieldConfig(raw: string | null | undefined): FieldConfig {

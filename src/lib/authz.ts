@@ -24,6 +24,7 @@ export interface SessionUser {
   systemRole: SystemRole;
   mustChangePassword: boolean;
   avatarColor: string;
+  locale: string;
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
@@ -32,7 +33,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
   if (!id) return null;
   const user = await prisma.user.findFirst({
     where: { id, isActive: true, deletedAt: null },
-    select: { id: true, email: true, name: true, systemRole: true, mustChangePassword: true, avatarColor: true },
+    select: { id: true, email: true, name: true, systemRole: true, mustChangePassword: true, avatarColor: true, locale: true },
   });
   return user;
 }
@@ -108,7 +109,10 @@ export async function workspaceOfComment(commentId: string) {
   return c?.task.workspaceId ?? null;
 }
 export async function workspaceOfAttachment(attachmentId: string) {
-  const a = await prisma.attachment.findFirst({ where: { id: attachmentId, deletedAt: null, task: { deletedAt: null } }, select: { workspaceId: true } });
+  const a = await prisma.attachment.findFirst({
+    where: { id: attachmentId, deletedAt: null, OR: [{ task: { deletedAt: null } }, { wikiPage: { deletedAt: null } }] },
+    select: { workspaceId: true },
+  });
   return a?.workspaceId ?? null;
 }
 export async function workspaceOfObjective(objectiveId: string) {
@@ -135,9 +139,20 @@ export async function workspaceOfStatus(statusId: string) {
   const s = await prisma.status.findUnique({ where: { id: statusId }, select: { workspaceId: true } });
   return s?.workspaceId ?? null;
 }
+export async function workspaceOfWikiPage(pageId: string) {
+  const p = await prisma.wikiPage.findFirst({ where: { id: pageId, deletedAt: null, project: { deletedAt: null } }, select: { workspaceId: true } });
+  return p?.workspaceId ?? null;
+}
 export async function workspaceOfCategory(categoryId: string) {
   const c = await prisma.category.findUnique({ where: { id: categoryId }, select: { workspaceId: true } });
   return c?.workspaceId ?? null;
+}
+
+/** Workspace admins/owners manage every project; editors manage the projects they own or created. */
+export async function assertCanManageProject(ctx: WorkspaceContext, projectId: string) {
+  if (roleAtLeast(ctx.role, "admin")) return;
+  const p = await prisma.project.findFirst({ where: { id: projectId, OR: [{ ownerId: ctx.user.id }, { createdById: ctx.user.id }] }, select: { id: true } });
+  if (!p) throw forbidden("Only the project owner or a workspace admin can change this project");
 }
 
 /**
@@ -173,6 +188,9 @@ export function route<P = Record<string, string>>(handler: Handler<P>): Handler<
 // Friendly messages for the CHECK constraints in the constraints migration.
 const CONSTRAINT_MESSAGES: Record<string, string> = {
   tasks_date_range: "Due date must be on or after the start date",
+  tasks_key_result_needs_objective: "A key result must be linked together with its objective",
+  wiki_pages_title_not_blank: "Page title is required",
+  users_locale_supported: "Unsupported language",
   projects_date_range: "End date must be on or after the start date",
   objectives_date_range: "End date must be on or after the start date",
   tasks_progress_range: "Progress must be between 0 and 100",
@@ -184,7 +202,7 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
   comments_body_not_blank: "Comment cannot be empty",
 };
 
-const TRIGGER_MESSAGE = /(task (?:project|status|category|key result) must belong to the task workspace|parent task must belong to the same project|assignee must be a member of the task workspace|custom field must be defined on the task project|option does not belong to this custom field|dependent tasks must belong to the same workspace)/;
+const TRIGGER_MESSAGE = /(task (?:project|status|category|key result|objective) must belong to the task (?:workspace|project|objective)|parent (?:page|task) must belong to the same project|parent key result must belong to another objective in the workspace|assignee must be a member of the task workspace|custom field must be defined on the task project|option does not belong to this custom field|dependent tasks must belong to the same workspace)/;
 
 export function errorResponse(e: unknown): Response {
   if (e instanceof HttpError) return NextResponse.json({ error: e.message }, { status: e.status });

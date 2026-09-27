@@ -5,6 +5,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { FolderKanban, FileText, Search } from "lucide-react";
 import { api } from "@/lib/api-client";
+import { useT } from "@/components/i18n-provider";
 
 interface SearchResult {
   projects: { id: string; name: string; color: string }[];
@@ -22,6 +23,7 @@ export function CommandPalette({
   workspaceId: string;
   workspaceSlug: string;
 }) {
+  const { t } = useT();
   const [q, setQ] = useState("");
   const [results, setResults] = useState<SearchResult>({ projects: [], tasks: [] });
   const router = useRouter();
@@ -70,23 +72,23 @@ export function CommandPalette({
             autoFocus
             value={q}
             onChange={(e) => handleQueryChange(e.target.value)}
-            placeholder="Search projects and tasks…"
+            placeholder={t("cp.placeholder")}
             className="border-0 focus:ring-0 shadow-none px-1"
           />
         </div>
         <div className="max-h-80 overflow-y-auto thin-scroll p-2">
-          {!q && <p className="text-xs text-neutral-400 px-2 py-4 text-center">Type to search this workspace</p>}
-          {q && !hasResults && <p className="text-xs text-neutral-400 px-2 py-4 text-center">No results</p>}
+          {!q && <p className="text-xs text-neutral-400 px-2 py-4 text-center">{t("cp.hint")}</p>}
+          {q && !hasResults && <p className="text-xs text-neutral-400 px-2 py-4 text-center">{t("cp.none")}</p>}
 
           {results.projects.length > 0 && (
-            <Group label="Projects">
+            <Group label={t("nav.projects")}>
               {results.projects.map((p) => (
                 <Row key={p.id} icon={<FolderKanban size={14} style={{ color: p.color }} />} label={p.name} onClick={() => go(`/w/${workspaceSlug}/p/${p.id}`)} />
               ))}
             </Group>
           )}
           {results.tasks.length > 0 && (
-            <Group label="Tasks">
+            <Group label={t("cp.tasks")}>
               {results.tasks.map((t) => (
                 <Row key={t.id} icon={<FileText size={14} />} label={t.label || "(untitled)"} sub={t.projectName} onClick={() => go(`/w/${workspaceSlug}/p/${t.projectId}?record=${t.id}`)} />
               ))}

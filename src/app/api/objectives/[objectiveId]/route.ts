@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfObjective } from "@/lib/authz";
 import { logActivity, diff } from "@/lib/activity";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
-import { assertObjectiveRefs } from "@/lib/okr-write";
+import { assertObjectiveRefs, parentObjectiveFor } from "@/lib/okr-write";
 import { objectiveSchema, dateOnlyToDate, lenientDateOnly } from "@/lib/validation";
 
 type P = { objectiveId: string };
@@ -35,7 +35,9 @@ export const PATCH = route<P>(async (req, { params }) => {
         title: body.title,
         description: body.description,
         teamId: body.teamId,
-        parentObjectiveId: body.parentObjectiveId,
+        parentObjectiveId: body.parentKeyResultId !== undefined ? await parentObjectiveFor(tx, body.parentKeyResultId) : body.parentObjectiveId,
+        parentKeyResultId: body.parentKeyResultId,
+        projectId: body.projectId,
         ownerId: body.ownerId,
         cycleType: body.cycleType,
         cycleLabel: body.cycleLabel,
@@ -48,7 +50,7 @@ export const PATCH = route<P>(async (req, { params }) => {
       },
       include: OBJECTIVE_INCLUDE,
     });
-    const changes = diff(before, after, ["title", "description", "teamId", "ownerId", "cycleType", "cycleLabel", "startDate", "endDate", "status", "confidence", "priority"]);
+    const changes = diff(before, after, ["title", "description", "teamId", "ownerId", "projectId", "parentKeyResultId", "cycleType", "cycleLabel", "startDate", "endDate", "status", "confidence", "priority"]);
     if (changes) await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "objective", entityId: objectiveId, action: "updated", changes });
     return after;
   });
@@ -64,7 +66,9 @@ export const DELETE = route<P>(async (_req, { params }) => {
     const now = new Date();
     const o = await tx.objective.update({ where: { id: objectiveId }, data: { deletedAt: now, updatedById: user.id } });
     // Unlink tasks so they don't point at a hidden key result.
-    await tx.task.updateMany({ where: { keyResult: { objectiveId } }, data: { keyResultId: null } });
+    await tx.task.updateMany({ where: { OR: [{ objectiveId }, { keyResult: { objectiveId } }] }, data: { keyResultId: null, objectiveId: null } });
+    // Objectives cascaded from its key results stay, but lose the alignment.
+    await tx.objective.updateMany({ where: { parentKeyResult: { objectiveId } }, data: { parentKeyResultId: null, parentObjectiveId: null } });
     await tx.keyResult.updateMany({ where: { objectiveId, deletedAt: null }, data: { deletedAt: now } });
     await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "objective", entityId: objectiveId, action: "deleted", summary: `Deleted objective "${o.title}"` });
   });

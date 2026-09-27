@@ -6,6 +6,7 @@ import { buildExportMatrix, downloadCsv, downloadXlsx } from "@/lib/export";
 import { toast } from "@/components/ui/toast";
 import type { FieldRow, RecordRow } from "@/types";
 import type { FormatMember } from "@/lib/format";
+import { useT } from "@/components/i18n-provider";
 
 export function ExportDialog({
   open,
@@ -28,6 +29,7 @@ export function ExportDialog({
   selectedRecords: RecordRow[];
   members: FormatMember[];
 }) {
+  const { t } = useT();
   const [format, setFormat] = useState<"csv" | "xlsx">("csv");
   const [scope, setScope] = useState<"filtered" | "all" | "selected">("filtered");
   const [fieldScope, setFieldScope] = useState<"visible" | "all">("visible");
@@ -39,7 +41,7 @@ export function ExportDialog({
     const records = scopeRecords[scope];
     const fields = fieldScope === "visible" ? visibleFields : allFields;
     if (!records.length) {
-      toast.error("No records to export");
+      toast.error(t("ex.none"));
       return;
     }
     const matrix = buildExportMatrix(fields, records, members);
@@ -47,20 +49,20 @@ export function ExportDialog({
     try {
       if (format === "csv") downloadCsv(matrix, filename);
       else await downloadXlsx(matrix, filename);
-      toast.success(`Exported ${records.length} record${records.length === 1 ? "" : "s"}`);
+      toast.success(t("ex.done", { count: records.length }));
       onOpenChange(false);
     } catch {
-      toast.error("Export failed");
+      toast.error(t("ex.failed"));
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <DialogTitle>Export {tableName}</DialogTitle>
+        <DialogTitle>{t("ex.title", { name: tableName })}</DialogTitle>
         <div className="space-y-4">
           <div>
-            <label className="text-xs font-medium text-neutral-500 mb-1.5 block">Format</label>
+            <label className="text-xs font-medium text-neutral-500 mb-1.5 block">{t("ex.format")}</label>
             <div className="flex gap-2">
               {(["csv", "xlsx"] as const).map((f) => (
                 <button
@@ -79,12 +81,12 @@ export function ExportDialog({
           </div>
 
           <div>
-            <label className="text-xs font-medium text-neutral-500 mb-1.5 block">Records</label>
+            <label className="text-xs font-medium text-neutral-500 mb-1.5 block">{t("ex.records")}</label>
             <div className="space-y-1">
-              <RadioRow label={`Current filtered view (${filteredRecords.length})`} checked={scope === "filtered"} onSelect={() => setScope("filtered")} />
-              <RadioRow label={`All records (${allRecords.length})`} checked={scope === "all"} onSelect={() => setScope("all")} />
+              <RadioRow label={t("ex.filtered", { count: filteredRecords.length })} checked={scope === "filtered"} onSelect={() => setScope("filtered")} />
+              <RadioRow label={t("ex.all", { count: allRecords.length })} checked={scope === "all"} onSelect={() => setScope("all")} />
               <RadioRow
-                label={`Selected records (${selectedRecords.length})`}
+                label={t("ex.selected", { count: selectedRecords.length })}
                 checked={scope === "selected"}
                 onSelect={() => setScope("selected")}
                 disabled={selectedRecords.length === 0}
@@ -93,19 +95,19 @@ export function ExportDialog({
           </div>
 
           <div>
-            <label className="text-xs font-medium text-neutral-500 mb-1.5 block">Fields</label>
+            <label className="text-xs font-medium text-neutral-500 mb-1.5 block">{t("tb.fields")}</label>
             <div className="space-y-1">
-              <RadioRow label={`Visible fields only (${visibleFields.length})`} checked={fieldScope === "visible"} onSelect={() => setFieldScope("visible")} />
-              <RadioRow label={`All fields (${allFields.length})`} checked={fieldScope === "all"} onSelect={() => setFieldScope("all")} />
+              <RadioRow label={t("ex.visibleFields", { count: visibleFields.length })} checked={fieldScope === "visible"} onSelect={() => setFieldScope("visible")} />
+              <RadioRow label={t("ex.allFields", { count: allFields.length })} checked={fieldScope === "all"} onSelect={() => setFieldScope("all")} />
             </div>
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button onClick={handleExport} disabled={!recordCount}>
-            Export {recordCount} record{recordCount === 1 ? "" : "s"}
+            {t("ex.submit", { count: recordCount })}
           </Button>
         </div>
       </DialogContent>

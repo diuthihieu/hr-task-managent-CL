@@ -11,6 +11,7 @@ import { formatDisplayValue } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
 import type { Member } from "@/components/grid/cell";
+import { useT } from "@/components/i18n-provider";
 
 const DATE_TYPES = ["date", "datetime"];
 const COLOR_TYPES = ["single_select", "status", "person", "people"];
@@ -56,6 +57,7 @@ export function CalendarView({
   onCellChange: (recordId: string, fieldId: string, value: unknown) => void;
   onOpenRecord: (id: string) => void;
 }) {
+  const { t } = useT();
   const dateFields = fields.filter((f) => DATE_TYPES.includes(f.type));
   const dateField = fields.find((f) => f.id === config.dateFieldId) ?? dateFields[0];
   const endDateField = fields.find((f) => f.id === config.endDateFieldId);
@@ -142,7 +144,7 @@ export function CalendarView({
   }
 
   if (!dateField) {
-    return <div className="flex-1 flex items-center justify-center text-sm text-neutral-400">This table has no Date or Date Time field to build a calendar from yet.</div>;
+    return <div className="flex-1 flex items-center justify-center text-sm text-neutral-400">{t("cal.noDate")}</div>;
   }
 
   const heading =
@@ -284,11 +286,12 @@ function WeekRow({ cursor, eventsByDay, onOpenRecord }: { cursor: Date; eventsBy
 }
 
 function DayList({ cursor, eventsByDay, onOpenRecord }: { cursor: Date; eventsByDay: Map<string, EventItem[]>; onOpenRecord: (id: string) => void }) {
+  const { t } = useT();
   const events = eventsByDay.get(isoKey(cursor)) ?? [];
   const { setNodeRef, isOver } = useDroppable({ id: isoKey(cursor) });
   return (
     <div ref={setNodeRef} className={cn("flex-1 overflow-y-auto thin-scroll p-4 space-y-2", isOver && "ring-2 ring-inset ring-indigo-400")}>
-      {events.length === 0 && <p className="text-sm text-neutral-400">No records on this day.</p>}
+      {events.length === 0 && <p className="text-sm text-neutral-400">{t("cal.noRecords")}</p>}
       {events.map((ev) => (
         <div key={ev.record.id} className="max-w-md">
           <EventChip event={ev} onOpen={() => onOpenRecord(ev.record.id)} />
@@ -309,37 +312,38 @@ function CalendarSettings({
   config: CalendarConfig;
   onChange: (patch: Partial<CalendarConfig>) => void;
 }) {
+  const { t } = useT();
   const colorFields = fields.filter((f) => COLOR_TYPES.includes(f.type));
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button className="ml-auto flex items-center gap-1.5 h-7 px-2 rounded-md text-sm text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800">
-          <Settings2 size={13} /> Calendar settings
+          <Settings2 size={13} /> {t("cal.settings")}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-3 space-y-2.5">
         <div>
-          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">Date field</label>
+          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">{t("cal.dateField")}</label>
           <Select className="w-full" value={config.dateFieldId ?? ""} onValueChange={(v) => onChange({ dateFieldId: v })} options={dateFields.map((f) => ({ value: f.id, label: f.name }))} />
         </div>
         <div>
-          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">End date (optional)</label>
+          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">{t("cal.endDate")}</label>
           <Select
             className="w-full"
             value={config.endDateFieldId ?? ""}
             onValueChange={(v) => onChange({ endDateFieldId: v || undefined })}
-            options={[{ value: "", label: "None" }, ...dateFields.map((f) => ({ value: f.id, label: f.name }))]}
-            placeholder="None"
+            options={[{ value: "", label: t("common.none") }, ...dateFields.map((f) => ({ value: f.id, label: f.name }))]}
+            placeholder={t("common.none")}
           />
         </div>
         <div>
-          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">Color by</label>
+          <label className="text-[11px] font-medium text-neutral-500 mb-1 block">{t("cal.colorBy")}</label>
           <Select
             className="w-full"
             value={config.colorFieldId ?? ""}
             onValueChange={(v) => onChange({ colorFieldId: v || undefined })}
-            options={[{ value: "", label: "None" }, ...colorFields.map((f) => ({ value: f.id, label: f.name }))]}
-            placeholder="None"
+            options={[{ value: "", label: t("common.none") }, ...colorFields.map((f) => ({ value: f.id, label: f.name }))]}
+            placeholder={t("common.none")}
           />
         </div>
       </PopoverContent>

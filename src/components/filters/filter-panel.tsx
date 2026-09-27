@@ -8,6 +8,7 @@ import { parseFieldConfig, SELECT_SINGLE_TYPES } from "@/lib/field-types";
 import type { FilterCondition, FilterGroup, FilterOperator } from "@/lib/query-engine";
 import type { FieldRow } from "@/types";
 import type { Member } from "@/components/grid/cell";
+import { useT } from "@/components/i18n-provider";
 
 const NO_VALUE_OPS: FilterOperator[] = ["is_empty", "is_not_empty", "today", "yesterday", "this_week", "this_month", "is_current_user"];
 
@@ -22,6 +23,7 @@ export function FilterPanel({
   members: Member[];
   onChange: (f: FilterGroup) => void;
 }) {
+  const { t } = useT();
   const conditions = filter.conditions ?? [];
 
   function updateCondition(id: string, patch: Partial<FilterCondition>) {
@@ -40,17 +42,17 @@ export function FilterPanel({
   return (
     <div className="w-[420px] p-3">
       <div className="flex items-center gap-2 mb-3 text-xs font-semibold text-neutral-500">
-        <ListFilter size={13} /> Filter records
+        <ListFilter size={13} /> {t("flt.title")}
       </div>
-      {conditions.length === 0 && <p className="text-xs text-neutral-400 mb-2">No filters applied</p>}
+      {conditions.length === 0 && <p className="text-xs text-neutral-400 mb-2">{t("flt.none")}</p>}
       <div className="space-y-2">
         {conditions.map((cond, idx) => {
           const field = fields.find((f) => f.id === cond.fieldId) ?? fields[0];
-          const ops = field ? operatorsForType(field.type) : [];
+          const ops = field ? operatorsForType(field.type, t) : [];
           const needsValue = !NO_VALUE_OPS.includes(cond.operator);
           return (
             <div key={cond.id} className="flex items-center gap-1.5">
-              <span className="w-10 text-xs text-neutral-400 shrink-0">{idx === 0 ? "Where" : filter.conjunction === "OR" ? "or" : "and"}</span>
+              <span className="w-10 text-xs text-neutral-400 shrink-0">{idx === 0 ? t("flt.where") : filter.conjunction === "OR" ? t("flt.orLower") : t("flt.andLower")}</span>
               <Select
                 className="w-28 shrink-0"
                 value={cond.fieldId}
@@ -78,7 +80,7 @@ export function FilterPanel({
       </div>
       <div className="flex items-center justify-between mt-3">
         <button onClick={addCondition} className="flex items-center gap-1 text-xs text-indigo-600 hover:underline">
-          <Plus size={12} /> Add condition
+          <Plus size={12} /> {t("flt.add")}
         </button>
         {conditions.length > 1 && (
           <div className="flex items-center gap-1 text-xs">
@@ -86,13 +88,13 @@ export function FilterPanel({
               onClick={() => onChange({ ...filter, conjunction: "AND" })}
               className={`px-2 py-0.5 rounded ${filter.conjunction !== "OR" ? "bg-neutral-800 text-white" : "text-neutral-400"}`}
             >
-              AND
+              {t("flt.and")}
             </button>
             <button
               onClick={() => onChange({ ...filter, conjunction: "OR" })}
               className={`px-2 py-0.5 rounded ${filter.conjunction === "OR" ? "bg-neutral-800 text-white" : "text-neutral-400"}`}
             >
-              OR
+              {t("flt.or")}
             </button>
           </div>
         )}

@@ -6,7 +6,8 @@
 
 import type { FieldRow, RecordRow } from "@/types";
 import { evaluateFormula } from "./formula";
-import { parseFieldConfig } from "./field-types";
+import { parseFieldConfig, resolveOkrTarget } from "./field-types";
+import { SYSTEM_FIELD_NAMES_EN } from "./system-field-names";
 
 export type FilterOperator =
   | "contains"
@@ -83,6 +84,28 @@ export interface ViewConfig {
   gallery?: GalleryConfig;
   form?: FormConfig;
   eisenhower?: EisenhowerConfig;
+  report?: ReportConfig;
+}
+
+export type ReportChartType = "kpi" | "bar" | "column" | "stacked_column" | "stacked_bar" | "line" | "area" | "pie" | "donut" | "pivot";
+
+/** One chart / pivot in a Report view. Computed client-side from the view's (filtered) tasks. */
+export interface ReportWidget {
+  id: string;
+  title: string;
+  type: ReportChartType;
+  dimensionFieldId?: string; // group by (rows)
+  dimension2FieldId?: string; // split by (columns / stacks)
+  measureFieldId?: string; // numeric field for sum/avg/min/max; empty = task count
+  aggregation?: "count" | "sum" | "avg" | "min" | "max";
+  dateBucket?: "day" | "week" | "month";
+  sortDesc?: boolean;
+  topN?: number;
+  wide?: boolean;
+}
+
+export interface ReportConfig {
+  widgets?: ReportWidget[];
 }
 
 export interface GanttConfig {
@@ -151,8 +174,11 @@ function computeCellValue(record: RecordRow, field: FieldRow, byId: Map<string, 
     if (!cfg.expression) return null;
     const nameMap: Record<string, string | number | boolean | null> = {};
     for (const f of byId.values()) {
-      const v = data[f.id];
-      nameMap[f.name] = (v as string | number | boolean | null) ?? null;
+      const v = (data[f.id] as string | number | boolean | null) ?? null;
+      nameMap[f.name] = v;
+      // System fields keep their English names as aliases, so a formula works in every UI language.
+      const en = SYSTEM_FIELD_NAMES_EN[f.id];
+      if (en && !(en in nameMap)) nameMap[en] = v;
     }
     return evaluateFormula(cfg.expression, nameMap);
   }
@@ -182,10 +208,14 @@ export function resolveValueLabel(
   key: string,
   members: MemberLite[] = []
 ): { label: string; color?: string } {
-  if (key === "__empty__") return { label: "(Empty)" };
+  if (key === "__empty__") return { label: "(Empty)", color: "#cbd5e1" };
   const cfg = parseFieldConfig(field.config);
   const option = cfg.options?.find((o) => o.id === key);
   if (option) return { label: option.label, color: option.color };
+  if (field.type === "okr_target") {
+    const t = resolveOkrTarget(cfg, key);
+    if (t) return { label: t.kind === "kr" ? `${t.objectiveTitle} › ${t.title}` : t.title };
+  }
   if (["person", "people"].includes(field.type)) {
     const member = members.find((m) => m.id === key);
     if (member) return { label: member.name, color: member.avatarColor };

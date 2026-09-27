@@ -133,6 +133,7 @@ enum ViewType {
   gallery
   form
   eisenhower
+  report
 
   @@map("view_type")
 }
@@ -188,6 +189,10 @@ model User {
   /// Set for admin-created / admin-reset accounts; the user must pick their
   /// own password before using the app.
   mustChangePassword Boolean    @default(true) @map("must_change_password")
+  /// UI language: "vi" or "en".
+  locale             String     @default("vi") @db.VarChar(5)
+  /// Accent palette name (Tailwind palette, e.g. "indigo", "rose").
+  accentColor        String     @default("indigo") @map("accent_color") @db.VarChar(20)
   lastLoginAt        DateTime?  @map("last_login_at") @db.Timestamptz(6)
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -209,6 +214,8 @@ model User {
   attachments           Attachment[]
   activityLogs          ActivityLog[]
   objectivesOwned       Objective[]            @relation("ObjectiveOwner")
+  wikiPagesCreated      WikiPage[]             @relation("WikiCreatedBy")
+  wikiPagesUpdated      WikiPage[]             @relation("WikiUpdatedBy")
   keyResultsOwned       KeyResult[]            @relation("KeyResultOwner")
   objectiveContributes  ObjectiveContributor[]
   capturedThoughts      CapturedThought[]
@@ -240,6 +247,7 @@ model Workspace {
   attachments      Attachment[]
   activityLogs     ActivityLog[]
   capturedThoughts CapturedThought[]
+  wikiPages        WikiPage[]
 
   @@map("workspaces")
 }
@@ -306,6 +314,9 @@ model Project {
   customFields     CustomField[]
   views            View[]
   capturedThoughts CapturedThought[]
+  categories       Category[]
+  objectives       Objective[]
+  wikiPages        WikiPage[]
 
   @@index([workspaceId, deletedAt, sortOrder])
   @@map("projects")
@@ -339,6 +350,9 @@ model Status {
 model Category {
   id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   workspaceId String   @map("workspace_id") @db.Uuid
+  /// Categories are configured per project (when the project is created or
+  /// later from the project's settings), not workspace-wide.
+  projectId   String   @map("project_id") @db.Uuid
   name        String   @db.VarChar(80)
   color       String   @default("#6366f1") @db.VarChar(9)
   sortOrder   Int      @default(0) @map("sort_order")
@@ -348,11 +362,13 @@ model Category {
   updatedById String?  @map("updated_by") @db.Uuid
 
   workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   tasks            Task[]
   capturedThoughts CapturedThought[]
 
-  @@unique([workspaceId, name])
-  @@index([workspaceId, sortOrder])
+  @@unique([projectId, name])
+  @@index([projectId, sortOrder])
+  @@index([workspaceId])
   @@map("categories")
 }
 
@@ -367,8 +383,13 @@ model Task {
   statusId        String       @map("status_id") @db.Uuid
   categoryId      String?      @map("category_id") @db.Uuid
   keyResultId     String?      @map("key_result_id") @db.Uuid
+  /// Objective the task contributes to. When a key result is chosen this is
+  /// that key result's objective; it can also be set alone (objective only).
+  objectiveId     String?      @map("objective_id") @db.Uuid
   title           String       @db.VarChar(500)
   description     String?
+  /// Rich page body (sanitized HTML from the record page editor).
+  content         String?
   priority        TaskPriority @default(medium)
   importance      Importance?
   urgency         Urgency?
@@ -394,6 +415,7 @@ model Task {
   status       Status                 @relation(fields: [statusId], references: [id], onDelete: Restrict)
   category     Category?              @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   keyResult    KeyResult?             @relation(fields: [keyResultId], references: [id], onDelete: SetNull)
+  objective    Objective?             @relation(fields: [objectiveId], references: [id], onDelete: SetNull)
   createdBy    User?                  @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   updatedBy    User?                  @relation("TaskUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   assignees    TaskAssignee[]
@@ -409,6 +431,7 @@ model Task {
   @@index([statusId])
   @@index([categoryId])
   @@index([keyResultId])
+  @@index([objectiveId])
   @@index([parentTaskId])
   @@map("tasks")
 }
@@ -547,7 +570,9 @@ model Comment {
 model Attachment {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   workspaceId     String    @map("workspace_id") @db.Uuid
-  taskId          String    @map("task_id") @db.Uuid
+  /// Exactly one owner: a task (record page / Files) or a wiki page (inline images).
+  taskId          String?   @map("task_id") @db.Uuid
+  wikiPageId      String?   @map("wiki_page_id") @db.Uuid
   fileName        String    @map("file_name") @db.VarChar(255)
   contentType     String    @map("content_type") @db.VarChar(255)
   sizeBytes       Int       @map("size_bytes")
@@ -559,10 +584,12 @@ model Attachment {
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
 
   workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  task       Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  task       Task?     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  wikiPage   WikiPage? @relation(fields: [wikiPageId], references: [id], onDelete: Cascade)
   uploadedBy User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
 
   @@index([taskId, deletedAt])
+  @@index([wikiPageId])
   @@map("attachments")
 }
 
@@ -662,6 +689,11 @@ model Objective {
   teamId            String?         @map("team_id") @db.Uuid
   /// Self-reference: cascading goals (company -> team -> individual).
   parentObjectiveId String?         @map("parent_objective_id") @db.Uuid
+  /// Project the objective was set up in (null = workspace-level objective).
+  projectId         String?         @map("project_id") @db.Uuid
+  /// Cascading OKRs: a key result of a higher-level objective that this
+  /// objective delivers (a manager's KR becomes a team member's objective).
+  parentKeyResultId String?         @map("parent_key_result_id") @db.Uuid
   ownerId           String?         @map("owner_id") @db.Uuid
   title             String          @db.VarChar(300)
   description       String?
@@ -685,9 +717,14 @@ model Objective {
   owner           User?                  @relation("ObjectiveOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   contributors    ObjectiveContributor[]
   keyResults      KeyResult[]
+  project         Project?               @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentKeyResult KeyResult?             @relation("KeyResultChildObjectives", fields: [parentKeyResultId], references: [id], onDelete: SetNull)
+  tasks           Task[]
 
   @@index([workspaceId, deletedAt])
   @@index([teamId])
+  @@index([projectId])
+  @@index([parentKeyResultId])
   @@index([ownerId])
   @@map("objectives")
 }
@@ -726,9 +763,10 @@ model KeyResult {
   updatedById    String?         @map("updated_by") @db.Uuid
   deletedAt      DateTime?       @map("deleted_at") @db.Timestamptz(6)
 
-  objective Objective @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
-  owner     User?     @relation("KeyResultOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  tasks     Task[]
+  objective       Objective   @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+  owner           User?       @relation("KeyResultOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  tasks           Task[]
+  childObjectives Objective[] @relation("KeyResultChildObjectives")
 
   @@index([objectiveId, deletedAt])
   @@map("key_results")
@@ -803,4 +841,40 @@ model DesktopRelease {
   @@unique([platform, channel, version])
   @@index([platform, channel, isPublished, publishedAt(sort: Desc)])
   @@map("desktop_releases")
+}
+
+// ---------------------------------------------------------------------------
+// Project wiki
+// ---------------------------------------------------------------------------
+
+/// A team wiki page inside a project. Pages nest (parent_page_id) so a
+/// project can hold a small knowledge base next to its tasks.
+model WikiPage {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId  String    @map("workspace_id") @db.Uuid
+  projectId    String    @map("project_id") @db.Uuid
+  parentPageId String?   @map("parent_page_id") @db.Uuid
+  title        String    @db.VarChar(300)
+  icon         String?   @db.VarChar(16)
+  /// Sanitized HTML produced by the rich-text editor.
+  content      String?
+  sortOrder    Int       @default(0) @map("sort_order")
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdById  String?   @map("created_by") @db.Uuid
+  updatedById  String?   @map("updated_by") @db.Uuid
+  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(6)
+  deletedById  String?   @map("deleted_by") @db.Uuid
+
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentPage  WikiPage?    @relation("WikiTree", fields: [parentPageId], references: [id], onDelete: Cascade)
+  children    WikiPage[]   @relation("WikiTree")
+  attachments Attachment[]
+  createdBy   User?        @relation("WikiCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy   User?        @relation("WikiUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@index([projectId, deletedAt, sortOrder])
+  @@index([parentPageId])
+  @@map("wiki_pages")
 }

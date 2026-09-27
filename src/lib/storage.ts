@@ -31,8 +31,9 @@ export function safeFileName(name: string) {
   return (cleaned || "file").slice(0, 200);
 }
 
-export async function uploadAttachment(opts: { workspaceId: string; taskId: string; file: File }) {
-  const pathname = `workspaces/${opts.workspaceId}/tasks/${opts.taskId}/${safeFileName(opts.file.name)}`;
+export async function uploadAttachment(opts: { workspaceId: string; taskId?: string; wikiPageId?: string; file: File }) {
+  const owner = opts.taskId ? `tasks/${opts.taskId}` : `wiki/${opts.wikiPageId}`;
+  const pathname = `workspaces/${opts.workspaceId}/${owner}/${safeFileName(opts.file.name)}`;
   const result = await put(pathname, opts.file, {
     access: access(),
     addRandomSuffix: true,

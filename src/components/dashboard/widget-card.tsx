@@ -6,6 +6,7 @@ import { api } from "@/lib/api-client";
 import { ChartRenderer, CHART_COLORS } from "./chart-renderer";
 import { AGGREGATION_LABELS, parseBlockConfig, type ChartType, type SeriesPoint, type StackedSeries, type ScatterPoint, type CrossFilter } from "@/lib/dashboard-engine";
 import { cn } from "@/lib/utils";
+import { useT } from "@/components/i18n-provider";
 
 export interface DashboardBlockLite {
   id: string;
@@ -43,6 +44,7 @@ export function WidgetCard({
   onCrossFilter?: (point: SeriesPoint) => void;
   crossFilterActive?: string | null;
 }) {
+  const { t } = useT();
   const [data, setData] = useState<DataResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const config = parseBlockConfig(block.config);
@@ -84,10 +86,10 @@ export function WidgetCard({
           </DropdownMenuTrigger>
           <DropdownMenuContent>
             <DropdownMenuItem onSelect={onEdit}>
-              <Pencil size={13} /> Edit widget
+              <Pencil size={13} /> {t("db.editWidget")}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={onDelete} className="text-red-600 dark:text-red-400">
-              <Trash2 size={13} /> Delete widget
+              <Trash2 size={13} /> {t("db.deleteWidget")}
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -133,7 +135,8 @@ function KpiDisplay({ value, label }: { value: number; label?: string }) {
 }
 
 function TableDisplay({ columns, rows }: { columns: string[]; rows: string[][] }) {
-  if (!columns.length) return <div className="h-full flex items-center justify-center text-xs text-neutral-400">No columns configured</div>;
+  const { t } = useT();
+  if (!columns.length) return <div className="h-full flex items-center justify-center text-xs text-neutral-400">{t("db.noColumns")}</div>;
   return (
     <div className="h-full overflow-auto thin-scroll">
       <table className="w-full text-xs border-collapse">

@@ -5,8 +5,10 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
-import { FIELD_TYPES, FIELD_CATEGORY_LABELS, CUSTOM_FIELD_TYPE_IDS, getFieldType, type FieldCategory, type FieldConfig, type SelectOption } from "@/lib/field-types";
+import type { MessageKey } from "@/lib/i18n/core";
+import { FIELD_TYPES, CUSTOM_FIELD_TYPE_IDS, getFieldType, type FieldCategory, type FieldConfig, type SelectOption } from "@/lib/field-types";
 import type { FieldRow } from "@/types";
+import { useT } from "@/components/i18n-provider";
 
 const CATEGORIES: FieldCategory[] = ["basic", "selection", "people", "contact", "files", "calculated", "relational", "system", "action"];
 const OPTION_COLORS = ["#94a3b8", "#3b82f6", "#22c55e", "#eab308", "#f97316", "#ef4444", "#8b5cf6", "#ec4899"];
@@ -29,6 +31,7 @@ export function FieldEditorDialog({
   field: (Pick<FieldRow, "name" | "type" | "description"> & { config: FieldConfig }) | null;
   onSave: (draft: FieldDraft) => void;
 }) {
+  const { t } = useT();
   function makeDraft(): FieldDraft {
     return field
       ? { name: field.name, type: field.type, description: field.description ?? "", config: field.config }
@@ -55,7 +58,7 @@ export function FieldEditorDialog({
     patchConfig({ options: options.map((o) => (o.id === id ? { ...o, ...patch } : o)) });
   }
   function addOption() {
-    patchConfig({ options: [...options, { id: crypto.randomUUID(), label: "New option", color: OPTION_COLORS[options.length % OPTION_COLORS.length] }] });
+    patchConfig({ options: [...options, { id: crypto.randomUUID(), label: t("fe.newOption"), color: OPTION_COLORS[options.length % OPTION_COLORS.length] }] });
   }
   function removeOption(id: string) {
     patchConfig({ options: options.filter((o) => o.id !== id) });
@@ -64,17 +67,17 @@ export function FieldEditorDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md">
-        <DialogTitle>{field ? "Edit field" : "New field"}</DialogTitle>
+        <DialogTitle>{field ? t("fe.edit") : t("fe.new")}</DialogTitle>
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-neutral-500 mb-1 block">Field name</label>
+            <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.name")}</label>
             <Input value={draft.name} onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))} autoFocus />
           </div>
           <div>
-            <label className="text-xs font-medium text-neutral-500 mb-1 block">Type</label>
+            <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.type")}</label>
             {field ? (
               <div className="text-sm text-neutral-700 dark:text-neutral-300 px-2.5 py-1.5 rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950">
-                {getFieldType(draft.type).label}
+                {CUSTOM_FIELD_TYPE_IDS.includes(draft.type) ? t(`ft.${draft.type}` as MessageKey) : getFieldType(draft.type).label}
                 <span className="text-[11px] text-neutral-400"> · the type is fixed once a field is created</span>
               </div>
             ) : (
@@ -82,7 +85,7 @@ export function FieldEditorDialog({
                 value={draft.type}
                 onValueChange={(v) => setDraft((d) => ({ ...d, type: v, config: {} }))}
                 options={CATEGORIES.flatMap((cat) =>
-                  FIELD_TYPES.filter((f) => f.category === cat && CUSTOM_FIELD_TYPE_IDS.includes(f.type)).map((f) => ({ value: f.type, label: `${FIELD_CATEGORY_LABELS[cat]} · ${f.label}` }))
+                  FIELD_TYPES.filter((f) => f.category === cat && CUSTOM_FIELD_TYPE_IDS.includes(f.type)).map((f) => ({ value: f.type, label: `${t(`fc.${cat}` as MessageKey)} · ${t(`ft.${f.type}` as MessageKey)}` }))
                 )}
                 className="w-full"
               />
@@ -91,7 +94,7 @@ export function FieldEditorDialog({
 
           {["single_select", "multi_select"].includes(draft.type) && (
             <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">Options</label>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.options")}</label>
               <div className="space-y-1.5 max-h-48 overflow-y-auto thin-scroll">
                 {options.map((o) => (
                   <div key={o.id} className="flex items-center gap-1.5">
@@ -114,46 +117,46 @@ export function FieldEditorDialog({
                 ))}
               </div>
               <button onClick={addOption} className="flex items-center gap-1 text-xs text-indigo-600 hover:underline mt-2">
-                <Plus size={12} /> Add option
+                <Plus size={12} /> {t("fe.addOption")}
               </button>
             </div>
           )}
 
           {draft.type === "formula" && (
             <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">Formula</label>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.formula")}</label>
               <Textarea
                 rows={3}
                 value={draft.config.expression ?? ""}
                 onChange={(e) => patchConfig({ expression: e.target.value })}
                 placeholder={'IF({Progress} >= 100, "Completed", "In Progress")'}
               />
-              <p className="text-[11px] text-neutral-400 mt-1">Reference fields with {"{Field Name}"}. Supports IF, AND, OR, NOT, CONCAT, UPPER, LOWER, LEN, TODAY, DATE_DIFF, SUM, AVG, MIN, MAX and arithmetic.</p>
+              <p className="text-[11px] text-neutral-400 mt-1">{t("fe.formulaHint")}</p>
             </div>
           )}
 
           {draft.type === "currency" && (
             <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">Currency symbol</label>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.currency")}</label>
               <Input value={draft.config.currencySymbol ?? "$"} onChange={(e) => patchConfig({ currencySymbol: e.target.value })} className="w-20" />
             </div>
           )}
 
           {draft.type === "rating" && (
             <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">Max rating</label>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.maxRating")}</label>
               <Input type="number" min={1} max={10} value={draft.config.maxRating ?? 5} onChange={(e) => patchConfig({ maxRating: Number(e.target.value) })} className="w-20" />
             </div>
           )}
 
           <div>
-            <label className="text-xs font-medium text-neutral-500 mb-1 block">Description (optional)</label>
+            <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.description")}</label>
             <Textarea rows={2} value={draft.description} onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))} />
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-4">
-          <Button variant="secondary" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={() => onSave(draft)} disabled={!draft.name.trim()}>Save</Button>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
+          <Button onClick={() => onSave(draft)} disabled={!draft.name.trim()}>{t("common.save")}</Button>
         </div>
       </DialogContent>
     </Dialog>

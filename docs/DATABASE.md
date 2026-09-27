@@ -9,7 +9,8 @@ always **Browser → Next.js route handler (authz) → Prisma → PostgreSQL**.
   changed through migrations (`prisma migrate dev` locally, `prisma migrate
   deploy` in CI/Vercel builds). Rules Prisma cannot express (CHECK
   constraints, partial unique index, integrity triggers) live in
-  `20260926140100_constraints_and_triggers`.
+  `20260926140100_constraints_and_triggers` and
+  `20260927120000_open_signup_project_okrs_wiki`.
 - Credentials: `DATABASE_URL` (pooled, runtime) and `DIRECT_URL` (direct,
   migrations) come from environment variables only.
 
@@ -17,31 +18,33 @@ always **Browser → Next.js route handler (authz) → Prisma → PostgreSQL**.
 
 | Table | Purpose | Delete strategy |
 |---|---|---|
-| `users` | Accounts. `system_role` = `ADMIN` / `MEMBER`. Only admins create accounts. | Deactivate (`is_active`) + `deleted_at` |
+| `users` | Accounts (open sign-up). `system_role` = `ADMIN` / `MEMBER`; `locale` (vi/en) and `accent_color` are UI preferences. | Deactivate (`is_active`) + `deleted_at` |
 | `workspaces` | Tenant boundary. | Soft (`deleted_at`) |
 | `workspace_members` | User ↔ Workspace with `workspace_role` | Hard |
 | `teams` | Groups inside a workspace (for goals) | Hard |
 | `projects` | Container of tasks, custom fields and views | Soft |
 | `statuses` | Workspace workflow states; `category` (todo/in_progress/done/cancelled) drives progress and "done" logic | Hard, `RESTRICT` while tasks use it |
-| `categories` | Workspace task categories | Hard, tasks `SET NULL` |
-| `tasks` | The work item | Soft (`deleted_at`, `deleted_by`) |
+| `categories` | Task categories of one project (`project_id`; `workspace_id` kept for tenant checks) | Hard, tasks `SET NULL` |
+| `tasks` | The work item; `content` = rich page body (sanitized HTML); `objective_id` / `key_result_id` = OKR link | Soft (`deleted_at`, `deleted_by`) |
 | `task_assignees` | Task ↔ User | Hard |
 | `task_dependencies` | Task → Task (depends on) | Hard |
 | `custom_fields` | Per-project field definitions | Soft |
 | `custom_field_options` | Options of select fields | Hard, values `SET NULL` |
 | `task_custom_field_values` | One row per (task, field), typed value columns | Hard |
 | `comments` | Task comments, threaded | Soft |
-| `attachments` | File metadata + object-storage URL/key | Soft (blob removed from storage) |
+| `attachments` | File metadata + object-storage URL/key; owned by exactly one task **or** wiki page | Soft (blob removed from storage) |
 | `activity_logs` | Append-only audit trail | Never updated (trigger) |
 | `views` | Saved view configuration per project | Hard |
 | `dashboards`, `dashboard_widgets` | Analytics layout | Hard |
-| `objectives`, `key_results`, `objective_contributors` | Goals (OKR) | Soft (objectives, key results) |
+| `objectives`, `key_results`, `objective_contributors` | Goals (OKR). `objectives.project_id` (null = workspace level), `objectives.parent_key_result_id` (cascading) | Soft (objectives, key results) |
+| `wiki_pages` | Nested project wiki pages (sanitized HTML) | Soft (page + sub-pages) |
 | `captured_thoughts` | Quick-capture inbox before a thought becomes a task | Hard / archived |
 
 ## Relationships
 
 - **One-to-many:** workspace → projects, statuses, categories, tasks, teams,
-  objectives, dashboards; project → tasks, custom_fields, views; status →
+  objectives, dashboards; project → tasks, categories, custom_fields, views,
+  objectives, wiki_pages; objective → tasks (direct link); status →
   tasks; category → tasks; custom_field → options, values; task → comments,
   attachments; objective → key_results; key_result → tasks; dashboard →
   widgets; user → comments, attachments, activity_logs.
@@ -50,7 +53,9 @@ always **Browser → Next.js route handler (authz) → Prisma → PostgreSQL**.
   custom fields (`task_custom_field_values`).
 - **Self-referencing:** `tasks.parent_task_id` (subtasks),
   `task_dependencies` (task ↔ task, many-to-many), `comments.parent_comment_id`
-  (replies), `objectives.parent_objective_id` (cascading goals),
+  (replies), `objectives.parent_objective_id` and
+  `objectives.parent_key_result_id` (cascading goals: a key result becomes a
+  child objective), `wiki_pages.parent_page_id` (nested pages),
   `users.created_by` / `updated_by`.
 
 ## Entity relationship diagram
@@ -62,7 +67,7 @@ erDiagram
     workspaces ||--o{ teams : has
     workspaces ||--o{ projects : has
     workspaces ||--o{ statuses : defines
-    workspaces ||--o{ categories : defines
+    projects ||--o{ categories : defines
     workspaces ||--o{ tasks : "scopes (denormalized)"
     workspaces ||--o{ objectives : has
     workspaces ||--o{ dashboards : has
@@ -74,6 +79,12 @@ erDiagram
     statuses ||--o{ tasks : "state of"
     categories ||--o{ tasks : classifies
     key_results ||--o{ tasks : "measured by"
+    objectives ||--o{ tasks : "linked directly"
+    projects ||--o{ objectives : "sets up"
+    key_results ||--o{ objectives : "cascades to"
+    projects ||--o{ wiki_pages : has
+    wiki_pages ||--o{ wiki_pages : "parent of"
+    wiki_pages ||--o{ attachments : embeds
     tasks ||--o{ tasks : "parent of (subtasks)"
     tasks ||--o{ task_dependencies : "depends on"
     tasks ||--o{ task_dependencies : "blocks"
@@ -239,19 +250,25 @@ erDiagram
   use a composite PK.
 - **Unique:** `users.email` (stored lowercase, enforced by CHECK),
   `workspaces.slug`, `(workspace_id, user_id)` on members, `(workspace_id,
-  name)` on statuses/categories/teams, `(task_id, depends_on_task_id)` on
+  name)` on statuses/teams, `(project_id, name)` on categories, `(task_id, depends_on_task_id)` on
   dependencies, one `is_default` status per workspace (partial unique index).
 - **CHECK:** non-blank names/titles, progress 0–100, confidence 0–100, date
   ranges (`due_date >= start_date`), positive weights, non-negative sizes and
   durations, no self-dependency, no self-parenting, lowercase email and slug
-  format.
-- **Triggers (tenant integrity):** a task's project/status/category/parent/
-  key result must be in the task's workspace; dependencies only inside one
+  format, `tasks_key_result_needs_objective`, one owner per attachment,
+  supported locale.
+- **Triggers (tenant integrity):** a task's project/status/objective/key
+  result must be in the task's workspace, its category in the task's project
+  and its key result must belong to its objective; objectives' project,
+  parent objective and parent key result stay in the workspace; wiki pages'
+  parent in the same project; attachment owners in the attachment's workspace; dependencies only inside one
   workspace; assignees must be workspace members; custom field values only
   for fields of the task's project and options of that field;
   `activity_logs` rejects UPDATE.
-- **Application rules:** dependency cycles (A→B→A) are rejected by the API
-  with a graph walk before insert.
+- **Application rules:** dependency cycles (A→B→A), cascading-OKR loops and
+  wiki page loops are rejected by the API with a graph walk before writing.
+  Rich page HTML is sanitized with an allow-list (no scripts, event handlers,
+  iframes or external images) before it is stored.
 
 ## Indexes (by query)
 
@@ -260,7 +277,9 @@ erDiagram
 | Project task list (grid/kanban/...) | `tasks (project_id, deleted_at, sort_order)` |
 | Overdue / due-soon across a workspace | `tasks (workspace_id, deleted_at, due_date)` |
 | My tasks | `task_assignees (user_id)` |
-| Key result rollup | `tasks (key_result_id)` |
+| Key result / objective rollup | `tasks (key_result_id)`, `tasks (objective_id)`, `objectives (project_id)`, `objectives (parent_key_result_id)` |
+| Project categories | `categories (project_id, sort_order)` |
+| Wiki tree | `wiki_pages (project_id, deleted_at, sort_order)`, `(parent_page_id)` |
 | Subtasks | `tasks (parent_task_id)` |
 | What blocks X | `task_dependencies (depends_on_task_id)` |
 | Filter/sort on custom fields | `task_custom_field_values (custom_field_id, value_number / value_date / value_option_id)` |
@@ -274,11 +293,15 @@ Enforced in route handlers through `src/lib/authz.ts`, never only in the UI:
 
 - Every request re-loads the user from the database; deactivated or deleted
   users are rejected even with a valid session cookie.
-- `ADMIN` (system role): manage users, create workspaces, full access.
-- Workspace roles: `owner`/`admin` manage members, statuses, categories,
-  projects; `editor` manages tasks, custom fields and views; `contributor`
-  creates tasks and edits tasks they created or are assigned to; `viewer`
-  reads and comments.
+- Anyone can sign up (`POST /api/register`) and create workspaces; the
+  creator is the owner.
+- `ADMIN` (system role): support console (deactivate/reset/delete accounts,
+  desktop releases) and access to every workspace.
+- Workspace roles: `owner` also deletes the workspace; `owner`/`admin` manage
+  members, statuses and every project; `editor` creates projects (and manages
+  the ones they own), categories, custom fields, views, objectives; `contributor`
+  creates tasks, edits tasks they created or are assigned to, writes wiki
+  pages; `viewer` reads and comments.
 - Every resource is resolved to its workspace first, then the caller's role
   in that workspace is checked. The database triggers above stop
   cross-workspace references even if a route had a bug.

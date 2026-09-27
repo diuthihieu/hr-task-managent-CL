@@ -4,6 +4,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { Select } from "@/components/ui/misc";
 import type { GanttConfig } from "@/lib/query-engine";
 import type { FieldRow } from "@/types";
+import { useT } from "@/components/i18n-provider";
 
 const DATE_TYPES = ["date", "datetime"];
 const PROGRESS_TYPES = ["progress", "number", "percent", "integer"];
@@ -19,6 +20,7 @@ export function GanttSettings({
   config: GanttConfig;
   onChange: (patch: Partial<GanttConfig>) => void;
 }) {
+  const { t } = useT();
   const dateFields = fields.filter((f) => DATE_TYPES.includes(f.type));
   const progressFields = fields.filter((f) => PROGRESS_TYPES.includes(f.type));
   const ownerFields = fields.filter((f) => OWNER_TYPES.includes(f.type));
@@ -29,34 +31,34 @@ export function GanttSettings({
     <Popover>
       <PopoverTrigger asChild>
         <button className="flex items-center gap-1.5 h-7 px-2 rounded-md text-sm text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800 shrink-0">
-          <Settings2 size={13} /> Gantt settings
+          <Settings2 size={13} /> {t("gt.settings")}
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-3 space-y-2.5">
-        <div className="text-xs font-semibold text-neutral-500 mb-1">Map fields for this Gantt view</div>
-        <Field label="Task name">
+        <div className="text-xs font-semibold text-neutral-500 mb-1">{t("gt.map")}</div>
+        <Field label={t("gt.task")}>
           <Select value={config.taskFieldId ?? ""} onValueChange={(v) => onChange({ taskFieldId: v })} options={fields.map((f) => ({ value: f.id, label: f.name }))} className="w-full" />
         </Field>
-        <Field label="Start date">
-          <Select value={config.startFieldId ?? ""} onValueChange={(v) => onChange({ startFieldId: v })} options={dateFields.map((f) => ({ value: f.id, label: f.name }))} className="w-full" placeholder="None" />
+        <Field label={t("gt.start")}>
+          <Select value={config.startFieldId ?? ""} onValueChange={(v) => onChange({ startFieldId: v })} options={dateFields.map((f) => ({ value: f.id, label: f.name }))} className="w-full" placeholder={t("common.none")} />
         </Field>
-        <Field label="End date">
-          <Select value={config.endFieldId ?? ""} onValueChange={(v) => onChange({ endFieldId: v })} options={dateFields.map((f) => ({ value: f.id, label: f.name }))} className="w-full" placeholder="None" />
+        <Field label={t("gt.end")}>
+          <Select value={config.endFieldId ?? ""} onValueChange={(v) => onChange({ endFieldId: v })} options={dateFields.map((f) => ({ value: f.id, label: f.name }))} className="w-full" placeholder={t("common.none")} />
         </Field>
-        <Field label="Progress">
-          <Select value={config.progressFieldId ?? ""} onValueChange={(v) => onChange({ progressFieldId: v })} options={progressFields.map((f) => ({ value: f.id, label: f.name }))} className="w-full" placeholder="None" />
+        <Field label={t("gt.progress")}>
+          <Select value={config.progressFieldId ?? ""} onValueChange={(v) => onChange({ progressFieldId: v })} options={progressFields.map((f) => ({ value: f.id, label: f.name }))} className="w-full" placeholder={t("common.none")} />
         </Field>
-        <Field label="Owner">
-          <Select value={config.ownerFieldId ?? ""} onValueChange={(v) => onChange({ ownerFieldId: v })} options={ownerFields.map((f) => ({ value: f.id, label: f.name }))} className="w-full" placeholder="None" />
+        <Field label={t("gt.owner")}>
+          <Select value={config.ownerFieldId ?? ""} onValueChange={(v) => onChange({ ownerFieldId: v })} options={ownerFields.map((f) => ({ value: f.id, label: f.name }))} className="w-full" placeholder={t("common.none")} />
         </Field>
-        <Field label="Status (bar color)">
-          <Select value={config.statusFieldId ?? ""} onValueChange={(v) => onChange({ statusFieldId: v })} options={statusFields.map((f) => ({ value: f.id, label: f.name }))} className="w-full" placeholder="None" />
+        <Field label={t("gt.status")}>
+          <Select value={config.statusFieldId ?? ""} onValueChange={(v) => onChange({ statusFieldId: v })} options={statusFields.map((f) => ({ value: f.id, label: f.name }))} className="w-full" placeholder={t("common.none")} />
         </Field>
-        <Field label="Dependencies">
-          <Select value={config.dependencyFieldId ?? ""} onValueChange={(v) => onChange({ dependencyFieldId: v })} options={linkFields.map((f) => ({ value: f.id, label: f.name }))} className="w-full" placeholder="None" />
+        <Field label={t("gt.deps")}>
+          <Select value={config.dependencyFieldId ?? ""} onValueChange={(v) => onChange({ dependencyFieldId: v })} options={linkFields.map((f) => ({ value: f.id, label: f.name }))} className="w-full" placeholder={t("common.none")} />
         </Field>
         {linkFields.length === 0 && (
-          <p className="text-[11px] text-neutral-400">Add a &quot;Link to Record&quot; field pointing at this table to track dependencies.</p>
+          <p className="text-[11px] text-neutral-400">{t("gt.depsHint")}</p>
         )}
       </PopoverContent>
     </Popover>

@@ -6,6 +6,7 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { parseFieldConfig } from "@/lib/field-types";
 import { initials, cn } from "@/lib/utils";
 import type { FieldRow } from "@/types";
+import { useT } from "@/components/i18n-provider";
 
 export interface FormMember {
   id: string;
@@ -29,6 +30,7 @@ export function FormFieldInput({
   members: FormMember[];
   onChange: (value: unknown) => void;
 }) {
+  const { t } = useT();
   const config = parseFieldConfig(field.config);
 
   switch (field.type) {
@@ -81,7 +83,7 @@ export function FormFieldInput({
           value={(value as string) ?? ""}
           onValueChange={onChange}
           options={(config.options ?? []).map((o) => ({ value: o.id, label: o.label }))}
-          placeholder="Choose…"
+          placeholder={t("form.choose")}
         />
       );
     case "multi_select": {
@@ -142,7 +144,7 @@ export function FormFieldInput({
                 ))
               ) : (
                 <span className="flex items-center gap-1.5 text-neutral-400">
-                  <UserIcon size={14} /> Choose…
+                  <UserIcon size={14} /> {t("form.choose")}
                 </span>
               )}
             </button>
@@ -181,7 +183,7 @@ export function FormFieldInput({
             </div>
           ))}
           <Input
-            placeholder="Paste a file URL and press Enter"
+            placeholder={t("form.fileUrl")}
             onKeyDown={(e) => {
               if (e.key === "Enter" && e.currentTarget.value.trim()) {
                 onChange([...files, { id: `${Date.now()}`, name: e.currentTarget.value.trim(), url: e.currentTarget.value.trim() }]);

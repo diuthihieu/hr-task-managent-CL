@@ -24,7 +24,7 @@ export const GET = route<P>(async (req, { params }) => {
 
 const addSchema = z.object({ email: emailSchema.optional(), userId: uuid.optional(), role: workspaceRoleSchema.default("editor") });
 
-/** Add an *existing* account to the workspace. New accounts are created by a system admin. */
+/** Add an *existing* (signed-up) account to the workspace. */
 export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { workspaceId } = await params;
@@ -34,7 +34,7 @@ export const POST = route<P>(async (req, { params }) => {
   const target = await prisma.user.findFirst({
     where: { deletedAt: null, ...(body.userId ? { id: body.userId } : { email: body.email ?? "" }) },
   });
-  if (!target) throw badRequest("No account with that email. Ask a system admin to create it first.");
+  if (!target || !target.isActive) throw badRequest("No account with that email. The person needs to sign up first.");
   if (await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId: target.id } } })) throw badRequest("Already a member");
   const member = await prisma.$transaction(async (tx) => {
     const m = await tx.workspaceMember.create({

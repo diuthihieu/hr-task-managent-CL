@@ -8,8 +8,10 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import type { FieldRow } from "@/types";
+import { useT } from "@/components/i18n-provider";
 
 export function FieldHeaderMenu({ field, onAction }: { field: FieldRow; onAction: (action: string) => void }) {
+  const { t } = useT();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -21,50 +23,50 @@ export function FieldHeaderMenu({ field, onAction }: { field: FieldRow; onAction
         {!field.system && (
           <>
             <DropdownMenuItem onSelect={() => onAction("edit")}>
-              <Pencil size={13} /> Edit field
+              <Pencil size={13} /> {t("fhm.edit")}
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => onAction("description")}>
-              <MessageSquare size={13} /> Edit description
+              <MessageSquare size={13} /> {t("fhm.description")}
             </DropdownMenuItem>
           </>
         )}
         <DropdownMenuItem onSelect={() => onAction("conditional_format")}>
-          <Paintbrush size={13} /> Conditional formatting
+          <Paintbrush size={13} /> {t("fhm.format")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => onAction("duplicate")}>
-          <Copy size={13} /> Duplicate field
+          <Copy size={13} /> {t("fhm.duplicate")}
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onAction("hide")}>
-          <EyeOff size={13} /> Hide field
+          <EyeOff size={13} /> {t("fhm.hide")}
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onAction("insert_left")}>
-          <ArrowLeftToLine size={13} /> Insert left
+          <ArrowLeftToLine size={13} /> {t("fhm.insertLeft")}
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onAction("insert_right")}>
-          <ArrowRightToLine size={13} /> Insert right
+          <ArrowRightToLine size={13} /> {t("fhm.insertRight")}
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onAction("freeze")}>
-          <PinOff size={13} /> Freeze up to this field
+          <PinOff size={13} /> {t("fhm.freeze")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={() => onAction("sort_asc")}>
-          <ArrowUpAZ size={13} /> Sort ascending
+          <ArrowUpAZ size={13} /> {t("fhm.sortAsc")}
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onAction("sort_desc")}>
-          <ArrowDownAZ size={13} /> Sort descending
+          <ArrowDownAZ size={13} /> {t("fhm.sortDesc")}
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onAction("group")}>
-          <Group size={13} /> Group by field
+          <Group size={13} /> {t("fhm.group")}
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => onAction("filter")}>
-          <ListFilter size={13} /> Filter by field
+          <ListFilter size={13} /> {t("fhm.filter")}
         </DropdownMenuItem>
         {!field.system && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => onAction("delete")} className="text-red-600 dark:text-red-400">
-              <Trash2 size={13} /> Delete field
+              <Trash2 size={13} /> {t("fhm.delete")}
             </DropdownMenuItem>
           </>
         )}

@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin, requireUser, route, readJson } from "@/lib/authz";
+import { requireUser, route, readJson, badRequest } from "@/lib/authz";
 import { createWorkspace } from "@/lib/workspace-setup";
 import { nameSchema } from "@/lib/validation";
 
-/** Workspaces the caller can open (admins see all). */
+/** Workspaces the caller can open (system admins see all). */
 export const GET = route(async () => {
   const user = await requireUser();
   if (user.systemRole === "ADMIN") {
@@ -22,10 +22,12 @@ export const GET = route(async () => {
 
 const createSchema = z.object({ name: nameSchema, description: z.string().max(2000).nullable().optional() });
 
-/** Only system admins create workspaces. */
+/** Any signed-in user can create a workspace and becomes its owner. */
 export const POST = route(async (req) => {
-  const admin = await requireAdmin();
+  const user = await requireUser();
   const body = createSchema.parse(await readJson(req));
-  const workspace = await prisma.$transaction((tx) => createWorkspace(tx, { name: body.name, description: body.description, ownerId: admin.id }));
+  const count = await prisma.workspaceMember.count({ where: { userId: user.id, role: "owner", workspace: { deletedAt: null } } });
+  if (count >= 50) throw badRequest("You already own 50 workspaces");
+  const workspace = await prisma.$transaction((tx) => createWorkspace(tx, { name: body.name, description: body.description, ownerId: user.id }));
   return NextResponse.json({ id: workspace.id, name: workspace.name, slug: workspace.slug }, { status: 201 });
 });

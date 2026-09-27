@@ -7,6 +7,7 @@ import { getCellValue, type RecordGroup, type GanttConfig } from "@/lib/query-en
 import { parseFieldConfig } from "@/lib/field-types";
 import { cn, initials } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
+import { useT } from "@/components/i18n-provider";
 
 const ZOOM_PX_PER_DAY: Record<string, number> = { day: 36, week: 14, month: 5 };
 const ZOOM_PADDING_DAYS: Record<string, number> = { day: 3, week: 7, month: 30 };
@@ -52,6 +53,7 @@ function toDateOnly(iso: string | null) {
 }
 
 export function GanttView(props: GanttViewProps) {
+  const { t } = useT();
   const { fields, groups, flatRecords, members, linkTargets, config, onConfigChange, onCellChange, onOpenRecord } = props;
 
   const primaryField = fields.find((f) => f.isPrimary);
@@ -266,7 +268,7 @@ export function GanttView(props: GanttViewProps) {
           ))}
         </div>
         <GanttSettings fields={fields} config={config} onChange={onConfigChange} />
-        {missingDates && <span className="text-xs text-amber-600 dark:text-amber-500">Add a Date field and map it in Gantt settings to see bars.</span>}
+        {missingDates && <span className="text-xs text-amber-600 dark:text-amber-500">{t("gt.missingDates")}</span>}
       </div>
 
       <div className="flex-1 overflow-auto thin-scroll">
@@ -404,6 +406,7 @@ function GanttRow({
   onOpenRecord: (id: string) => void;
   onStartDrag: (recordId: string, mode: "move" | "resize-start" | "resize-end", e: React.MouseEvent) => void;
 }) {
+  const { t } = useT();
   const owner = ownerField ? (getCellValue(record, ownerField, fields) as string | string[] | null) : null;
   const ownerIds = Array.isArray(owner) ? owner : owner ? [owner] : [];
   const ownerMembers = members.filter((m) => ownerIds.includes(m.id));
@@ -411,7 +414,7 @@ function GanttRow({
   return (
     <div className="flex group/gr hover:bg-neutral-50 dark:hover:bg-neutral-900/60" style={{ height: TASK_ROW_HEIGHT }}>
       <div className="sticky left-0 z-10 bg-white dark:bg-neutral-950 border-b border-r border-neutral-100 dark:border-neutral-900 flex items-center" style={{ width: NAME_COL_WIDTH }}>
-        <button onClick={() => onOpenRecord(record.id)} className="opacity-0 group-hover/gr:opacity-100 shrink-0 ml-1 text-neutral-400 hover:text-indigo-600" title="Expand record">
+        <button onClick={() => onOpenRecord(record.id)} className="opacity-0 group-hover/gr:opacity-100 shrink-0 ml-1 text-neutral-400 hover:text-indigo-600" title={t("grid.expand")}>
           <Maximize2 size={12} />
         </button>
         <div className="flex-1 h-full overflow-hidden">
@@ -442,7 +445,7 @@ function GanttRow({
             <div className="absolute right-0 top-0 h-full w-1.5 cursor-ew-resize" onMouseDown={(e) => onStartDrag(record.id, "resize-end", e)} />
           </div>
         ) : (
-          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-neutral-300 dark:text-neutral-700">No dates set</span>
+          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-neutral-300 dark:text-neutral-700">{t("gt.noDates")}</span>
         )}
       </div>
     </div>

@@ -31,6 +31,8 @@ export const projectInputSchema = z.object({
   ownerId: uuid.nullable().optional(),
   startDate: dateOnlySchema,
   endDate: dateOnlySchema,
+  /** Categories to create with the project (each project has its own). */
+  categories: z.array(z.object({ name: z.string().trim().min(1).max(80), color: colorSchema.optional() })).max(50).optional(),
 });
 
 export const statusSchema = z.object({
@@ -47,6 +49,8 @@ export const objectiveSchema = z.object({
   description: z.string().max(5000).nullable().optional(),
   teamId: uuid.nullable().optional(),
   parentObjectiveId: uuid.nullable().optional(),
+  parentKeyResultId: uuid.nullable().optional(),
+  projectId: uuid.nullable().optional(),
   ownerId: uuid.nullable().optional(),
   cycleType: z.enum(["quarter", "year", "custom"]).optional(),
   cycleLabel: z.string().max(40).nullable().optional(),
@@ -56,6 +60,11 @@ export const objectiveSchema = z.object({
   confidence: z.number().int().min(0).max(100).optional(),
   priority: z.enum(["low", "medium", "high", "critical"]).optional(),
   contributorIds: z.array(uuid).max(200).optional(),
+  /** Create key results together with the objective. */
+  keyResults: z
+    .array(z.object({ title: z.string().trim().min(1).max(300), ownerId: uuid.nullable().optional(), type: z.enum(["task_based", "numeric", "percentage", "manual"]).optional(), targetValue: z.number().finite().optional(), unit: z.string().max(20).nullable().optional() }))
+    .max(50)
+    .optional(),
 });
 
 export const keyResultSchema = z.object({

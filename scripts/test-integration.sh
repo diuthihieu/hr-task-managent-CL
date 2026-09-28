@@ -17,8 +17,9 @@ export AUTH_SECRET="${AUTH_SECRET:-integration-test-secret-integration-test-secr
 export DESKTOP_RELEASE_TOKEN="$(head -c 48 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 48)"
 export ADMIN_EMAIL=admin@integration.test ADMIN_PASSWORD=Bootstrap123 ADMIN_NAME="Integration Admin"
 unset BLOB_READ_WRITE_TOKEN
-# AI calls go to a local Gemini stub (no real key or network needed).
-export GEMINI_API_KEY=integration-test-key GEMINI_API_BASE="http://localhost:${GEMINI_STUB_PORT:-3999}/v1beta" GEMINI_MODEL=stub-model AI_DAILY_LIMIT=6
+# AI calls go to a local Gemini stub (no real key or network needed). The configured
+# models are "retired", so every call also exercises model discovery.
+export GEMINI_API_KEY=integration-test-key GEMINI_API_BASE="http://localhost:${GEMINI_STUB_PORT:-3999}/v1beta" GEMINI_MODEL=retired-model GEMINI_FALLBACK_MODELS=retired-fallback AI_DAILY_LIMIT=6
 
 npx prisma migrate deploy >/dev/null
 npx tsx prisma/bootstrap-admin.ts

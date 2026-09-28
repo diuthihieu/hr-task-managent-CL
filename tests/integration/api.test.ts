@@ -619,7 +619,7 @@ test("wiki AI: managers set instructions and documents; members ask, grounded in
   assert.ok(a.conversationId);
   const req = await lastModelRequest();
   assert.equal(req.apiKey, "integration-test-key", "key sent server-side in a header");
-  assert.match(req.url, /stub-model:streamGenerateContent\?alt=sse/);
+  assert.match(req.url, /gemini-9\.9-flash:streamGenerateContent\?alt=sse/, "retired models are skipped; a model is discovered from the key's model list");
   const system = req.body.systemInstruction!.parts[0].text;
   assert.match(system, /HR onboarding buddy/, "owner instructions");
   assert.match(system, /Probation lasts 60 days/, "uploaded document");

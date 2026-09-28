@@ -1,10 +1,11 @@
 import "server-only";
 import { HttpError } from "../http-errors";
+import { rankModels, type ListedModel } from "./models";
 
 // Minimal Gemini API client over REST (no SDK): generateContent and
 // streamGenerateContent (SSE). Configure with environment variables:
 //   GEMINI_API_KEY   required - from Google AI Studio (never sent to the browser)
-//   GEMINI_MODEL     optional - defaults to the rolling "gemini-flash-latest" alias
+//   GEMINI_MODEL     optional - defaults to DEFAULT_MODEL below
 //   GEMINI_FALLBACK_MODELS optional - comma list tried when the first model is
 //                    missing, rate-limited or overloaded (default below)
 //   GEMINI_API_BASE  optional - override the endpoint (tests point it at a local stub)
@@ -29,22 +30,46 @@ export function aiConfigured() {
   return Boolean(process.env.GEMINI_API_KEY);
 }
 
+// Google retires model ids regularly (a retired id answers 404 and names its
+// replacement). Defaults follow the ids Google currently points to; if all of
+// them are gone, the model list of the API key is read and the newest Flash
+// model is used, so a retirement doesn't take the assistant down.
+const DEFAULT_MODEL = "gemini-3.8-flash";
+const DEFAULT_FALLBACKS = "gemini-flash-latest,gemini-3.5-flash,gemini-flash-lite-latest";
+
 export function geminiModel() {
-  return process.env.GEMINI_MODEL?.trim() || "gemini-flash-latest";
+  return process.env.GEMINI_MODEL?.trim() || DEFAULT_MODEL;
 }
+
+/** The model that last answered - tried first next time (per server instance). */
+let workingModel: string | null = null;
 
 /** Configured model first, then fallbacks (deduplicated). */
 export function geminiModels() {
-  const fallbacks = (process.env.GEMINI_FALLBACK_MODELS ?? "gemini-2.5-flash,gemini-flash-lite-latest,gemini-2.0-flash")
+  const fallbacks = (process.env.GEMINI_FALLBACK_MODELS ?? DEFAULT_FALLBACKS)
     .split(",")
     .map((m) => m.trim())
     .filter(Boolean);
-  return [...new Set([geminiModel(), ...fallbacks])];
+  return [...new Set([...(workingModel ? [workingModel] : []), geminiModel(), ...fallbacks])];
+}
+
+function apiBase() {
+  return (process.env.GEMINI_API_BASE?.trim() || "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/, "");
 }
 
 function endpoint(model: string, method: "generateContent" | "streamGenerateContent") {
-  const base = (process.env.GEMINI_API_BASE?.trim() || "https://generativelanguage.googleapis.com/v1beta").replace(/\/$/, "");
-  return `${base}/models/${encodeURIComponent(model)}:${method}${method === "streamGenerateContent" ? "?alt=sse" : ""}`;
+  return `${apiBase()}/models/${encodeURIComponent(model)}:${method}${method === "streamGenerateContent" ? "?alt=sse" : ""}`;
+}
+
+async function discoverModels(): Promise<string[]> {
+  try {
+    const res = await fetch(`${apiBase()}/models?pageSize=1000`, { headers: { "x-goog-api-key": process.env.GEMINI_API_KEY! } });
+    if (!res.ok) return [];
+    const body = (await res.json()) as { models?: ListedModel[] };
+    return rankModels(body.models ?? []);
+  } catch {
+    return [];
+  }
 }
 
 // Worth trying the next model: not found, rate-limited, overloaded or a transient server error.
@@ -52,24 +77,47 @@ const RETRYABLE = new Set([404, 429, 500, 502, 503, 504]);
 
 /** POST to the first model that answers; falls back to the next model on retryable errors. */
 async function callWithFallback(method: "generateContent" | "streamGenerateContent", init: RequestInit): Promise<{ res: Response; model: string }> {
-  const models = geminiModels();
-  let lastError: HttpError | null = null;
-  for (const [i, model] of models.entries()) {
+  const tried: { model: string; status: number | string; error: HttpError }[] = [];
+  const attempt = async (model: string): Promise<Response | null> => {
     let res: Response;
     try {
       res = await fetch(endpoint(model, method), init);
     } catch (e) {
       if ((e as Error).name === "AbortError") throw e;
       console.error("[gemini] network error", model, e);
-      lastError = new HttpError(502, `Could not reach the Gemini API (${(e as Error).message})`);
-      continue;
+      tried.push({ model, status: "network", error: new HttpError(502, `Could not reach the Gemini API (${(e as Error).message})`) });
+      return null;
     }
-    if (res.ok) return { res, model };
-    lastError = await failure(res, model);
-    if (!RETRYABLE.has(res.status) || i === models.length - 1) break;
-    console.warn(`[gemini] ${model} -> ${res.status}; trying ${models[i + 1]}`);
+    if (res.ok) {
+      workingModel = model;
+      return res;
+    }
+    tried.push({ model, status: res.status, error: await failure(res, model) });
+    return null;
+  };
+
+  for (const model of geminiModels()) {
+    const res = await attempt(model);
+    if (res) return { res, model };
+    const last = tried[tried.length - 1];
+    if (typeof last.status === "number" && !RETRYABLE.has(last.status)) throw last.error;
   }
-  throw lastError ?? new HttpError(502, "The AI service is unavailable");
+  // Every configured model failed: ask the API which models this key can use.
+  if (tried.some((t) => t.status === 404)) {
+    const already = new Set(tried.map((t) => t.model));
+    for (const model of (await discoverModels()).filter((m) => !already.has(m)).slice(0, 4)) {
+      const res = await attempt(model);
+      if (res) {
+        console.warn(`[gemini] configured models unavailable; using discovered model ${model}. Set GEMINI_MODEL=${model} to skip discovery.`);
+        return { res, model };
+      }
+    }
+  }
+  if (workingModel && tried.some((t) => t.model === workingModel)) workingModel = null;
+  // Report the most useful error: a quota/permission/server problem says more than "model not found".
+  const best = tried.find((t) => t.status !== 404) ?? tried[tried.length - 1];
+  const summary = tried.map((t) => `${t.model}: ${t.status}`).join(", ");
+  throw new HttpError(best?.error.status ?? 502, `${best?.error.message ?? "The AI service is unavailable"} (tried ${summary})`);
 }
 
 function requestInit(opts: GenerateOptions): RequestInit {

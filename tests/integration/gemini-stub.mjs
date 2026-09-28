@@ -8,6 +8,19 @@ let last = null;
 
 http
   .createServer((req, res) => {
+    if (req.method === "GET" && req.url.startsWith("/v1beta/models")) {
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ models: [
+        { name: "models/gemini-9.9-flash", supportedGenerationMethods: ["generateContent", "countTokens"] },
+        { name: "models/gemini-9.9-flash-image", supportedGenerationMethods: ["generateContent"] },
+        { name: "models/text-embedding-9", supportedGenerationMethods: ["embedContent"] },
+      ] }));
+    }
+    // Retired ids answer like Google does: 404 naming the replacement.
+    if (req.method === "POST" && /\/models\/retired-/.test(req.url)) {
+      res.writeHead(404, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ error: { code: 404, status: "NOT_FOUND", message: "This model is no longer available." } }));
+    }
     if (req.method === "GET" && req.url === "/last") {
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify(last));

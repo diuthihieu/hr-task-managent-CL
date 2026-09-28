@@ -4,6 +4,7 @@ import { requireUser, requireWorkspaceRole, requireWiki, route, readJson, notFou
 import { aiConfigured, streamGenerate, type GeminiContent, type Usage } from "@/lib/ai/gemini";
 import { wikiKnowledge, workspaceData } from "@/lib/ai/context";
 import { wikiSystemPrompt, assistantSystemPrompt } from "@/lib/ai/prompts";
+import { personalPromptBlock } from "@/lib/ai/personal";
 import { uuid } from "@/lib/validation";
 
 export const maxDuration = 120;
@@ -44,13 +45,13 @@ export const POST = route(async (req) => {
       wikiKnowledge(wikiId),
     ]);
     if (settings && !settings.enabled) throw new HttpError(403, "The wiki's managers have turned its assistant off");
-    system = wikiSystemPrompt({ wiki: wiki.name, workspace: wiki.workspace.name, instructions: settings?.instructions ?? "", knowledge: knowledge.text });
+    system = wikiSystemPrompt({ wiki: wiki.name, workspace: wiki.workspace.name, instructions: settings?.instructions ?? "", knowledge: knowledge.text, personal: await personalPromptBlock(user.id) });
   } else {
     if (!body.workspaceId) throw badRequest("workspaceId is required");
     const ctx = await requireWorkspaceRole(user, body.workspaceId, "viewer");
     workspaceId = ctx.workspaceId;
     const [ws, data] = await Promise.all([prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { name: true } }), workspaceData(user, workspaceId, ctx.role)]);
-    system = assistantSystemPrompt({ workspace: ws.name, user: user.name, role: ctx.role, now: new Date(), data: data.text });
+    system = assistantSystemPrompt({ workspace: ws.name, user: user.name, role: ctx.role, now: new Date(), data: data.text, personal: await personalPromptBlock(user.id) });
   }
 
   // Per-user daily quota keeps API costs predictable.

@@ -5,6 +5,7 @@ import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfTask, wo
 import { aiConfigured, generate, streamGenerate, parseJsonAnswer, type Usage } from "@/lib/ai/gemini";
 import { ACTION_INSTRUCTIONS, STRUCTURED_ACTIONS, actionSystemPrompt, taskContext, objectiveContext, wikiPageContext, myDayContext, type AiActionName } from "@/lib/ai/actions";
 import { rateLimit } from "@/lib/rate-limit";
+import { personalPromptBlock } from "@/lib/ai/personal";
 import { uuid } from "@/lib/validation";
 
 export const maxDuration = 120;
@@ -68,6 +69,7 @@ export const POST = route(async (req) => {
     locale: user.locale ?? "vi",
     instructions: ACTION_INSTRUCTIONS[body.action] + (body.note ? `\nExtra request from the user: ${body.note}` : ""),
     data,
+    personal: await personalPromptBlock(user.id),
   });
   const contents = [{ role: "user" as const, parts: [{ text: body.note || "Go." }] }];
 

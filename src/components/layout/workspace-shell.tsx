@@ -34,6 +34,7 @@ import {
   Grid2x2,
   Search,
   Menu,
+  UserCircle,
   Sun,
   Moon,
   LogOut,
@@ -109,7 +110,7 @@ export function WorkspaceShell({
   workspaces: WorkspaceLite[];
   wikis: WikiLite[];
   projects: ProjectLite[];
-  user: { id: string; name: string; email: string; systemRole: "ADMIN" | "MEMBER"; avatarColor: string };
+  user: { id: string; name: string; email: string; systemRole: "ADMIN" | "MEMBER"; avatarColor: string; avatarUrl?: string | null };
   role: string;
   children: React.ReactNode;
 }) {
@@ -497,9 +498,14 @@ export function WorkspaceShell({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-2 rounded-lg pl-1 pr-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800 ml-1" data-testid="user-menu">
-                  <span className="h-8 w-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0" style={{ backgroundColor: user.avatarColor }}>
-                    {initials(user.name)}
-                  </span>
+                  {user.avatarUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- authorized avatar route
+                    <img src={user.avatarUrl} alt="" className="h-8 w-8 rounded-full object-cover shrink-0" data-testid="user-avatar" />
+                  ) : (
+                    <span className="h-8 w-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0" style={{ backgroundColor: user.avatarColor }}>
+                      {initials(user.name)}
+                    </span>
+                  )}
                   <span className="hidden md:block text-left leading-tight">
                     <span className="block text-[13px] font-semibold text-neutral-800 dark:text-neutral-100 max-w-40 truncate">{user.name}</span>
                     <span className="block text-[11px] text-neutral-400">{t(`role.${role}` as MessageKey)}</span>
@@ -512,6 +518,9 @@ export function WorkspaceShell({
                   {user.email}
                   {desktopVersion && <div className="text-[10px] font-normal text-neutral-400">{t("nav.desktopVersion", { version: desktopVersion })}</div>}
                 </DropdownMenuLabel>
+                <DropdownMenuItem onSelect={() => router.push(`/w/${workspace.slug}/settings?section=profile`)} data-testid="menu-profile">
+                  <UserCircle size={14} /> {t("nav.profile")}
+                </DropdownMenuItem>
                 <DropdownMenuItem onSelect={() => setPrefsOpen(true)}>
                   <Palette size={14} /> {t("nav.preferences")}
                 </DropdownMenuItem>

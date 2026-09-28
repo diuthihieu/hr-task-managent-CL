@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfWikiPage, badRequest, forbidden, roleAtLeast } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfWikiPage, badRequest, forbidden, wikiRoleAtLeast } from "@/lib/authz";
 import { logActivity, diff } from "@/lib/activity";
 import { assertNoWikiCycle, serializeWikiSummary, wikiSubtreeIds } from "@/lib/wiki";
 import { sanitizeRichText } from "@/lib/rich-text";
@@ -32,12 +32,13 @@ const patchSchema = z.object({
 export const PATCH = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { pageId } = await params;
-  const ctx = await requireWorkspaceRole(user, await workspaceOfWikiPage(pageId), "contributor");
+  const ctx = await requireWorkspaceRole(user, await workspaceOfWikiPage(pageId), "viewer");
+  if (!wikiRoleAtLeast(ctx.wikiRole, "editor")) throw forbidden("You can only read this wiki");
   const body = patchSchema.parse(await readJson(req));
   const page = await prisma.$transaction(async (tx) => {
     const before = await tx.wikiPage.findUniqueOrThrow({ where: { id: pageId } });
     if (body.parentPageId) {
-      if (!(await tx.wikiPage.findFirst({ where: { id: body.parentPageId, projectId: before.projectId, deletedAt: null } }))) throw badRequest("Unknown parent page");
+      if (!(await tx.wikiPage.findFirst({ where: { id: body.parentPageId, wikiId: before.wikiId, deletedAt: null } }))) throw badRequest("Unknown parent page");
       await assertNoWikiCycle(tx, pageId, body.parentPageId);
     }
     const after = await tx.wikiPage.update({
@@ -62,13 +63,13 @@ export const PATCH = route<P>(async (req, { params }) => {
   return NextResponse.json({ ...serializeWikiSummary(page), content: page.content });
 });
 
-/** Soft-deletes the page and its sub-pages. Editors, or the page's author. */
+/** Soft-deletes the page and its sub-pages (wiki editors). */
 export const DELETE = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { pageId } = await params;
-  const ctx = await requireWorkspaceRole(user, await workspaceOfWikiPage(pageId), "contributor");
-  const page = await prisma.wikiPage.findUniqueOrThrow({ where: { id: pageId }, select: { title: true, createdById: true } });
-  if (!roleAtLeast(ctx.role, "editor") && page.createdById !== user.id) throw forbidden("Only editors or the page author can delete it");
+  const ctx = await requireWorkspaceRole(user, await workspaceOfWikiPage(pageId), "viewer");
+  if (!wikiRoleAtLeast(ctx.wikiRole, "editor")) throw forbidden("You can only read this wiki");
+  const page = await prisma.wikiPage.findUniqueOrThrow({ where: { id: pageId }, select: { title: true } });
   await prisma.$transaction(async (tx) => {
     const ids = await wikiSubtreeIds(tx, pageId);
     await tx.wikiPage.updateMany({ where: { id: { in: ids } }, data: { deletedAt: new Date(), deletedById: user.id } });

@@ -1,8 +1,9 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import { api } from "@/lib/api-client";
+import { onViewsChanged } from "@/lib/view-events";
 import { toast } from "@/components/ui/toast";
 import { nanoid } from "nanoid";
 import { ViewTabs } from "./view-tabs";
@@ -41,6 +42,7 @@ const ROLE_RANK: Record<string, number> = { viewer: 0, contributor: 1, editor: 2
 
 export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string; breadcrumb: { workspace: string; project: string } }) {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const { t } = useT();
   const { data: session } = useSession();
   const currentUserId = (session?.user as { id?: string } | undefined)?.id;
@@ -86,6 +88,23 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams, table?.id]);
+
+  // Views changed from the sidebar: refresh our tabs (records are untouched).
+  useEffect(
+    () =>
+      onViewsChanged(projectId, async () => {
+        try {
+          const detail = await api.get<ProjectDetail>(`/api/projects/${projectId}`);
+          setTable((t) => (t ? { ...t, views: detail.views } : t));
+          setActiveViewId((prev) => (detail.views.some((v) => v.id === prev) ? prev : detail.views.find((v) => v.isDefault)?.id || detail.views[0]?.id || ""));
+        } catch {
+          // keep the current tabs
+        }
+      }),
+    [projectId]
+  );
+  /** Our tab changes → re-render the server sidebar. */
+  const syncSidebar = () => router.refresh();
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching table data on mount / table change is exactly what this effect is for
@@ -347,19 +366,21 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       const view = await api.post<ViewRow>(`/api/projects/${projectId}/views`, { name, type });
       setTable((t) => (t ? { ...t, views: [...t.views, view] } : t));
       setActiveViewId(view.id);
+      syncSidebar();
     } catch {
       toast.error(t("common.failed"));
     }
   }
   async function handleRenameView(id: string, name: string) {
     setTable((t) => (t ? { ...t, views: t.views.map((v) => (v.id === id ? { ...v, name } : v)) } : t));
-    api.patch(`/api/views/${id}`, { name }).catch(() => {});
+    api.patch(`/api/views/${id}`, { name }).then(syncSidebar).catch(() => {});
   }
   async function handleDeleteView(id: string) {
     try {
       await api.delete(`/api/views/${id}`);
       setTable((t) => (t ? { ...t, views: t.views.filter((v) => v.id !== id) } : t));
       setActiveViewId((prev) => (prev === id ? table?.views.find((v) => v.id !== id)?.id ?? "" : prev));
+      syncSidebar();
     } catch {
       toast.error(t("common.failed"));
     }
@@ -376,6 +397,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       });
       setTable((t) => (t ? { ...t, views: [...t.views, view] } : t));
       setActiveViewId(view.id);
+      syncSidebar();
       toast.success(`Saved as "${name}"`);
     } catch {
       toast.error(t("common.failed"));
@@ -393,6 +415,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       });
       setTable((t) => (t ? { ...t, views: [...t.views, view] } : t));
       setActiveViewId(view.id);
+      syncSidebar();
     } catch {
       toast.error(t("common.failed"));
     }
@@ -402,6 +425,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
     setTable((t) => (t ? { ...t, views: [...t.views].sort((a, b) => (map.get(a.id) ?? 0) - (map.get(b.id) ?? 0)) } : t));
     try {
       await Promise.all(orderedIds.map((id, i) => api.patch(`/api/views/${id}`, { order: i })));
+      syncSidebar();
     } catch {
       toast.error(t("common.failed"));
     }

@@ -14,7 +14,7 @@ export interface ConversationLite {
   updatedAt: string;
 }
 
-type Target = { kind: "wiki"; projectId: string } | { kind: "assistant"; workspaceId: string };
+type Target = { kind: "wiki"; wikiId: string } | { kind: "assistant"; workspaceId: string };
 
 /** Chat state + streaming for the wiki assistant and the workspace AI assistant. */
 export function useAiChat(target: Target) {
@@ -25,7 +25,7 @@ export function useAiChat(target: Target) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
-  const qs = target.kind === "wiki" ? `kind=wiki&projectId=${target.projectId}` : `kind=assistant&workspaceId=${target.workspaceId}`;
+  const qs = target.kind === "wiki" ? `kind=wiki&wikiId=${target.wikiId}` : `kind=assistant&workspaceId=${target.workspaceId}`;
 
   const loadConversations = useCallback(async () => {
     const r = await api.get<{ configured: boolean; items: ConversationLite[] }>(`/api/ai/conversations?${qs}`);

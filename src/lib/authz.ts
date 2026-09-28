@@ -75,12 +75,16 @@ export interface WorkspaceContext {
   role: WorkspaceRole;
   /** Set when the request targets something that lives inside a project. */
   projectId?: string;
+  /** Set when the request targets something inside a wiki; `wikiRole` is the caller's role there. */
+  wikiId?: string;
+  wikiRole?: WikiRoleName;
 }
 
 /** What a resource resolves to: its workspace, plus its project when it has one. */
 export interface Scope {
   workspaceId: string;
   projectId?: string | null;
+  wikiId?: string | null;
 }
 
 /** True when a project's creator/admin hid it from this user. System admins are never hidden. */
@@ -112,8 +116,14 @@ export async function requireWorkspaceRole(user: SessionUser, target: string | S
   const role = await effectiveRole(user, scope.workspaceId);
   if (!role) throw notFound();
   if (scope.projectId && (await isProjectHiddenFrom(user, scope.projectId))) throw notFound();
+  let wikiRole: WikiRoleName | undefined;
+  if (scope.wikiId) {
+    const r = await wikiRoleOf(user, scope.wikiId, role);
+    if (!r) throw notFound();
+    wikiRole = r;
+  }
   if (!roleAtLeast(role, min)) throw forbidden();
-  return { user, workspaceId: scope.workspaceId, role, projectId: scope.projectId ?? undefined };
+  return { user, workspaceId: scope.workspaceId, role, projectId: scope.projectId ?? undefined, wikiId: scope.wikiId ?? undefined, wikiRole };
 }
 
 // ---------------------------------------------------------------------------
@@ -143,9 +153,9 @@ export async function workspaceOfComment(commentId: string): Promise<Scope | nul
 export async function workspaceOfAttachment(attachmentId: string): Promise<Scope | null> {
   const a = await prisma.attachment.findFirst({
     where: { id: attachmentId, deletedAt: null, OR: [{ task: { deletedAt: null } }, { wikiPage: { deletedAt: null } }] },
-    select: { workspaceId: true, task: { select: { projectId: true } }, wikiPage: { select: { projectId: true } } },
+    select: { workspaceId: true, task: { select: { projectId: true } }, wikiPage: { select: { wikiId: true } } },
   });
-  return a ? { workspaceId: a.workspaceId, projectId: a.task?.projectId ?? a.wikiPage?.projectId ?? null } : null;
+  return a ? { workspaceId: a.workspaceId, projectId: a.task?.projectId ?? null, wikiId: a.wikiPage?.wikiId ?? null } : null;
 }
 export async function workspaceOfObjective(objectiveId: string): Promise<Scope | null> {
   const o = await prisma.objective.findFirst({ where: { id: objectiveId, deletedAt: null }, select: { workspaceId: true, projectId: true } });
@@ -173,12 +183,55 @@ export async function workspaceOfStatus(statusId: string) {
   return s?.workspaceId ?? null;
 }
 export async function workspaceOfWikiPage(pageId: string): Promise<Scope | null> {
-  const p = await prisma.wikiPage.findFirst({ where: { id: pageId, deletedAt: null, project: { deletedAt: null } }, select: { workspaceId: true, projectId: true } });
-  return p ? { workspaceId: p.workspaceId, projectId: p.projectId } : null;
+  const p = await prisma.wikiPage.findFirst({ where: { id: pageId, deletedAt: null, wiki: { deletedAt: null } }, select: { workspaceId: true, wikiId: true } });
+  return p ? { workspaceId: p.workspaceId, wikiId: p.wikiId } : null;
+}
+export async function workspaceOfWiki(wikiId: string): Promise<Scope | null> {
+  const w = await prisma.wiki.findFirst({ where: { id: wikiId, deletedAt: null }, select: { workspaceId: true } });
+  return w ? { workspaceId: w.workspaceId, wikiId } : null;
 }
 export async function workspaceOfCategory(categoryId: string): Promise<Scope | null> {
   const c = await prisma.category.findUnique({ where: { id: categoryId }, select: { workspaceId: true, projectId: true } });
   return c ? { workspaceId: c.workspaceId, projectId: c.projectId } : null;
+}
+
+// ---------------------------------------------------------------------------
+// Wikis: workspace-level knowledge spaces with their own access rule.
+// ---------------------------------------------------------------------------
+
+export type WikiRoleName = "viewer" | "editor" | "manager";
+const WIKI_RANK: Record<WikiRoleName, number> = { viewer: 0, editor: 1, manager: 2 };
+export const wikiRoleAtLeast = (r: WikiRoleName | null | undefined, min: WikiRoleName) => !!r && WIKI_RANK[r] >= WIKI_RANK[min];
+
+/**
+ * The caller's role in a wiki, or null when they can't see it.
+ * Workspace owners/admins and the wiki's creator manage it; explicit members
+ * get their role; on workspace-wide wikis everyone else gets the default role.
+ * Workspace viewers are read-only everywhere, so they never edit.
+ */
+export async function wikiRoleOf(user: SessionUser, wikiId: string, workspaceRole: WorkspaceRole): Promise<WikiRoleName | null> {
+  const w = await prisma.wiki.findFirst({ where: { id: wikiId, deletedAt: null }, select: { access: true, defaultRole: true, createdById: true, members: { where: { userId: user.id }, select: { role: true } } } });
+  if (!w) return null;
+  if (roleAtLeast(workspaceRole, "admin") || w.createdById === user.id) return "manager";
+  const explicit = w.members[0]?.role as WikiRoleName | undefined;
+  const implied: WikiRoleName | undefined = w.access === "workspace" ? (w.defaultRole as WikiRoleName) : undefined;
+  let r: WikiRoleName | undefined = explicit && implied ? (WIKI_RANK[explicit] >= WIKI_RANK[implied] ? explicit : implied) : (explicit ?? implied);
+  if (!r) return null;
+  if (workspaceRole === "viewer" && r !== "manager") r = "viewer";
+  return r;
+}
+
+/** Wiki access + minimum wiki role; 404 when the wiki is invisible, 403 when the role is too low. */
+export async function requireWiki(user: SessionUser, wikiId: string, min: WikiRoleName) {
+  const ctx = await requireWorkspaceRole(user, await workspaceOfWiki(wikiId), "viewer");
+  if (!wikiRoleAtLeast(ctx.wikiRole, min)) throw forbidden(min === "manager" ? "Only the wiki's managers can change this" : "You can only read this wiki");
+  return ctx as WorkspaceContext & { wikiId: string; wikiRole: WikiRoleName };
+}
+
+/** Prisma filter for "wikis this user may open" in a workspace where they have `role`. */
+export function visibleWikiWhere(user: SessionUser, role: WorkspaceRole) {
+  if (user.systemRole === "ADMIN" || roleAtLeast(role, "admin")) return { deletedAt: null };
+  return { deletedAt: null, OR: [{ access: "workspace" as const }, { createdById: user.id }, { members: { some: { userId: user.id } } }] };
 }
 
 /** Workspace admins/owners manage every project; editors manage the projects they own or created. */
@@ -235,7 +288,7 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
   comments_body_not_blank: "Comment cannot be empty",
 };
 
-const TRIGGER_MESSAGE = /(task (?:project|status|category|key result|objective) must belong to the task (?:workspace|project|objective)|parent (?:page|task) must belong to the same project|parent key result must belong to another objective in the workspace|assignee must be a member of the task workspace|custom field must be defined on the task project|option does not belong to this custom field|dependent tasks must belong to the same workspace|report recipient must be a member of the task workspace|hidden member must be a member of the project workspace|project must belong to the same workspace)/;
+const TRIGGER_MESSAGE = /(task (?:project|status|category|key result|objective) must belong to the task (?:workspace|project|objective)|parent (?:page|task) must belong to the same project|parent key result must belong to another objective in the workspace|assignee must be a member of the task workspace|custom field must be defined on the task project|option does not belong to this custom field|dependent tasks must belong to the same workspace|report recipient must be a member of the task workspace|hidden member must be a member of the project workspace|project must belong to the same workspace|wiki must belong to the same workspace|wiki member must be a member of the wiki workspace|wiki page must belong to a wiki of its workspace|parent page must belong to the same wiki)/;
 
 export function errorResponse(e: unknown): Response {
   if (e instanceof HttpError) return NextResponse.json({ error: e.message }, { status: e.status });

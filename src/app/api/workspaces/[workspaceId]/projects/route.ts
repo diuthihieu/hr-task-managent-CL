@@ -40,12 +40,9 @@ export const POST = route<P>(async (req, { params }) => {
         sortOrder: (last._max.sortOrder ?? 0) + 1,
         createdById: user.id,
         updatedById: user.id,
-        // Starter views are UI configuration, not data.
+        // A new project starts with one blank task table; any other views are added by the user.
         views: {
-          create: [
-            { name: t("view.default.all"), type: "grid", isDefault: true, sortOrder: 0, createdById: user.id },
-            { name: t("view.default.board"), type: "kanban", sortOrder: 1, createdById: user.id, config: { kanban: { groupFieldId: "sys_status" } } },
-          ],
+          create: [{ name: t("view.default.all"), type: "grid", isDefault: true, sortOrder: 0, createdById: user.id }],
         },
       },
     });

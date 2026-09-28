@@ -1,4 +1,4 @@
-import { visibleProjectWhere } from "@/lib/authz";
+import { visibleProjectWhere, visibleWikiWhere } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { requireWorkspacePage } from "@/lib/page-context";
 import type { Metadata } from "next";
@@ -33,8 +33,15 @@ export default async function WorkspaceLayout({ children, params }: { children: 
     select: { id: true, name: true, color: true, views: { orderBy: { sortOrder: "asc" }, select: { id: true, name: true, type: true } } },
   });
 
+  const wikis = await prisma.wiki.findMany({
+    where: { workspaceId: workspace.id, ...visibleWikiWhere(user, role) },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    select: { id: true, name: true, icon: true, color: true, access: true },
+  });
+
   return (
     <WorkspaceShell
+      wikis={wikis}
       workspace={{ id: workspace.id, name: workspace.name, slug: workspace.slug, logoUrl: workspaceLogoUrl(workspace) }}
       workspaces={workspaces}
       projects={projects}

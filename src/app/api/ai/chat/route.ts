@@ -1,8 +1,8 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject, notFound, badRequest, HttpError } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, requireWiki, route, readJson, notFound, badRequest, HttpError } from "@/lib/authz";
 import { aiConfigured, streamGenerate, type GeminiContent, type Usage } from "@/lib/ai/gemini";
-import { projectKnowledge, workspaceData } from "@/lib/ai/context";
+import { wikiKnowledge, workspaceData } from "@/lib/ai/context";
 import { wikiSystemPrompt, assistantSystemPrompt } from "@/lib/ai/prompts";
 import { uuid } from "@/lib/validation";
 
@@ -14,13 +14,13 @@ const HISTORY = 20;
 const schema = z.object({
   kind: z.enum(["wiki", "assistant"]),
   workspaceId: uuid.optional(),
-  projectId: uuid.optional(),
+  wikiId: uuid.optional(),
   conversationId: uuid.optional(),
   message: z.string().trim().min(1).max(8000),
 });
 
 /**
- * Ask the wiki assistant (kind=wiki, projectId) or the workspace AI assistant
+ * Ask a wiki's assistant (kind=wiki, wikiId) or the workspace AI assistant
  * (kind=assistant, workspaceId). Streams the answer as plain text; the
  * conversation id comes back in the X-Conversation-Id header. Both turns are
  * saved, so history lives in the database rather than the browser.
@@ -31,25 +31,25 @@ export const POST = route(async (req) => {
   if (!aiConfigured()) throw new HttpError(503, "AI is not configured on this server (GEMINI_API_KEY missing)");
 
   let workspaceId: string;
-  let projectId: string | null = null;
+  let wikiId: string | null = null;
   let system: string;
   if (body.kind === "wiki") {
-    if (!body.projectId) throw badRequest("projectId is required");
-    const ctx = await requireWorkspaceRole(user, await workspaceOfProject(body.projectId), "viewer");
+    if (!body.wikiId) throw badRequest("wikiId is required");
+    const ctx = await requireWiki(user, body.wikiId, "viewer");
     workspaceId = ctx.workspaceId;
-    projectId = body.projectId;
-    const [project, settings, knowledge] = await Promise.all([
-      prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true, workspace: { select: { name: true } } } }),
-      prisma.projectAiSettings.findUnique({ where: { projectId } }),
-      projectKnowledge(projectId),
+    wikiId = body.wikiId;
+    const [wiki, settings, knowledge] = await Promise.all([
+      prisma.wiki.findUniqueOrThrow({ where: { id: wikiId }, select: { name: true, workspace: { select: { name: true } } } }),
+      prisma.wikiAiSettings.findUnique({ where: { wikiId } }),
+      wikiKnowledge(wikiId),
     ]);
-    if (settings && !settings.enabled) throw new HttpError(403, "The project owner has turned the wiki assistant off");
-    system = wikiSystemPrompt({ project: project.name, workspace: project.workspace.name, instructions: settings?.instructions ?? "", knowledge: knowledge.text });
+    if (settings && !settings.enabled) throw new HttpError(403, "The wiki's managers have turned its assistant off");
+    system = wikiSystemPrompt({ wiki: wiki.name, workspace: wiki.workspace.name, instructions: settings?.instructions ?? "", knowledge: knowledge.text });
   } else {
     if (!body.workspaceId) throw badRequest("workspaceId is required");
     const ctx = await requireWorkspaceRole(user, body.workspaceId, "viewer");
     workspaceId = ctx.workspaceId;
-    const [ws, data] = await Promise.all([prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { name: true } }), workspaceData(user, workspaceId)]);
+    const [ws, data] = await Promise.all([prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { name: true } }), workspaceData(user, workspaceId, ctx.role)]);
     system = assistantSystemPrompt({ workspace: ws.name, user: user.name, role: ctx.role, now: new Date(), data: data.text });
   }
 
@@ -60,10 +60,10 @@ export const POST = route(async (req) => {
 
   let conversationId = body.conversationId;
   if (conversationId) {
-    const c = await prisma.aiConversation.findFirst({ where: { id: conversationId, userId: user.id, workspaceId, kind: body.kind, projectId } });
+    const c = await prisma.aiConversation.findFirst({ where: { id: conversationId, userId: user.id, workspaceId, kind: body.kind, wikiId } });
     if (!c) throw notFound("Conversation");
   } else {
-    const c = await prisma.aiConversation.create({ data: { workspaceId, projectId, userId: user.id, kind: body.kind, title: body.message.replace(/\s+/g, " ").slice(0, 120) } });
+    const c = await prisma.aiConversation.create({ data: { workspaceId, wikiId, userId: user.id, kind: body.kind, title: body.message.replace(/\s+/g, " ").slice(0, 120) } });
     conversationId = c.id;
   }
   const history = await prisma.aiMessage.findMany({ where: { conversationId }, orderBy: { createdAt: "desc" }, take: HISTORY, select: { role: true, content: true } });

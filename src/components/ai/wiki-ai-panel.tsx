@@ -33,22 +33,22 @@ interface Doc {
 }
 
 /** Right-hand panel in the project wiki: ask the wiki assistant, and (for project managers) set it up. */
-export function WikiAiPanel({ projectId, projectName, onClose }: { projectId: string; projectName: string; onClose: () => void }) {
+export function WikiAiPanel({ wikiId, wikiName, onClose }: { wikiId: string; wikiName: string; onClose: () => void }) {
   const { t } = useT();
   const [tab, setTab] = useState<"chat" | "settings">("chat");
   const [settings, setSettings] = useState<AiSettings | null>(null);
-  const chat = useAiChat({ kind: "wiki", projectId });
+  const chat = useAiChat({ kind: "wiki", wikiId });
 
   const loadSettings = useCallback(async () => {
-    setSettings(await api.get<AiSettings>(`/api/projects/${projectId}/ai-settings`));
-  }, [projectId]);
+    setSettings(await api.get<AiSettings>(`/api/wikis/${wikiId}/ai-settings`));
+  }, [wikiId]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch
     loadSettings().catch(() => {});
     chat.loadConversations().catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per project
-  }, [projectId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per wiki
+  }, [wikiId]);
 
   return (
     <aside className="w-[420px] shrink-0 border-l border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 flex flex-col" data-testid="wiki-ai-panel">
@@ -91,7 +91,7 @@ export function WikiAiPanel({ projectId, projectName, onClose }: { projectId: st
       </div>
 
       {tab === "settings" && settings?.canManage ? (
-        <WikiAiSettings projectId={projectId} settings={settings} onSaved={loadSettings} />
+        <WikiAiSettings wikiId={wikiId} settings={settings} onSaved={loadSettings} />
       ) : settings && !settings.enabled ? (
         <div className="p-6 text-sm text-neutral-500 text-center">{t("wikiAi.disabled")}</div>
       ) : (
@@ -103,7 +103,7 @@ export function WikiAiPanel({ projectId, projectName, onClose }: { projectId: st
           configured={chat.configured}
           onSend={chat.send}
           onStop={chat.stop}
-          emptyTitle={t("wikiAi.emptyTitle", { project: projectName })}
+          emptyTitle={t("wikiAi.emptyTitle", { project: wikiName })}
           emptyBody={settings?.greeting || t("wikiAi.emptyBody", { pages: settings?.pageCount ?? 0, docs: settings?.docCount ?? 0 })}
           suggestions={[t("wikiAi.s1"), t("wikiAi.s2"), t("wikiAi.s3")]}
           placeholder={t("wikiAi.placeholder")}
@@ -113,7 +113,7 @@ export function WikiAiPanel({ projectId, projectName, onClose }: { projectId: st
   );
 }
 
-function WikiAiSettings({ projectId, settings, onSaved }: { projectId: string; settings: AiSettings; onSaved: () => void }) {
+function WikiAiSettings({ wikiId, settings, onSaved }: { wikiId: string; settings: AiSettings; onSaved: () => void }) {
   const { t } = useT();
   const [enabled, setEnabled] = useState(settings.enabled);
   const [instructions, setInstructions] = useState(settings.instructions ?? "");
@@ -124,7 +124,7 @@ function WikiAiSettings({ projectId, settings, onSaved }: { projectId: string; s
   const [preview, setPreview] = useState<{ fileName: string; text: string; truncated: boolean } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const loadDocs = useCallback(async () => setDocs(await api.get<Doc[]>(`/api/projects/${projectId}/knowledge-docs`)), [projectId]);
+  const loadDocs = useCallback(async () => setDocs(await api.get<Doc[]>(`/api/wikis/${wikiId}/knowledge-docs`)), [wikiId]);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch
     loadDocs().catch(() => {});
@@ -133,7 +133,7 @@ function WikiAiSettings({ projectId, settings, onSaved }: { projectId: string; s
   async function save() {
     setSaving(true);
     try {
-      await api.put(`/api/projects/${projectId}/ai-settings`, { enabled, instructions, greeting: greeting.trim() || null });
+      await api.put(`/api/wikis/${wikiId}/ai-settings`, { enabled, instructions, greeting: greeting.trim() || null });
       toast.success(t("common.saved"));
       onSaved();
     } catch (e) {
@@ -149,7 +149,7 @@ function WikiAiSettings({ projectId, settings, onSaved }: { projectId: string; s
       try {
         const form = new FormData();
         form.append("file", file);
-        const res = await fetch(`/api/projects/${projectId}/knowledge-docs`, { method: "POST", body: form });
+        const res = await fetch(`/api/wikis/${wikiId}/knowledge-docs`, { method: "POST", body: form });
         const body = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(body.error || t("common.failed"));
       } catch (e) {

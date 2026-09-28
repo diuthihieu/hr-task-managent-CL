@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, workspaceOfProject, assertCanManageProject, badRequest } from "@/lib/authz";
+import { requireUser, requireWiki, route, badRequest } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { extractDocText } from "@/lib/ai/extract";
 import { safeFileName } from "@/lib/storage";
 
-type P = { projectId: string };
+type P = { wikiId: string };
 
 export const maxDuration = 120;
 
@@ -15,18 +15,17 @@ const toRow = (d: Row) => ({ ...d, createdAt: d.createdAt.toISOString(), created
 
 export const GET = route<P>(async (_req, { params }) => {
   const user = await requireUser();
-  const { projectId } = await params;
-  await requireWorkspaceRole(user, await workspaceOfProject(projectId), "viewer");
-  const docs = await prisma.knowledgeDoc.findMany({ where: { projectId, deletedAt: null }, orderBy: { createdAt: "desc" }, select });
+  const { wikiId } = await params;
+  await requireWiki(user, wikiId, "viewer");
+  const docs = await prisma.knowledgeDoc.findMany({ where: { wikiId, deletedAt: null }, orderBy: { createdAt: "desc" }, select });
   return NextResponse.json(docs.map(toRow));
 });
 
 /** Upload a reference document (multipart `file`); its text is extracted and stored for the wiki assistant. */
 export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
-  const { projectId } = await params;
-  const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "editor");
-  await assertCanManageProject(ctx, projectId);
+  const { wikiId } = await params;
+  const ctx = await requireWiki(user, wikiId, "manager");
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) throw badRequest("Send the document as multipart form field `file`");
@@ -35,7 +34,7 @@ export const POST = route<P>(async (req, { params }) => {
     const d = await tx.knowledgeDoc.create({
       data: {
         workspaceId: ctx.workspaceId,
-        projectId,
+        wikiId,
         fileName: safeFileName(file.name),
         contentType: file.type || "application/octet-stream",
         sizeBytes: file.size,
@@ -45,7 +44,7 @@ export const POST = route<P>(async (req, { params }) => {
       },
       select,
     });
-    await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "project", entityId: projectId, action: "updated", summary: `Added "${d.fileName}" to the wiki assistant's documents` });
+    await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "wiki", entityId: wikiId, action: "updated", summary: `Added "${d.fileName}" to the wiki assistant's documents` });
     return d;
   });
   return NextResponse.json(toRow(doc), { status: 201 });

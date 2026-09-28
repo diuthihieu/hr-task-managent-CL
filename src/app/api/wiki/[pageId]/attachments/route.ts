@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, workspaceOfWikiPage, badRequest } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, workspaceOfWikiPage, badRequest, forbidden, wikiRoleAtLeast } from "@/lib/authz";
 import { assertUploadAllowed, uploadAttachment, deleteAttachmentBlob, safeFileName } from "@/lib/storage";
 
 type P = { pageId: string };
@@ -9,7 +9,8 @@ type P = { pageId: string };
 export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { pageId } = await params;
-  const ctx = await requireWorkspaceRole(user, await workspaceOfWikiPage(pageId), "contributor");
+  const ctx = await requireWorkspaceRole(user, await workspaceOfWikiPage(pageId), "viewer");
+  if (!wikiRoleAtLeast(ctx.wikiRole, "editor")) throw forbidden("You can only read this wiki");
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) throw badRequest("Send the file as multipart form field `file`");

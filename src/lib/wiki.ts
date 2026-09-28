@@ -1,10 +1,60 @@
 import type { WikiPage } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import { badRequest } from "./http-errors";
+import type { WikiRoleName } from "./authz";
+
+export const WIKI_SELECT = {
+  id: true,
+  workspaceId: true,
+  name: true,
+  description: true,
+  icon: true,
+  color: true,
+  access: true,
+  defaultRole: true,
+  createdById: true,
+  updatedAt: true,
+  _count: { select: { pages: { where: { deletedAt: null } }, members: true } },
+} as const;
+
+export interface WikiRow {
+  id: string;
+  workspaceId: string;
+  name: string;
+  description: string | null;
+  icon: string | null;
+  color: string;
+  access: "workspace" | "restricted";
+  defaultRole: "viewer" | "editor";
+  pageCount: number;
+  memberCount: number;
+  updatedAt: string;
+  myRole: WikiRoleName | null;
+}
+
+export function serializeWiki(
+  w: { id: string; workspaceId: string; name: string; description: string | null; icon: string | null; color: string; access: string; defaultRole: string; updatedAt: Date; _count: { pages: number; members: number } },
+  myRole: WikiRoleName | null | undefined
+): WikiRow {
+  return {
+    id: w.id,
+    workspaceId: w.workspaceId,
+    name: w.name,
+    description: w.description,
+    icon: w.icon,
+    color: w.color,
+    access: w.access as WikiRow["access"],
+    defaultRole: w.defaultRole as WikiRow["defaultRole"],
+    pageCount: w._count.pages,
+    memberCount: w._count.members,
+    updatedAt: w.updatedAt.toISOString(),
+    myRole: myRole ?? null,
+  };
+}
 
 export interface WikiPageSummary {
   id: string;
-  projectId: string;
+  wikiId: string;
   parentPageId: string | null;
   title: string;
   icon: string | null;
@@ -16,7 +66,7 @@ export interface WikiPageSummary {
 export function serializeWikiSummary(p: WikiPage & { updatedBy?: { name: string } | null }): WikiPageSummary {
   return {
     id: p.id,
-    projectId: p.projectId,
+    wikiId: p.wikiId,
     parentPageId: p.parentPageId,
     title: p.title,
     icon: p.icon,

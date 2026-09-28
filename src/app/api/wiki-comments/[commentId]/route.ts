@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, workspaceOfWikiPage, notFound, forbidden, wikiRoleAtLeast } from "@/lib/authz";
+import { refreshPageSources } from "@/lib/wiki-sources";
 
 type P = { commentId: string };
 
@@ -16,5 +17,6 @@ export const DELETE = route<P>(async (_req, { params }) => {
     prisma.wikiComment.update({ where: { id: commentId }, data: { deletedAt: new Date() } }),
     prisma.attachment.updateMany({ where: { wikiCommentId: commentId }, data: { deletedAt: new Date() } }),
   ]);
+  await refreshPageSources(prisma, c.wikiPageId);
   return new NextResponse(null, { status: 204 });
 });

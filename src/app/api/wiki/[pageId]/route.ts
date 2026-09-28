@@ -6,6 +6,7 @@ import { logActivity, diff } from "@/lib/activity";
 import { assertNoWikiCycle, serializeWikiSummary, wikiSubtreeIds } from "@/lib/wiki";
 import { sanitizeRichText } from "@/lib/rich-text";
 import { shouldLogContentEdit } from "@/lib/content-log";
+import { refreshPageSources, restrictingProjects } from "@/lib/wiki-sources";
 import { uuid } from "@/lib/validation";
 
 type P = { pageId: string };
@@ -18,7 +19,7 @@ export const GET = route<P>(async (_req, { params }) => {
     where: { id: pageId },
     include: { updatedBy: { select: { name: true } }, createdBy: { select: { name: true } } },
   });
-  return NextResponse.json({ ...serializeWikiSummary(page), content: page.content, createdAt: page.createdAt.toISOString(), createdBy: page.createdBy?.name ?? null });
+  return NextResponse.json({ ...serializeWikiSummary(page), content: page.content, createdAt: page.createdAt.toISOString(), createdBy: page.createdBy?.name ?? null, restrictedTo: await restrictingProjects(prisma, page.sourceProjectIds) });
 });
 
 const patchSchema = z.object({
@@ -58,9 +59,10 @@ export const PATCH = route<P>(async (req, { params }) => {
     else if (body.content !== undefined && (await shouldLogContentEdit(tx, "wiki_page", pageId, user.id))) {
       await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "wiki_page", entityId: pageId, action: "updated", summary: `Edited the page "${after.title}"` });
     }
-    return after;
+    const sources = body.content !== undefined || body.title !== undefined ? await refreshPageSources(tx, pageId) : after.sourceProjectIds;
+    return { ...after, restrictedTo: await restrictingProjects(tx, sources) };
   });
-  return NextResponse.json({ ...serializeWikiSummary(page), content: page.content });
+  return NextResponse.json({ ...serializeWikiSummary(page), content: page.content, restrictedTo: page.restrictedTo });
 });
 
 /** Soft-deletes the page and its sub-pages (wiki editors). */

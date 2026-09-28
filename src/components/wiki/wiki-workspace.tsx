@@ -17,6 +17,8 @@ import type { WikiPageSummary, WikiRow } from "@/lib/wiki";
 
 interface WikiPageFull extends WikiPageSummary {
   content: string | null;
+  /** Projects this page quotes that are hidden from some members - they can't see the page. */
+  restrictedTo?: { id: string; name: string }[];
 }
 
 /** Project wiki: page tree on the left, the selected page (rich editor) on the right. */
@@ -214,6 +216,12 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
             <Link href={base} className="md:hidden inline-flex items-center gap-1 text-xs text-neutral-500 mb-3">
               <ChevronRight size={12} className="rotate-180" /> {wiki.name}
             </Link>
+            {!!page.restrictedTo?.length && (
+              <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/40 px-3 py-2 mb-3 text-xs text-amber-800 dark:text-amber-200" data-testid="wiki-restricted">
+                <Lock size={13} className="shrink-0 mt-0.5" />
+                <span>{t("wiki.restrictedBySource", { projects: page.restrictedTo.map((p) => p.name).join(", ") })}</span>
+              </div>
+            )}
             <div className="flex items-center gap-2 text-[11px] text-neutral-400 mb-2">
               <span>{t("wiki.lastEdited", { name: page.updatedBy ?? currentUserName, when: formatDate(page.updatedAt, true) })}</span>
               <span className="ml-auto" data-testid="wiki-save-state">
@@ -247,7 +255,9 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
               onUploadImage={uploadImage}
               minHeight={420}
               onSave={async (html) => {
-                await api.patch(`/api/wiki/${page.id}`, { content: html || null });
+                const saved = await api.patch<{ restrictedTo?: { id: string; name: string }[] }>(`/api/wiki/${page.id}`, { content: html || null });
+                // Only the notice changes; the editor keeps its own content.
+                setPage((p) => (p ? { ...p, restrictedTo: saved.restrictedTo ?? [] } : p));
               }}
             />
             <WikiComments pageId={page.id} currentUserId={currentUserId ?? null} canManage={wiki.myRole === "manager"} />

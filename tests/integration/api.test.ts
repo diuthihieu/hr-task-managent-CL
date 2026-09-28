@@ -1003,6 +1003,47 @@ test("My OKRs show only the viewer's own branch: objective -> their key result -
   assert.equal((await viewer.get<Obj>(`/api/objectives/${o.body.id}`)).body.keyResults.length, 2, "Team view unchanged");
 });
 
+test("wiki pages that quote a hidden project are hidden too - in the UI, search and AI answers", async () => {
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId] });
+  const wiki = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/wikis`, { name: "Team reports", access: "workspace" });
+  // What happened in production: a workspace-wide report (built by someone who sees every project) saved as a wiki page.
+  const report = await admin.post<{ id: string }>(`/api/wikis/${wiki.body.id}/pages`, {
+    title: "Weekly report - whole workspace",
+    content: "<h2>Other project</h2><table><tr><td>Call the insurer</td><td>In Progress</td></tr></table><p>Budget review: pending</p>",
+  });
+  assert.equal(report.status, 201, JSON.stringify(report.body));
+  const clean = await admin.post<{ id: string }>(`/api/wikis/${wiki.body.id}/pages`, { title: "Leave policy", content: "<p>Twelve days a year.</p>" });
+
+  assert.equal((await viewer.get(`/api/wiki/${report.body.id}`)).status, 404, "hidden from the viewer");
+  assert.equal((await viewer.get(`/api/wiki/${clean.body.id}`)).status, 200);
+  const tree = (await viewer.get<{ id: string }[]>(`/api/wikis/${wiki.body.id}/pages`)).body.map((p) => p.id);
+  assert.ok(!tree.includes(report.body.id) && tree.includes(clean.body.id), "left out of the page tree");
+  assert.equal((await viewer.get<{ pages: unknown[] }>(`/api/search?workspaceId=${s.ws}&q=Weekly%20report`)).body.pages.length, 0, "and out of search");
+  assert.equal((await viewer.get(`/api/wiki/${report.body.id}/comments`)).status, 404);
+  const own = await admin.get<{ restrictedTo: { name: string }[] }>(`/api/wiki/${report.body.id}`);
+  assert.deepEqual(own.body.restrictedTo.map((p) => p.name), ["Other project"], "people who can see it get a notice");
+
+  await prisma.aiMessage.deleteMany({ where: { conversation: { userId: s.viewerId } } }); // reset the daily quota used up earlier
+  assert.equal((await ask(viewer, { kind: "assistant", workspaceId: s.ws, message: "report on Other project" })).status, 200);
+  let system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+  assert.match(system, /Leave policy/, "other wiki pages still reach the AI");
+  assert.doesNotMatch(system, /Call the insurer|Weekly report - whole workspace/, "the quoting page doesn't");
+  assert.equal((await ask(viewer, { kind: "wiki", wikiId: wiki.body.id, message: "what's in the weekly report?" })).status, 200);
+  system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+  assert.doesNotMatch(system, /Call the insurer/, "nor through the wiki's own assistant");
+
+  // A comment quoting the hidden project restricts a page that was fine before; mentioning the viewer doesn't notify them.
+  const c = await admin.post(`/api/wiki/${clean.body.id}/comments`, { body: `@[Vic](${s.viewerId}) see Call the insurer` });
+  assert.equal(c.status, 201, JSON.stringify(c.body));
+  assert.equal((await viewer.get(`/api/wiki/${clean.body.id}`)).status, 404);
+  assert.equal(await prisma.notification.count({ where: { userId: s.viewerId, type: "mention", data: { path: ["where"], equals: "wiki" }, title: "Leave policy" } }), 0);
+
+  // Unhiding the project gives the pages back.
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
+  assert.equal((await viewer.get(`/api/wiki/${report.body.id}`)).status, 200);
+  assert.deepEqual((await admin.get<{ restrictedTo: unknown[] }>(`/api/wiki/${report.body.id}`)).body.restrictedTo, [], "no notice when nobody is hidden");
+});
+
 test("members can leave; only owners delete a workspace", async () => {
   const joined = await admin.post(`/api/workspaces/${s.contributorWs}/members`, { email: "viewer@integration.test", role: "admin" });
   assert.equal(joined.status, 201);

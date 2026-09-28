@@ -9,5 +9,6 @@ export const GET = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { pageId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfWikiPage(pageId), "viewer");
-  return NextResponse.json(await wikiReaders(ctx.wikiId!, ctx.workspaceId));
+  const scope = await workspaceOfWikiPage(pageId);
+  return NextResponse.json(await wikiReaders(ctx.wikiId!, ctx.workspaceId, scope?.sourceProjectIds));
 });

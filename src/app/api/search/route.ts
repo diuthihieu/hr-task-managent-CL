@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, visibleProjectWhere, visibleWikiWhere } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, visibleProjectWhere, visibleWikiWhere, hiddenProjectIds } from "@/lib/authz";
+import { visiblePageWhere } from "@/lib/wiki-sources";
 
 const EMPTY = { projects: [], tasks: [], pages: [], objectives: [], people: [], files: [] };
 
@@ -20,6 +21,7 @@ export const GET = route(async (req) => {
   const visible = visibleProjectWhere(user);
   const liveProject = { deletedAt: null, ...visible };
   const wikiWhere = visibleWikiWhere(user, role);
+  const pageWhere = visiblePageWhere(await hiddenProjectIds(user));
 
   const [projects, tasks, pages, objectives, people, files] = await Promise.all([
     prisma.project.findMany({ where: { workspaceId, ...liveProject, name: like }, select: { id: true, name: true, color: true }, take: 6 }),
@@ -30,7 +32,7 @@ export const GET = route(async (req) => {
       take: 12,
     }),
     prisma.wikiPage.findMany({
-      where: { workspaceId, deletedAt: null, wiki: wikiWhere, title: like },
+      where: { workspaceId, deletedAt: null, wiki: wikiWhere, title: like, ...pageWhere },
       select: { id: true, title: true, wikiId: true, wiki: { select: { name: true } } },
       orderBy: { updatedAt: "desc" },
       take: 8,
@@ -51,7 +53,7 @@ export const GET = route(async (req) => {
         workspaceId,
         deletedAt: null,
         fileName: like,
-        OR: [{ task: { deletedAt: null, project: liveProject } }, { wikiPage: { deletedAt: null, wiki: wikiWhere } }],
+        OR: [{ task: { deletedAt: null, project: liveProject } }, { wikiPage: { deletedAt: null, wiki: wikiWhere, ...pageWhere } }],
       },
       select: { id: true, fileName: true, contentType: true, sizeBytes: true, task: { select: { id: true, title: true, projectId: true } }, wikiPage: { select: { id: true, title: true, wikiId: true } } },
       orderBy: { createdAt: "desc" },

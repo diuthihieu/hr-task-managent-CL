@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, requireWiki, route, readJson, notFound, badRequest, HttpError } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, requireWiki, route, readJson, notFound, badRequest, HttpError, hiddenProjectIds } from "@/lib/authz";
 import { aiConfigured, streamGenerate, type GeminiContent, type Usage } from "@/lib/ai/gemini";
 import { wikiKnowledge, workspaceData } from "@/lib/ai/context";
 import { wikiSystemPrompt, assistantSystemPrompt } from "@/lib/ai/prompts";
@@ -42,7 +42,7 @@ export const POST = route(async (req) => {
     const [wiki, settings, knowledge] = await Promise.all([
       prisma.wiki.findUniqueOrThrow({ where: { id: wikiId }, select: { name: true, workspace: { select: { name: true } } } }),
       prisma.wikiAiSettings.findUnique({ where: { wikiId } }),
-      wikiKnowledge(wikiId),
+      hiddenProjectIds(user).then((hidden) => wikiKnowledge(wikiId!, undefined, hidden)),
     ]);
     if (settings && !settings.enabled) throw new HttpError(403, "The wiki's managers have turned its assistant off");
     system = wikiSystemPrompt({ wiki: wiki.name, workspace: wiki.workspace.name, instructions: settings?.instructions ?? "", knowledge: knowledge.text, personal: await personalPromptBlock(user.id) });

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWiki, route, readJson, badRequest } from "@/lib/authz";
+import { requireUser, requireWiki, route, readJson, badRequest, hiddenProjectIds } from "@/lib/authz";
+import { refreshPageSources, visiblePageWhere } from "@/lib/wiki-sources";
 import { logActivity } from "@/lib/activity";
 import { serializeWikiSummary } from "@/lib/wiki";
 import { sanitizeRichText } from "@/lib/rich-text";
@@ -15,11 +16,13 @@ export const GET = route<P>(async (_req, { params }) => {
   const { wikiId } = await params;
   await requireWiki(user, wikiId, "viewer");
   const pages = await prisma.wikiPage.findMany({
-    where: { wikiId, deletedAt: null },
+    where: { wikiId, deletedAt: null, ...visiblePageWhere(await hiddenProjectIds(user)) },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     include: { updatedBy: { select: { name: true } } },
   });
-  return NextResponse.json(pages.map(serializeWikiSummary));
+  // A page under a parent the viewer can't see moves to the top level for them.
+  const ids = new Set(pages.map((p) => p.id));
+  return NextResponse.json(pages.map((p) => serializeWikiSummary(p.parentPageId && !ids.has(p.parentPageId) ? { ...p, parentPageId: null } : p)));
 });
 
 const createSchema = z.object({
@@ -52,6 +55,7 @@ export const POST = route<P>(async (req, { params }) => {
       include: { updatedBy: { select: { name: true } } },
     });
     await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "wiki_page", entityId: p.id, action: "created", summary: `Created wiki page "${p.title}"` });
+    await refreshPageSources(tx, p.id);
     return p;
   });
   return NextResponse.json(serializeWikiSummary(page), { status: 201 });

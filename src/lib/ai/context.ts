@@ -3,6 +3,7 @@ import { stripMentions } from "@/lib/mentions";
 import { prisma } from "../prisma";
 import type { WorkspaceRole } from "@prisma/client";
 import { visibleProjectWhere, visibleWikiWhere, hiddenProjectIds, type SessionUser } from "../authz";
+import { visiblePageWhere } from "../wiki-sources";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "../okr-resolver";
 import { htmlToText } from "./extract";
 
@@ -40,10 +41,11 @@ class Budget {
 const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "-");
 
 /** A wiki's pages and reference documents, for its assistant. */
-export async function wikiKnowledge(wikiId: string, budget = CONTEXT_CHARS) {
+export async function wikiKnowledge(wikiId: string, budget = CONTEXT_CHARS, hidden: Set<string> = new Set()) {
+  const pageWhere = visiblePageWhere(hidden);
   const [pages, docs, files] = await Promise.all([
     prisma.wikiPage.findMany({
-      where: { wikiId, deletedAt: null },
+      where: { wikiId, deletedAt: null, ...pageWhere },
       orderBy: [{ parentPageId: "asc" }, { sortOrder: "asc" }],
       select: {
         title: true,
@@ -54,7 +56,7 @@ export async function wikiKnowledge(wikiId: string, budget = CONTEXT_CHARS) {
     }),
     prisma.knowledgeDoc.findMany({ where: { wikiId, deletedAt: null }, orderBy: { createdAt: "asc" }, select: { fileName: true, text: true } }),
     // Files attached to page comments, with the text extracted at upload.
-    prisma.attachment.findMany({ where: { wikiPage: { wikiId, deletedAt: null }, wikiCommentId: { not: null }, deletedAt: null, extractedText: { not: null } }, select: { fileName: true, extractedText: true, wikiPage: { select: { title: true } } } }),
+    prisma.attachment.findMany({ where: { wikiPage: { wikiId, deletedAt: null, ...pageWhere }, wikiCommentId: { not: null }, deletedAt: null, extractedText: { not: null } }, select: { fileName: true, extractedText: true, wikiPage: { select: { title: true } } } }),
   ]);
   const b = new Budget(budget);
   for (const d of docs) b.add(`### Reference document: ${d.fileName}\n${d.text}`);
@@ -145,7 +147,7 @@ export async function workspaceData(user: SessionUser, workspaceId: string, role
 
   const wikis = await prisma.wiki.findMany({ where: { workspaceId, ...visibleWikiWhere(user, role) }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true } });
   for (const w of wikis) {
-    const k = await wikiKnowledge(w.id, Math.max(0, budget / 4));
+    const k = await wikiKnowledge(w.id, Math.max(0, budget / 4), hidden);
     if (k.pageCount || k.docCount) if (!b.add(`## Wiki "${w.name}" (pages & documents)\n${k.text}`)) break;
   }
   return { text: b.toString(), projectCount: projects.length, taskCount: tasks.length, objectiveCount: rows.length };

@@ -7,6 +7,7 @@ import { requireWorkspacePage } from "@/lib/page-context";
 import { getServerT } from "@/lib/prefs";
 import { getMyObjectiveRows, resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 import { NewProjectButton } from "@/components/projects/new-project-button";
+import { visiblePageWhere } from "@/lib/wiki-sources";
 import { ProjectIcon } from "@/components/projects/project-icon";
 import { Greeting } from "@/components/home/greeting";
 import { CommandCenter, type HomeTask } from "@/components/home/command-center";
@@ -88,7 +89,7 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
   const ids = (type: string) => activity.filter((a) => a.entityType === type).map((a) => a.entityId);
   const [actTasks, actPages, actObjectives] = await Promise.all([
     prisma.task.findMany({ where: { id: { in: ids("task") }, project: visible }, select: { id: true, title: true, projectId: true } }),
-    prisma.wikiPage.findMany({ where: { id: { in: ids("wiki_page") }, deletedAt: null, wiki: visibleWikiWhere(user, role) }, select: { id: true, title: true, wikiId: true } }),
+    prisma.wikiPage.findMany({ where: { id: { in: ids("wiki_page") }, deletedAt: null, wiki: visibleWikiWhere(user, role), ...visiblePageWhere(hidden) }, select: { id: true, title: true, wikiId: true } }),
     prisma.objective.findMany({ where: { id: { in: ids("objective") }, deletedAt: null, OR: [{ projectId: null }, { project: visible }] }, select: { id: true, title: true } }),
   ]);
   const projectById = new Map(projects.map((p) => [p.id, p]));

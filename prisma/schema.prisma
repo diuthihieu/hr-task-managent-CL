@@ -922,6 +922,10 @@ model WikiPage {
   icon         String?   @db.VarChar(16)
   /// Sanitized HTML produced by the rich-text editor.
   content      String?
+  /// Projects whose data the page (or its comments) quotes - detected on every
+  /// save. Anyone hidden from one of these projects can't see the page, in the
+  /// UI, search or AI answers.
+  sourceProjectIds String[] @default([]) @map("source_project_ids") @db.Uuid
   sortOrder    Int       @default(0) @map("sort_order")
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)

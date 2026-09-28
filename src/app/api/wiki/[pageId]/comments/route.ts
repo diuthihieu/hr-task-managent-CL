@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfWikiPage, badRequest } from "@/lib/authz";
 import { uuid } from "@/lib/validation";
 import { mentionedUserIds, stripMentions } from "@/lib/mentions";
+import { detectSourceProjects, refreshPageSources } from "@/lib/wiki-sources";
 import { wikiReaders, WIKI_COMMENT_SELECT } from "@/lib/wiki-comments";
 import { extractBufferText, isExtractable, MAX_DOC_CHARS } from "@/lib/ai/extract";
 import { openAttachment } from "@/lib/storage";
@@ -48,7 +49,10 @@ export const POST = route<P>(async (req, { params }) => {
   const body = schema.parse(await readJson(req));
   const page = await prisma.wikiPage.findUniqueOrThrow({ where: { id: pageId }, select: { title: true, wikiId: true, workspace: { select: { slug: true } } } });
 
-  const readers = new Set((await wikiReaders(page.wikiId, ctx.workspaceId)).map((r) => r.id));
+  // The page's sources as they will be once this comment is saved (the comment itself may quote a project).
+  const current = (await workspaceOfWikiPage(pageId))?.sourceProjectIds ?? [];
+  const quoted = await detectSourceProjects(prisma, ctx.workspaceId, stripMentions(body.body));
+  const readers = new Set((await wikiReaders(page.wikiId, ctx.workspaceId, [...new Set([...current, ...quoted])])).map((r) => r.id));
   const mentioned = mentionedUserIds(body.body).filter((id) => readers.has(id) && id !== user.id);
   if (body.parentCommentId && !(await prisma.wikiComment.findFirst({ where: { id: body.parentCommentId, wikiPageId: pageId, deletedAt: null }, select: { id: true } })))
     throw badRequest("The comment you reply to is gone");
@@ -68,6 +72,7 @@ export const POST = route<P>(async (req, { params }) => {
         data: mentioned.map((userId) => ({ userId, workspaceId: ctx.workspaceId, actorId: user.id, type: "mention", title: page.title || "Wiki", body: excerpt, link, data: { where: "wiki" } })),
       });
     await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "wiki_page", entityId: pageId, action: "updated", summary: `Commented on "${page.title}"` });
+    await refreshPageSources(tx, pageId);
     return c;
   });
 

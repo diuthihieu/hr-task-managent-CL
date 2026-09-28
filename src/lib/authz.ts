@@ -85,6 +85,8 @@ export interface Scope {
   workspaceId: string;
   projectId?: string | null;
   wikiId?: string | null;
+  /** A wiki page's source projects: hidden from anyone hidden from one of them. */
+  sourceProjectIds?: string[];
 }
 
 /** True when a project's creator/admin hid it from this user. System admins are never hidden. */
@@ -116,6 +118,10 @@ export async function requireWorkspaceRole(user: SessionUser, target: string | S
   const role = await effectiveRole(user, scope.workspaceId);
   if (!role) throw notFound();
   if (scope.projectId && (await isProjectHiddenFrom(user, scope.projectId))) throw notFound();
+  if (scope.sourceProjectIds?.length) {
+    const hidden = await hiddenProjectIds(user);
+    if (scope.sourceProjectIds.some((id) => hidden.has(id))) throw notFound();
+  }
   let wikiRole: WikiRoleName | undefined;
   if (scope.wikiId) {
     const r = await wikiRoleOf(user, scope.wikiId, role);
@@ -153,9 +159,9 @@ export async function workspaceOfComment(commentId: string): Promise<Scope | nul
 export async function workspaceOfAttachment(attachmentId: string): Promise<Scope | null> {
   const a = await prisma.attachment.findFirst({
     where: { id: attachmentId, deletedAt: null, OR: [{ task: { deletedAt: null } }, { wikiPage: { deletedAt: null } }] },
-    select: { workspaceId: true, task: { select: { projectId: true } }, wikiPage: { select: { wikiId: true } } },
+    select: { workspaceId: true, task: { select: { projectId: true } }, wikiPage: { select: { wikiId: true, sourceProjectIds: true } } },
   });
-  return a ? { workspaceId: a.workspaceId, projectId: a.task?.projectId ?? null, wikiId: a.wikiPage?.wikiId ?? null } : null;
+  return a ? { workspaceId: a.workspaceId, projectId: a.task?.projectId ?? null, wikiId: a.wikiPage?.wikiId ?? null, sourceProjectIds: a.wikiPage?.sourceProjectIds } : null;
 }
 export async function workspaceOfObjective(objectiveId: string): Promise<Scope | null> {
   const o = await prisma.objective.findFirst({ where: { id: objectiveId, deletedAt: null }, select: { workspaceId: true, projectId: true } });
@@ -183,8 +189,8 @@ export async function workspaceOfStatus(statusId: string) {
   return s?.workspaceId ?? null;
 }
 export async function workspaceOfWikiPage(pageId: string): Promise<Scope | null> {
-  const p = await prisma.wikiPage.findFirst({ where: { id: pageId, deletedAt: null, wiki: { deletedAt: null } }, select: { workspaceId: true, wikiId: true } });
-  return p ? { workspaceId: p.workspaceId, wikiId: p.wikiId } : null;
+  const p = await prisma.wikiPage.findFirst({ where: { id: pageId, deletedAt: null, wiki: { deletedAt: null } }, select: { workspaceId: true, wikiId: true, sourceProjectIds: true } });
+  return p ? { workspaceId: p.workspaceId, wikiId: p.wikiId, sourceProjectIds: p.sourceProjectIds } : null;
 }
 export async function workspaceOfWiki(wikiId: string): Promise<Scope | null> {
   const w = await prisma.wiki.findFirst({ where: { id: wikiId, deletedAt: null }, select: { workspaceId: true } });

@@ -1261,6 +1261,7 @@ export const MESSAGES = {
   "seg.filterDashboard": ["Filter the dashboard by this", "Lọc cả dashboard theo mục này"],
   "seg.hint": ["Drag a card's header to move it, its corner to resize; click a bar or slice to see its tasks.", "Kéo tiêu đề thẻ để di chuyển, kéo góc để đổi kích cỡ; bấm vào cột hoặc lát biểu đồ để xem các task."],
   "seg.hintView": ["Click a bar or slice to see its tasks.", "Bấm vào cột hoặc lát biểu đồ để xem các task."],
+  "wiki.restrictedBySource": ["This page quotes data from {projects}. People hidden from that project can't see this page, and the AI won't use it for them.", "Trang này có dữ liệu của project {projects}. Người bị ẩn khỏi project đó sẽ không thấy trang này, và AI cũng không dùng trang này khi trả lời họ."],
   "cap.placeholder": ["What's on your mind? e.g. Prepare payroll reconciliation", "Bạn đang nghĩ gì? VD: Chuẩn bị đối soát lương"],
   "cap.capture": ["Capture", "Ghi lại"],
   "cap.category": ["Category", "Category"],

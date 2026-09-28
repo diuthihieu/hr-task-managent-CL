@@ -687,6 +687,21 @@ test("a new project starts with a single blank task table", async () => {
   assert.equal((await admin.del(`/api/projects/${p.body.id}`)).status, 204);
 });
 
+test("AI overload: busy models are retried; if Gemini stays busy nothing is saved", async () => {
+  const before = await prisma.aiConversation.count();
+  const once = await ask(admin, { kind: "assistant", workspaceId: s.ws, message: "report #overload-once" });
+  assert.equal(once.status, 200, "a 503 is retried on the same model");
+  assert.match(once.text, /You asked: report #overload-once/);
+  assert.equal((await (await fetch(`${STUB}/count?q=${encodeURIComponent("report #overload-once")}`)).json()).count, 2);
+
+  const always = await ask(admin, { kind: "assistant", workspaceId: s.ws, message: "report #overload-always" });
+  assert.equal(always.status, 503);
+  const err = JSON.parse(always.text).error as string;
+  assert.match(err, /overloaded/);
+  assert.match(err, /tried gemini-9\.9-flash: 503, retired-model: 404, retired-fallback: 404/, "the model that last worked goes first, then every other model is tried");
+  assert.equal(await prisma.aiConversation.count(), before + 1, "only the successful chat was saved");
+});
+
 test("AI assistant: answers from what the user may see, declines the rest, and enforces a daily quota", async () => {
   // Hide the other project from the viewer: its tasks must not reach the model.
   await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId] });

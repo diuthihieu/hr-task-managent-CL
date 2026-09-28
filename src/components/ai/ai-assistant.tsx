@@ -71,6 +71,9 @@ export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: {
           messages={chat.messages}
           busy={chat.busy}
           error={chat.error}
+          errorStatus={chat.errorStatus}
+          failedText={chat.failedText}
+          onRetry={chat.retry}
           configured={chat.configured}
           onSend={chat.send}
           onStop={chat.stop}

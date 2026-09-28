@@ -5,6 +5,8 @@ import http from "node:http";
 
 const port = Number(process.env.GEMINI_STUB_PORT || 3999);
 let last = null;
+// Overload simulation: "#overload-once" is refused once per text, "#overload-always" every time.
+const seen = new Map();
 
 http
   .createServer((req, res) => {
@@ -21,6 +23,11 @@ http
       res.writeHead(404, { "content-type": "application/json" });
       return res.end(JSON.stringify({ error: { code: 404, status: "NOT_FOUND", message: "This model is no longer available." } }));
     }
+    if (req.method === "GET" && req.url.startsWith("/count")) {
+      const text = decodeURIComponent(req.url.split("?q=")[1] ?? "");
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify({ count: seen.get(text) ?? 0 }));
+    }
     if (req.method === "GET" && req.url === "/last") {
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify(last));
@@ -32,6 +39,12 @@ http
       last = { url: req.url, apiKey: req.headers["x-goog-api-key"], body };
       const userText = body.contents?.at(-1)?.parts?.map((p) => p.text ?? "[file]").join(" ") ?? "";
       const hasFile = body.contents?.some((c) => c.parts?.some((p) => p.inlineData));
+      const overload = userText.includes("#overload-always") || (userText.includes("#overload-once") && !seen.has(userText));
+      if (userText.includes("#overload")) seen.set(userText, (seen.get(userText) ?? 0) + 1);
+      if (overload) {
+        res.writeHead(503, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ error: { code: 503, status: "UNAVAILABLE", message: "This model is currently experiencing high demand." } }));
+      }
       const answer = hasFile ? "Extracted text from the PDF: leave policy is 12 days per year." : ["# Stub report", "", `You asked: ${userText}`, "", "| a | b |", "|---|---|", "| 1 | 2 |"].join("\n");
       if (req.url.includes(":streamGenerateContent")) {
         res.writeHead(200, { "content-type": "text/event-stream" });

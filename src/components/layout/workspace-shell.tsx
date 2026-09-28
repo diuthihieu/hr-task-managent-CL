@@ -3,6 +3,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { NotificationBell, UnreadCount } from "@/components/notifications/notification-bell";
 import { WorkspaceAvatar } from "@/components/workspaces/workspace-avatar";
+import { emitViewsChanged } from "@/lib/view-events";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { signOut } from "next-auth/react";
 import {
@@ -50,6 +51,7 @@ import {
   ListChecks,
   Inbox,
   Sparkles,
+  Lock,
 } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { PreferencesDialog } from "@/components/preferences/preferences-dialog";
@@ -90,9 +92,12 @@ interface WorkspaceLite { id: string; name: string; slug: string; logoUrl?: stri
 
 const ROLE_RANK: Record<string, number> = { viewer: 0, contributor: 1, editor: 2, admin: 3, owner: 4 };
 
+interface WikiLite { id: string; name: string; icon: string | null; color: string; access: string }
+
 export function WorkspaceShell({
   workspace,
   workspaces,
+  wikis,
   projects,
   user,
   role,
@@ -100,6 +105,7 @@ export function WorkspaceShell({
 }: {
   workspace: WorkspaceLite;
   workspaces: WorkspaceLite[];
+  wikis: WikiLite[];
   projects: ProjectLite[];
   user: { id: string; name: string; email: string; systemRole: "ADMIN" | "MEMBER"; avatarColor: string };
   role: string;
@@ -169,6 +175,7 @@ export function WorkspaceShell({
     const name = prompt(t("view.namePrompt"), label) || label;
     try {
       const view = await api.post<{ id: string }>(`/api/projects/${projectId}/views`, { name, type });
+      emitViewsChanged(projectId);
       router.push(`/w/${workspace.slug}/p/${projectId}?view=${view.id}`);
       router.refresh();
     } catch (e) {
@@ -176,11 +183,12 @@ export function WorkspaceShell({
     }
   }
 
-  async function renameView(view: ViewLite) {
+  async function renameView(projectId: string, view: ViewLite) {
     const name = prompt(t("common.rename"), view.name);
     if (!name || name === view.name) return;
     try {
       await api.patch(`/api/views/${view.id}`, { name });
+      emitViewsChanged(projectId);
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
@@ -191,6 +199,7 @@ export function WorkspaceShell({
     try {
       const source = await api.get<{ config: string }>(`/api/views/${view.id}`);
       const copy = await api.post<{ id: string }>(`/api/projects/${projectId}/views`, { name: `${view.name} copy`, type: view.type, config: JSON.parse(source.config || "{}") });
+      emitViewsChanged(projectId);
       router.push(`/w/${workspace.slug}/p/${projectId}?view=${copy.id}`);
       router.refresh();
     } catch (e) {
@@ -198,19 +207,22 @@ export function WorkspaceShell({
     }
   }
 
-  async function deleteView(view: ViewLite) {
+  async function deleteView(projectId: string, view: ViewLite) {
     if (!confirm(t("common.confirmDelete", { name: view.name }))) return;
     try {
       await api.delete(`/api/views/${view.id}`);
+      emitViewsChanged(projectId);
+      if (activeViewId === view.id) router.push(`/w/${workspace.slug}/p/${projectId}`);
       router.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
   }
 
-  async function reorderViews(orderedIds: string[]) {
+  async function reorderViews(projectId: string, orderedIds: string[]) {
     try {
       await Promise.all(orderedIds.map((id, i) => api.patch(`/api/views/${id}`, { order: i })));
+      emitViewsChanged(projectId);
       router.refresh();
     } catch {
       toast.error(t("common.failed"));
@@ -224,6 +236,8 @@ export function WorkspaceShell({
     );
   const isHome = pathname === `/w/${workspace.slug}`;
   const isInbox = pathname.endsWith("/inbox");
+  const activeWikiId = pathname.match(/\/wiki\/([0-9a-f-]{36})/)?.[1];
+  const isWikiHome = pathname.endsWith("/wiki");
   const isAi = pathname.includes("/ai");
   const okrActive = isTeamOkrs || isMyOkrs || isOkrDashboard || isOkrDetail;
 
@@ -285,6 +299,22 @@ export function WorkspaceShell({
           <Link href={`/w/${workspace.slug}/dashboards`} className={navItem(isDashboards)}>
             <BarChart3 size={16} /> <span className="flex-1">{t("nav.reports")}</span>
           </Link>
+          <Link href={`/w/${workspace.slug}/wiki`} className={navItem(isWikiHome)} data-testid="nav-wiki">
+            <BookOpen size={16} /> <span className="flex-1">{t("nav.wiki")}</span>
+          </Link>
+          {wikis.length > 0 && (
+            <div className="ml-[18px] pl-3 border-l border-neutral-200 dark:border-neutral-800 space-y-0.5">
+              {wikis.map((w) => (
+                <Link key={w.id} href={`/w/${workspace.slug}/wiki/${w.id}`} className={cn(navItem(activeWikiId === w.id), "py-1")} data-testid="sidebar-wiki">
+                  <span className="h-4 w-4 rounded flex items-center justify-center text-[10px] shrink-0" style={{ backgroundColor: `${w.color}26`, color: w.color }}>
+                    {w.icon || w.name.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span className="flex-1 truncate">{w.name}</span>
+                  {w.access === "restricted" && <Lock size={10} className="text-neutral-400 shrink-0" />}
+                </Link>
+              ))}
+            </div>
+          )}
 
           <div className="pt-4 pb-1 px-2.5 flex items-center justify-between text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">
             <span>{t("nav.projects")}</span>
@@ -360,40 +390,46 @@ export function WorkspaceShell({
                 )}
               </div>
               {!collapsed.has(project.id) && (
-                <div className="ml-[13px] border-l border-neutral-200 dark:border-neutral-800 pl-2 space-y-0.5 mb-1">
-                  <ViewList
-                    project={project}
-                    workspaceSlug={workspace.slug}
-                    activeProjectId={projectSection && projectSection !== "t" ? undefined : activeProjectId}
-                    activeViewId={activeViewId}
-                    canEdit={canEditViews}
-                    onRename={renameView}
-                    onDuplicate={(v) => duplicateView(project.id, v)}
-                    onDelete={deleteView}
-                    onReorder={reorderViews}
-                  />
-                  {(
-                    [
-                      ["objectives", t("nav.objectives"), TargetIcon],
-                      ["wiki", t("nav.wiki"), BookOpen],
-                      ["settings", t("nav.projectSettings"), SlidersHorizontal],
-                    ] as const
-                  ).map(([section, label, Icon]) => (
-                    <Link
-                      key={section}
-                      href={`/w/${workspace.slug}/p/${project.id}/${section}`}
-                      className={cn(
-                        "flex items-center gap-1.5 rounded-md px-1.5 py-1 ml-2.5 truncate text-[13px]",
-                        activeProjectId === project.id && projectSection === section
-                          ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium"
-                          : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-                      )}
-                      data-testid={`sidebar-${section}-${project.id}`}
-                    >
-                      <Icon size={13} />
-                      <span className="truncate">{label}</span>
-                    </Link>
-                  ))}
+                <div className="ml-[13px] border-l border-neutral-200 dark:border-neutral-800 pl-2 mb-1.5">
+                  <div className="flex items-center justify-between pl-2.5 pr-1 pt-1 pb-0.5 text-[10px] font-semibold uppercase tracking-wider text-neutral-400" data-testid={`sidebar-views-${project.id}`}>
+                    <span>{t("nav.views")}</span>
+                  </div>
+                  <div className="space-y-0.5">
+                    <ViewList
+                      project={project}
+                      workspaceSlug={workspace.slug}
+                      activeProjectId={projectSection && projectSection !== "t" ? undefined : activeProjectId}
+                      activeViewId={activeViewId}
+                      canEdit={canEditViews}
+                      onRename={(v) => renameView(project.id, v)}
+                      onDuplicate={(v) => duplicateView(project.id, v)}
+                      onDelete={(v) => deleteView(project.id, v)}
+                      onReorder={(ids) => reorderViews(project.id, ids)}
+                    />
+                  </div>
+                  <div className="mt-1.5 pt-1.5 border-t border-dashed border-neutral-200 dark:border-neutral-800 space-y-0.5">
+                    {(
+                      [
+                        ["objectives", t("nav.objectives"), TargetIcon],
+                        ["settings", t("nav.projectSettings"), SlidersHorizontal],
+                      ] as const
+                    ).map(([section, label, Icon]) => (
+                      <Link
+                        key={section}
+                        href={`/w/${workspace.slug}/p/${project.id}/${section}`}
+                        className={cn(
+                          "flex items-center gap-1.5 rounded-md px-2.5 py-1 truncate text-[12px] font-medium",
+                          activeProjectId === project.id && projectSection === section
+                            ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300"
+                            : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                        )}
+                        data-testid={`sidebar-${section}-${project.id}`}
+                      >
+                        <Icon size={13} />
+                        <span className="truncate">{label}</span>
+                      </Link>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

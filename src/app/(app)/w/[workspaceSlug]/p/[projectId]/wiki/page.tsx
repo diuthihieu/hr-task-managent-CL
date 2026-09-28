@@ -1,15 +1,7 @@
-import { requireProjectPage } from "@/lib/page-context";
-import { roleAtLeast } from "@/lib/authz";
-import { ProjectHeader } from "@/components/projects/project-tabs";
-import { WikiWorkspace } from "@/components/wiki/wiki-workspace";
+import { redirect } from "next/navigation";
 
-export default async function ProjectWikiPage({ params }: { params: Promise<{ workspaceSlug: string; projectId: string }> }) {
+// Wikis moved to the main menu. A project's old wiki kept the project's id as its wiki id.
+export default async function OldProjectWiki({ params }: { params: Promise<{ workspaceSlug: string; projectId: string }> }) {
   const { workspaceSlug, projectId } = await params;
-  const { user, workspace, project, role } = await requireProjectPage(workspaceSlug, projectId);
-  return (
-    <div className="flex-1 flex flex-col overflow-hidden">
-      <ProjectHeader workspaceSlug={workspaceSlug} workspaceName={workspace.name} projectId={project.id} projectName={project.name} />
-      <WikiWorkspace projectId={project.id} projectName={project.name} workspaceSlug={workspaceSlug} pageId={null} canEdit={roleAtLeast(role, "contributor")} canDeleteAny={roleAtLeast(role, "editor")} currentUserName={user.name} />
-    </div>
-  );
+  redirect(`/w/${workspaceSlug}/wiki/${projectId}`);
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "../prisma";
-import { visibleProjectWhere, hiddenProjectIds, type SessionUser } from "../authz";
+import type { WorkspaceRole } from "@prisma/client";
+import { visibleProjectWhere, visibleWikiWhere, hiddenProjectIds, type SessionUser } from "../authz";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "../okr-resolver";
 import { htmlToText } from "./extract";
 
@@ -37,11 +38,11 @@ class Budget {
 
 const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "-");
 
-/** A project's wiki pages and reference documents, for its wiki assistant. */
-export async function projectKnowledge(projectId: string, budget = CONTEXT_CHARS) {
+/** A wiki's pages and reference documents, for its assistant. */
+export async function wikiKnowledge(wikiId: string, budget = CONTEXT_CHARS) {
   const [pages, docs] = await Promise.all([
-    prisma.wikiPage.findMany({ where: { projectId, deletedAt: null }, orderBy: [{ parentPageId: "asc" }, { sortOrder: "asc" }], select: { title: true, content: true, updatedAt: true } }),
-    prisma.knowledgeDoc.findMany({ where: { projectId, deletedAt: null }, orderBy: { createdAt: "asc" }, select: { fileName: true, text: true } }),
+    prisma.wikiPage.findMany({ where: { wikiId, deletedAt: null }, orderBy: [{ parentPageId: "asc" }, { sortOrder: "asc" }], select: { title: true, content: true, updatedAt: true } }),
+    prisma.knowledgeDoc.findMany({ where: { wikiId, deletedAt: null }, orderBy: { createdAt: "asc" }, select: { fileName: true, text: true } }),
   ]);
   const b = new Budget(budget);
   for (const d of docs) b.add(`### Reference document: ${d.fileName}\n${d.text}`);
@@ -50,7 +51,7 @@ export async function projectKnowledge(projectId: string, budget = CONTEXT_CHARS
 }
 
 /** Everything this user may see in the workspace: projects, tasks, OKRs, wikis and docs. */
-export async function workspaceData(user: SessionUser, workspaceId: string, budget = CONTEXT_CHARS) {
+export async function workspaceData(user: SessionUser, workspaceId: string, role: WorkspaceRole, budget = CONTEXT_CHARS) {
   const visible = visibleProjectWhere(user);
   const [projects, tasks, objectives, hidden] = await Promise.all([
     prisma.project.findMany({ where: { workspaceId, deletedAt: null, ...visible }, orderBy: { sortOrder: "asc" }, include: { owner: { select: { name: true } } } }),
@@ -126,9 +127,10 @@ export async function workspaceData(user: SessionUser, workspaceId: string, budg
         .join("\n")
   );
 
-  for (const p of projects) {
-    const k = await projectKnowledge(p.id, Math.max(0, budget / 4));
-    if (k.pageCount || k.docCount) if (!b.add(`## Wiki & documents of project "${p.name}"\n${k.text}`)) break;
+  const wikis = await prisma.wiki.findMany({ where: { workspaceId, ...visibleWikiWhere(user, role) }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true } });
+  for (const w of wikis) {
+    const k = await wikiKnowledge(w.id, Math.max(0, budget / 4));
+    if (k.pageCount || k.docCount) if (!b.add(`## Wiki "${w.name}" (pages & documents)\n${k.text}`)) break;
   }
   return { text: b.toString(), projectCount: projects.length, taskCount: tasks.length, objectiveCount: rows.length };
 }

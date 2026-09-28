@@ -11,6 +11,7 @@ export type EntityType =
   | "workspace"
   | "member"
   | "project"
+  | "wiki"
   | "task"
   | "comment"
   | "attachment"

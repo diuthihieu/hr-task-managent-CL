@@ -51,6 +51,7 @@ export const DELETE = route<P>(async (_req, { params }) => {
     await tx.taskAssignee.deleteMany({ where: { userId, task: { workspaceId } } });
     await tx.taskReportRecipient.deleteMany({ where: { userId, task: { workspaceId } } });
     await tx.projectHiddenMember.deleteMany({ where: { userId, project: { workspaceId } } });
+    await tx.wikiMember.deleteMany({ where: { userId, wiki: { workspaceId } } });
     await tx.workspaceMember.delete({ where: { workspaceId_userId: { workspaceId, userId } } });
     await logActivity(tx, { workspaceId, actorId: user.id, entityType: "member", entityId: userId, action: "deleted" });
   });

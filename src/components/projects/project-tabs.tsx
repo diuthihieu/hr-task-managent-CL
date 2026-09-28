@@ -1,11 +1,11 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, ListChecks, Target, BookOpen, SlidersHorizontal } from "lucide-react";
+import { ChevronRight, ListChecks, Target, SlidersHorizontal } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { cn } from "@/lib/utils";
 
-/** Breadcrumb + section tabs shared by every project page (tasks, objectives, wiki, settings). */
+/** Breadcrumb + section tabs shared by every project page (tasks, objectives, settings). */
 export function ProjectHeader({ workspaceSlug, workspaceName, projectId, projectName, right }: { workspaceSlug: string; workspaceName: string; projectId: string; projectName: string; right?: React.ReactNode }) {
   const { t } = useT();
   const pathname = usePathname();
@@ -14,7 +14,6 @@ export function ProjectHeader({ workspaceSlug, workspaceName, projectId, project
   const tabs = [
     { key: "", label: t("project.tabs.tasks"), icon: ListChecks },
     { key: "objectives", label: t("project.tabs.objectives"), icon: Target },
-    { key: "wiki", label: t("project.tabs.wiki"), icon: BookOpen },
     { key: "settings", label: t("project.tabs.settings"), icon: SlidersHorizontal },
   ];
   const active = section === "t" ? "" : section;

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ClipboardList, Loader, CheckCircle2, AlarmClock, ArrowUpRight, FolderKanban, Target, Activity, Sparkles } from "lucide-react";
 import { prisma } from "@/lib/prisma";
-import { visibleProjectWhere, hiddenProjectIds } from "@/lib/authz";
+import { visibleProjectWhere, visibleWikiWhere, hiddenProjectIds } from "@/lib/authz";
 import { requireWorkspacePage } from "@/lib/page-context";
 import { getServerT } from "@/lib/prefs";
 import { getMyObjectiveRows, resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
@@ -62,7 +62,7 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
   const ids = (type: string) => activity.filter((a) => a.entityType === type).map((a) => a.entityId);
   const [actTasks, actPages, actObjectives] = await Promise.all([
     prisma.task.findMany({ where: { id: { in: ids("task") }, project: visible }, select: { id: true, title: true, projectId: true } }),
-    prisma.wikiPage.findMany({ where: { id: { in: ids("wiki_page") }, deletedAt: null, project: visible }, select: { id: true, title: true, projectId: true } }),
+    prisma.wikiPage.findMany({ where: { id: { in: ids("wiki_page") }, deletedAt: null, wiki: visibleWikiWhere(user, role) }, select: { id: true, title: true, wikiId: true } }),
     prisma.objective.findMany({ where: { id: { in: ids("objective") }, deletedAt: null, OR: [{ projectId: null }, { project: visible }] }, select: { id: true, title: true } }),
   ]);
   const projectById = new Map(projects.map((p) => [p.id, p]));
@@ -74,7 +74,7 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
       }
       if (a.entityType === "wiki_page") {
         const x = actPages.find((r) => r.id === a.entityId);
-        return x && { a, label: x.title, href: `${base}/p/${x.projectId}/wiki/${x.id}` };
+        return x && { a, label: x.title, href: `${base}/wiki/${x.wikiId}/${x.id}` };
       }
       if (a.entityType === "objective") {
         const x = actObjectives.find((r) => r.id === a.entityId);

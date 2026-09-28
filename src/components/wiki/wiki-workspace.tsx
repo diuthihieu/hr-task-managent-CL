@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookOpen, ChevronDown, ChevronRight, FileText, Plus, Trash2, Sparkles } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, FileText, Plus, Trash2, Sparkles, Lock, Users } from "lucide-react";
+import { WikiShareDialog } from "./wiki-share-dialog";
 import { WikiAiPanel } from "@/components/ai/wiki-ai-panel";
 import { RichEditor, type SaveState } from "@/components/editor/rich-editor";
 import { Button } from "@/components/ui/button";
@@ -10,17 +11,20 @@ import { toast } from "@/components/ui/toast";
 import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
 import { formatDate, cn } from "@/lib/utils";
-import type { WikiPageSummary } from "@/lib/wiki";
+import type { WikiPageSummary, WikiRow } from "@/lib/wiki";
 
 interface WikiPageFull extends WikiPageSummary {
   content: string | null;
 }
 
 /** Project wiki: page tree on the left, the selected page (rich editor) on the right. */
-export function WikiWorkspace({ projectId, projectName, workspaceSlug, pageId, canEdit, canDeleteAny, currentUserName }: { projectId: string; projectName: string; workspaceSlug: string; pageId: string | null; canEdit: boolean; canDeleteAny: boolean; currentUserName: string }) {
+export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, currentUserName }: { wiki: WikiRow; workspaceSlug: string; workspaceId: string; pageId: string | null; currentUserName: string }) {
   const { t } = useT();
   const router = useRouter();
-  const base = `/w/${workspaceSlug}/p/${projectId}/wiki`;
+  const base = `/w/${workspaceSlug}/wiki/${wiki.id}`;
+  const canEdit = wiki.myRole === "editor" || wiki.myRole === "manager";
+  const canManage = wiki.myRole === "manager";
+  const [shareOpen, setShareOpen] = useState(false);
   const [pages, setPages] = useState<WikiPageSummary[]>([]);
   const [page, setPage] = useState<WikiPageFull | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -29,11 +33,11 @@ export function WikiWorkspace({ projectId, projectName, workspaceSlug, pageId, c
 
   const loadTree = useCallback(async () => {
     try {
-      setPages(await api.get<WikiPageSummary[]>(`/api/projects/${projectId}/wiki`));
+      setPages(await api.get<WikiPageSummary[]>(`/api/wikis/${wiki.id}/pages`));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
-  }, [projectId, t]);
+  }, [wiki.id, t]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch
@@ -70,7 +74,7 @@ export function WikiWorkspace({ projectId, projectName, workspaceSlug, pageId, c
 
   async function create(parentPageId: string | null) {
     try {
-      const p = await api.post<WikiPageSummary>(`/api/projects/${projectId}/wiki`, { title: t("wiki.untitled"), parentPageId });
+      const p = await api.post<WikiPageSummary>(`/api/wikis/${wiki.id}/pages`, { title: t("wiki.untitled"), parentPageId });
       await loadTree();
       router.push(`${base}/${p.id}`);
     } catch (e) {
@@ -154,8 +158,11 @@ export function WikiWorkspace({ projectId, projectName, workspaceSlug, pageId, c
     <div className="flex-1 flex overflow-hidden">
       <aside className="w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col">
         <div className="flex items-center gap-2 px-3 h-11 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
-          <BookOpen size={14} className="text-indigo-500" />
-          <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">{t("wiki.title")}</span>
+          <span className="h-6 w-6 rounded-md flex items-center justify-center text-sm shrink-0" style={{ backgroundColor: `${wiki.color}22`, color: wiki.color }}>
+            {wiki.icon || <BookOpen size={13} />}
+          </span>
+          <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100 truncate" title={wiki.name}>{wiki.name}</span>
+          {wiki.access === "restricted" && <Lock size={11} className="text-neutral-400 shrink-0" />}
           {canEdit && (
             <button onClick={() => create(null)} className="ml-auto text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200" title={t("wiki.newPage")} data-testid="wiki-new-page">
               <Plus size={15} />
@@ -172,6 +179,9 @@ export function WikiWorkspace({ projectId, projectName, workspaceSlug, pageId, c
             data-testid="wiki-ask-ai"
           >
             <Sparkles size={14} /> {t("wikiAi.ask")}
+          </button>
+          <button onClick={() => setShareOpen(true)} className="mt-1.5 w-full flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800" data-testid="wiki-share">
+            <Users size={13} /> {canManage ? t("wikis.share") : t("wikis.whoHasAccess")}
           </button>
         </div>
         <div className="flex-1 overflow-y-auto thin-scroll p-2">
@@ -204,7 +214,7 @@ export function WikiWorkspace({ projectId, projectName, workspaceSlug, pageId, c
               <span className="ml-auto" data-testid="wiki-save-state">
                 {saveState === "saving" ? t("editor.saving") : saveState === "saved" ? t("editor.saved") : saveState === "error" ? t("editor.error") : ""}
               </span>
-              {(canDeleteAny || canEdit) && (
+              {canEdit && (
                 <button onClick={remove} className="flex items-center gap-1 hover:text-red-600">
                   <Trash2 size={12} /> {t("common.delete")}
                 </button>
@@ -232,7 +242,8 @@ export function WikiWorkspace({ projectId, projectName, workspaceSlug, pageId, c
           </div>
         )}
       </div>
-      {aiOpen && <WikiAiPanel projectId={projectId} projectName={projectName} onClose={() => setAiOpen(false)} />}
+      {aiOpen && <WikiAiPanel wikiId={wiki.id} wikiName={wiki.name} onClose={() => setAiOpen(false)} />}
+      {shareOpen && <WikiShareDialog wiki={wiki} workspaceId={workspaceId} onClose={() => setShareOpen(false)} />}
     </div>
   );
 }

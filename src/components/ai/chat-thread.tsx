@@ -5,6 +5,7 @@ import { useT } from "@/components/i18n-provider";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { Markdown } from "./markdown";
+import { AiHealthCheck } from "./ai-health-check";
 import type { ChatMessage } from "./use-ai-chat";
 
 /** Message list + composer shared by the wiki assistant panel and the AI Assistant page. */
@@ -55,7 +56,7 @@ export function ChatThread({
         <div className={cn("mx-auto space-y-4", !compact && "max-w-3xl")}>
           {!configured && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/30 dark:border-amber-900 p-3 text-xs text-amber-800 dark:text-amber-300 flex gap-2">
-              <AlertTriangle size={14} className="shrink-0 mt-0.5" /> {t("ai.notConfigured")}
+              <AlertTriangle size={14} className="shrink-0 mt-0.5" /> <span className="flex-1">{t("ai.notConfigured")}</span>
             </div>
           )}
           {messages.length === 0 && (
@@ -113,7 +114,12 @@ export function ChatThread({
               </div>
             )
           )}
-          {error && <div className="rounded-lg bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-sm px-3 py-2" data-testid="ai-error">{error}</div>}
+          {error && (
+            <div className="rounded-lg bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-sm px-3 py-2 space-y-2" data-testid="ai-error">
+              <div className="break-words">{error}</div>
+              <AiHealthCheck />
+            </div>
+          )}
           <div ref={endRef} />
         </div>
       </div>

@@ -399,21 +399,25 @@ test("record pages and wiki pages store sanitized rich content", async () => {
   const rows = await viewer.get<Rec[]>(`/api/projects/${s.project}/tasks`);
   assert.ok(!JSON.stringify(rows.body).includes("<strong>team</strong>"));
 
-  const page = await contributor.post<{ id: string }>(`/api/projects/${s.project}/wiki`, { title: "Onboarding checklist" });
+  const wiki = await admin.post<{ id: string; myRole: string }>(`/api/workspaces/${s.ws}/wikis`, { name: "HR handbook" });
+  assert.equal(wiki.status, 201);
+  assert.equal(wiki.body.myRole, "manager");
+  s.wiki = wiki.body.id;
+  const page = await contributor.post<{ id: string }>(`/api/wikis/${s.wiki}/pages`, { title: "Onboarding checklist" });
   assert.equal(page.status, 201);
-  const sub = await contributor.post<{ id: string }>(`/api/projects/${s.project}/wiki`, { title: "IT", parentPageId: page.body.id });
+  const sub = await contributor.post<{ id: string }>(`/api/wikis/${s.wiki}/pages`, { title: "IT", parentPageId: page.body.id });
   assert.equal(sub.status, 201);
-  assert.equal((await viewer.post(`/api/projects/${s.project}/wiki`, { title: "Nope" })).status, 403);
+  assert.equal((await viewer.post(`/api/wikis/${s.wiki}/pages`, { title: "Nope" })).status, 403, "workspace viewers only read");
   const saved = await contributor.patch<{ content: string }>(`/api/wiki/${page.body.id}`, { content: '<h2>Day one</h2><iframe src="https://x"></iframe>' });
   assert.equal(saved.body.content, "<h2>Day one</h2>");
   assert.equal((await contributor.patch(`/api/wiki/${page.body.id}`, { parentPageId: sub.body.id })).status, 400, "no cycles in the page tree");
   assert.equal((await outsider.get(`/api/wiki/${page.body.id}`)).status, 404);
-  const tree = await viewer.get<{ id: string; parentPageId: string | null }[]>(`/api/projects/${s.project}/wiki`);
+  const tree = await viewer.get<{ id: string; parentPageId: string | null }[]>(`/api/wikis/${s.wiki}/pages`);
   assert.equal(tree.body.length, 2);
   // Deleting a page soft-deletes its sub-pages too.
   assert.equal((await admin.del(`/api/wiki/${page.body.id}`)).status, 204);
-  assert.equal((await viewer.get<unknown[]>(`/api/projects/${s.project}/wiki`)).body.length, 0);
-  assert.equal(await prisma.wikiPage.count({ where: { projectId: s.project, deletedAt: { not: null } } }), 2);
+  assert.equal((await viewer.get<unknown[]>(`/api/wikis/${s.wiki}/pages`)).body.length, 0);
+  assert.equal(await prisma.wikiPage.count({ where: { wikiId: s.wiki, deletedAt: { not: null } } }), 2);
 });
 
 test("report views and personal preferences", async () => {
@@ -588,28 +592,28 @@ test("workspace logo: admins upload or generate one; it becomes the favicon and 
   assert.equal((await fetch(`${BASE}${logoUrl}`)).status, 404);
 });
 
-test("wiki AI: owners set instructions and documents; members ask, grounded in this project's wiki only", async () => {
-  await contributor.post(`/api/projects/${s.project}/wiki`, { title: "Leave policy" }).then((r) => contributor.patch(`/api/wiki/${(r.body as { id: string }).id}`, { content: "<p>Annual leave is 12 days.</p>" }));
-  // Only the project owner / workspace admins configure the assistant.
-  assert.equal((await contributor.put(`/api/projects/${s.project}/ai-settings`, { instructions: "x" })).status, 403);
-  assert.equal((await admin.put(`/api/projects/${s.project}/ai-settings`, { instructions: "You are the HR onboarding buddy. Answer in bullet points.", greeting: "Hi!" })).status, 200);
-  const asViewer = await viewer.get<{ canManage: boolean; instructions?: string; greeting: string; configured: boolean }>(`/api/projects/${s.project}/ai-settings`);
+test("wiki AI: managers set instructions and documents; members ask, grounded in this wiki only", async () => {
+  await contributor.post(`/api/wikis/${s.wiki}/pages`, { title: "Leave policy" }).then((r) => contributor.patch(`/api/wiki/${(r.body as { id: string }).id}`, { content: "<p>Annual leave is 12 days.</p>" }));
+  // Only the wiki's managers configure the assistant.
+  assert.equal((await contributor.put(`/api/wikis/${s.wiki}/ai-settings`, { instructions: "x" })).status, 403);
+  assert.equal((await admin.put(`/api/wikis/${s.wiki}/ai-settings`, { instructions: "You are the HR onboarding buddy. Answer in bullet points.", greeting: "Hi!" })).status, 200);
+  const asViewer = await viewer.get<{ canManage: boolean; instructions?: string; greeting: string; configured: boolean }>(`/api/wikis/${s.wiki}/ai-settings`);
   assert.equal(asViewer.body.canManage, false);
   assert.equal(asViewer.body.instructions, undefined, "members don't see the system prompt");
   assert.equal(asViewer.body.greeting, "Hi!");
   assert.equal(asViewer.body.configured, true);
 
-  assert.equal((await upload(contributor, "POST", `/api/projects/${s.project}/knowledge-docs`, "handbook.txt", "x", "text/plain")).status, 403);
-  assert.equal((await upload(admin, "POST", `/api/projects/${s.project}/knowledge-docs`, "virus.exe", "MZ", "application/octet-stream")).status, 400);
-  const txt = await upload(admin, "POST", `/api/projects/${s.project}/knowledge-docs`, "handbook.txt", "Probation lasts 60 days. Laptop pickup at IT desk.", "text/plain");
+  assert.equal((await upload(contributor, "POST", `/api/wikis/${s.wiki}/knowledge-docs`, "handbook.txt", "x", "text/plain")).status, 403);
+  assert.equal((await upload(admin, "POST", `/api/wikis/${s.wiki}/knowledge-docs`, "virus.exe", "MZ", "application/octet-stream")).status, 400);
+  const txt = await upload(admin, "POST", `/api/wikis/${s.wiki}/knowledge-docs`, "handbook.txt", "Probation lasts 60 days. Laptop pickup at IT desk.", "text/plain");
   assert.equal(txt.status, 201, JSON.stringify(txt.body));
-  const pdf = await upload(admin, "POST", `/api/projects/${s.project}/knowledge-docs`, "policy.pdf", "%PDF-1.4 fake", "application/pdf");
+  const pdf = await upload(admin, "POST", `/api/wikis/${s.wiki}/knowledge-docs`, "policy.pdf", "%PDF-1.4 fake", "application/pdf");
   assert.equal(pdf.status, 201, "PDF text is transcribed by the model");
-  const docs = await viewer.get<{ fileName: string; charCount: number }[]>(`/api/projects/${s.project}/knowledge-docs`);
+  const docs = await viewer.get<{ fileName: string; charCount: number }[]>(`/api/wikis/${s.wiki}/knowledge-docs`);
   assert.deepEqual(docs.body.map((d) => d.fileName).sort(), ["handbook.txt", "policy.pdf"]);
   assert.equal((await viewer.get(`/api/knowledge-docs/${pdf.body!.id}`)).status, 403, "extracted text preview is for managers");
 
-  const a = await ask(viewer, { kind: "wiki", projectId: s.project, message: "How long is probation?" });
+  const a = await ask(viewer, { kind: "wiki", wikiId: s.wiki, message: "How long is probation?" });
   assert.equal(a.status, 200, a.text);
   assert.match(a.text, /You asked: How long is probation\?/);
   assert.ok(a.conversationId);
@@ -625,18 +629,62 @@ test("wiki AI: owners set instructions and documents; members ask, grounded in t
   assert.doesNotMatch(system, /Call the insurer/, "no data from other projects");
 
   // Follow-up keeps history; conversations are private.
-  await ask(viewer, { kind: "wiki", projectId: s.project, conversationId: a.conversationId, message: "And the laptop?" });
+  await ask(viewer, { kind: "wiki", wikiId: s.wiki, conversationId: a.conversationId, message: "And the laptop?" });
   assert.deepEqual((await lastModelRequest()).body.contents.map((c) => c.role), ["user", "model", "user"]);
   const conv = await viewer.get<{ messages: { role: string }[] }>(`/api/ai/conversations/${a.conversationId}`);
   assert.equal(conv.body.messages.length, 4);
   assert.equal((await contributor.get(`/api/ai/conversations/${a.conversationId}`)).status, 404);
-  assert.equal((await ask(contributor, { kind: "wiki", projectId: s.project, conversationId: a.conversationId, message: "hi" })).status, 404);
-  assert.equal((await ask(outsider, { kind: "wiki", projectId: s.project, message: "hi" })).status, 404);
+  assert.equal((await ask(contributor, { kind: "wiki", wikiId: s.wiki, conversationId: a.conversationId, message: "hi" })).status, 404);
+  assert.equal((await ask(outsider, { kind: "wiki", wikiId: s.wiki, message: "hi" })).status, 404);
 
   // Turning the assistant off blocks questions.
-  await admin.put(`/api/projects/${s.project}/ai-settings`, { enabled: false });
-  assert.equal((await ask(viewer, { kind: "wiki", projectId: s.project, message: "hi" })).status, 403);
-  await admin.put(`/api/projects/${s.project}/ai-settings`, { enabled: true });
+  await admin.put(`/api/wikis/${s.wiki}/ai-settings`, { enabled: false });
+  assert.equal((await ask(viewer, { kind: "wiki", wikiId: s.wiki, message: "hi" })).status, 403);
+  await admin.put(`/api/wikis/${s.wiki}/ai-settings`, { enabled: true });
+});
+
+test("wikis live at workspace level: restricted wikis, per-person roles, managers", async () => {
+  // A contributor creates a private wiki: they manage it, others can't see it.
+  const w = await contributor.post<{ id: string; access: string; myRole: string }>(`/api/workspaces/${s.ws}/wikis`, { name: "Payroll secrets", access: "restricted" });
+  assert.equal(w.status, 201);
+  assert.equal(w.body.myRole, "manager");
+  const id = w.body.id;
+  assert.equal((await viewer.post(`/api/workspaces/${s.ws}/wikis`, { name: "Nope" })).status, 403, "workspace viewers can't create wikis");
+  const viewerList = await viewer.get<{ id: string }[]>(`/api/workspaces/${s.ws}/wikis`);
+  assert.ok(!viewerList.body.some((x) => x.id === id), "hidden from people not added");
+  assert.ok(viewerList.body.some((x) => x.id === s.wiki), "workspace-wide wiki is listed");
+  assert.equal((await viewer.get(`/api/wikis/${id}/pages`)).status, 404);
+  assert.equal((await admin.get(`/api/wikis/${id}`)).status, 200, "workspace admins see every wiki");
+  const page = await contributor.post<{ id: string }>(`/api/wikis/${id}/pages`, { title: "Salary bands" });
+  assert.equal((await viewer.get(`/api/wiki/${page.body.id}`)).status, 404);
+  assert.equal((await ask(viewer, { kind: "wiki", wikiId: id, message: "hi" })).status, 404, "no AI on a wiki you can't open");
+
+  // Only managers change access; only workspace members can be added.
+  assert.equal((await viewer.put(`/api/wikis/${id}/members`, { members: [] })).status, 404);
+  assert.equal((await contributor.put(`/api/wikis/${id}/members`, { members: [{ userId: s.outsiderId, role: "viewer" }] })).status, 400);
+  assert.equal((await contributor.put(`/api/wikis/${id}/members`, { members: [{ userId: s.viewerId, role: "viewer" }] })).status, 200);
+  assert.equal((await viewer.get(`/api/wiki/${page.body.id}`)).status, 200, "added as viewer: can read");
+  assert.equal((await viewer.patch(`/api/wiki/${page.body.id}`, { title: "x" })).status, 403, "...but not edit");
+  assert.equal((await viewer.patch(`/api/wikis/${id}`, { name: "x" })).status, 403);
+  const members = await contributor.get<{ members: { id: string; role: string | null; lockedReason: string | null }[] }>(`/api/wikis/${id}/members`);
+  assert.equal(members.body.members.find((m) => m.id === s.viewerId)!.role, "viewer");
+  assert.equal(members.body.members.find((m) => m.id === s.contributorId)!.lockedReason, "creator");
+
+  // Opening it to the workspace with "view" as default.
+  assert.equal((await contributor.patch(`/api/wikis/${id}`, { access: "workspace", defaultRole: "viewer" })).status, 200);
+  assert.equal((await admin.post(`/api/wikis/${id}/pages`, { title: "Admins still edit" })).status, 201);
+  // Delete (soft) by a manager.
+  assert.equal((await contributor.del(`/api/wikis/${id}`)).status, 204);
+  assert.equal((await viewer.get(`/api/wikis/${id}`)).status, 404);
+  assert.ok(await prisma.wiki.findUnique({ where: { id } }), "row kept");
+});
+
+test("a new project starts with a single blank task table", async () => {
+  const p = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Blank project" });
+  const detail = await admin.get<{ views: { type: string; isDefault: boolean }[] }>(`/api/projects/${p.body.id}`);
+  assert.deepEqual(detail.body.views.map((v) => [v.type, v.isDefault]), [["grid", true]]);
+  assert.equal(await prisma.task.count({ where: { projectId: p.body.id } }), 0);
+  assert.equal((await admin.del(`/api/projects/${p.body.id}`)).status, 204);
 });
 
 test("AI assistant: answers from what the user may see, declines the rest, and enforces a daily quota", async () => {
@@ -651,17 +699,24 @@ test("AI assistant: answers from what the user may see, declines the rest, and e
   assert.doesNotMatch(system, /Call the insurer|Other project/, "hidden project stays out");
   assert.match(system, /decline in one or two sentences/, "out-of-scope rule");
   await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
+  // Wikis the user can't open stay out too.
+  const secret = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/wikis`, { name: "Board notes", access: "restricted" });
+  await admin.post<{ id: string }>(`/api/wikis/${secret.body.id}/pages`, { title: "Board-only acquisition plan" });
+  await ask(viewer, { kind: "assistant", workspaceId: s.ws, message: "anything secret?" });
+  assert.doesNotMatch((await lastModelRequest()).body.systemInstruction!.parts[0].text, /acquisition plan/);
   const again = await ask(admin, { kind: "assistant", workspaceId: s.ws, message: "report" });
   assert.equal(again.status, 200);
-  assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /Call the insurer/, "admins see everything");
+  const adminPrompt = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+  assert.match(adminPrompt, /Call the insurer/, "admins see everything");
+  assert.match(adminPrompt, /Board notes/, "including restricted wikis");
 
   assert.equal((await ask(outsider, { kind: "assistant", workspaceId: s.ws, message: "hi" })).status, 404);
   const list = await viewer.get<{ items: { id: string }[] }>(`/api/ai/conversations?kind=assistant&workspaceId=${s.ws}`);
-  assert.equal(list.body.items.length, 1);
+  assert.equal(list.body.items.length, 2, "one per new chat");
 
-  // AI_DAILY_LIMIT=6 in the test environment; the viewer has asked 2 wiki + 1 assistant questions so far (rejected requests don't count).
+  // AI_DAILY_LIMIT=6 in the test environment; the viewer has asked 2 wiki + 2 assistant questions so far (rejected requests don't count).
   let status = 200;
-  for (let i = 0; i < 4 && status === 200; i++) status = (await ask(viewer, { kind: "assistant", workspaceId: s.ws, message: `q${i}` })).status;
+  for (let i = 0; i < 3 && status === 200; i++) status = (await ask(viewer, { kind: "assistant", workspaceId: s.ws, message: `q${i}` })).status;
   assert.equal(status, 429);
   const saved = await prisma.aiMessage.findFirst({ where: { role: "model", conversation: { userId: s.viewerId } }, orderBy: { createdAt: "desc" } });
   assert.equal(saved?.tokensIn, 111, "token usage recorded");

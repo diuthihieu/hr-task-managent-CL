@@ -226,7 +226,9 @@ model User {
   customFieldUserValues TaskCustomFieldValue[] @relation("CustomValueUser")
   knowledgeDocs         KnowledgeDoc[]
   aiConversations       AiConversation[]
-  aiSettingsUpdated     ProjectAiSettings[]
+  aiSettingsUpdated     WikiAiSettings[]
+  wikisCreated          Wiki[]                 @relation("WikiCreatedByUser")
+  wikiMemberships       WikiMember[]
 
   @@index([isActive, deletedAt])
   @@map("users")
@@ -262,6 +264,7 @@ model Workspace {
   notifications    Notification[]
   knowledgeDocs    KnowledgeDoc[]
   aiConversations  AiConversation[]
+  wikis            Wiki[]
 
   @@map("workspaces")
 }
@@ -332,10 +335,6 @@ model Project {
   hiddenMembers    ProjectHiddenMember[]
   notifications    Notification[]
   objectives       Objective[]
-  wikiPages        WikiPage[]
-  aiSettings       ProjectAiSettings?
-  knowledgeDocs    KnowledgeDoc[]
-  aiConversations  AiConversation[]
 
   @@index([workspaceId, deletedAt, sortOrder])
   @@map("projects")
@@ -874,7 +873,7 @@ model DesktopRelease {
 model WikiPage {
   id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   workspaceId  String    @map("workspace_id") @db.Uuid
-  projectId    String    @map("project_id") @db.Uuid
+  wikiId       String    @map("wiki_id") @db.Uuid
   parentPageId String?   @map("parent_page_id") @db.Uuid
   title        String    @db.VarChar(300)
   icon         String?   @db.VarChar(16)
@@ -889,14 +888,14 @@ model WikiPage {
   deletedById  String?   @map("deleted_by") @db.Uuid
 
   workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  wiki        Wiki         @relation(fields: [wikiId], references: [id], onDelete: Cascade)
   parentPage  WikiPage?    @relation("WikiTree", fields: [parentPageId], references: [id], onDelete: Cascade)
   children    WikiPage[]   @relation("WikiTree")
   attachments Attachment[]
   createdBy   User?        @relation("WikiCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   updatedBy   User?        @relation("WikiUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
-  @@index([projectId, deletedAt, sortOrder])
+  @@index([wikiId, deletedAt, sortOrder])
   @@index([parentPageId])
   @@map("wiki_pages")
 }
@@ -968,21 +967,21 @@ model ProjectHiddenMember {
   @@map("project_hidden_members")
 }
 
-/// Per-project wiki assistant: the owner's instructions (system prompt) and whether it's on.
-model ProjectAiSettings {
-  projectId    String   @id @map("project_id") @db.Uuid
+/// Per-wiki AI assistant: the wiki manager's instructions (system prompt) and whether it's on.
+model WikiAiSettings {
+  wikiId       String   @id @map("wiki_id") @db.Uuid
   enabled      Boolean  @default(true)
-  /// Owner-written instructions: role, tone, answer style, what to avoid.
+  /// Manager-written instructions: role, tone, answer style, what to avoid.
   instructions String   @default("")
   /// Short welcome text shown above the chat.
   greeting     String?  @db.VarChar(500)
   updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   updatedById  String?  @map("updated_by") @db.Uuid
 
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  updatedBy User?   @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+  wiki      Wiki  @relation(fields: [wikiId], references: [id], onDelete: Cascade)
+  updatedBy User? @relation(fields: [updatedById], references: [id], onDelete: SetNull)
 
-  @@map("project_ai_settings")
+  @@map("wiki_ai_settings")
 }
 
 /// Reference document uploaded by the project owner. Only the extracted text is
@@ -990,7 +989,7 @@ model ProjectAiSettings {
 model KnowledgeDoc {
   id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   workspaceId String    @map("workspace_id") @db.Uuid
-  projectId   String    @map("project_id") @db.Uuid
+  wikiId      String    @map("wiki_id") @db.Uuid
   fileName    String    @map("file_name") @db.VarChar(200)
   contentType String    @map("content_type") @db.VarChar(120)
   sizeBytes   Int       @map("size_bytes")
@@ -1001,10 +1000,10 @@ model KnowledgeDoc {
   deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  wiki      Wiki      @relation(fields: [wikiId], references: [id], onDelete: Cascade)
   createdBy User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
-  @@index([projectId, deletedAt])
+  @@index([wikiId, deletedAt])
   @@map("knowledge_docs")
 }
 
@@ -1017,7 +1016,7 @@ enum AiConversationKind {
 model AiConversation {
   id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   workspaceId String             @map("workspace_id") @db.Uuid
-  projectId   String?            @map("project_id") @db.Uuid
+  wikiId      String?            @map("wiki_id") @db.Uuid
   userId      String             @map("user_id") @db.Uuid
   kind        AiConversationKind
   title       String             @db.VarChar(200)
@@ -1025,7 +1024,7 @@ model AiConversation {
   updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project   Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  wiki      Wiki?       @relation(fields: [wikiId], references: [id], onDelete: Cascade)
   user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages  AiMessage[]
 
@@ -1051,4 +1050,63 @@ model AiMessage {
 
   @@index([conversationId, createdAt])
   @@map("ai_messages")
+}
+
+enum WikiAccess {
+  /// Every workspace member can open it (with the wiki's default role).
+  workspace
+  /// Only the people added to it (plus workspace owners/admins).
+  restricted
+}
+
+enum WikiRole {
+  viewer
+  editor
+  manager
+}
+
+/// A knowledge space at workspace level. A workspace can have many wikis,
+/// each with its own pages, access rule and AI assistant.
+model Wiki {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String     @map("workspace_id") @db.Uuid
+  name        String     @db.VarChar(160)
+  description String?
+  icon        String?    @db.VarChar(16)
+  color       String     @default("#f97316") @db.VarChar(9)
+  access      WikiAccess @default(workspace)
+  /// Role every workspace member gets when access = workspace (viewer or editor).
+  defaultRole WikiRole   @default(editor) @map("default_role")
+  sortOrder   Int        @default(0) @map("sort_order")
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdById String?    @map("created_by") @db.Uuid
+  deletedAt   DateTime?  @map("deleted_at") @db.Timestamptz(6)
+
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy       User?            @relation("WikiCreatedByUser", fields: [createdById], references: [id], onDelete: SetNull)
+  members         WikiMember[]
+  pages           WikiPage[]
+  aiSettings      WikiAiSettings?
+  knowledgeDocs   KnowledgeDoc[]
+  aiConversations AiConversation[]
+
+  @@index([workspaceId, deletedAt, sortOrder])
+  @@map("wikis")
+}
+
+/// Explicit access to a wiki: required for restricted wikis, and raises the
+/// default role on workspace-wide ones (e.g. make someone a manager).
+model WikiMember {
+  wikiId    String   @map("wiki_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  role      WikiRole
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  wiki Wiki @relation(fields: [wikiId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([wikiId, userId])
+  @@index([userId])
+  @@map("wiki_members")
 }

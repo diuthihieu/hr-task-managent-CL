@@ -603,7 +603,11 @@ test("wiki AI: managers set instructions and documents; members ask, grounded in
   assert.equal(asViewer.body.greeting, "Hi!");
   assert.equal(asViewer.body.configured, true);
 
-  assert.equal((await upload(contributor, "POST", `/api/wikis/${s.wiki}/knowledge-docs`, "handbook.txt", "x", "text/plain")).status, 403);
+  // Editors of the wiki add documents too (and may remove their own); readers can't.
+  assert.equal((await upload(viewer, "POST", `/api/wikis/${s.wiki}/knowledge-docs`, "notes.txt", "x", "text/plain")).status, 403);
+  const deck = await upload(contributor, "POST", `/api/wikis/${s.wiki}/knowledge-docs`, "notes.md", "# Draft", "text/markdown");
+  assert.equal(deck.status, 201, JSON.stringify(deck.body));
+  assert.equal((await contributor.del(`/api/knowledge-docs/${deck.body!.id}`)).status, 204, "the uploader removes their own document");
   assert.equal((await upload(admin, "POST", `/api/wikis/${s.wiki}/knowledge-docs`, "virus.exe", "MZ", "application/octet-stream")).status, 400);
   const txt = await upload(admin, "POST", `/api/wikis/${s.wiki}/knowledge-docs`, "handbook.txt", "Probation lasts 60 days. Laptop pickup at IT desk.", "text/plain");
   assert.equal(txt.status, 201, JSON.stringify(txt.body));
@@ -735,6 +739,166 @@ test("AI assistant: answers from what the user may see, declines the rest, and e
   assert.equal(status, 429);
   const saved = await prisma.aiMessage.findFirst({ where: { role: "model", conversation: { userId: s.viewerId } }, orderBy: { createdAt: "desc" } });
   assert.equal(saved?.tokensIn, 111, "token usage recorded");
+});
+
+async function action(client: Client, body: Record<string, unknown>) {
+  const res = await fetch(`${BASE}/api/ai/action`, { method: "POST", headers: { cookie: client.cookieHeader(), "content-type": "application/json" }, body: JSON.stringify(body) });
+  return { status: res.status, type: res.headers.get("content-type") ?? "", text: await res.text() };
+}
+type NotifList = { unread: number; items: { id: string; type: string; taskId: string | null; actioned: boolean; snoozedUntil: string | null }[] };
+
+test("comments: @mentions notify only people who can see the task", async () => {
+  const t = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Prepare offer letters", sys_assignees: [s.contributorId] } });
+  assert.equal(t.status, 201, JSON.stringify(t.body));
+  s.r6task = t.body.id;
+  const people = await contributor.get<{ id: string }[]>(`/api/tasks/${s.r6task}/mentionable`);
+  assert.ok(people.body.some((p) => p.id === s.viewerId));
+  assert.ok(!people.body.some((p) => p.id === s.outsiderId), "outsiders can't be tagged");
+  const c = await contributor.post<{ id: string }>(`/api/tasks/${s.r6task}/comments`, { body: `Please check @[Vic Viewer](${s.viewerId}) and @[Out](${s.outsiderId})` });
+  assert.equal(c.status, 201, JSON.stringify(c.body));
+  const rows = await prisma.commentMention.findMany({ where: { commentId: c.body.id } });
+  assert.deepEqual(rows.map((r) => r.userId), [s.viewerId]);
+  const inbox = await viewer.get<NotifList>("/api/notifications?view=todo");
+  assert.ok(inbox.body.items.some((n) => n.type === "mention" && n.taskId === s.r6task));
+  assert.equal(await prisma.notification.count({ where: { userId: s.outsiderId, type: "mention" } }), 0);
+});
+
+test("action center: snooze hides an item, done clears it, due-date changes reach the assignee", async () => {
+  const inbox = await viewer.get<NotifList>("/api/notifications?view=todo");
+  const n = inbox.body.items.find((x) => x.type === "mention")!;
+  const later = new Date(Date.now() + 3600_000).toISOString();
+  assert.equal((await viewer.patch(`/api/notifications/${n.id}`, { snoozeUntil: later })).status, 200);
+  assert.ok(!(await viewer.get<NotifList>("/api/notifications?view=todo")).body.items.some((x) => x.id === n.id), "snoozed items leave To do");
+  assert.ok((await viewer.get<NotifList>("/api/notifications?view=snoozed")).body.items.some((x) => x.id === n.id));
+  await viewer.patch(`/api/notifications/${n.id}`, { snoozeUntil: null, actioned: true });
+  assert.ok(!(await viewer.get<NotifList>("/api/notifications?view=todo")).body.items.some((x) => x.id === n.id), "done items leave To do");
+  assert.ok((await viewer.get<NotifList>("/api/notifications?view=all")).body.items.some((x) => x.id === n.id && x.actioned));
+  assert.equal((await outsider.patch(`/api/notifications/${n.id}`, { read: true })).status, 404, "someone else's notification");
+
+  await admin.patch(`/api/tasks/${s.r6task}`, { data: { sys_due_date: "2031-03-15" } });
+  const due = await prisma.notification.findFirst({ where: { userId: s.contributorId, taskId: s.r6task, type: "task_due_changed" } });
+  assert.ok(due, "assignee told about the new deadline");
+  assert.equal((due!.data as { date: string }).date, "2031-03-15");
+});
+
+test("quick actions: start / plan / complete follow the same permissions as edits", async () => {
+  assert.equal((await viewer.post(`/api/tasks/${s.r6task}/quick`, { action: "start" })).status, 403, "viewers can't edit");
+  const started = await contributor.post<Rec>(`/api/tasks/${s.r6task}/quick`, { action: "start" });
+  assert.equal(started.status, 200, JSON.stringify(started.body));
+  const plan = await contributor.post<Rec>(`/api/tasks/${s.r6task}/quick`, { action: "plan" });
+  assert.equal(plan.body.data.sys_start_date, new Date().toISOString().slice(0, 10));
+  const task = await prisma.task.findUniqueOrThrow({ where: { id: s.r6task }, include: { status: true } });
+  assert.equal(task.status.category, "in_progress");
+});
+
+test("focus sessions: one running session at a time; completing adds the minutes to actual hours", async () => {
+  const a = await contributor.post<{ id: string; status: string; plannedMinutes: number }>(`/api/tasks/${s.r6task}/focus`, {});
+  assert.equal(a.status, 201, JSON.stringify(a.body));
+  assert.equal(a.body.status, "running");
+  const other = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Second focus task", sys_assignees: [s.contributorId] } });
+  const b = await contributor.post<{ id: string }>(`/api/tasks/${other.body.id}/focus`, {});
+  assert.equal((await prisma.focusSession.findUniqueOrThrow({ where: { id: a.body.id } })).status, "paused", "starting another one pauses the first");
+  assert.equal((await contributor.patch(`/api/focus/${b.body.id}`, { action: "cancel" })).status, 200);
+  await contributor.patch(`/api/focus/${a.body.id}`, { action: "resume" });
+  assert.equal((await viewer.patch(`/api/focus/${a.body.id}`, { action: "pause" })).status, 404, "only the owner");
+  // 25 minutes focused.
+  await prisma.focusSession.update({ where: { id: a.body.id }, data: { elapsedSeconds: 25 * 60, resumedAt: new Date() } });
+  const done = await contributor.patch<{ status: string }>(`/api/focus/${a.body.id}`, { action: "complete", notes: "Drafted 3 letters" });
+  assert.equal(done.body.status, "completed");
+  const task = await prisma.task.findUniqueOrThrow({ where: { id: s.r6task } });
+  assert.ok(task.actualMinutes! >= 25 && task.actualMinutes! <= 26, `actual minutes ${task.actualMinutes}`);
+  const grid = await contributor.get<Rec[]>(`/api/projects/${s.project}/tasks`);
+  const rec = grid.body.find((r) => r.id === s.r6task)!;
+  assert.ok(Number(rec.data.sys_actual) >= 0.4, "shown as hours in the grid");
+});
+
+test("universal search covers tasks, projects, wikis, objectives and people - within what the user can see", async () => {
+  const r = await admin.get<{ tasks: { id: string }[]; projects: unknown[]; people: { id: string }[]; objectives: unknown[] }>(`/api/search?workspaceId=${s.ws}&q=offer`);
+  assert.ok(r.body.tasks.some((t) => t.id === s.r6task));
+  const people = await admin.get<{ people: { id: string }[] }>(`/api/search?workspaceId=${s.ws}&q=viewer`);
+  assert.ok(people.body.people.some((p) => p.id === s.viewerId));
+  await admin.put(`/api/projects/${s.project}/visibility`, { hiddenUserIds: [s.viewerId] });
+  const hidden = await viewer.get<{ tasks: unknown[] }>(`/api/search?workspaceId=${s.ws}&q=offer`);
+  assert.equal(hidden.body.tasks.length, 0, "hidden project stays out of search");
+  await admin.put(`/api/projects/${s.project}/visibility`, { hiddenUserIds: [] });
+  assert.equal((await outsider.get(`/api/search?workspaceId=${s.ws}&q=offer`)).status, 404);
+});
+
+test("key results carry confidence and a deadline", async () => {
+  const r = await admin.patch<{ keyResults: { id: string; confidence: number; dueDate: string | null }[] }>(`/api/key-results/${s.krLaptop}`, { confidence: 40, dueDate: "2031-12-31" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const kr = r.body.keyResults.find((k) => k.id === s.krLaptop)!;
+  assert.equal(kr.confidence, 40);
+  assert.equal(kr.dueDate, "2031-12-31");
+  assert.equal((await admin.patch(`/api/key-results/${s.krLaptop}`, { confidence: 140 })).status, 400);
+});
+
+test("embedded AI actions: grounded in the target, personalized, and never outside the user's access", async () => {
+  const prof = await admin.patch<{ aiTone: string }>("/api/account/profile", { jobTitle: "HR Director", aiInstructions: "Always end with a one-line takeaway.", aiTone: "concise", aiLength: "short" });
+  assert.equal(prof.status, 200, JSON.stringify(prof.body));
+  const sum = await action(admin, { action: "task_summarize", targetId: s.r6task });
+  assert.equal(sum.status, 200, sum.text);
+  const system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+  assert.match(system, /Prepare offer letters/, "the task is in the context");
+  assert.match(system, /Always end with a one-line takeaway/, "custom instructions");
+  assert.match(system, /very concise/, "tone");
+  assert.match(system, /PERMISSION SCOPE/, "scope guard on every prompt");
+  assert.equal((await action(outsider, { action: "task_summarize", targetId: s.r6task })).status, 404);
+
+  const br = await action(admin, { action: "task_breakdown", targetId: s.r6task });
+  assert.equal(br.status, 200);
+  assert.match(br.type, /application\/json/);
+  assert.equal((JSON.parse(br.text) as { items: unknown[] }).items.length, 2);
+
+  const brief = await action(contributor, { action: "home_brief", targetId: s.ws });
+  assert.equal(brief.status, 200);
+  assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /Prepare offer letters/, "my day includes my tasks");
+  assert.equal((await action(outsider, { action: "home_brief", targetId: s.ws })).status, 404);
+  assert.equal((await action(admin, { action: "dash_explain", targetId: s.project, targetKind: "project" })).status, 400, "dashboard actions need the chart data");
+});
+
+test("AI dashboard builder: only valid chart specs over real fields are kept", async () => {
+  const rep = await admin.post<{ widgets: { id: string; dimensionFieldId: string }[] }>("/api/ai/build-widgets", { target: "report", projectId: s.project, prompt: "status overview and workload" });
+  assert.equal(rep.status, 200, JSON.stringify(rep.body));
+  assert.deepEqual(rep.body.widgets.map((w) => w.dimensionFieldId), ["sys_status", "sys_assignees"], "the made-up field is dropped");
+  assert.equal((await viewer.post("/api/ai/build-widgets", { target: "report", projectId: s.project, prompt: "status overview" })).status, 403, "editors only");
+  const d = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/dashboards`, { name: "AI built" });
+  const built = await admin.post<{ widgets: unknown[] }>("/api/ai/build-widgets", { target: "dashboard", dashboardId: d.body.id, prompt: "status overview" });
+  assert.equal(built.status, 201, JSON.stringify(built.body));
+  assert.equal(await prisma.dashboardWidget.count({ where: { dashboardId: d.body.id } }), 2);
+});
+
+test("wiki comments: mentions, replies, delete rights, and the wiki AI reads the discussion", async () => {
+  const page = await admin.post<{ id: string }>(`/api/wikis/${s.wiki}/pages`, { title: "Leave policy" });
+  assert.equal(page.status, 201);
+  const people = await viewer.get<{ id: string }[]>(`/api/wiki/${page.body.id}/mentionable`);
+  assert.ok(people.body.some((p) => p.id === s.contributorId));
+  const c = await viewer.post<{ id: string }>(`/api/wiki/${page.body.id}/comments`, { body: `**Question** for @[Casey Contributor](${s.contributorId}): does sick leave need a certificate after 2 days?` });
+  assert.equal(c.status, 201, JSON.stringify(c.body));
+  assert.ok(await prisma.notification.findFirst({ where: { userId: s.contributorId, type: "mention", link: { contains: page.body.id } } }), "mentioned person notified");
+  const reply = await contributor.post<{ id: string }>(`/api/wiki/${page.body.id}/comments`, { body: "Yes, from day 3.", parentCommentId: c.body.id });
+  assert.equal(reply.status, 201);
+  assert.equal((await outsider.get(`/api/wiki/${page.body.id}/comments`)).status, 404);
+  assert.equal((await contributor.del(`/api/wiki-comments/${c.body.id}`)).status, 403, "not the author, not a manager");
+  const list = await viewer.get<unknown[]>(`/api/wiki/${page.body.id}/comments`);
+  assert.equal(list.body.length, 2);
+  const r = await ask(admin, { kind: "wiki", wikiId: s.wiki, message: "What does the discussion say about sick leave?" });
+  assert.equal(r.status, 200, r.text);
+  assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /certificate after 2 days/, "comments are part of the wiki's knowledge");
+  assert.equal((await admin.del(`/api/wiki-comments/${c.body.id}`)).status, 204, "managers can delete");
+});
+
+test("profile & appearance: avatars are visible to co-members only; theme mode and tone are validated", async () => {
+  const svg = await fetch(`${BASE}/api/users/${s.viewerId}/avatar`, { headers: { cookie: admin.cookieHeader() } });
+  assert.equal(svg.status, 200);
+  assert.match(svg.headers.get("content-type") ?? "", /image\/svg\+xml/);
+  assert.match(await svg.text(), /VV/, "initials when no picture was uploaded");
+  assert.equal((await fetch(`${BASE}/api/users/${s.viewerId}/avatar`, { headers: { cookie: outsider.cookieHeader() } })).status, 404);
+  assert.equal((await admin.patch("/api/account/preferences", { themeMode: "system", surfaceTone: "ocean" })).status, 200);
+  assert.equal((await admin.patch("/api/account/preferences", { surfaceTone: "neon" })).status, 400);
+  const u = await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } });
+  assert.equal(u.surfaceTone, "ocean");
+  assert.equal((await admin.patch("/api/account/profile", { aiTone: "sarcastic" })).status, 400);
 });
 
 test("members can leave; only owners delete a workspace", async () => {

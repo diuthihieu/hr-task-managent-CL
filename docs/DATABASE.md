@@ -18,7 +18,7 @@ always **Browser → Next.js route handler (authz) → Prisma → PostgreSQL**.
 
 | Table | Purpose | Delete strategy |
 |---|---|---|
-| `users` | Accounts (open sign-up). `system_role` = `ADMIN` / `MEMBER`; `locale` (vi/en) and `accent_color` are UI preferences. | Deactivate (`is_active`) + `deleted_at` |
+| `users` | Accounts (open sign-up or Google: `google_sub`, `password_hash` null for Google-only). `system_role` = `ADMIN` / `MEMBER`; UI preferences `locale`, `accent_color`, `theme_mode` (light/dark/system), `surface_tone`; profile `avatar_data` (≤ 512 KB), `job_title`; AI personalization `ai_about`, `ai_instructions`, `ai_tone`, `ai_length` (style only, never access). | Deactivate (`is_active`) + `deleted_at` |
 | `workspaces` | Tenant boundary. | Soft (`deleted_at`) |
 | `workspace_members` | User ↔ Workspace with `workspace_role` | Hard |
 | `teams` | Groups inside a workspace (for goals) | Hard |
@@ -32,9 +32,12 @@ always **Browser → Next.js route handler (authz) → Prisma → PostgreSQL**.
 | `custom_field_options` | Options of select fields | Hard, values `SET NULL` |
 | `task_custom_field_values` | One row per (task, field), typed value columns | Hard |
 | `comments` | Task comments, threaded | Soft |
-| `attachments` | File metadata + object-storage URL/key; owned by exactly one task **or** wiki page | Soft (blob removed from storage) |
+| `comment_mentions` | Comment ↔ tagged user (`@[Name](id)` in the body) | Hard (cascade) |
+| `wiki_comments`, `wiki_comment_mentions` | Discussion under a wiki page (Markdown + mentions, threaded) | Soft |
+| `focus_sessions` | Focus timer runs on a task (planned minutes, elapsed seconds, notes, checklist); completing adds to `tasks.actual_minutes` | Hard |
+| `attachments` | File metadata + object-storage URL/key; owned by exactly one task **or** wiki page (`wiki_comment_id` when attached to a page comment; `extracted_text` for the wiki AI) | Soft (blob removed from storage) |
 | `activity_logs` | Append-only audit trail | Never updated (trigger) |
-| `views` | Saved view configuration per project | Hard |
+| `views` | Saved view configuration per project (filters, sorts, card fields, report widgets) - configuration only, never a copy of task data | Hard |
 | `dashboards`, `dashboard_widgets` | Analytics layout | Hard |
 | `objectives`, `key_results`, `objective_contributors` | Goals (OKR). `objectives.project_id` (null = workspace level), `objectives.parent_key_result_id` (cascading) | Soft (objectives, key results) |
 | `wiki_pages` | Nested project wiki pages (sanitized HTML) | Soft (page + sub-pages) |
@@ -264,7 +267,9 @@ erDiagram
   parent in the same project; attachment owners in the attachment's workspace; dependencies only inside one
   workspace; assignees must be workspace members; custom field values only
   for fields of the task's project and options of that field;
-  `activity_logs` rejects UPDATE.
+  focus sessions and wiki comments stay in their task's / page's workspace,
+  a wiki comment reply stays on its parent's page and comment files on the
+  comment's page; `activity_logs` rejects UPDATE.
 - **Application rules:** dependency cycles (A→B→A), cascading-OKR loops and
   wiki page loops are rejected by the API with a graph walk before writing.
   Rich page HTML is sanitized with an allow-list (no scripts, event handlers,

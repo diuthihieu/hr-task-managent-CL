@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Star, User as UserIcon, Link2, Check, Paperclip, Plus, X, Target, KeySquare } from "lucide-react";
 import { Checkbox } from "@/components/ui/misc";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -38,17 +38,6 @@ interface CellProps {
   wrapText?: boolean;
   maxHeight?: number;
   columnWidth?: number;
-}
-
-// Rough chars-per-line estimate from a column's pixel width, for sizing an
-// auto-growing textarea without a full text-measurement/ResizeObserver pass -
-// good enough to make longer content visibly take more rows, not pixel-exact.
-const AVG_CHAR_PX = 6.5;
-function estimateRows(value: string, columnWidthPx: number | undefined, maxRows: number): number {
-  if (!value) return 1;
-  const charsPerLine = Math.max(10, Math.floor((columnWidthPx ?? 180) / AVG_CHAR_PX));
-  const lines = value.split("\n").reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / charsPerLine)), 0);
-  return Math.max(1, Math.min(maxRows, lines));
 }
 
 // Text-like cells keep a local draft and only commit on blur / Enter, so the
@@ -97,11 +86,33 @@ function DraftInput({ value, onCommit, ...rest }: DraftProps<HTMLInputElement>) 
   );
 }
 
-function DraftTextarea({ value, onCommit, ...rest }: DraftProps<HTMLTextAreaElement>) {
+/**
+ * With `autoGrow`, the textarea is sized to its real content height (measured,
+ * not estimated): re-measured on every edit and whenever its width changes
+ * (column resize, sidebar toggle), capped by `maxHeight` (then it scrolls).
+ */
+function DraftTextarea({ value, onCommit, autoGrow, maxHeight, ...rest }: DraftProps<HTMLTextAreaElement> & { autoGrow?: boolean; maxHeight?: number }) {
   const d = useDraft(value, onCommit);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!autoGrow || !el) return;
+    const fit = () => {
+      el.style.height = "auto";
+      const h = el.scrollHeight;
+      el.style.height = `${maxHeight ? Math.min(h, maxHeight) : h}px`;
+      el.style.overflowY = maxHeight && h > maxHeight ? "auto" : "hidden";
+    };
+    fit();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(fit) : null;
+    ro?.observe(el.parentElement ?? el);
+    return () => ro?.disconnect();
+  }, [autoGrow, maxHeight, d.draft]);
   return (
     <textarea
       {...(rest as React.TextareaHTMLAttributes<HTMLTextAreaElement>)}
+      ref={ref}
+      rows={autoGrow ? 1 : rest.rows}
       value={d.draft}
       onFocus={() => d.setFocused(true)}
       onChange={(e) => d.setDraft(e.target.value)}
@@ -168,7 +179,7 @@ function OptionBadge({ option }: { option: SelectOption }) {
   );
 }
 
-export function Cell({ field, value, record, members, linkTargets, okrOptions, wrapText, maxHeight, columnWidth, onChange, readOnlyOverride }: CellProps) {
+export function Cell({ field, value, record, members, linkTargets, okrOptions, wrapText, maxHeight, onChange, readOnlyOverride }: CellProps) {
   const typeDef = getFieldType(field.type);
   const config = parseFieldConfig(field.config);
   const base = "h-full w-full flex items-center px-2 text-sm";
@@ -185,13 +196,11 @@ export function Cell({ field, value, record, members, linkTargets, okrOptions, w
     case "text":
     case "long_text": {
       if (wrapText) {
-        const maxRows = field.type === "long_text" ? 10 : 6;
-        const rows = estimateRows((value as string) ?? "", columnWidth, maxRows);
         return (
           <DraftTextarea
-            rows={rows}
-            className="w-full bg-transparent outline-none resize-none text-sm text-neutral-800 dark:text-neutral-100 focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40 px-2 py-1.5 leading-5"
-            style={{ maxHeight, overflowY: "auto" }}
+            autoGrow
+            maxHeight={maxHeight}
+            className="block w-full bg-transparent outline-none resize-none text-sm text-neutral-800 dark:text-neutral-100 focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40 px-2 py-1.5 leading-5 break-words"
             value={(value as string) ?? ""}
             onCommit={(v) => onChange(v)}
           />

@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Settings as SettingsIcon, Building2, Users, ShieldCheck, Flag, LayoutList, Palette, ArrowDownUp, History, Lock } from "lucide-react";
+import { Settings as SettingsIcon, Building2, Users, ShieldCheck, Flag, LayoutList, Palette, ArrowDownUp, History, Lock, UserCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
@@ -13,6 +13,7 @@ import { SettingsAppearance } from "./settings-appearance";
 import { SettingsDataIO } from "./settings-data-io";
 import { SettingsAuditLog } from "./settings-audit-log";
 import { SettingsSecurity } from "./settings-security";
+import { SettingsProfile } from "./settings-profile";
 
 // Categories are configured per project (Project → Settings), not here.
 const SECTIONS: { key: string; label: MessageKey; icon: React.ComponentType<{ size?: number; className?: string }>; group: MessageKey }[] = [
@@ -21,6 +22,7 @@ const SECTIONS: { key: string; label: MessageKey; icon: React.ComponentType<{ si
   { key: "permissions", label: "set.permissions", icon: ShieldCheck, group: "set.group.workspace" },
   { key: "statuses", label: "set.statuses", icon: Flag, group: "set.group.tasks" },
   { key: "views", label: "set.views", icon: LayoutList, group: "set.group.tasks" },
+  { key: "profile", label: "set.profile", icon: UserCircle, group: "set.group.personal" },
   { key: "appearance", label: "set.appearance", icon: Palette, group: "set.group.personal" },
   { key: "data-io", label: "set.dataIo", icon: ArrowDownUp, group: "set.group.data" },
   { key: "audit", label: "set.audit", icon: History, group: "set.group.data" },
@@ -48,7 +50,7 @@ export function SettingsWorkspace({
 
   return (
     <div className="flex-1 flex overflow-hidden">
-      <div className="w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 flex flex-col overflow-hidden">
+      <div className="hidden md:flex w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 flex-col overflow-hidden">
         <div className="flex items-center gap-2 h-12 px-4 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
           <SettingsIcon size={15} className="text-indigo-500" />
           <h1 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">{t("set.title")}</h1>
@@ -77,11 +79,25 @@ export function SettingsWorkspace({
       </div>
 
       <div className="flex-1 overflow-y-auto thin-scroll">
+        <div className="md:hidden sticky top-0 z-10 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 px-3 py-2">
+          <select value={section} onChange={(e) => setSection(e.target.value)} className="w-full h-9 rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 text-sm" aria-label={t("set.title")} data-testid="settings-mobile-nav">
+            {GROUPS.map((g) => (
+              <optgroup key={g} label={t(g)}>
+                {SECTIONS.filter((s) => s.group === g).map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {t(s.label)}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </div>
         {section === "general" && <SettingsGeneral workspaceId={workspaceId} workspaceSlug={workspaceSlug} currentUserRole={currentUserRole} />}
         {section === "members" && <SettingsMembers workspaceId={workspaceId} currentUserId={currentUserId} currentUserRole={currentUserRole} isSystemAdmin={isSystemAdmin} />}
         {section === "permissions" && <SettingsPermissions />}
         {section === "statuses" && <SettingsTaskConfig workspaceId={workspaceId} mode="statuses" canEdit={currentUserRole === "owner" || currentUserRole === "admin"} />}
         {section === "views" && <SettingsViews workspaceId={workspaceId} workspaceSlug={workspaceSlug} />}
+        {section === "profile" && <SettingsProfile />}
         {section === "appearance" && <SettingsAppearance />}
         {section === "data-io" && <SettingsDataIO workspaceId={workspaceId} />}
         {section === "audit" && <SettingsAuditLog workspaceId={workspaceId} />}

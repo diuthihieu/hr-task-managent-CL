@@ -78,6 +78,10 @@ export const keyResultSchema = z.object({
   weight: z.number().positive().max(1000).optional(),
   manualProgress: z.number().min(0).max(100).nullable().optional(),
   status: z.enum(["not_started", "on_track", "at_risk", "off_track", "completed"]).optional(),
+  /** Owner's confidence (0-100) that the target will be hit. */
+  confidence: z.number().int().min(0).max(100).optional(),
+  /** Deadline (YYYY-MM-DD) or null. */
+  dueDate: z.preprocess(lenientDateOnly, z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional()),
   order: z.number().int().optional(),
 });
 

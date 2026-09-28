@@ -6,14 +6,15 @@ import { requireUser, route, readJson, badRequest } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { assertPasswordPolicy, hashPassword } from "@/lib/passwords";
 
-const schema = z.object({ currentPassword: z.string().min(1), newPassword: z.string() });
+/** currentPassword may be empty only for Google-only accounts (setting a first password). */
+const schema = z.object({ currentPassword: z.string().optional().default(""), newPassword: z.string() });
 
 export const POST = route(async (req) => {
   const user = await requireUser();
   const body = schema.parse(await readJson(req));
   const newPassword = assertPasswordPolicy(body.newPassword);
   const row = await prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { passwordHash: true } });
-  if (!(await bcrypt.compare(body.currentPassword, row.passwordHash))) throw badRequest("Current password is incorrect");
+  if (row.passwordHash !== null && !(await bcrypt.compare(body.currentPassword, row.passwordHash))) throw badRequest("Current password is incorrect");
   if (body.currentPassword === newPassword) throw badRequest("New password must be different");
   const passwordHash = await hashPassword(newPassword);
   await prisma.$transaction(async (tx) => {

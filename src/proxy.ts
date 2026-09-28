@@ -6,6 +6,14 @@ import { NextResponse, type NextRequest } from "next/server";
 // the link after signing in. Only checks that a session cookie exists; the
 // real authorization still happens in the pages and API routes.
 export function proxy(request: NextRequest) {
+  // The public landing page always uses the brand look (orange, neutral
+  // surfaces); the root layout reads this header instead of the visitor's
+  // saved accent / tone, which only apply inside the app.
+  if (["/", "/privacy", "/terms"].includes(request.nextUrl.pathname)) {
+    const headers = new Headers(request.headers);
+    headers.set("x-woli-marketing", "1");
+    return NextResponse.next({ request: { headers } });
+  }
   const hasSession = request.cookies.getAll().some((c) => c.name.endsWith("authjs.session-token") || c.name.includes("authjs.session-token."));
   if (hasSession) return NextResponse.next();
   const slug = request.nextUrl.pathname.split("/")[2];
@@ -19,4 +27,4 @@ export function proxy(request: NextRequest) {
   return NextResponse.redirect(url);
 }
 
-export const config = { matcher: ["/w/:path*"] };
+export const config = { matcher: ["/", "/privacy", "/terms", "/w/:path*"] };

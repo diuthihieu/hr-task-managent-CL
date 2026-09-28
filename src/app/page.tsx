@@ -1,3 +1,5 @@
+import { googleEnabled } from "@/lib/auth";
+import { HeroBackground, ScreenshotMarquee } from "@/components/landing/hero-visuals";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
@@ -34,8 +36,8 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
 
 // Public home page: sign in / sign up on top, then the how-to guide, the
 // benefits and the Windows download. Signed-in users go to their workspaces.
-export default async function HomePage({ searchParams }: { searchParams: Promise<{ auth?: string; callbackUrl?: string; ws?: string }> }) {
-  const [{ auth, callbackUrl, ws }, user] = await Promise.all([searchParams, getSessionUser()]);
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ auth?: string; callbackUrl?: string; ws?: string; error?: string }> }) {
+  const [{ auth, callbackUrl, ws, error }, user] = await Promise.all([searchParams, getSessionUser()]);
   if (user) redirect(callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//") ? callbackUrl : "/workspaces");
   const { t, locale } = await getServerT();
   const [latest, invited] = await Promise.all([
@@ -68,7 +70,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   ];
 
   return (
-    <div className="min-h-screen bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100">
+    <div className="min-h-screen overflow-x-clip bg-white dark:bg-neutral-950 text-neutral-900 dark:text-neutral-100">
       <header className="sticky top-0 z-30 bg-white/85 dark:bg-neutral-950/85 backdrop-blur border-b border-neutral-100 dark:border-neutral-900">
         <div className="max-w-6xl mx-auto px-4 h-16 flex items-center gap-4">
           <Link href="/" aria-label="woli.">
@@ -92,19 +94,19 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </div>
       </header>
 
-      <section className="relative overflow-hidden">
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(60%_60%_at_85%_20%,var(--color-indigo-100),transparent_70%),radial-gradient(40%_50%_at_0%_100%,var(--color-indigo-50),transparent_70%)] dark:bg-[radial-gradient(60%_60%_at_85%_20%,color-mix(in_oklab,var(--color-indigo-900)_45%,transparent),transparent_70%)]" />
-        <div className="max-w-6xl mx-auto px-4 pt-12 pb-14 md:pt-20 md:pb-20 grid lg:grid-cols-[1fr_400px] gap-12 items-center">
+      <section className="relative isolate overflow-hidden">
+        <HeroBackground />
+        <div className="max-w-6xl mx-auto px-4 pt-12 pb-10 md:pt-20 md:pb-14 grid lg:grid-cols-[1fr_400px] gap-12 items-center">
           <div>
             <span className="inline-flex items-center gap-2 rounded-full border border-indigo-200/70 dark:border-indigo-900 bg-white/70 dark:bg-neutral-900/70 px-3 py-1 text-xs font-medium text-neutral-600 dark:text-neutral-300">
               <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" /> {t("landing.hero.badge")}
             </span>
-            <h1 className="mt-5 text-4xl md:text-6xl font-extrabold tracking-tight leading-[1.05]">
+            <h1 className="mt-5 text-4xl md:text-[3.5rem] font-bold tracking-[-0.03em] leading-[1.06] text-neutral-900 dark:text-white">
               {t("landing.hero.title1")} <span className="text-indigo-600">{t("landing.hero.title2")}</span>
             </h1>
             <p className="mt-5 text-base md:text-lg text-neutral-600 dark:text-neutral-400 max-w-xl leading-relaxed">{t("landing.hero.subtitle")}</p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <a href="?auth=register#auth" className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 text-white font-semibold px-5 py-3 hover:bg-indigo-500 shadow-lg shadow-indigo-600/25">
+              <a href="?auth=register#auth" className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 text-white font-semibold px-5 py-3 hover:bg-indigo-500 shadow-sm shadow-indigo-600/20 transition-colors">
                 {t("landing.hero.cta")} <ArrowRight size={17} />
               </a>
               <a href="#guide" className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 font-semibold px-5 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800">
@@ -129,8 +131,24 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                 </div>
               </div>
             )}
-            <AuthCard initialMode={auth === "register" ? "register" : "login"} callbackUrl={callbackUrl} />
+            <AuthCard initialMode={auth === "register" ? "register" : "login"} callbackUrl={callbackUrl} googleEnabled={googleEnabled} error={error} />
           </div>
+        </div>
+        <div className="pb-14 md:pb-20">
+          <p className="text-center text-xs font-medium uppercase tracking-[0.14em] text-neutral-400 mb-5">{t("landing.shots.caption")}</p>
+          <ScreenshotMarquee
+            label={t("landing.shots.caption")}
+            shots={[
+              { src: "/landing/home.webp", label: t("landing.shots.home") },
+              { src: "/landing/kanban.webp", label: t("landing.shots.kanban") },
+              { src: "/landing/okr.webp", label: t("landing.shots.okr") },
+              { src: "/landing/report.webp", label: t("landing.shots.report") },
+              { src: "/landing/wiki.webp", label: t("landing.shots.wiki") },
+              { src: "/landing/grid.webp", label: t("landing.shots.grid") },
+              { src: "/landing/task.webp", label: t("landing.shots.task") },
+              { src: "/landing/gallery.webp", label: t("landing.shots.gallery") },
+            ]}
+          />
         </div>
       </section>
 
@@ -223,7 +241,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <footer className="border-t border-neutral-100 dark:border-neutral-900 py-8">
         <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center gap-3 justify-between text-sm text-neutral-500">
           <Brand size={24} textClassName="text-base" />
-          <span>{t("landing.footer", { year: new Date().getFullYear() })}</span>
+          <div className="flex items-center gap-4">
+            <Link href="/privacy" className="hover:text-neutral-900 dark:hover:text-white">{t("landing.privacy")}</Link>
+            <Link href="/terms" className="hover:text-neutral-900 dark:hover:text-white">{t("landing.terms")}</Link>
+            <span>{t("landing.footer", { year: new Date().getFullYear() })}</span>
+          </div>
         </div>
       </footer>
     </div>

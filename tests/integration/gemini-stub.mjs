@@ -45,6 +45,21 @@ http
         res.writeHead(503, { "content-type": "application/json" });
         return res.end(JSON.stringify({ error: { code: 503, status: "UNAVAILABLE", message: "This model is currently experiencing high demand." } }));
       }
+      // JSON mode (structured AI actions and the AI dashboard builder).
+      if (body.generationConfig?.responseMimeType === "application/json") {
+        const system = body.systemInstruction?.parts?.map((p) => p.text).join("\n") ?? "";
+        const catalog = system.match(/CATALOG:\n(.+)$/s)?.[1];
+        const projectId = catalog ? JSON.parse(catalog)[0]?.id : undefined;
+        const json = catalog
+          ? { widgets: [
+              { title: "Tasks by status", type: "pie", projectId, dimensionFieldId: "sys_status", aggregation: "count" },
+              { title: "Hours by assignee", type: "bar", projectId, dimensionFieldId: "sys_assignees", measureFieldId: "sys_estimate", aggregation: "sum" },
+              { title: "Made-up field", type: "bar", projectId, dimensionFieldId: "sys_nope", aggregation: "count" },
+            ] }
+          : { items: [{ title: "Draft the checklist", estimateHours: 2, note: "" }, { title: "Review with the manager", estimateHours: 1, note: "30 min" }] };
+        res.writeHead(200, { "content-type": "application/json" });
+        return res.end(JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: JSON.stringify(json) }] } }], usageMetadata: { promptTokenCount: 50, candidatesTokenCount: 10 } }));
+      }
       const answer = hasFile ? "Extracted text from the PDF: leave policy is 12 days per year." : ["# Stub report", "", `You asked: ${userText}`, "", "| a | b |", "|---|---|", "| 1 | 2 |"].join("\n");
       if (req.url.includes(":streamGenerateContent")) {
         res.writeHead(200, { "content-type": "text/event-stream" });

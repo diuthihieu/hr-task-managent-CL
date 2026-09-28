@@ -22,6 +22,8 @@ export const GET = route<P>(async (_req, { params }) => {
     configured: aiConfigured(),
     model: manage ? geminiModel() : undefined,
     canManage: manage,
+    /** Editors may add reference documents; only managers change the instructions. */
+    canUpload: wikiRoleAtLeast(ctx.wikiRole, "editor"),
     enabled: s?.enabled ?? true,
     greeting: s?.greeting ?? null,
     instructions: manage ? (s?.instructions ?? "") : undefined,

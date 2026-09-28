@@ -12,7 +12,9 @@ import { ObjectiveDialog, objectivePayload, type ObjectiveDraft } from "./object
 import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
 import { KeyResultDialog, type KeyResultDraft } from "./key-result-dialog";
-import { ProgressBar, StatusBadge, PriorityBadge, ConfidenceDot, UserChip, UserStack, DeadlineLabel, CycleLabel } from "./okr-ui";
+import { ProgressBar, StatusBadge, PriorityBadge, ConfidenceDot, PctLabel, UserChip, UserStack, DeadlineLabel, CycleLabel } from "./okr-ui";
+import { AiObjectiveActions } from "@/components/ai/ai-actions";
+import { formatDate } from "@/lib/utils";
 import type { ObjectiveRow, KeyResultRow, TeamRow } from "@/types";
 
 interface MemberLite {
@@ -92,6 +94,8 @@ export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug }: { o
           weight: draft.weight,
           manualProgress: draft.type === "manual" ? draft.manualProgress : null,
           status: draft.status,
+          confidence: draft.confidence,
+          dueDate: draft.dueDate || null,
         });
       } else {
         await api.post(`/api/objectives/${objectiveId}/key-results`, {
@@ -105,6 +109,8 @@ export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug }: { o
           weight: draft.weight,
           manualProgress: draft.type === "manual" ? draft.manualProgress : null,
           status: draft.status,
+          confidence: draft.confidence,
+          dueDate: draft.dueDate || null,
         });
       }
       setKrDialog({ open: false, kr: null });
@@ -144,7 +150,9 @@ export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug }: { o
         <span className="text-sm font-medium text-neutral-500 truncate">{objective.project?.name ?? objective.team?.name ?? t("okr.workspaceLevel")}</span>
         <ChevronRight size={13} className="text-neutral-300" />
         <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-50 truncate">{objective.title}</span>
-        <Button size="sm" variant="secondary" className="ml-auto" onClick={() => setEditOpen(true)}>
+        <div className="ml-auto" />
+        <AiObjectiveActions objectiveId={objectiveId} />
+        <Button size="sm" variant="secondary" onClick={() => setEditOpen(true)}>
           <Pencil size={13} /> {t("common.edit")}
         </Button>
       </div>
@@ -161,7 +169,10 @@ export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug }: { o
                 </Link>
               )}
             </div>
-            <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400 shrink-0 tabular-nums">{Math.round(objective.progress)}%</div>
+            <div className="text-right shrink-0">
+              <div className="text-[11px] text-neutral-400">{t("okr.objectiveProgress")}</div>
+              <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400 tabular-nums" data-testid="objective-progress">{Math.round(objective.progress)}%</div>
+            </div>
           </div>
           <ProgressBar value={objective.progress} height={8} />
           <div className="flex flex-wrap items-center gap-3 mt-3 text-xs">
@@ -192,10 +203,10 @@ export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug }: { o
                 </button>
                 <span className="text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate flex-1 min-w-[120px]">{kr.title}</span>
                 <span className="text-[10px] uppercase tracking-wide text-neutral-400 shrink-0">{t(`okr.krType.${kr.type}` as MessageKey)}</span>
-                <div className="w-32 shrink-0">
+                <div className="w-28 shrink-0">
                   <ProgressBar value={kr.progress} />
                 </div>
-                <span className="text-xs font-medium tabular-nums w-9 text-right shrink-0">{Math.round(kr.progress)}%</span>
+                <PctLabel label={t("okr.krProgress")} value={kr.progress} className="text-xs" strong />
                 <StatusBadge status={kr.status} />
                 <div className="w-24 shrink-0">
                   <UserChip user={kr.owner} size={16} />
@@ -207,42 +218,43 @@ export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug }: { o
                   <X size={13} />
                 </button>
               </div>
+              <KrMeasures kr={kr} />
               {expanded.has(kr.id) && (
-                <div className="border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950/40 px-3 py-2">
-                  {kr.type !== "task_based" ? (
-                    <p className="text-xs text-neutral-400 py-1">
-                      {kr.type === "numeric" && `${kr.currentValue}${kr.unit ? ` ${kr.unit}` : ""} of ${kr.targetValue}${kr.unit ? ` ${kr.unit}` : ""} target`}
-                      {kr.type === "percentage" && `${kr.currentValue}% complete`}
-                      {kr.type === "manual" && `Manually set to ${kr.manualProgress ?? 0}%`}
-                    </p>
-                  ) : (
-                    <>
-                      {kr.tasks.length === 0 && <p className="text-xs text-neutral-400 py-1">{t("okr.f.taskBasedHint")}</p>}
-                      <div className="space-y-1">
-                        {kr.tasks.map((task) => (
-                          <div key={task.id} className="flex items-center gap-2 py-1 group/task">
-                            <Link
-                              href={`/w/${workspaceSlug}/p/${task.projectId}/t/${task.taskId}`}
-                              className="flex-1 min-w-0 flex items-center gap-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:text-indigo-600 dark:hover:text-indigo-400"
-                            >
-                              <ExternalLink size={11} className="shrink-0 opacity-0 group-hover/task:opacity-100" />
-                              <span className="truncate">{task.title || t("common.untitled")}</span>
-                            </Link>
-                            {task.status && <span className="text-[10px] text-neutral-400 shrink-0">{task.status}</span>}
-                            <div className="w-16 shrink-0">
-                              <ProgressBar value={task.progress} height={4} />
-                            </div>
-                            <span className="text-[10px] tabular-nums text-neutral-400 w-8 text-right shrink-0">{task.progress}%</span>
-                            <span className="text-[10px] text-neutral-300 dark:text-neutral-700 w-10 text-right shrink-0">{task.weight}×</span>
-                            <button onClick={() => unlinkTask(kr.id, task.id)} className="text-neutral-300 hover:text-red-600 shrink-0">
-                              <X size={12} />
-                            </button>
-                          </div>
-                        ))}
+                <div className="border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-950/40 px-3 py-2" data-testid="kr-tasks">
+                  <div className="text-[11px] font-medium text-neutral-500 mb-1">
+                    {t("okr.linkedTasks")} ({kr.tasks.length})
+                  </div>
+                  {kr.tasks.length === 0 && <p className="text-xs text-neutral-400 py-1">{kr.type === "task_based" ? t("okr.f.taskBasedHint") : t("okr.noLinkedTasks")}</p>}
+                  <div className="space-y-1">
+                    {kr.tasks.map((task) => (
+                      <div key={task.id} className="flex items-center gap-2 py-1 group/task">
+                        <Link
+                          href={`/w/${workspaceSlug}/p/${task.projectId}/t/${task.taskId}`}
+                          className="flex-1 min-w-0 flex items-center gap-1.5 text-xs text-neutral-700 dark:text-neutral-300 hover:text-indigo-600 dark:hover:text-indigo-400"
+                        >
+                          <CheckSquare size={11} className="shrink-0 text-neutral-400" />
+                          <span className="truncate">{task.title || t("common.untitled")}</span>
+                          <ExternalLink size={11} className="shrink-0 opacity-0 group-hover/task:opacity-100" />
+                        </Link>
+                        {task.assignee && <UserChip user={task.assignee} size={14} />}
+                        {task.dueDate && <span className="text-[10px] text-neutral-400 shrink-0">{formatDate(task.dueDate)}</span>}
+                        {task.status && <span className="text-[10px] text-neutral-400 shrink-0">{task.status}</span>}
+                        <div className="w-14 shrink-0">
+                          <ProgressBar value={task.progress} height={4} />
+                        </div>
+                        <PctLabel label={t("okr.taskProgress")} value={task.progress} className="text-[10px]" />
+                        {kr.type === "task_based" && (
+                          <span className="text-[10px] text-neutral-400 shrink-0" title={t("okr.weight")}>
+                            {t("okr.weight")} {task.weight}×
+                          </span>
+                        )}
+                        <button onClick={() => unlinkTask(kr.id, task.id)} className="text-neutral-300 hover:text-red-600 shrink-0" aria-label={t("common.delete")}>
+                          <X size={12} />
+                        </button>
                       </div>
-                      <LinkTaskPopover keyResultId={kr.id} onLinked={load} />
-                    </>
-                  )}
+                    ))}
+                  </div>
+                  <LinkTaskPopover keyResultId={kr.id} onLinked={load} />
                 </div>
               )}
             </div>
@@ -276,7 +288,7 @@ export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug }: { o
                   <div className="w-16">
                     <ProgressBar value={task.progress} height={4} />
                   </div>
-                  <span className="tabular-nums text-neutral-500 w-8 text-right">{Math.round(task.progress)}%</span>
+                  <PctLabel label={t("okr.taskProgress")} value={task.progress} />
                 </Link>
               ))}
             </div>
@@ -286,6 +298,44 @@ export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug }: { o
 
       <ObjectiveDialog open={editOpen} onOpenChange={setEditOpen} objective={objective} teams={teams} members={members} onSave={saveObjective} workspaceId={workspaceId} projects={projects} />
       <KeyResultDialog open={krDialog.open} onOpenChange={(v) => setKrDialog((d) => ({ ...d, open: v }))} keyResult={krDialog.kr} members={members} onSave={saveKeyResult} />
+    </div>
+  );
+}
+
+/** The measurable facts of a key result: baseline → current → target (unit), confidence, deadline, owner. */
+function KrMeasures({ kr }: { kr: KeyResultRow }) {
+  const { t } = useT();
+  const u = kr.unit ? ` ${kr.unit}` : "";
+  const num = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+  const done = kr.tasks.filter((x) => x.progress >= 100).length;
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 pb-2 pl-9 text-[11px] text-neutral-500" data-testid="kr-measures">
+      {kr.type === "numeric" && (
+        <>
+          <span>
+            {t("okr.measure.start")}: <b className="font-medium text-neutral-700 dark:text-neutral-300">{num(kr.startValue)}{u}</b>
+          </span>
+          <span>
+            {t("okr.measure.current")}: <b className="font-medium text-neutral-700 dark:text-neutral-300">{num(kr.currentValue)}{u}</b>
+          </span>
+          <span>
+            {t("okr.measure.target")}: <b className="font-medium text-neutral-700 dark:text-neutral-300">{num(kr.targetValue)}{u}</b>
+          </span>
+        </>
+      )}
+      {kr.type === "percentage" && (
+        <span>
+          {t("okr.measure.current")}: <b className="font-medium text-neutral-700 dark:text-neutral-300">{num(kr.currentValue)}%</b> / {t("okr.measure.target")} 100%
+        </span>
+      )}
+      {kr.type === "task_based" && <span>{t("okr.measure.tasks", { done, total: kr.tasks.length })}</span>}
+      {kr.type === "manual" && <span>{t("okr.measure.manual")}</span>}
+      <ConfidenceDot confidence={kr.confidence} />
+      {kr.dueDate && (
+        <span>
+          {t("okr.f.dueDate")}: <b className="font-medium text-neutral-700 dark:text-neutral-300">{formatDate(kr.dueDate)}</b>
+        </span>
+      )}
     </div>
   );
 }

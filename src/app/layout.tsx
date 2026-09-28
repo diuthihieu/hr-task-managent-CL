@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { headers } from "next/headers";
 import { getRequestPrefs } from "@/lib/prefs";
 
 export const metadata: Metadata = {
@@ -11,11 +12,23 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const { locale, accent } = await getRequestPrefs();
+  const prefs = await getRequestPrefs();
+  const marketing = (await headers()).get("x-woli-marketing") === "1";
+  const { locale, themeMode } = prefs;
+  const accent = marketing ? "orange" : prefs.accent;
+  const tone = marketing ? "neutral" : prefs.tone;
   return (
-    <html lang={locale} data-accent={accent} className="h-full antialiased" suppressHydrationWarning>
+    <html lang={locale} data-accent={accent} data-tone={tone} data-theme-mode={themeMode} className={`h-full antialiased${themeMode === "dark" ? " dark" : ""}`} suppressHydrationWarning>
+      <head>
+        {/* "System" mode: pick light/dark before first paint so there is no flash. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var d=document.documentElement;if(d.dataset.themeMode==="system"&&matchMedia("(prefers-color-scheme: dark)").matches)d.classList.add("dark")}catch(e){}})()`,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col">
-        <Providers locale={locale} accent={accent}>{children}</Providers>
+        <Providers locale={locale} accent={accent} themeMode={themeMode} tone={tone}>{children}</Providers>
       </body>
     </html>
   );

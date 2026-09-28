@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ChevronDown, ChevronRight, Plus, MoreHorizontal, Pencil, Trash2, Target, KeySquare, CornerDownRight, FolderKanban, CheckSquare } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
@@ -10,7 +11,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { useT } from "@/components/i18n-provider";
 import { ObjectiveDialog, objectivePayload, type ObjectiveDraft } from "./objective-dialog";
 import { KeyResultDialog, type KeyResultDraft } from "./key-result-dialog";
-import { ProgressBar, StatusBadge, PriorityBadge, ConfidenceDot, UserChip, UserStack, DeadlineLabel, CycleLabel } from "./okr-ui";
+import { ProgressBar, StatusBadge, PriorityBadge, ConfidenceDot, PctLabel, UserChip, UserStack, DeadlineLabel, CycleLabel } from "./okr-ui";
 import type { KeyResultTaskRow, ObjectiveRow, TeamRow } from "@/types";
 
 interface MemberLite {
@@ -49,7 +50,9 @@ export function OkrListWorkspace({
   const [filters, setFilters] = useState({ teamId: "", ownerId: "", status: "", cycleType: "", projectId: "" });
   const [groupBy, setGroupBy] = useState<"project" | "team">("project");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [objectiveDialog, setObjectiveDialog] = useState<{ open: boolean; objective: ObjectiveRow | null }>({ open: false, objective: null });
+  const searchParams = useSearchParams();
+  // ?new=1 (Ctrl+K "Create objective") opens the new-objective dialog.
+  const [objectiveDialog, setObjectiveDialog] = useState<{ open: boolean; objective: ObjectiveRow | null }>(() => ({ open: canEdit && searchParams.get("new") === "1", objective: null }));
   const [keyResultDialog, setKeyResultDialog] = useState<{ open: boolean; objectiveId: string | null }>({ open: false, objectiveId: null });
 
   async function load() {
@@ -236,7 +239,7 @@ export function OkrListWorkspace({
                     <CycleLabel cycleType={o.cycleType} cycleLabel={o.cycleLabel} />
                     <div className="flex items-center gap-2 flex-1 min-w-[100px]">
                       <ProgressBar value={o.progress} />
-                      <span className="text-xs font-medium text-neutral-600 dark:text-neutral-300 tabular-nums w-9 text-right shrink-0">{Math.round(o.progress)}%</span>
+                      <PctLabel label={t("okr.progressShort")} value={o.progress} className="text-xs" strong />
                     </div>
                     <ConfidenceDot confidence={o.confidence} />
                     <StatusBadge status={o.status} />
@@ -286,18 +289,18 @@ export function OkrListWorkspace({
                               <div className="w-24 shrink-0">
                                 <ProgressBar value={kr.progress} height={4} />
                               </div>
-                              <span className="tabular-nums text-neutral-500 w-8 text-right shrink-0">{Math.round(kr.progress)}%</span>
+                              <PctLabel label={t("okr.progressShort")} value={kr.progress} />
                               {canEdit && (
                                 <button onClick={() => deleteKeyResult(kr.id)} className="opacity-0 group-hover/kr:opacity-100 text-neutral-400 hover:text-red-600" aria-label={t("common.delete")}>
                                   <Trash2 size={12} />
                                 </button>
                               )}
                             </div>
-                            {kr.tasks.length > 0 && scope === "project" && (
+                            {kr.tasks.length > 0 && (
                               <div className="pl-6 space-y-0.5">
                                 {kr.tasks.map((task) => (
                                   <Link key={task.id} href={taskHref(task)} className="flex items-center gap-1.5 text-[11px] text-neutral-500 hover:text-indigo-600 truncate">
-                                    <CheckSquare size={10} className="shrink-0" /> <span className="truncate">{task.title}</span> <span className="text-neutral-400">· {Math.round(task.progress)}%</span>
+                                    <CheckSquare size={10} className="shrink-0" /> <span className="truncate">{task.title}</span> <span className="text-neutral-400">· {t("okr.taskProgress")} {Math.round(task.progress)}%</span>
                                   </Link>
                                 ))}
                               </div>
@@ -318,7 +321,7 @@ export function OkrListWorkspace({
                             <Link key={task.id} href={taskHref(task)} className="flex items-center gap-1.5 pl-1 text-[11px] text-neutral-500 hover:text-indigo-600 truncate">
                               <CheckSquare size={10} className="shrink-0" /> <span className="truncate">{task.title}</span>
                               <span className="text-neutral-400">
-                                · {task.projectName} · {Math.round(task.progress)}%
+                                · {task.projectName} · {t("okr.taskProgress")} {Math.round(task.progress)}%
                               </span>
                             </Link>
                           ))}

@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./accent-palettes.css";
+@import "./tone-palettes.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -239,3 +240,36 @@ body {
 .ai-md th { background: var(--color-neutral-50); font-weight: 600; }
 .dark .ai-md th { background: var(--color-neutral-800); }
 .ai-md hr { border-color: var(--color-neutral-200); }
+
+/* Touch screens have no hover: reveal hover-only row actions (edit, delete,
+   quick actions) so they stay reachable on phones and tablets. */
+@media (hover: none) {
+  [class*="group-hover"][class*="opacity-0"],
+  [class*="group-hover/"][class*="opacity-0"] {
+    opacity: 1 !important;
+  }
+}
+
+/* Landing hero: slow drifting glows, a fading dotted grid and the screenshot
+   marquee. Subtle by design; everything stops for prefers-reduced-motion. */
+.hero-grid {
+  background-image: radial-gradient(circle at 1px 1px, var(--color-neutral-300) 1px, transparent 0);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+}
+@keyframes hero-drift-a { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(-60px, 40px, 0) scale(1.08); } }
+@keyframes hero-drift-b { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(70px, -30px, 0) scale(1.05); } }
+.hero-glow-a { animation: hero-drift-a 28s ease-in-out infinite alternate; }
+.hero-glow-b { animation: hero-drift-b 34s ease-in-out infinite alternate; }
+
+@keyframes marquee-scroll { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(calc(-50% - 10px), 0, 0); } }
+.marquee {
+  mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+}
+.marquee-track { animation: marquee-scroll 70s linear infinite; }
+.marquee:hover .marquee-track { animation-play-state: paused; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-glow-a, .hero-glow-b, .marquee-track { animation: none; }
+  .marquee { overflow-x: auto; }
+}

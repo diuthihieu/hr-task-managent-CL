@@ -17,6 +17,7 @@ interface AiSettings {
   configured: boolean;
   model?: string;
   canManage: boolean;
+  canUpload?: boolean;
   enabled: boolean;
   greeting: string | null;
   instructions?: string;
@@ -51,7 +52,7 @@ export function WikiAiPanel({ wikiId, wikiName, onClose }: { wikiId: string; wik
   }, [wikiId]);
 
   return (
-    <aside className="w-[420px] shrink-0 border-l border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 flex flex-col" data-testid="wiki-ai-panel">
+    <aside className="fixed inset-0 z-40 md:static md:z-auto md:w-[420px] shrink-0 border-l border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 flex flex-col" data-testid="wiki-ai-panel">
       <div className="h-11 px-3 flex items-center gap-2 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shrink-0">
         <Sparkles size={15} className="text-indigo-600" />
         <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-50 truncate">{t("wikiAi.title")}</span>
@@ -79,7 +80,7 @@ export function WikiAiPanel({ wikiId, wikiName, onClose }: { wikiId: string; wik
               </DropdownMenu>
             </>
           )}
-          {settings?.canManage && (
+          {(settings?.canManage || settings?.canUpload) && (
             <button onClick={() => setTab(tab === "chat" ? "settings" : "chat")} className={cn("rounded p-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800", tab === "settings" ? "text-indigo-600" : "text-neutral-500")} title={tab === "chat" ? t("wikiAi.settings") : t("wikiAi.chat")} data-testid="wiki-ai-settings-tab">
               {tab === "chat" ? <Settings2 size={15} /> : <MessageSquare size={15} />}
             </button>
@@ -90,7 +91,7 @@ export function WikiAiPanel({ wikiId, wikiName, onClose }: { wikiId: string; wik
         </div>
       </div>
 
-      {tab === "settings" && settings?.canManage ? (
+      {tab === "settings" && (settings?.canManage || settings?.canUpload) ? (
         <WikiAiSettings wikiId={wikiId} settings={settings} onSaved={loadSettings} />
       ) : settings && !settings.enabled ? (
         <div className="p-6 text-sm text-neutral-500 text-center">{t("wikiAi.disabled")}</div>
@@ -175,6 +176,7 @@ function WikiAiSettings({ wikiId, settings, onSaved }: { wikiId: string; setting
   const label = "text-[11px] font-semibold text-neutral-500 uppercase tracking-wide mb-1 block";
   return (
     <div className="flex-1 overflow-y-auto thin-scroll p-4 space-y-5" data-testid="wiki-ai-settings">
+      {settings.canManage && (<>
       <div className="flex items-center justify-between rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2.5">
         <div>
           <div className="text-sm font-medium text-neutral-800 dark:text-neutral-100">{t("wikiAi.enable")}</div>
@@ -194,6 +196,7 @@ function WikiAiSettings({ wikiId, settings, onSaved }: { wikiId: string; setting
       <Button onClick={save} disabled={saving} className="w-full" data-testid="wiki-ai-save">
         {t("common.save")}
       </Button>
+      </>)}
 
       <div>
         <label className={label}>{t("wikiAi.docs")}</label>
@@ -203,7 +206,7 @@ function WikiAiSettings({ wikiId, settings, onSaved }: { wikiId: string; setting
           {uploading ? t("wikiAi.reading", { name: uploading }) : t("wikiAi.uploadDocs")}
           <span className="text-[10px] text-neutral-400">{t("wikiAi.docTypes")}</span>
         </button>
-        <input ref={fileRef} type="file" multiple className="hidden" accept=".pdf,.docx,.xlsx,.xls,.txt,.md,.csv,.json,.html,.htm,.png,.jpg,.jpeg,.webp" onChange={(e) => e.target.files && upload(e.target.files)} data-testid="wiki-ai-file" />
+        <input ref={fileRef} type="file" multiple className="hidden" accept=".pdf,.docx,.xlsx,.xls,.pptx,.txt,.md,.csv,.json,.html,.htm,.png,.jpg,.jpeg,.webp,.gif" onChange={(e) => e.target.files && upload(e.target.files)} data-testid="wiki-ai-file" />
         <ul className="mt-2 space-y-1.5">
           {docs.map((d) => (
             <li key={d.id} className="flex items-center gap-2 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2.5 py-2 text-xs" data-testid="wiki-ai-doc">

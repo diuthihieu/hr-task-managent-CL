@@ -1,5 +1,7 @@
 "use client";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ConvertToWikiDialog } from "./convert-to-wiki-dialog";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Plus, Trash2, Sparkles, ShieldCheck, MessageSquare } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
@@ -12,6 +14,21 @@ import { exportReportPdf } from "./print-report";
 export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: { workspaceId: string; workspaceName: string; logoUrl: string | null; userName: string }) {
   const { t, locale } = useT();
   const chat = useAiChat({ kind: "assistant", workspaceId });
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const initialQuestion = searchParams.get("q");
+  const [convert, setConvert] = useState<string | null>(null);
+  const workspaceSlug = pathname.split("/")[2] ?? "";
+
+  // Ctrl+K "Ask AI": /ai?q=... starts a new chat with that question.
+  useEffect(() => {
+    if (!initialQuestion?.trim()) return;
+    router.replace(pathname);
+    chat.open(null);
+    chat.send(initialQuestion.trim());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per question
+  }, [initialQuestion]);
 
   useEffect(() => {
     chat.loadConversations().catch(() => {});
@@ -27,7 +44,7 @@ export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: {
 
   return (
     <div className="flex-1 flex overflow-hidden" data-testid="ai-assistant">
-      <aside className="w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col">
+      <aside className="hidden md:flex w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex-col">
         <div className="p-3">
           <Button className="w-full" onClick={() => chat.open(null)} data-testid="ai-new-chat">
             <Plus size={14} /> {t("ai.newChat")}
@@ -78,12 +95,14 @@ export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: {
           onSend={chat.send}
           onStop={chat.stop}
           onExportPdf={exportPdf}
+          onConvertToWiki={(m) => setConvert(m.content)}
           emptyTitle={t("ai.emptyTitle", { name: userName.split(" ").slice(-1)[0] })}
           emptyBody={t("ai.emptyBody")}
           suggestions={suggestions}
           placeholder={t("ai.placeholder")}
         />
       </main>
+      <ConvertToWikiDialog markdown={convert} workspaceId={workspaceId} workspaceSlug={workspaceSlug} onClose={() => setConvert(null)} />
     </div>
   );
 }

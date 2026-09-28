@@ -6,6 +6,7 @@ import { toast } from "@/components/ui/toast";
 import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { AttachmentViewer } from "@/components/attachments/attachment-viewer";
 
 export interface CellFile {
   id: string;
@@ -21,6 +22,7 @@ export function AttachmentsCell({ taskId, files, className, onChange }: { taskId
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [viewing, setViewing] = useState<number | null>(null);
 
   async function upload(list: FileList | File[]) {
     const items = Array.from(list);
@@ -59,6 +61,10 @@ export function AttachmentsCell({ taskId, files, className, onChange }: { taskId
   }
 
   return (
+    <>
+    {viewing !== null && (
+      <AttachmentViewer files={files.map((f) => ({ id: f.id, fileName: f.name, contentType: f.type }))} index={viewing} onIndexChange={setViewing} onClose={() => setViewing(null)} />
+    )}
     <Popover>
       <PopoverTrigger asChild>
         <button className={cn(className, "gap-1 overflow-hidden cursor-pointer")} title={files.map((f) => f.name).join("\n") || t("att.add")} data-testid="cell-attachments">
@@ -114,9 +120,9 @@ export function AttachmentsCell({ taskId, files, className, onChange }: { taskId
                     <Paperclip size={12} className="text-neutral-400" />
                   </span>
                 )}
-                <span className="flex-1 truncate text-neutral-700 dark:text-neutral-200" title={f.name}>
+                <button onClick={() => setViewing(files.indexOf(f))} className="flex-1 truncate text-left text-neutral-700 dark:text-neutral-200 hover:text-indigo-600 hover:underline" title={t("att.view")} data-testid="cell-attachment-open">
                   {f.name}
-                </span>
+                </button>
                 <a href={`/api/attachments/${f.id}/download`} className="text-neutral-400 hover:text-indigo-600" title={t("att.download")}>
                   <Download size={13} />
                 </a>
@@ -129,5 +135,6 @@ export function AttachmentsCell({ taskId, files, className, onChange }: { taskId
         )}
       </PopoverContent>
     </Popover>
+    </>
   );
 }

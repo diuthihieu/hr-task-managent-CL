@@ -5,6 +5,7 @@ import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfTask, ba
 import { notifyTaskComment } from "@/lib/notifications";
 import { logActivity } from "@/lib/activity";
 import { uuid } from "@/lib/validation";
+import { mentionedUserIds, stripMentions } from "@/lib/mentions";
 
 type P = { taskId: string };
 
@@ -34,9 +35,20 @@ export const POST = route<P>(async (req, { params }) => {
   const ctx = await requireWorkspaceRole(user, await workspaceOfTask(taskId), "viewer");
   const body = createSchema.parse(await readJson(req));
   if (body.parentCommentId && !(await prisma.comment.findFirst({ where: { id: body.parentCommentId, taskId, deletedAt: null } }))) throw badRequest("Parent comment not found");
+  // Only people who can see the task can be tagged; unknown ids are ignored.
+  const wanted = mentionedUserIds(body.body);
+  const mentioned = wanted.length
+    ? (
+        await prisma.workspaceMember.findMany({
+          where: { workspaceId: ctx.workspaceId, userId: { in: wanted }, user: { isActive: true, hiddenProjects: { none: { projectId: ctx.projectId } } } },
+          select: { userId: true },
+        })
+      ).map((m) => m.userId)
+    : [];
   const comment = await prisma.$transaction(async (tx) => {
     const c = await tx.comment.create({ data: { taskId, authorId: user.id, body: body.body, parentCommentId: body.parentCommentId ?? null }, select });
-    await notifyTaskComment(tx, { taskId, actorId: user.id, excerpt: body.body });
+    if (mentioned.length) await tx.commentMention.createMany({ data: mentioned.map((userId) => ({ commentId: c.id, userId })), skipDuplicates: true });
+    await notifyTaskComment(tx, { taskId, actorId: user.id, excerpt: stripMentions(body.body), mentioned });
     await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "comment", entityId: c.id, action: "created", summary: `Commented on task`, changes: { taskId: { from: null, to: taskId } } });
     return c;
   });

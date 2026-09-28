@@ -20,6 +20,8 @@ export interface GenerateOptions {
   contents: GeminiContent[];
   temperature?: number;
   maxOutputTokens?: number;
+  /** Ask for a JSON response (application/json). */
+  json?: boolean;
 }
 export interface Usage {
   tokensIn: number | null;
@@ -158,7 +160,7 @@ function requestInit(opts: GenerateOptions): RequestInit {
     body: JSON.stringify({
       ...(opts.system ? { systemInstruction: { parts: [{ text: opts.system }] } } : {}),
       contents: opts.contents,
-      generationConfig: { temperature: opts.temperature ?? 0.3, maxOutputTokens: opts.maxOutputTokens ?? 8192 },
+      generationConfig: { temperature: opts.temperature ?? 0.3, maxOutputTokens: opts.maxOutputTokens ?? 8192, ...(opts.json ? { responseMimeType: "application/json" } : {}) },
     }),
   };
 }
@@ -244,4 +246,17 @@ export async function streamGenerate(opts: GenerateOptions, usage: Usage, signal
     }
   }
   return chunks();
+}
+
+/** Parse a JSON answer, tolerating code fences or text around the object. */
+export function parseJsonAnswer<T>(text: string): T | null {
+  const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+  for (const candidate of [cleaned, cleaned.slice(cleaned.indexOf("{"), cleaned.lastIndexOf("}") + 1)]) {
+    try {
+      return JSON.parse(candidate) as T;
+    } catch {
+      // try the next shape
+    }
+  }
+  return null;
 }

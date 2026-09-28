@@ -4,7 +4,7 @@ import Link from "next/link";
 import { CheckSquare, Target, KeySquare, Grid2x2, CalendarClock, Sparkles } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/misc";
-import { ProgressBar, StatusBadge, DeadlineLabel } from "./okr-ui";
+import { ProgressBar, StatusBadge, DeadlineLabel, PctLabel } from "./okr-ui";
 import { PutAllThingsOn } from "@/components/capture/put-all-things-on";
 import type { ObjectiveRow, KeyResultRow } from "@/types";
 import type { MyTaskRow } from "@/types";
@@ -108,7 +108,7 @@ export function MyWork({ workspaceId, workspaceSlug }: { workspaceId: string; wo
               <Link key={o.id} href={`/w/${workspaceSlug}/okrs/${o.id}`} className="flex items-center gap-3 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 hover:border-neutral-300 dark:hover:border-neutral-700">
                 <span className="flex-1 min-w-0 truncate text-sm text-neutral-800 dark:text-neutral-100">{o.title}</span>
                 <div className="w-24 shrink-0"><ProgressBar value={o.progress} /></div>
-                <span className="text-xs tabular-nums w-9 text-right shrink-0">{Math.round(o.progress)}%</span>
+                <PctLabel label={t("okr.progressShort")} value={o.progress} className="text-xs" />
                 <StatusBadge status={o.status} />
                 <DeadlineLabel endDate={o.endDate} />
               </Link>
@@ -126,7 +126,7 @@ export function MyWork({ workspaceId, workspaceSlug }: { workspaceId: string; wo
                   <div className="truncate text-[11px] text-neutral-400">{k.objectiveTitle}</div>
                 </div>
                 <div className="w-24 shrink-0"><ProgressBar value={k.progress} /></div>
-                <span className="text-xs tabular-nums w-9 text-right shrink-0">{Math.round(k.progress)}%</span>
+                <PctLabel label={t("okr.progressShort")} value={k.progress} className="text-xs" />
               </Link>
             ))}
           </div>

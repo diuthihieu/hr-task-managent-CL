@@ -16,9 +16,12 @@ export const PATCH = route<P>(async (req, { params }) => {
   const objective = await prisma.$transaction(async (tx) => {
     await assertObjectiveRefs(tx, ctx.workspaceId, { ownerId: body.ownerId });
     const before = await tx.keyResult.findUniqueOrThrow({ where: { id: keyResultId } });
-    const { order, ...rest } = body;
-    const after = await tx.keyResult.update({ where: { id: keyResultId }, data: { ...rest, sortOrder: order, updatedById: user.id } });
-    const changes = diff(before, after, ["title", "ownerId", "type", "startValue", "targetValue", "currentValue", "unit", "weight", "manualProgress", "status"]);
+    const { order, dueDate, ...rest } = body;
+    const after = await tx.keyResult.update({
+      where: { id: keyResultId },
+      data: { ...rest, ...(dueDate !== undefined ? { dueDate: dueDate ? new Date(`${dueDate}T00:00:00Z`) : null } : {}), sortOrder: order, updatedById: user.id },
+    });
+    const changes = diff(before, after, ["title", "ownerId", "type", "startValue", "targetValue", "currentValue", "unit", "weight", "manualProgress", "status", "confidence", "dueDate"]);
     if (changes) await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "key_result", entityId: keyResultId, action: "updated", changes });
     return tx.objective.findUniqueOrThrow({ where: { id: after.objectiveId }, include: OBJECTIVE_INCLUDE });
   });

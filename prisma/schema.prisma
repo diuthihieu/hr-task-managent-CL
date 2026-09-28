@@ -182,7 +182,10 @@ model User {
   /// Stored lowercased; uniqueness is case-insensitive by construction.
   email              String     @unique @db.VarChar(254)
   name               String     @db.VarChar(120)
-  passwordHash       String     @map("password_hash")
+  /// Null for accounts that only sign in with Google.
+  passwordHash       String?    @map("password_hash")
+  /// Google account id ("sub") once the user has signed in with Google.
+  googleSub          String?    @unique @map("google_sub") @db.VarChar(64)
   systemRole         SystemRole @default(MEMBER) @map("system_role")
   avatarColor        String     @default("#6366f1") @map("avatar_color") @db.VarChar(9)
   isActive           Boolean    @default(true) @map("is_active")
@@ -193,6 +196,22 @@ model User {
   locale             String     @default("vi") @db.VarChar(5)
   /// Accent palette name (Tailwind palette, e.g. "indigo", "rose").
   accentColor        String     @default("orange") @map("accent_color") @db.VarChar(20)
+  /// "light" | "dark" | "system" (follows the OS).
+  themeMode          String     @default("system") @map("theme_mode") @db.VarChar(10)
+  /// Surface tone: "neutral" | cool ("slate", "ocean", "mint") | warm ("sand", "rose", "amber").
+  surfaceTone        String     @default("neutral") @map("surface_tone") @db.VarChar(20)
+  /// Uploaded profile picture (PNG/JPEG/WebP, <= 512 KB); omitted from queries by default.
+  avatarData         Bytes?     @map("avatar_data")
+  avatarType         String?    @map("avatar_type") @db.VarChar(40)
+  avatarUpdatedAt    DateTime?  @map("avatar_updated_at") @db.Timestamptz(6)
+  jobTitle           String?    @map("job_title") @db.VarChar(120)
+  /// Personalization for every AI answer (like custom instructions in ChatGPT / Claude).
+  aiAbout            String?    @map("ai_about")
+  aiInstructions     String?    @map("ai_instructions")
+  /// "professional" | "friendly" | "concise" | "coach" | "formal"
+  aiTone             String     @default("professional") @map("ai_tone") @db.VarChar(20)
+  /// "short" | "balanced" | "detailed"
+  aiLength           String     @default("balanced") @map("ai_length") @db.VarChar(10)
   lastLoginAt        DateTime?  @map("last_login_at") @db.Timestamptz(6)
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -229,6 +248,10 @@ model User {
   aiSettingsUpdated     WikiAiSettings[]
   wikisCreated          Wiki[]                 @relation("WikiCreatedByUser")
   wikiMemberships       WikiMember[]
+  commentMentions       CommentMention[]
+  wikiComments          WikiComment[]          @relation("WikiCommentAuthor")
+  wikiCommentMentions   WikiCommentMention[]   @relation("WikiCommentMentionUser")
+  focusSessions         FocusSession[]
 
   @@index([isActive, deletedAt])
   @@map("users")
@@ -258,6 +281,7 @@ model Workspace {
   objectives       Objective[]
   dashboards       Dashboard[]
   attachments      Attachment[]
+  wikiComments     WikiComment[]
   activityLogs     ActivityLog[]
   capturedThoughts CapturedThought[]
   wikiPages        WikiPage[]
@@ -414,6 +438,8 @@ model Task {
   startDate       DateTime?    @map("start_date") @db.Date
   dueDate         DateTime?    @map("due_date") @db.Date
   estimateMinutes Int?         @map("estimate_minutes")
+  /// Time actually spent (minutes): focus sessions add to it; can be edited by hand.
+  actualMinutes   Int?         @map("actual_minutes")
   progress        Int          @default(0)
   /// Weight of this task inside its key result's task-based progress.
   okrWeight       Decimal      @default(1) @map("okr_weight") @db.Decimal(8, 2)
@@ -445,6 +471,7 @@ model Task {
   attachments   Attachment[]
   customValues  TaskCustomFieldValue[]
   thoughts      CapturedThought[]
+  focusSessions FocusSession[]
 
   @@index([projectId, deletedAt, sortOrder])
   @@index([workspaceId, deletedAt, dueDate])
@@ -577,10 +604,11 @@ model Comment {
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  task    Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  author  User?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
-  parent  Comment?  @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
-  replies Comment[] @relation("CommentReplies")
+  task     Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author   User?            @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  parent   Comment?         @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies  Comment[]        @relation("CommentReplies")
+  mentions CommentMention[]
 
   @@index([taskId, createdAt])
   @@map("comments")
@@ -600,9 +628,14 @@ model Attachment {
   storageKey      String    @map("storage_key")
   url             String
   uploadedById    String?   @map("uploaded_by") @db.Uuid
+  /// Set when the file was attached to a wiki page comment (wikiPageId is then that page).
+  wikiCommentId   String?   @map("wiki_comment_id") @db.Uuid
+  /// Text extracted from the file for the wiki's AI (comment files); omitted from queries by default.
+  extractedText   String?   @map("extracted_text")
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
 
+  wikiComment WikiComment? @relation(fields: [wikiCommentId], references: [id], onDelete: SetNull)
   workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   task       Task?     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   wikiPage   WikiPage? @relation(fields: [wikiPageId], references: [id], onDelete: Cascade)
@@ -610,6 +643,7 @@ model Attachment {
 
   @@index([taskId, deletedAt])
   @@index([wikiPageId])
+  @@index([wikiCommentId])
   @@map("attachments")
 }
 
@@ -776,6 +810,9 @@ model KeyResult {
   weight         Decimal         @default(1) @db.Decimal(8, 2)
   manualProgress Decimal?        @map("manual_progress") @db.Decimal(5, 2)
   status         ObjectiveStatus @default(on_track)
+  /// Owner's confidence that the target will be hit (0-100).
+  confidence     Int             @default(70)
+  dueDate        DateTime?       @map("due_date") @db.Date
   sortOrder      Int             @default(0) @map("sort_order")
   createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -892,6 +929,7 @@ model WikiPage {
   parentPage  WikiPage?    @relation("WikiTree", fields: [parentPageId], references: [id], onDelete: Cascade)
   children    WikiPage[]   @relation("WikiTree")
   attachments Attachment[]
+  comments    WikiComment[]
   createdBy   User?        @relation("WikiCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
   updatedBy   User?        @relation("WikiUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
@@ -922,22 +960,26 @@ model TaskReportRecipient {
 /// In-app notification for one user. `dedupe_key` makes reminders (due soon,
 /// overdue, forgotten quick captures) idempotent.
 model Notification {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId      String    @map("user_id") @db.Uuid
-  workspaceId String?   @map("workspace_id") @db.Uuid
-  projectId   String?   @map("project_id") @db.Uuid
-  taskId      String?   @map("task_id") @db.Uuid
-  thoughtId   String?   @map("thought_id") @db.Uuid
-  actorId     String?   @map("actor_id") @db.Uuid
-  type        String    @db.VarChar(40)
-  title       String    @db.VarChar(300)
-  body        String?
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  workspaceId  String?   @map("workspace_id") @db.Uuid
+  projectId    String?   @map("project_id") @db.Uuid
+  taskId       String?   @map("task_id") @db.Uuid
+  thoughtId    String?   @map("thought_id") @db.Uuid
+  actorId      String?   @map("actor_id") @db.Uuid
+  type         String    @db.VarChar(40)
+  title        String    @db.VarChar(300)
+  body         String?
   /// Parameters for rendering the message in the reader's language (status name, field names...).
-  data        Json?
-  link        String?   @db.VarChar(500)
-  dedupeKey   String?   @map("dedupe_key") @db.VarChar(200)
-  readAt      DateTime? @map("read_at") @db.Timestamptz(6)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  data         Json?
+  link         String?   @db.VarChar(500)
+  dedupeKey    String?   @map("dedupe_key") @db.VarChar(200)
+  readAt       DateTime? @map("read_at") @db.Timestamptz(6)
+  /// Hidden from the inbox until this time (Snooze).
+  snoozedUntil DateTime? @map("snoozed_until") @db.Timestamptz(6)
+  /// When the reader acted on it (Accept / Complete / Done) - it leaves the "To do" list.
+  actionedAt   DateTime? @map("actioned_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user      User             @relation("NotificationUser", fields: [userId], references: [id], onDelete: Cascade)
   actor     User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
@@ -1109,4 +1151,89 @@ model WikiMember {
   @@id([wikiId, userId])
   @@index([userId])
   @@map("wiki_members")
+}
+
+/// People tagged with @ in a comment (the body stores @[Name](userId) tokens).
+model CommentMention {
+  commentId String @map("comment_id") @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([commentId, userId])
+  @@index([userId])
+  @@map("comment_mentions")
+}
+
+enum FocusStatus {
+  running
+  paused
+  completed
+  cancelled
+}
+
+/// One focus block on a task. Time is accumulated across pauses; on completion
+/// the minutes are added to the task's actual time. Kept for productivity analytics.
+model FocusSession {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId    String      @map("workspace_id") @db.Uuid
+  taskId         String      @map("task_id") @db.Uuid
+  userId         String      @map("user_id") @db.Uuid
+  status         FocusStatus @default(running)
+  /// Planned length of this block (minutes).
+  plannedMinutes Int?        @map("planned_minutes")
+  /// Seconds counted before the current run (sum of previous runs).
+  elapsedSeconds Int         @default(0) @map("elapsed_seconds")
+  /// Start of the current run while status = running.
+  resumedAt      DateTime?   @map("resumed_at") @db.Timestamptz(6)
+  notes          String?
+  /// [{ text, done }]
+  checklist      Json?
+  startedAt      DateTime    @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt        DateTime?   @map("ended_at") @db.Timestamptz(6)
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([taskId])
+  @@index([workspaceId, startedAt])
+  @@map("focus_sessions")
+}
+
+/// Discussion on a wiki page: Markdown body with @[Name](userId) mentions, optional files.
+model WikiComment {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId     String    @map("workspace_id") @db.Uuid
+  wikiPageId      String    @map("wiki_page_id") @db.Uuid
+  authorId        String?   @map("author_id") @db.Uuid
+  parentCommentId String?   @map("parent_comment_id") @db.Uuid
+  body            String
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  workspace   Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  wikiPage    WikiPage             @relation(fields: [wikiPageId], references: [id], onDelete: Cascade)
+  author      User?                @relation("WikiCommentAuthor", fields: [authorId], references: [id], onDelete: SetNull)
+  parent      WikiComment?         @relation("WikiCommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies     WikiComment[]        @relation("WikiCommentReplies")
+  mentions    WikiCommentMention[]
+  attachments Attachment[]
+
+  @@index([wikiPageId, createdAt])
+  @@map("wiki_comments")
+}
+
+model WikiCommentMention {
+  commentId String @map("comment_id") @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+
+  comment WikiComment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User        @relation("WikiCommentMentionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([commentId, userId])
+  @@index([userId])
+  @@map("wiki_comment_mentions")
 }

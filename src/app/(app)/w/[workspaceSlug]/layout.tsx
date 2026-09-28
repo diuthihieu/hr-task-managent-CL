@@ -33,6 +33,8 @@ export default async function WorkspaceLayout({ children, params }: { children: 
     select: { id: true, name: true, color: true, views: { orderBy: { sortOrder: "asc" }, select: { id: true, name: true, type: true } } },
   });
 
+  const me = await prisma.user.findUnique({ where: { id: user.id }, select: { avatarUpdatedAt: true } });
+
   const wikis = await prisma.wiki.findMany({
     where: { workspaceId: workspace.id, ...visibleWikiWhere(user, role) },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
@@ -45,7 +47,7 @@ export default async function WorkspaceLayout({ children, params }: { children: 
       workspace={{ id: workspace.id, name: workspace.name, slug: workspace.slug, logoUrl: workspaceLogoUrl(workspace) }}
       workspaces={workspaces}
       projects={projects}
-      user={{ id: user.id, name: user.name, email: user.email, systemRole: user.systemRole, avatarColor: user.avatarColor }}
+      user={{ id: user.id, name: user.name, email: user.email, systemRole: user.systemRole, avatarColor: user.avatarColor, avatarUrl: me?.avatarUpdatedAt ? `/api/users/${user.id}/avatar?v=${me.avatarUpdatedAt.getTime()}` : null }}
       role={role}
     >
       {children}

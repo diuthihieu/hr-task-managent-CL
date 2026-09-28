@@ -25,7 +25,7 @@ export const GET = route<P>(async (_req, { params }) => {
 export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { wikiId } = await params;
-  const ctx = await requireWiki(user, wikiId, "manager");
+  const ctx = await requireWiki(user, wikiId, "editor");
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) throw badRequest("Send the document as multipart form field `file`");

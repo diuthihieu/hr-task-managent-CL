@@ -29,7 +29,10 @@ export function ViewToolbar({
   onExportClick,
   onSaveAsView,
   viewType = "grid",
+  extra,
 }: {
+  /** View-specific controls (e.g. gallery card settings) kept on the same row. */
+  extra?: React.ReactNode;
   fields: FieldRow[];
   config: ViewConfig;
   members: Member[];
@@ -130,6 +133,8 @@ export function ViewToolbar({
         </Popover>
       )}
 
+      {extra}
+
       <div className="ml-auto flex items-center gap-1.5 shrink-0">
         {onSaveAsView && (
           <ToolbarButton
@@ -142,7 +147,7 @@ export function ViewToolbar({
         <ToolbarButton icon={<Download size={13} />} label={t("tb.export")} onClick={onExportClick} />
         <div className="relative">
           <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400" />
-          <Input value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder={t("tb.search")} className="w-44 pl-7" />
+          <Input value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder={t("tb.search")} className="w-32 sm:w-44 pl-7" />
         </div>
         {isGrid && (
           <Select

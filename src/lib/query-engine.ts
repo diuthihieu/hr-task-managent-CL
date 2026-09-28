@@ -132,8 +132,13 @@ export interface CalendarConfig {
 }
 
 export interface GalleryConfig {
+  /** Attachment field used as cover ("none" = no cover). Default: the task's attachments (first image). */
   coverFieldId?: string;
   cardFieldIds?: string[];
+  cardSize?: "small" | "medium" | "large";
+  coverFit?: "cover" | "contain";
+  /** true (default): cards grow to show wrapped text; false: one-line, equal height. */
+  fitContent?: boolean;
 }
 
 export interface FormFieldConfig {

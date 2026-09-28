@@ -9,6 +9,8 @@ import { RichEditor, type SaveState } from "@/components/editor/rich-editor";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { useT } from "@/components/i18n-provider";
+import { AiWikiActions } from "@/components/ai/ai-actions";
+import { WikiComments } from "./wiki-comments";
 import { api } from "@/lib/api-client";
 import { formatDate, cn } from "@/lib/utils";
 import type { WikiPageSummary, WikiRow } from "@/lib/wiki";
@@ -18,7 +20,7 @@ interface WikiPageFull extends WikiPageSummary {
 }
 
 /** Project wiki: page tree on the left, the selected page (rich editor) on the right. */
-export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, currentUserName }: { wiki: WikiRow; workspaceSlug: string; workspaceId: string; pageId: string | null; currentUserName: string }) {
+export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, currentUserName, currentUserId }: { wiki: WikiRow; workspaceSlug: string; workspaceId: string; pageId: string | null; currentUserName: string; currentUserId?: string }) {
   const { t } = useT();
   const router = useRouter();
   const base = `/w/${workspaceSlug}/wiki/${wiki.id}`;
@@ -156,7 +158,7 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
 
   return (
     <div className="flex-1 flex overflow-hidden">
-      <aside className="w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col">
+      <aside className={cn("md:w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex-col", page ? "hidden md:flex" : "flex w-full")}>
         <div className="flex items-center gap-2 px-3 h-11 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
           <span className="h-6 w-6 rounded-md flex items-center justify-center text-sm shrink-0" style={{ backgroundColor: `${wiki.color}22`, color: wiki.color }}>
             {wiki.icon || <BookOpen size={13} />}
@@ -189,7 +191,7 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
         </div>
       </aside>
 
-      <div className="flex-1 overflow-y-auto thin-scroll">
+      <div className={cn("flex-1 overflow-y-auto thin-scroll", !page && "hidden md:block")}>
         {!page ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-8 text-neutral-500">
             <BookOpen size={36} className="text-indigo-400 mb-3" />
@@ -208,12 +210,21 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
             )}
           </div>
         ) : (
-          <div className="max-w-4xl mx-auto px-8 py-8" key={page.id}>
+          <div className="max-w-4xl mx-auto px-4 sm:px-8 py-5 sm:py-8" key={`${page.id}:${page.updatedAt}`}>
+            <Link href={base} className="md:hidden inline-flex items-center gap-1 text-xs text-neutral-500 mb-3">
+              <ChevronRight size={12} className="rotate-180" /> {wiki.name}
+            </Link>
             <div className="flex items-center gap-2 text-[11px] text-neutral-400 mb-2">
               <span>{t("wiki.lastEdited", { name: page.updatedBy ?? currentUserName, when: formatDate(page.updatedAt, true) })}</span>
               <span className="ml-auto" data-testid="wiki-save-state">
                 {saveState === "saving" ? t("editor.saving") : saveState === "saved" ? t("editor.saved") : saveState === "error" ? t("editor.error") : ""}
               </span>
+              <AiWikiActions
+                pageId={page.id}
+                workspaceId={workspaceId}
+                canEdit={canEdit}
+                onApplied={() => api.get<WikiPageFull>(`/api/wiki/${page.id}`).then(setPage).catch(() => {})}
+              />
               {canEdit && (
                 <button onClick={remove} className="flex items-center gap-1 hover:text-red-600">
                   <Trash2 size={12} /> {t("common.delete")}
@@ -239,6 +250,7 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
                 await api.patch(`/api/wiki/${page.id}`, { content: html || null });
               }}
             />
+            <WikiComments pageId={page.id} currentUserId={currentUserId ?? null} canManage={wiki.myRole === "manager"} />
           </div>
         )}
       </div>

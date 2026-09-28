@@ -29,6 +29,8 @@ export const POST = route<P>(async (req, { params }) => {
         weight: body.weight,
         manualProgress: body.manualProgress ?? null,
         status: body.status,
+        confidence: body.confidence,
+        dueDate: body.dueDate ? new Date(`${body.dueDate}T00:00:00Z`) : null,
         sortOrder: count,
         createdById: user.id,
         updatedById: user.id,

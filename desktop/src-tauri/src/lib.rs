@@ -50,7 +50,7 @@ pub fn run() {
             let nav_server = server.clone();
 
             WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
-                .title("Basework")
+                .title("woli.")
                 .inner_size(1360.0, 860.0)
                 .min_inner_size(960.0, 600.0)
                 .center()

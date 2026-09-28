@@ -4,7 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { LayoutGrid, Plus, Building2, LogOut, Palette, KeyRound, ShieldCheck, MoreHorizontal, DoorOpen, MonitorDown, ChevronRight } from "lucide-react";
+import { Plus, Building2, LogOut, Palette, KeyRound, ShieldCheck, MoreHorizontal, DoorOpen, MonitorDown, ChevronRight } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -16,6 +16,8 @@ import { PreferencesDialog } from "@/components/preferences/preferences-dialog";
 import { useDesktopVersion } from "@/components/desktop/use-desktop";
 import { api } from "@/lib/api-client";
 import { initials } from "@/lib/utils";
+import { Brand } from "@/components/brand/brand";
+import { WorkspaceAvatar } from "./workspace-avatar";
 import type { MessageKey } from "@/lib/i18n/core";
 
 export interface WorkspaceCard {
@@ -23,6 +25,7 @@ export interface WorkspaceCard {
   name: string;
   slug: string;
   description: string | null;
+  logoUrl: string | null;
   role: string;
   projects: number;
   members: number;
@@ -65,10 +68,7 @@ export function WorkspaceChooser({ user, workspaces }: { user: { id: string; nam
     <div className="min-h-screen bg-neutral-50 dark:bg-neutral-950">
       <header className="h-14 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
         <div className="max-w-5xl mx-auto h-full px-4 flex items-center gap-3">
-          <span className="h-8 w-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center">
-            <LayoutGrid size={17} />
-          </span>
-          <span className="font-semibold text-neutral-900 dark:text-neutral-50">Basework</span>
+          <Brand />
           <div className="ml-auto flex items-center gap-2">
             <LocaleSwitch signedIn />
             <NotificationBell align="end" />
@@ -130,7 +130,7 @@ export function WorkspaceChooser({ user, workspaces }: { user: { id: string; nam
               <div key={w.id} className="group relative rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-800 transition-all">
                 <Link href={`/w/${w.slug}`} className="block p-5" data-testid={`workspace-card-${w.slug}`}>
                   <div className="flex items-center gap-3">
-                    <span className="h-10 w-10 rounded-lg bg-indigo-600 text-white font-semibold flex items-center justify-center">{initials(w.name)}</span>
+                    <WorkspaceAvatar name={w.name} logoUrl={w.logoUrl} size={44} className="rounded-xl" />
                     <div className="min-w-0 flex-1">
                       <div className="font-semibold text-neutral-900 dark:text-neutral-100 truncate">{w.name}</div>
                       <div className="text-xs text-neutral-500">{t(`role.${w.role}` as MessageKey)}</div>

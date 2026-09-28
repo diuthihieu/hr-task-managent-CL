@@ -4,11 +4,12 @@ import { useRouter } from "next/navigation";
 import { Bell, CheckCheck, BellRing } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { useT } from "@/components/i18n-provider";
+import { create } from "zustand";
 import { api } from "@/lib/api-client";
 import { cn, initials } from "@/lib/utils";
 import type { MessageKey, TFunction } from "@/lib/i18n/core";
 
-interface NotificationItem {
+export interface NotificationItem {
   id: string;
   type: string;
   title: string;
@@ -23,6 +24,40 @@ interface NotificationItem {
 }
 
 const POLL_MS = 60_000;
+
+/** Shared inbox state: the bell polls, the sidebar badge and the Inbox page read the same data. */
+interface InboxState {
+  items: NotificationItem[];
+  unread: number;
+  loaded: boolean;
+  set: (p: Partial<InboxState>) => void;
+}
+export const useInbox = create<InboxState>((set) => ({ items: [], unread: 0, loaded: false, set: (p) => set(p) }));
+
+export async function fetchInbox() {
+  const r = await api.get<{ unread: number; items: NotificationItem[] }>("/api/notifications");
+  useInbox.getState().set({ items: r.items, unread: r.unread, loaded: true });
+  return r;
+}
+
+export async function markRead(n: NotificationItem) {
+  if (n.read) return;
+  const st = useInbox.getState();
+  st.set({ items: st.items.map((x) => (x.id === n.id ? { ...x, read: true } : x)), unread: Math.max(0, st.unread - 1) });
+  await api.patch(`/api/notifications/${n.id}`, { read: true }).catch(() => {});
+}
+
+export async function markAllRead() {
+  const st = useInbox.getState();
+  st.set({ items: st.items.map((x) => ({ ...x, read: true })), unread: 0 });
+  await api.post("/api/notifications/read-all").catch(() => {});
+}
+
+export function UnreadCount() {
+  const unread = useInbox((s) => s.unread);
+  if (!unread) return null;
+  return <span className="min-w-5 h-5 px-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[11px] font-semibold leading-5 text-center" data-testid="nav-unread">{unread > 99 ? "99+" : unread}</span>;
+}
 
 /** One sentence per notification type, in the viewer's language. */
 export function describeNotification(n: NotificationItem, t: TFunction): string {
@@ -52,7 +87,7 @@ export function describeNotification(n: NotificationItem, t: TFunction): string 
   }
 }
 
-function timeAgo(iso: string, t: TFunction) {
+export function timeAgo(iso: string, t: TFunction) {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
   if (s < 60) return t("notif.justNow");
   if (s < 3600) return t("notif.minutes", { count: Math.floor(s / 60) });
@@ -68,8 +103,8 @@ function timeAgo(iso: string, t: TFunction) {
 export function NotificationBell({ className, align = "start" }: { className?: string; align?: "start" | "end" }) {
   const { t } = useT();
   const router = useRouter();
-  const [items, setItems] = useState<NotificationItem[]>([]);
-  const [unread, setUnread] = useState(0);
+  const items = useInbox((st) => st.items);
+  const unread = useInbox((st) => st.unread);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">("unsupported");
@@ -77,9 +112,7 @@ export function NotificationBell({ className, align = "start" }: { className?: s
 
   const load = useCallback(async () => {
     try {
-      const r = await api.get<{ unread: number; items: NotificationItem[] }>("/api/notifications");
-      setItems(r.items);
-      setUnread(r.unread);
+      const r = await fetchInbox();
       // Native notifications only for items that arrived after the first load.
       if (seen.current && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
         for (const n of r.items) {
@@ -99,8 +132,8 @@ export function NotificationBell({ className, align = "start" }: { className?: s
   }, [router, t]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch + polling
     load();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- browser-only value, unknown during SSR
     if (typeof window !== "undefined" && "Notification" in window) setPermission(Notification.permission);
     const id = setInterval(load, POLL_MS);
     const onFocus = () => load();
@@ -112,20 +145,12 @@ export function NotificationBell({ className, align = "start" }: { className?: s
   }, [load]);
 
   async function openItem(n: NotificationItem) {
-    if (!n.read) {
-      setItems((prev) => prev.map((x) => (x.id === n.id ? { ...x, read: true } : x)));
-      setUnread((u) => Math.max(0, u - 1));
-      api.patch(`/api/notifications/${n.id}`, { read: true }).catch(() => {});
-    }
+    markRead(n);
     setOpen(false);
     if (n.link) router.push(n.link);
   }
 
-  async function markAll() {
-    setItems((prev) => prev.map((x) => ({ ...x, read: true })));
-    setUnread(0);
-    await api.post("/api/notifications/read-all").catch(() => {});
-  }
+  const markAll = markAllRead;
 
   async function enableNative() {
     if (!("Notification" in window)) return;
@@ -166,29 +191,36 @@ export function NotificationBell({ className, align = "start" }: { className?: s
         <div className="max-h-[420px] overflow-y-auto thin-scroll divide-y divide-neutral-100 dark:divide-neutral-800">
           {shown.length === 0 && <div className="px-3 py-8 text-center text-xs text-neutral-400">{t("notif.empty")}</div>}
           {shown.map((n) => (
-            <button key={n.id} onClick={() => openItem(n)} className={cn("w-full text-left flex gap-2.5 px-3 py-2.5 hover:bg-neutral-50 dark:hover:bg-neutral-800/60", !n.read && "bg-indigo-50/40 dark:bg-indigo-950/20")} data-testid="notif-item">
-              {n.actor ? (
-                <span className="h-7 w-7 rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0" style={{ backgroundColor: n.actor.avatarColor }}>
-                  {initials(n.actor.name)}
-                </span>
-              ) : (
-                <span className={cn("h-7 w-7 rounded-full flex items-center justify-center shrink-0", n.type === "task_overdue" ? "bg-red-100 text-red-600 dark:bg-red-950" : "bg-amber-100 text-amber-600 dark:bg-amber-950")}>
-                  <Bell size={13} />
-                </span>
-              )}
-              <span className="flex-1 min-w-0">
-                <span className="block text-xs text-neutral-500">{describeNotification(n, t)}</span>
-                <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate">{n.title}</span>
-                {n.body && <span className="block text-xs text-neutral-500 line-clamp-2">{n.body}</span>}
-                <span className="block text-[11px] text-neutral-400 mt-0.5 truncate">
-                  {[n.projectName, n.workspaceName].filter(Boolean).join(" · ")} · {timeAgo(n.createdAt, t)}
-                </span>
-              </span>
-              {!n.read && <span className="h-2 w-2 rounded-full bg-indigo-600 mt-1.5 shrink-0" />}
-            </button>
+            <NotificationRow key={n.id} n={n} onOpen={() => openItem(n)} />
           ))}
         </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+export function NotificationRow({ n, onOpen, large }: { n: NotificationItem; onOpen: () => void; large?: boolean }) {
+  const { t } = useT();
+  return (
+    <button onClick={onOpen} className={cn("w-full text-left flex gap-2.5 px-3 py-2.5 hover:bg-neutral-50 dark:hover:bg-neutral-800/60", large && "px-4 py-3.5", !n.read && "bg-indigo-50/40 dark:bg-indigo-950/20")} data-testid="notif-item">
+      {n.actor ? (
+        <span className={cn("rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0", large ? "h-9 w-9" : "h-7 w-7")} style={{ backgroundColor: n.actor.avatarColor }}>
+          {initials(n.actor.name)}
+        </span>
+      ) : (
+        <span className={cn("rounded-full flex items-center justify-center shrink-0", large ? "h-9 w-9" : "h-7 w-7", n.type === "task_overdue" ? "bg-red-100 text-red-600 dark:bg-red-950" : "bg-amber-100 text-amber-600 dark:bg-amber-950")}>
+          <Bell size={13} />
+        </span>
+      )}
+      <span className="flex-1 min-w-0">
+        <span className="block text-xs text-neutral-500">{describeNotification(n, t)}</span>
+        <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate">{n.title}</span>
+        {n.body && <span className="block text-xs text-neutral-500 line-clamp-2">{n.body}</span>}
+        <span className="block text-[11px] text-neutral-400 mt-0.5 truncate">
+          {[n.projectName, n.workspaceName].filter(Boolean).join(" · ")} · {timeAgo(n.createdAt, t)}
+        </span>
+      </span>
+      {!n.read && <span className="h-2 w-2 rounded-full bg-indigo-600 mt-1.5 shrink-0" />}
+    </button>
   );
 }

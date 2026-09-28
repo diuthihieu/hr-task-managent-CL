@@ -9,7 +9,7 @@ export default async function WikiPageRoute({ params }: { params: Promise<{ work
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <ProjectHeader workspaceSlug={workspaceSlug} workspaceName={workspace.name} projectId={project.id} projectName={project.name} />
-      <WikiWorkspace projectId={project.id} workspaceSlug={workspaceSlug} pageId={pageId} canEdit={roleAtLeast(role, "contributor")} canDeleteAny={roleAtLeast(role, "editor")} currentUserName={user.name} />
+      <WikiWorkspace projectId={project.id} projectName={project.name} workspaceSlug={workspaceSlug} pageId={pageId} canEdit={roleAtLeast(role, "contributor")} canDeleteAny={roleAtLeast(role, "editor")} currentUserName={user.name} />
     </div>
   );
 }

@@ -9,11 +9,13 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
 import { SettingsSection } from "./settings-shell";
+import { WorkspaceLogoEditor } from "./workspace-logo-editor";
 
 interface WorkspaceDetail {
   id: string;
   name: string;
   slug: string;
+  logoUrl: string | null;
   createdAt: string;
   role: string;
 }
@@ -66,6 +68,7 @@ export function SettingsGeneral({ workspaceId, workspaceSlug, currentUserRole }:
   return (
     <SettingsSection title={t("set.general")} description={t("set.generalDesc")}>
       <div className="space-y-4 max-w-md">
+        <WorkspaceLogoEditor workspaceId={workspaceId} name={detail.name} logoUrl={detail.logoUrl} canEdit={canEdit} onChange={(logoUrl) => setDetail((d) => (d ? { ...d, logoUrl } : d))} />
         <div>
           <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("set.wsName")}</label>
           <div className="flex gap-2">

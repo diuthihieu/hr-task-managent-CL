@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson } from "@/lib/authz";
 import { logActivity, diff } from "@/lib/activity";
 import { nameSchema } from "@/lib/validation";
+import { workspaceLogoUrl } from "@/lib/workspace-logo";
 
 type P = { workspaceId: string };
 
@@ -12,7 +13,7 @@ export const GET = route<P>(async (_req, { params }) => {
   const { workspaceId } = await params;
   const ctx = await requireWorkspaceRole(user, workspaceId, "viewer");
   const w = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
-  return NextResponse.json({ id: w.id, name: w.name, slug: w.slug, description: w.description, createdAt: w.createdAt.toISOString(), role: ctx.role });
+  return NextResponse.json({ id: w.id, name: w.name, slug: w.slug, description: w.description, logoUrl: workspaceLogoUrl(w), createdAt: w.createdAt.toISOString(), role: ctx.role });
 });
 
 const patchSchema = z.object({ name: nameSchema.optional(), description: z.string().max(2000).nullable().optional() });
@@ -29,7 +30,7 @@ export const PATCH = route<P>(async (req, { params }) => {
     if (changes) await logActivity(tx, { workspaceId, actorId: user.id, entityType: "workspace", entityId: workspaceId, action: "updated", changes });
     return after;
   });
-  return NextResponse.json({ id: w.id, name: w.name, slug: w.slug, description: w.description });
+  return NextResponse.json({ id: w.id, name: w.name, slug: w.slug, description: w.description, logoUrl: workspaceLogoUrl(w) });
 });
 
 /** Soft delete; workspace owners (or system admins). */

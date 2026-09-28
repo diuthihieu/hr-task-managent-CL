@@ -1,7 +1,21 @@
 import { visibleProjectWhere } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { requireWorkspacePage } from "@/lib/page-context";
+import type { Metadata } from "next";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
+import { workspaceLogoUrl } from "@/lib/workspace-logo";
+
+/** Tab title + favicon follow the workspace (its logo when one is set). */
+export async function generateMetadata({ params }: { params: Promise<{ workspaceSlug: string }> }): Promise<Metadata> {
+  const { workspaceSlug } = await params;
+  const w = await prisma.workspace.findFirst({ where: { slug: workspaceSlug, deletedAt: null }, select: { name: true, slug: true, logoUpdatedAt: true } });
+  if (!w) return {};
+  const logo = workspaceLogoUrl(w);
+  return {
+    title: { default: `${w.name} · woli.`, template: `%s · ${w.name}` },
+    ...(logo ? { icons: { icon: logo, apple: logo } } : {}),
+  };
+}
 
 export default async function WorkspaceLayout({ children, params }: { children: React.ReactNode; params: Promise<{ workspaceSlug: string }> }) {
   const { workspaceSlug } = await params;
@@ -10,8 +24,8 @@ export default async function WorkspaceLayout({ children, params }: { children: 
   // The switcher lists the caller's own memberships (a system admin opening
   // someone else's workspace for support still sees it as the current one).
   const memberships = await prisma.workspaceMember.findMany({ where: { userId: user.id, workspace: { deletedAt: null } }, include: { workspace: true }, orderBy: { createdAt: "asc" } });
-  const workspaces = memberships.map((m) => ({ id: m.workspace.id, name: m.workspace.name, slug: m.workspace.slug }));
-  if (!workspaces.some((w) => w.id === workspace.id)) workspaces.unshift({ id: workspace.id, name: workspace.name, slug: workspace.slug });
+  const workspaces = memberships.map((m) => ({ id: m.workspace.id, name: m.workspace.name, slug: m.workspace.slug, logoUrl: workspaceLogoUrl(m.workspace) }));
+  if (!workspaces.some((w) => w.id === workspace.id)) workspaces.unshift({ id: workspace.id, name: workspace.name, slug: workspace.slug, logoUrl: workspaceLogoUrl(workspace) });
 
   const projects = await prisma.project.findMany({
     where: { workspaceId: workspace.id, deletedAt: null, ...visibleProjectWhere(user) },
@@ -21,7 +35,7 @@ export default async function WorkspaceLayout({ children, params }: { children: 
 
   return (
     <WorkspaceShell
-      workspace={{ id: workspace.id, name: workspace.name, slug: workspace.slug }}
+      workspace={{ id: workspace.id, name: workspace.name, slug: workspace.slug, logoUrl: workspaceLogoUrl(workspace) }}
       workspaces={workspaces}
       projects={projects}
       user={{ id: user.id, name: user.name, email: user.email, systemRole: user.systemRole, avatarColor: user.avatarColor }}

@@ -278,6 +278,7 @@ export function CommandCenter({
           {focus && <StartFocusButton taskId={focus.id} />}
           <AiActionMenu
             targetId={workspaceId}
+            autoAction={params.get("ai")}
             label={t("cc.aiBrief")}
             actions={[
               { action: "home_brief", label: "cc.ai.brief", icon: Sparkles },

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { Download, Upload } from "lucide-react";
+import { Download, Upload, FileSpreadsheet } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
@@ -98,9 +98,71 @@ export function SettingsDataIO({ workspaceId }: { workspaceId: string }) {
     return cell;
   }
 
+  /** Rows of the uploaded file: CSV, or the "Tasks" (else first) sheet of an Excel workbook. */
+  async function readRows(file: File): Promise<string[][]> {
+    if (!/\.(xlsx|xls)$/i.test(file.name)) return parseCsv(await file.text());
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(await file.arrayBuffer(), { type: "array", cellDates: true });
+    const name = wb.SheetNames.find((n) => n.toLowerCase() === "tasks") ?? wb.SheetNames[0];
+    const raw = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], { header: 1, raw: true, defval: "" }) as unknown[][];
+    return raw
+      .map((row) => row.map((c) => (c instanceof Date ? new Date(c.getTime() - c.getTimezoneOffset() * 60000).toISOString().slice(0, 10) : String(c ?? ""))))
+      .filter((row) => row.some((c) => c.trim() !== ""));
+  }
+
+  /** Two-sheet Excel template: "Tasks" to fill in, and an instructions sheet describing every column. */
+  async function downloadTemplate() {
+    if (!project) return;
+    const XLSX = await import("xlsx");
+    const writable = fields.filter((f) => !f.readOnly && f.type !== "formula" && f.type !== "link" && f.type !== "attachment");
+    const today = new Date();
+    const iso = (days: number) => new Date(today.getTime() + days * 86400000).toISOString().slice(0, 10);
+    const sample = (f: FieldRow, i: number): string | number => {
+      const opts = parseFieldConfig(f.config).options ?? [];
+      if (f.isPrimary) return i === 0 ? t("io.tpl.sample1") : t("io.tpl.sample2");
+      if (opts.length) return opts[Math.min(i, opts.length - 1)].label;
+      if (f.type === "person" || f.type === "people") return members[0]?.email ?? "name@company.com";
+      if (f.type === "date" || f.type === "datetime") return iso(i === 0 ? 7 : 14);
+      if (f.type === "checkbox") return i === 0 ? "yes" : "no";
+      if (f.type === "progress" || f.type === "percent") return i === 0 ? 0 : 50;
+      if (["number", "currency", "rating", "integer"].includes(f.type)) return i === 0 ? 4 : 8;
+      return "";
+    };
+    const describe = (f: FieldRow) => {
+      const opts = parseFieldConfig(f.config).options ?? [];
+      if (opts.length) return t("io.tpl.oneOf", { values: opts.map((o) => o.label).join(" | ") }) + (f.type === "multi_select" ? ` ${t("io.tpl.multi")}` : "");
+      if (f.type === "person" || f.type === "people") return t("io.tpl.person");
+      if (f.type === "date" || f.type === "datetime") return t("io.tpl.date");
+      if (f.type === "checkbox") return t("io.tpl.checkbox");
+      if (f.type === "progress" || f.type === "percent") return t("io.tpl.percent");
+      if (["number", "currency", "rating", "integer"].includes(f.type)) return t("io.tpl.number");
+      return t("io.tpl.text");
+    };
+    const tasks = XLSX.utils.aoa_to_sheet([writable.map((f) => f.name), ...[0, 1].map((i) => writable.map((f) => sample(f, i)))]);
+    tasks["!cols"] = writable.map((f) => ({ wch: Math.max(14, Math.min(40, f.name.length + 4)) }));
+    const guide = XLSX.utils.aoa_to_sheet([
+      [t("io.tpl.title", { project: project.name })],
+      [t("io.tpl.how1")],
+      [t("io.tpl.how2")],
+      [t("io.tpl.how3")],
+      [t("io.tpl.how4")],
+      [],
+      [t("io.tpl.col.column"), t("io.tpl.col.required"), t("io.tpl.col.format"), t("io.tpl.col.example"), t("io.tpl.col.notes")],
+      ...writable.map((f) => [f.name, f.isPrimary ? t("io.tpl.yes") : t("io.tpl.no"), describe(f), String(sample(f, 0)), f.description ?? ""]),
+      [],
+      [t("io.tpl.members")],
+      ...members.map((m) => [m.name, m.email]),
+    ]);
+    guide["!cols"] = [{ wch: 28 }, { wch: 10 }, { wch: 60 }, { wch: 28 }, { wch: 40 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, tasks, "Tasks");
+    XLSX.utils.book_append_sheet(wb, guide, t("io.tpl.sheet").slice(0, 31));
+    XLSX.writeFile(wb, `${project.name.replace(/[\\/:*?"<>|]/g, "_")}-import-template.xlsx`);
+  }
+
   async function handleImport(file: File) {
     if (!projectId) return;
-    const rows = parseCsv(await file.text());
+    const rows = await readRows(file);
     if (rows.length < 2) {
       toast.error(t("io.noRows"));
       return;
@@ -163,10 +225,16 @@ export function SettingsDataIO({ workspaceId }: { workspaceId: string }) {
           <p className="text-xs text-neutral-400 mb-2">
             {t("io.importDesc")}
           </p>
-          <input ref={fileRef} type="file" accept=".csv" className="hidden" onChange={(e) => e.target.files?.[0] && handleImport(e.target.files[0])} />
-          <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()} disabled={importing}>
-            <Upload size={13} /> {importing ? t("io.importing") : t("io.importBtn")}
-          </Button>
+          <input ref={fileRef} type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={(e) => e.target.files?.[0] && handleImport(e.target.files[0])} data-testid="io-import-input" />
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={downloadTemplate} disabled={!fields.length} data-testid="io-template">
+              <FileSpreadsheet size={13} /> {t("io.templateBtn")}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()} disabled={importing}>
+              <Upload size={13} /> {importing ? t("io.importing") : t("io.importBtn")}
+            </Button>
+          </div>
+          <p className="text-[11px] text-neutral-400 mt-2">{t("io.templateHint")}</p>
         </div>
       </div>
 

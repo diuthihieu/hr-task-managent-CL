@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo } from "react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Plus, Trash2, Sparkles, ShieldCheck, MessageSquare } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
@@ -12,6 +13,19 @@ import { exportReportPdf } from "./print-report";
 export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: { workspaceId: string; workspaceName: string; logoUrl: string | null; userName: string }) {
   const { t, locale } = useT();
   const chat = useAiChat({ kind: "assistant", workspaceId });
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const initialQuestion = searchParams.get("q");
+
+  // Ctrl+K "Ask AI": /ai?q=... starts a new chat with that question.
+  useEffect(() => {
+    if (!initialQuestion?.trim()) return;
+    router.replace(pathname);
+    chat.open(null);
+    chat.send(initialQuestion.trim());
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- once per question
+  }, [initialQuestion]);
 
   useEffect(() => {
     chat.loadConversations().catch(() => {});

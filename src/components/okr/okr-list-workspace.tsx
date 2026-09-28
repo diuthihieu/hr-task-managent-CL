@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ChevronDown, ChevronRight, Plus, MoreHorizontal, Pencil, Trash2, Target, KeySquare, CornerDownRight, FolderKanban, CheckSquare } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
@@ -49,7 +50,9 @@ export function OkrListWorkspace({
   const [filters, setFilters] = useState({ teamId: "", ownerId: "", status: "", cycleType: "", projectId: "" });
   const [groupBy, setGroupBy] = useState<"project" | "team">("project");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [objectiveDialog, setObjectiveDialog] = useState<{ open: boolean; objective: ObjectiveRow | null }>({ open: false, objective: null });
+  const searchParams = useSearchParams();
+  // ?new=1 (Ctrl+K "Create objective") opens the new-objective dialog.
+  const [objectiveDialog, setObjectiveDialog] = useState<{ open: boolean; objective: ObjectiveRow | null }>(() => ({ open: canEdit && searchParams.get("new") === "1", objective: null }));
   const [keyResultDialog, setKeyResultDialog] = useState<{ open: boolean; objectiveId: string | null }>({ open: false, objectiveId: null });
 
   async function load() {

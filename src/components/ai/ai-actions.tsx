@@ -56,7 +56,10 @@ export function AiActionMenu({
   renderApply,
   label,
   className,
+  autoAction,
 }: {
+  /** Run this action right away (e.g. Home ?ai=home_plan from Ctrl+K "Plan my day"). */
+  autoAction?: string | null;
   actions: AiActionDef[];
   targetId: string;
   targetKind?: "dashboard" | "project";
@@ -91,6 +94,15 @@ export function AiActionMenu({
       setBusy(false);
     }
   }
+  const [autoDone, setAutoDone] = useState(false);
+  useEffect(() => {
+    const a = autoAction ? actions.find((x) => x.action === autoAction) : undefined;
+    if (!a || autoDone) return;
+    setAutoDone(true); // eslint-disable-line react-hooks/set-state-in-effect -- one-shot trigger from the URL
+    start(a);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoAction]);
+
   const close = () => {
     abort?.abort();
     setOpen(null);

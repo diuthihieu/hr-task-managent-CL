@@ -968,6 +968,41 @@ test("dashboard drill-down: a clicked segment lists exactly the tasks it counts"
   assert.equal((await viewer.post(`/api/dashboard-blocks/${block.body.id}/records`, {})).status, 400, "segment required");
 });
 
+test("My OKRs show only the viewer's own branch: objective -> their key result -> their tasks", async () => {
+  type Obj = { id: string; keyResults: { id: string; title: string; tasks: { taskId: string }[] }[]; tasks: { taskId: string }[] };
+  const o = await admin.post<Obj>(`/api/workspaces/${s.ws}/objectives`, {
+    title: "Branch visibility",
+    projectId: s.project,
+    keyResults: [{ title: "KR owned by contributor", ownerId: s.contributorId }, { title: "KR with tasks" }],
+  });
+  assert.equal(o.status, 201, JSON.stringify(o.body));
+  const [krC, krT] = o.body.keyResults;
+  const adminId = (await prisma.user.findUniqueOrThrow({ where: { email: "admin@integration.test" } })).id;
+  const mk = async (title: string, assignee: string, target: string) => {
+    const r = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: title, sys_assignees: [assignee], sys_objective: target } });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    return r.body.id;
+  };
+  const vTask = await mk("Viewer's branch task", s.viewerId, `kr:${krT.id}`);
+  const otherTask = await mk("Someone else's task", s.contributorId, `kr:${krT.id}`);
+  const cOnKrC = await mk("Admin task under contributor KR", adminId, `kr:${krC.id}`);
+  const find = async (c: Client) => (await c.get<Obj[]>(`/api/workspaces/${s.ws}/objectives?mine=1`)).body.find((x) => x.id === o.body.id);
+
+  const v = await find(viewer);
+  assert.ok(v, "assignee sees the objective of their task");
+  assert.deepEqual(v!.keyResults.map((k) => k.id), [krT.id], "only the key result holding their task");
+  assert.deepEqual(v!.keyResults[0].tasks.map((x) => x.taskId), [vTask], "only their own task");
+
+  const c = await find(contributor);
+  assert.deepEqual(c!.keyResults.map((k) => k.id).sort(), [krC.id, krT.id].sort(), "own KR + KR holding their task");
+  assert.deepEqual(c!.keyResults.find((k) => k.id === krC.id)!.tasks.map((x) => x.taskId), [cOnKrC], "a KR owner sees every task of that KR");
+  assert.deepEqual(c!.keyResults.find((k) => k.id === krT.id)!.tasks.map((x) => x.taskId), [otherTask]);
+
+  const detail = await viewer.get<Obj>(`/api/objectives/${o.body.id}?mine=1`);
+  assert.deepEqual(detail.body.keyResults.map((k) => k.id), [krT.id], "detail opened from My OKRs is pruned too");
+  assert.equal((await viewer.get<Obj>(`/api/objectives/${o.body.id}`)).body.keyResults.length, 2, "Team view unchanged");
+});
+
 test("members can leave; only owners delete a workspace", async () => {
   const joined = await admin.post(`/api/workspaces/${s.contributorWs}/members`, { email: "viewer@integration.test", role: "admin" });
   assert.equal(joined.status, 201);

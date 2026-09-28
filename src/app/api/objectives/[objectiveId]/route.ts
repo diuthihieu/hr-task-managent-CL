@@ -2,18 +2,24 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfObjective, hiddenProjectIds } from "@/lib/authz";
 import { logActivity, diff } from "@/lib/activity";
-import { resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
+import { resolveObjectives, pruneToMyBranch, myTaskIdsIn, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 import { assertObjectiveRefs, parentObjectiveFor } from "@/lib/okr-write";
 import { objectiveSchema, dateOnlyToDate, lenientDateOnly } from "@/lib/validation";
 
 type P = { objectiveId: string };
 
-export const GET = route<P>(async (_req, { params }) => {
+export const GET = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { objectiveId } = await params;
   await requireWorkspaceRole(user, await workspaceOfObjective(objectiveId), "viewer");
   const o = await prisma.objective.findUniqueOrThrow({ where: { id: objectiveId }, include: OBJECTIVE_INCLUDE });
-  return NextResponse.json(resolveObjectives([o], await hiddenProjectIds(user))[0]);
+  const row = resolveObjectives([o], await hiddenProjectIds(user))[0];
+  // ?mine=1 (opened from "My OKRs"): only the viewer's own branch, when they have one.
+  if (new URL(req.url).searchParams.get("mine") === "1") {
+    const [mine] = pruneToMyBranch([row], user.id, await myTaskIdsIn(user.id, [objectiveId]));
+    if (mine) return NextResponse.json(mine);
+  }
+  return NextResponse.json(row);
 });
 
 export const PATCH = route<P>(async (req, { params }) => {

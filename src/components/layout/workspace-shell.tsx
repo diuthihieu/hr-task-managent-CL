@@ -325,7 +325,7 @@ export function WorkspaceShell({
             <div className="ml-[18px] pl-3 border-l border-neutral-200 dark:border-neutral-800 space-y-0.5">
               {wikis.map((w) => (
                 <Link key={w.id} href={`/w/${workspace.slug}/wiki/${w.id}`} className={cn(navItem(activeWikiId === w.id), "py-1")} data-testid="sidebar-wiki">
-                  <span className="h-4 w-4 rounded flex items-center justify-center text-[10px] shrink-0" style={{ backgroundColor: `${w.color}26`, color: w.color }}>
+                  <span className="h-4 w-4 rounded flex items-center justify-center text-[10px] shrink-0 font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-300">
                     {w.icon || w.name.slice(0, 1).toUpperCase()}
                   </span>
                   <span className="flex-1 truncate">{w.name}</span>

@@ -160,7 +160,7 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
     <div className="flex-1 flex overflow-hidden">
       <aside className={cn("md:w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex-col", page ? "hidden md:flex" : "flex w-full")}>
         <div className="flex items-center gap-2 px-3 h-11 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
-          <span className="h-6 w-6 rounded-md flex items-center justify-center text-sm shrink-0" style={{ backgroundColor: `${wiki.color}22`, color: wiki.color }}>
+          <span className="h-6 w-6 rounded-md flex items-center justify-center text-sm shrink-0 font-semibold bg-indigo-100 text-indigo-700 dark:bg-indigo-950/70 dark:text-indigo-300">
             {wiki.icon || <BookOpen size={13} />}
           </span>
           <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-100 truncate" title={wiki.name}>{wiki.name}</span>

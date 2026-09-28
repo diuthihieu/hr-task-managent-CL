@@ -221,7 +221,7 @@ export function OkrListWorkspace({
                       {expanded.has(o.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                     </button>
                     <div className="min-w-0 max-w-[340px]">
-                      <Link href={`/w/${workspaceSlug}/okrs/${o.id}`} className="flex items-center gap-1.5 font-medium text-sm text-neutral-900 dark:text-neutral-100 hover:text-indigo-600 dark:hover:text-indigo-400">
+                      <Link href={`/w/${workspaceSlug}/okrs/${o.id}${scope === "mine" ? "?mine=1" : ""}`} className="flex items-center gap-1.5 font-medium text-sm text-neutral-900 dark:text-neutral-100 hover:text-indigo-600 dark:hover:text-indigo-400">
                         <Target size={13} className="text-indigo-500 shrink-0" />
                         <span className="truncate">{o.title}</span>
                       </Link>
@@ -306,7 +306,7 @@ export function OkrListWorkspace({
                               </div>
                             )}
                             {children.map((c) => (
-                              <Link key={c.id} href={`/w/${workspaceSlug}/okrs/${c.id}`} className="flex items-center gap-1.5 pl-6 py-0.5 text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline truncate">
+                              <Link key={c.id} href={`/w/${workspaceSlug}/okrs/${c.id}${scope === "mine" ? "?mine=1" : ""}`} className="flex items-center gap-1.5 pl-6 py-0.5 text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline truncate">
                                 <CornerDownRight size={11} className="shrink-0" /> <Target size={11} className="shrink-0" /> <span className="truncate">{c.title}</span>
                                 {c.owner && <span className="text-neutral-400">· {c.owner.name}</span>}
                               </Link>

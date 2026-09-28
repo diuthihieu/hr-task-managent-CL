@@ -34,7 +34,6 @@ export function WikiShareDialog({ wiki, onClose }: { wiki: WikiRow; workspaceId:
   const [name, setName] = useState(wiki.name);
   const [description, setDescription] = useState(wiki.description ?? "");
   const [icon, setIcon] = useState(wiki.icon ?? "");
-  const [color, setColor] = useState(wiki.color);
   const [access, setAccess] = useState(wiki.access);
   const [defaultRole, setDefaultRole] = useState(wiki.defaultRole);
   const [members, setMembers] = useState<MemberRow[]>([]);
@@ -64,7 +63,7 @@ export function WikiShareDialog({ wiki, onClose }: { wiki: WikiRow; workspaceId:
   async function save() {
     setSaving(true);
     try {
-      await api.patch(`/api/wikis/${wiki.id}`, { name: name.trim(), description: description.trim() || null, icon: icon.trim() || null, color, access, defaultRole });
+      await api.patch(`/api/wikis/${wiki.id}`, { name: name.trim(), description: description.trim() || null, icon: icon.trim() || null, access, defaultRole });
       await api.put(`/api/wikis/${wiki.id}/members`, { members: members.filter((m) => m.role && !m.lockedReason).map((m) => ({ userId: m.id, role: m.role })) });
       toast.success(t("common.saved"));
       router.refresh();
@@ -106,11 +105,6 @@ export function WikiShareDialog({ wiki, onClose }: { wiki: WikiRow; workspaceId:
               <div className="sm:col-span-2">
                 <label className={label}>{t("wikis.description")}</label>
                 <Textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
-              </div>
-              <div className="sm:col-span-2 flex gap-1.5">
-                {WIKI_COLORS.map((c) => (
-                  <button key={c} onClick={() => setColor(c)} className={cn("h-6 w-6 rounded-full border-2", color === c ? "border-neutral-900 dark:border-white" : "border-transparent")} style={{ backgroundColor: c }} aria-label={c} />
-                ))}
               </div>
             </div>
           )}

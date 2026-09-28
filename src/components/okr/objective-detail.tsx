@@ -28,7 +28,7 @@ interface TaskCandidate {
   projectName: string;
 }
 
-export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug }: { objectiveId: string; workspaceId: string; workspaceSlug: string }) {
+export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug, mine = false }: { objectiveId: string; workspaceId: string; workspaceSlug: string; /** Opened from "My OKRs": show only the viewer's branch. */ mine?: boolean }) {
   const router = useRouter();
   const { t } = useT();
   const [objective, setObjective] = useState<ObjectiveRow | null>(null);
@@ -41,7 +41,7 @@ export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug }: { o
 
   async function load() {
     try {
-      const o = await api.get<ObjectiveRow>(`/api/objectives/${objectiveId}`);
+      const o = await api.get<ObjectiveRow>(`/api/objectives/${objectiveId}${mine ? "?mine=1" : ""}`);
       setObjective(o);
       setExpanded(new Set(o.keyResults.map((k) => k.id)));
     } catch (e) {

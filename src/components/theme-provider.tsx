@@ -1,28 +1,64 @@
 "use client";
 import { createContext, useContext, useEffect, useState } from "react";
+import type { ThemeMode } from "@/lib/theme-colors";
+import { applyThemeMode, applyTone, setPreferenceCookie } from "@/lib/client-dom";
 
 type Theme = "light" | "dark";
-const ThemeContext = createContext<{ theme: Theme; toggle: () => void }>({ theme: "light", toggle: () => {} });
+interface ThemeCtx {
+  /** What is on screen right now. */
+  theme: Theme;
+  /** What the user picked ("system" follows the OS). */
+  mode: ThemeMode;
+  tone: string;
+  toggle: () => void;
+  setMode: (m: ThemeMode) => void;
+  setTone: (t: string) => void;
+}
+const ThemeContext = createContext<ThemeCtx>({ theme: "light", mode: "system", tone: "neutral", toggle: () => {}, setMode: () => {}, setTone: () => {} });
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setTheme] = useState<Theme>("light");
+const systemDark = () => typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
+
+/**
+ * Light / dark / system + surface tone. The server renders the saved choice
+ * (html class + data-tone); this keeps it live (OS changes in "system" mode)
+ * and applies changes instantly. Saving to the profile is the caller's job.
+ */
+export function ThemeProvider({ initialMode, initialTone, children }: { initialMode: ThemeMode; initialTone: string; children: React.ReactNode }) {
+  const [mode, setModeState] = useState<ThemeMode>(initialMode);
+  const [tone, setToneState] = useState(initialTone);
+  const [osDark, setOsDark] = useState(false);
 
   useEffect(() => {
-    const stored = localStorage.getItem("theme") as Theme | null;
-    const initial = stored ?? (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time hydration from a browser-only API (localStorage/matchMedia), unreadable during SSR render
-    setTheme(initial);
-    document.documentElement.classList.toggle("dark", initial === "dark");
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- browser-only API, unreadable during SSR render
+    setOsDark(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setOsDark(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
   }, []);
 
+  const theme: Theme = mode === "system" ? (osDark ? "dark" : "light") : mode;
+  useEffect(() => {
+    applyThemeMode(mode, theme === "dark");
+  }, [mode, theme]);
+
+  function setMode(m: ThemeMode) {
+    setModeState(m);
+    setPreferenceCookie("bw_theme", m);
+    applyThemeMode(m, m === "system" ? systemDark() : m === "dark");
+  }
+  function setTone(t: string) {
+    setToneState(t);
+    setPreferenceCookie("bw_tone", t);
+    applyTone(t);
+  }
   function toggle() {
     const next = theme === "dark" ? "light" : "dark";
-    setTheme(next);
-    localStorage.setItem("theme", next);
-    document.documentElement.classList.toggle("dark", next === "dark");
+    setMode(next);
+    fetch("/api/account/preferences", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ themeMode: next }) }).catch(() => {});
   }
 
-  return <ThemeContext.Provider value={{ theme, toggle }}>{children}</ThemeContext.Provider>;
+  return <ThemeContext.Provider value={{ theme, mode, tone, toggle, setMode, setTone }}>{children}</ThemeContext.Provider>;
 }
 
 export function useTheme() {

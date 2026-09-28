@@ -36,3 +36,25 @@ export const ACCENT_NAMES: string[] = ACCENT_COLORS.map((c) => c.name);
 export function normalizeAccent(v: string | null | undefined): AccentName {
   return (ACCENT_NAMES.includes(v ?? "") ? v : "orange") as AccentName;
 }
+
+export type ThemeMode = "light" | "dark" | "system";
+export const THEME_MODES: ThemeMode[] = ["light", "dark", "system"];
+export function normalizeThemeMode(v: string | null | undefined): ThemeMode {
+  return THEME_MODES.includes(v as ThemeMode) ? (v as ThemeMode) : "system";
+}
+
+/** Surface tones (tinted grays). Keep in sync with src/app/tone-palettes.css. */
+export const SURFACE_TONES = [
+  { name: "neutral", group: "neutral", swatch: ["#fafafa", "#e5e5e5", "#525252"], vi: "Trung tính", en: "Neutral" },
+  { name: "slate", group: "cool", swatch: ["#f8fafc", "#e2e8f0", "#475569"], vi: "Xám xanh", en: "Slate" },
+  { name: "ocean", group: "cool", swatch: ["#f5f9fd", "#dce7f3", "#3f5a78"], vi: "Đại dương", en: "Ocean" },
+  { name: "mint", group: "cool", swatch: ["#f6fbf9", "#dcece5", "#3f6356"], vi: "Bạc hà", en: "Mint" },
+  { name: "sand", group: "warm", swatch: ["#fbf9f6", "#ece5dc", "#655646"], vi: "Cát", en: "Sand" },
+  { name: "rose", group: "warm", swatch: ["#fcf8f8", "#f0e2e2", "#6b4a4c"], vi: "Hồng đất", en: "Rose" },
+  { name: "amber", group: "warm", swatch: ["#fcfaf3", "#efe6cc", "#6b5a2c"], vi: "Hổ phách", en: "Amber" },
+] as const;
+export type SurfaceTone = (typeof SURFACE_TONES)[number]["name"];
+export const SURFACE_TONE_NAMES: string[] = SURFACE_TONES.map((t) => t.name);
+export function normalizeTone(v: string | null | undefined): SurfaceTone {
+  return (SURFACE_TONE_NAMES.includes(v ?? "") ? v : "neutral") as SurfaceTone;
+}

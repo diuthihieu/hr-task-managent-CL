@@ -1,3 +1,4 @@
+import { googleEnabled } from "@/lib/auth";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
@@ -34,8 +35,8 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
 
 // Public home page: sign in / sign up on top, then the how-to guide, the
 // benefits and the Windows download. Signed-in users go to their workspaces.
-export default async function HomePage({ searchParams }: { searchParams: Promise<{ auth?: string; callbackUrl?: string; ws?: string }> }) {
-  const [{ auth, callbackUrl, ws }, user] = await Promise.all([searchParams, getSessionUser()]);
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ auth?: string; callbackUrl?: string; ws?: string; error?: string }> }) {
+  const [{ auth, callbackUrl, ws, error }, user] = await Promise.all([searchParams, getSessionUser()]);
   if (user) redirect(callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//") ? callbackUrl : "/workspaces");
   const { t, locale } = await getServerT();
   const [latest, invited] = await Promise.all([
@@ -129,7 +130,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                 </div>
               </div>
             )}
-            <AuthCard initialMode={auth === "register" ? "register" : "login"} callbackUrl={callbackUrl} />
+            <AuthCard initialMode={auth === "register" ? "register" : "login"} callbackUrl={callbackUrl} googleEnabled={googleEnabled} error={error} />
           </div>
         </div>
       </section>

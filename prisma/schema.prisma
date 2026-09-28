@@ -182,7 +182,10 @@ model User {
   /// Stored lowercased; uniqueness is case-insensitive by construction.
   email              String     @unique @db.VarChar(254)
   name               String     @db.VarChar(120)
-  passwordHash       String     @map("password_hash")
+  /// Null for accounts that only sign in with Google.
+  passwordHash       String?    @map("password_hash")
+  /// Google account id ("sub") once the user has signed in with Google.
+  googleSub          String?    @unique @map("google_sub") @db.VarChar(64)
   systemRole         SystemRole @default(MEMBER) @map("system_role")
   avatarColor        String     @default("#6366f1") @map("avatar_color") @db.VarChar(9)
   isActive           Boolean    @default(true) @map("is_active")
@@ -193,6 +196,22 @@ model User {
   locale             String     @default("vi") @db.VarChar(5)
   /// Accent palette name (Tailwind palette, e.g. "indigo", "rose").
   accentColor        String     @default("orange") @map("accent_color") @db.VarChar(20)
+  /// "light" | "dark" | "system" (follows the OS).
+  themeMode          String     @default("system") @map("theme_mode") @db.VarChar(10)
+  /// Surface tone: "neutral" | cool ("slate", "ocean", "mint") | warm ("sand", "rose", "amber").
+  surfaceTone        String     @default("neutral") @map("surface_tone") @db.VarChar(20)
+  /// Uploaded profile picture (PNG/JPEG/WebP, <= 512 KB); omitted from queries by default.
+  avatarData         Bytes?     @map("avatar_data")
+  avatarType         String?    @map("avatar_type") @db.VarChar(40)
+  avatarUpdatedAt    DateTime?  @map("avatar_updated_at") @db.Timestamptz(6)
+  jobTitle           String?    @map("job_title") @db.VarChar(120)
+  /// Personalization for every AI answer (like custom instructions in ChatGPT / Claude).
+  aiAbout            String?    @map("ai_about")
+  aiInstructions     String?    @map("ai_instructions")
+  /// "professional" | "friendly" | "concise" | "coach" | "formal"
+  aiTone             String     @default("professional") @map("ai_tone") @db.VarChar(20)
+  /// "short" | "balanced" | "detailed"
+  aiLength           String     @default("balanced") @map("ai_length") @db.VarChar(10)
   lastLoginAt        DateTime?  @map("last_login_at") @db.Timestamptz(6)
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)

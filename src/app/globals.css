@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./accent-palettes.css";
+@import "./tone-palettes.css";
 
 @custom-variant dark (&:where(.dark, .dark *));
 

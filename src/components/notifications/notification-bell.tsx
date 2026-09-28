@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, CheckCheck, BellRing } from "lucide-react";
+import { Bell, CheckCheck, BellRing, X } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { useT } from "@/components/i18n-provider";
 import { create } from "zustand";
@@ -27,7 +27,8 @@ export interface NotificationItem {
   projectName: string | null;
 }
 
-const POLL_MS = 60_000;
+const POLL_MS = 30_000;
+const POPUP_MS = 9_000;
 
 /** Shared inbox state: the bell polls, the sidebar badge and the Inbox page read the same data. */
 interface InboxState {
@@ -119,20 +120,25 @@ export function NotificationBell({ className, align = "start" }: { className?: s
   const [filter, setFilter] = useState<"all" | "unread">("all");
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">("unsupported");
   const seen = useRef<Set<string> | null>(null);
+  const [popups, setPopups] = useState<NotificationItem[]>([]);
 
   const load = useCallback(async () => {
     try {
       const r = await fetchInbox();
-      // Native notifications only for items that arrived after the first load.
-      if (seen.current && typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
-        for (const n of r.items) {
-          if (!n.read && !seen.current.has(n.id)) {
-            const native = new Notification(n.title, { body: describeNotification(n, t), tag: n.id });
-            native.onclick = () => {
-              window.focus();
-              if (n.link) router.push(n.link);
-            };
-          }
+      // Pop-ups (in the app) and native notifications (when the tab is in the
+      // background) only for items that arrived after the first load.
+      const fresh = seen.current ? r.items.filter((n) => !n.read && !seen.current!.has(n.id)) : [];
+      if (fresh.length) {
+        setPopups((prev) => [...fresh.slice(0, 3), ...prev].slice(0, 4));
+        for (const n of fresh) setTimeout(() => setPopups((prev) => prev.filter((x) => x.id !== n.id)), POPUP_MS);
+      }
+      if (fresh.length && typeof document !== "undefined" && document.hidden && "Notification" in window && Notification.permission === "granted") {
+        for (const n of fresh) {
+          const native = new Notification(n.title, { body: describeNotification(n, t), tag: n.id });
+          native.onclick = () => {
+            window.focus();
+            if (n.link) router.push(n.link);
+          };
         }
       }
       seen.current = new Set(r.items.map((n) => n.id));
@@ -170,6 +176,32 @@ export function NotificationBell({ className, align = "start" }: { className?: s
   const shown = filter === "unread" ? items.filter((n) => !n.read) : items;
 
   return (
+    <>
+    {popups.length > 0 && (
+      <div className="fixed z-[70] bottom-4 right-4 left-4 sm:left-auto sm:w-96 flex flex-col gap-2" role="status" aria-live="polite" data-testid="notif-popups">
+        {popups.map((n) => (
+          <div key={n.id} className="flex items-start gap-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-2xl p-3 animate-in" data-testid="notif-popup">
+            <span className="h-8 w-8 rounded-full flex items-center justify-center text-white text-[11px] font-semibold shrink-0" style={{ backgroundColor: n.actor?.avatarColor ?? "var(--color-indigo-500)" }}>
+              {n.actor ? initials(n.actor.name) : <Bell size={14} />}
+            </span>
+            <button
+              className="min-w-0 flex-1 text-left"
+              onClick={() => {
+                setPopups((prev) => prev.filter((x) => x.id !== n.id));
+                openItem(n);
+              }}
+            >
+              <span className="block text-sm font-medium text-neutral-900 dark:text-neutral-50 line-clamp-2">{n.title}</span>
+              <span className="block text-xs text-neutral-500 line-clamp-2">{describeNotification(n, t)}</span>
+              <span className="block text-[11px] font-medium text-indigo-600 mt-1">{t("notif.openIt")}</span>
+            </button>
+            <button onClick={() => setPopups((prev) => prev.filter((x) => x.id !== n.id))} className="text-neutral-400 hover:text-neutral-700 shrink-0" aria-label={t("common.close")}>
+              <X size={14} />
+            </button>
+          </div>
+        ))}
+      </div>
+    )}
     <Popover open={open} onOpenChange={(v) => { setOpen(v); if (v) load(); }}>
       <PopoverTrigger asChild>
         <button className={cn("relative rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800", className)} aria-label={t("notif.title")} data-testid="notif-bell">
@@ -206,6 +238,7 @@ export function NotificationBell({ className, align = "start" }: { className?: s
         </div>
       </PopoverContent>
     </Popover>
+    </>
   );
 }
 

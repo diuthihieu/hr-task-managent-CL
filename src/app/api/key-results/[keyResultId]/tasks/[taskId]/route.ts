@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, workspaceOfKeyResult, notFound } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, workspaceOfKeyResult, notFound, hiddenProjectIds } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 
@@ -18,5 +18,5 @@ export const DELETE = route<P>(async (_req, { params }) => {
     const kr = await tx.keyResult.findUniqueOrThrow({ where: { id: keyResultId }, select: { objectiveId: true } });
     return tx.objective.findUniqueOrThrow({ where: { id: kr.objectiveId }, include: OBJECTIVE_INCLUDE });
   });
-  return NextResponse.json(resolveObjectives([objective])[0]);
+  return NextResponse.json(resolveObjectives([objective], await hiddenProjectIds(user))[0]);
 });

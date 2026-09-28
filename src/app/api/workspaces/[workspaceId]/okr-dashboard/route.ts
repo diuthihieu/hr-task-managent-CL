@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, hiddenProjectIds, visibleProjectWhere } from "@/lib/authz";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 
 type P = { workspaceId: string };
@@ -21,6 +21,7 @@ export const GET = route<P>(async (req, { params }) => {
     where: {
       workspaceId,
       deletedAt: null,
+      OR: [{ projectId: null }, { project: { deletedAt: null, ...visibleProjectWhere(user) } }],
       ...(teamId ? { teamId } : {}),
       ...(ownerId ? { ownerId } : {}),
       ...(status ? { status } : {}),
@@ -28,7 +29,7 @@ export const GET = route<P>(async (req, { params }) => {
     },
     include: OBJECTIVE_INCLUDE,
   });
-  const rows = resolveObjectives(objectives);
+  const rows = resolveObjectives(objectives, await hiddenProjectIds(user));
 
   const total = rows.length;
   const byStatus = { not_started: 0, on_track: 0, at_risk: 0, off_track: 0, completed: 0 } as Record<string, number>;

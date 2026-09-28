@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, visibleProjectWhere } from "@/lib/authz";
 
 type P = { workspaceId: string };
 
@@ -11,7 +11,7 @@ export const GET = route<P>(async (_req, { params }) => {
   await requireWorkspaceRole(user, workspaceId, "viewer");
   const [objectives, keyResults] = await Promise.all([
     prisma.objective.findMany({
-      where: { workspaceId, deletedAt: null, OR: [{ projectId: null }, { project: { deletedAt: null } }] },
+      where: { workspaceId, deletedAt: null, OR: [{ projectId: null }, { project: { deletedAt: null, ...visibleProjectWhere(user) } }] },
       select: { id: true, title: true, teamId: true, projectId: true, project: { select: { name: true } } },
       orderBy: { title: "asc" },
     }),

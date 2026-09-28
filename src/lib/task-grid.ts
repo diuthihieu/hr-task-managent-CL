@@ -22,6 +22,7 @@ export const SYS = {
   title: "sys_title",
   status: "sys_status",
   assignees: "sys_assignees",
+  reportTo: "sys_report_to",
   priority: "sys_priority",
   category: "sys_category",
   startDate: "sys_start_date",
@@ -112,6 +113,7 @@ function assertUuids(ids: string[], label: string) {
 
 const TASK_INCLUDE = {
   assignees: { select: { userId: true } },
+  reportTo: { select: { userId: true } },
   dependencies: { select: { dependsOnTaskId: true } },
   customValues: true,
   attachments: { where: { deletedAt: null }, select: { id: true, fileName: true, contentType: true }, orderBy: { createdAt: "asc" } },
@@ -162,6 +164,7 @@ export function buildFields(meta: ProjectMeta, t: TFunction = makeT("en")): Fiel
       config: opts({ options: meta.statuses.map((s) => ({ id: s.id, label: s.name, color: s.color, category: s.category })) }),
     }),
     sysField(pid, SYS.assignees, n(SYS.assignees), "people", 2),
+    sysField(pid, SYS.reportTo, n(SYS.reportTo), "people", 2.5, { description: t("fieldHint.sys_report_to") }),
     sysField(pid, SYS.priority, n(SYS.priority), "single_select", 3, { config: opts({ options: PRIORITY_OPTIONS_DEFAULT }) }),
     sysField(pid, SYS.category, n(SYS.category), "single_select", 4, {
       config: opts({ options: meta.categories.map((c) => ({ id: c.id, label: c.name, color: c.color })) }),
@@ -175,8 +178,8 @@ export function buildFields(meta: ProjectMeta, t: TFunction = makeT("en")): Fiel
       : []),
     sysField(pid, SYS.importance, n(SYS.importance), "importance", 10, { config: opts({ options: IMPORTANCE_OPTIONS }) }),
     sysField(pid, SYS.urgency, n(SYS.urgency), "urgency", 11, { config: opts({ options: URGENCY_OPTIONS }) }),
-    sysField(pid, SYS.dependsOn, n(SYS.dependsOn), "link", 12, { config: opts({ linkProjectId: pid }) }),
-    sysField(pid, SYS.parent, n(SYS.parent), "link", 13, { config: opts({ linkProjectId: pid, maxLinks: 1 }) }),
+    sysField(pid, SYS.dependsOn, n(SYS.dependsOn), "link", 12, { config: opts({ linkProjectId: pid }), description: t("fieldHint.sys_depends_on") }),
+    sysField(pid, SYS.parent, n(SYS.parent), "link", 13, { config: opts({ linkProjectId: pid, maxLinks: 1 }), description: t("fieldHint.sys_parent") }),
     sysField(pid, SYS.description, n(SYS.description), "long_text", 14),
     sysField(pid, SYS.attachments, n(SYS.attachments), "task_attachments", 15, { readOnly: true }),
   ];
@@ -239,6 +242,7 @@ export function toRecord(task: TaskWithRelations, fieldTypes: Map<string, Custom
     [SYS.title]: task.title,
     [SYS.status]: task.statusId,
     [SYS.assignees]: task.assignees.map((a) => a.userId),
+    [SYS.reportTo]: task.reportTo.map((r) => r.userId),
     [SYS.priority]: task.priority,
     [SYS.category]: task.categoryId,
     [SYS.startDate]: fromDateOnly(task.startDate),
@@ -297,8 +301,12 @@ export async function loadTaskRecord(taskId: string, db: Tx | typeof prisma = pr
 export interface PatchResult {
   changes: Record<string, { from: unknown; to: unknown }>;
   statusChanged: boolean;
+  /** Name of the new status when it changed (for notifications). */
+  newStatusName?: string;
   assigned: string[];
   unassigned: string[];
+  /** Users newly added to "Report to". */
+  reportAdded: string[];
 }
 
 /** Walks the dependency graph from each prerequisite; rejects if it reaches `taskId`. */
@@ -336,7 +344,7 @@ export async function applyTaskPatch(
   const before = await tx.task.findUniqueOrThrow({ where: { id: taskId }, include: TASK_INCLUDE });
   const update: Prisma.TaskUncheckedUpdateInput = {};
   const changes: PatchResult["changes"] = {};
-  const result: PatchResult = { changes, statusChanged: false, assigned: [], unassigned: [] };
+  const result: PatchResult = { changes, statusChanged: false, assigned: [], unassigned: [], reportAdded: [] };
   const record = (key: string, from: unknown, to: unknown) => {
     if (JSON.stringify(from) !== JSON.stringify(to)) changes[key] = { from, to };
   };
@@ -372,6 +380,7 @@ export async function applyTaskPatch(
         update.statusId = statusId;
         if (statusId !== before.statusId) {
           result.statusChanged = true;
+          result.newStatusName = status.name;
           update.completedAt = status.category === "done" ? new Date() : null;
           if (status.category === "done") update.progress = 100;
         }
@@ -484,6 +493,20 @@ export async function applyTaskPatch(
         result.assigned = added;
         result.unassigned = removed;
         record("assignees", [...prev].sort(), [...userIds].sort());
+        break;
+      }
+      case SYS.reportTo: {
+        const userIds = toIdArray(value, "Report to");
+        assertUuids(userIds, "Report to");
+        const members = await tx.workspaceMember.findMany({ where: { workspaceId, userId: { in: userIds }, user: { isActive: true, deletedAt: null } }, select: { userId: true } });
+        if (members.length !== userIds.length) throw badRequest("Report recipients must be active members of this workspace");
+        const prev = before.reportTo.map((r) => r.userId);
+        const added = userIds.filter((u) => !prev.includes(u));
+        const removed = prev.filter((u) => !userIds.includes(u));
+        if (removed.length) await tx.taskReportRecipient.deleteMany({ where: { taskId, userId: { in: removed } } });
+        if (added.length) await tx.taskReportRecipient.createMany({ data: added.map((userId) => ({ taskId, userId, assignedById: actorId })) });
+        result.reportAdded = added;
+        record("reportTo", [...prev].sort(), [...userIds].sort());
         break;
       }
       case SYS.dependsOn: {

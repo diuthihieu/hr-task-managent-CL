@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfKeyResult, badRequest } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfKeyResult, badRequest, hiddenProjectIds, visibleProjectWhere } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 import { uuid } from "@/lib/validation";
@@ -18,7 +18,7 @@ export const GET = route<P>(async (req, { params }) => {
     where: {
       workspaceId: ctx.workspaceId,
       deletedAt: null,
-      project: { deletedAt: null },
+      project: { deletedAt: null, ...visibleProjectWhere(user) },
       OR: [{ keyResultId: null }, { keyResultId: { not: keyResultId } }],
       ...(q ? { title: { contains: q, mode: "insensitive" as const } } : {}),
     },
@@ -36,12 +36,12 @@ export const POST = route<P>(async (req, { params }) => {
   const ctx = await requireWorkspaceRole(user, await workspaceOfKeyResult(keyResultId), "editor");
   const body = z.object({ taskId: uuid, weight: z.number().positive().max(1000).optional() }).parse(await readJson(req));
   const objective = await prisma.$transaction(async (tx) => {
-    const task = await tx.task.findFirst({ where: { id: body.taskId, workspaceId: ctx.workspaceId, deletedAt: null } });
+    const task = await tx.task.findFirst({ where: { id: body.taskId, workspaceId: ctx.workspaceId, deletedAt: null, project: visibleProjectWhere(user) } });
     if (!task) throw badRequest("Task not found in this workspace");
     const kr = await tx.keyResult.findUniqueOrThrow({ where: { id: keyResultId }, select: { objectiveId: true } });
     await tx.task.update({ where: { id: task.id }, data: { keyResultId, objectiveId: kr.objectiveId, okrWeight: body.weight ?? task.okrWeight, updatedById: user.id } });
     await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "task", entityId: task.id, action: "updated", changes: { keyResult: { from: task.keyResultId, to: keyResultId } } });
     return tx.objective.findUniqueOrThrow({ where: { id: kr.objectiveId }, include: OBJECTIVE_INCLUDE });
   });
-  return NextResponse.json(resolveObjectives([objective])[0], { status: 201 });
+  return NextResponse.json(resolveObjectives([objective], await hiddenProjectIds(user))[0], { status: 201 });
 });

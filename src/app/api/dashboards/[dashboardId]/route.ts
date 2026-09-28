@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfDashboard } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfDashboard, visibleProjectWhere } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { serializeDashboard } from "@/lib/dashboard-serialize";
 
@@ -14,7 +14,7 @@ export const GET = route<P>(async (_req, { params }) => {
   const ctx = await requireWorkspaceRole(user, await workspaceOfDashboard(dashboardId), "viewer");
   const [d, projects] = await Promise.all([
     prisma.dashboard.findUniqueOrThrow({ where: { id: dashboardId }, include: { widgets: { orderBy: { sortOrder: "asc" } } } }),
-    prisma.project.findMany({ where: { workspaceId: ctx.workspaceId, deletedAt: null }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true } }),
+    prisma.project.findMany({ where: { workspaceId: ctx.workspaceId, deletedAt: null, ...visibleProjectWhere(user) }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true } }),
   ]);
   return NextResponse.json({ ...serializeDashboard(d), projects, myRole: ctx.role });
 });

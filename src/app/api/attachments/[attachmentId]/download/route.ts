@@ -15,7 +15,7 @@ export const GET = route<P>(async (req, { params }) => {
   const { attachmentId } = await params;
   await requireWorkspaceRole(user, await workspaceOfAttachment(attachmentId), "viewer");
   const a = await prisma.attachment.findUniqueOrThrow({ where: { id: attachmentId } });
-  const blob = await openAttachment(a.url);
+  const blob = await openAttachment(a.url, a.storageProvider);
   if (!blob) throw notFound("File");
   const inline = new URL(req.url).searchParams.get("inline") === "1" && INLINE_TYPES.test(a.contentType);
   return new Response(blob.stream, {

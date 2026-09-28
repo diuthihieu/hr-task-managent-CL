@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, badRequest } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, badRequest, visibleProjectWhere } from "@/lib/authz";
 import { uuid } from "@/lib/validation";
 import type { CapturedThoughtRow } from "@/types";
 
@@ -13,7 +13,7 @@ export const GET = route<P>(async (_req, { params }) => {
   const { workspaceId } = await params;
   await requireWorkspaceRole(user, workspaceId, "contributor");
   const thoughts = await prisma.capturedThought.findMany({
-    where: { workspaceId, userId: user.id, status: "captured", project: { deletedAt: null } },
+    where: { workspaceId, userId: user.id, status: "captured", project: { deletedAt: null, ...visibleProjectWhere(user) } },
     include: { project: { select: { name: true } }, category: { select: { name: true, color: true } } },
     orderBy: { createdAt: "asc" },
   });
@@ -46,7 +46,7 @@ export const POST = route<P>(async (req, { params }) => {
   const { workspaceId } = await params;
   await requireWorkspaceRole(user, workspaceId, "contributor");
   const body = createSchema.parse(await readJson(req));
-  if (!(await prisma.project.findFirst({ where: { id: body.projectId, workspaceId, deletedAt: null } }))) throw badRequest("Unknown project");
+  if (!(await prisma.project.findFirst({ where: { id: body.projectId, workspaceId, deletedAt: null, ...visibleProjectWhere(user) } }))) throw badRequest("Unknown project");
   if (body.categoryId && !(await prisma.category.findFirst({ where: { id: body.categoryId, projectId: body.projectId } }))) throw badRequest("Unknown category");
   const plannedAt = body.plannedAt ? new Date(body.plannedAt) : null;
   if (plannedAt && Number.isNaN(plannedAt.getTime())) throw badRequest("Invalid planned time");

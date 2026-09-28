@@ -65,7 +65,12 @@ type ObjectiveWithIncludes = Prisma.ObjectiveGetPayload<{ include: typeof OBJECT
 const lite = (u: { id: string; name: string; avatarColor: string } | null | undefined): OkrUserLite | null =>
   u ? { id: u.id, name: u.name, avatarColor: u.avatarColor } : null;
 
-export function resolveObjectives(objectives: ObjectiveWithIncludes[]): ObjectiveRow[] {
+/**
+ * `hidden` lists projects hidden from the viewer: their tasks still count
+ * toward progress (the numbers stay truthful) but aren't listed by title.
+ */
+export function resolveObjectives(objectives: ObjectiveWithIncludes[], hidden: Set<string> = new Set()): ObjectiveRow[] {
+  const shown = (rows: KeyResultTaskRow[], src: { id: string; projectId: string }[]) => rows.filter((r) => !hidden.has(src.find((t) => t.id === r.id)!.projectId));
   return objectives.map((o) => {
     const keyResults: KeyResultRow[] = o.keyResults.map((kr) => {
       const tasks: KeyResultTaskRow[] = kr.tasks.map((t) => toTaskRow(t, kr.id));
@@ -96,7 +101,7 @@ export function resolveObjectives(objectives: ObjectiveWithIncludes[]): Objectiv
         status: kr.status,
         order: kr.sortOrder,
         progress,
-        tasks,
+        tasks: shown(tasks, kr.tasks),
       };
     });
 
@@ -116,7 +121,7 @@ export function resolveObjectives(objectives: ObjectiveWithIncludes[]): Objectiv
       parentKeyResult: o.parentKeyResult
         ? { id: o.parentKeyResult.id, title: o.parentKeyResult.title, objectiveId: o.parentKeyResult.objectiveId, objectiveTitle: o.parentKeyResult.objective.title }
         : null,
-      tasks: directTasks,
+      tasks: shown(directTasks, o.tasks),
       childObjectives: o.keyResults.flatMap((kr) => kr.childObjectives.map((c) => ({ id: c.id, title: c.title, parentKeyResultId: kr.id, owner: lite(c.owner) }))),
       teamId: o.teamId,
       team: o.team ? { id: o.team.id, workspaceId: o.team.workspaceId, name: o.team.name, color: o.team.color } : null,
@@ -140,7 +145,7 @@ export function resolveObjectives(objectives: ObjectiveWithIncludes[]): Objectiv
 }
 
 /** Objectives where the user is owner, contributor, KR owner, or assignee of a task contributing to the objective or one of its key results. */
-export async function getMyObjectiveRows(workspaceId: string, userId: string): Promise<ObjectiveRow[]> {
+export async function getMyObjectiveRows(workspaceId: string, userId: string, hidden: Set<string> = new Set()): Promise<ObjectiveRow[]> {
   const objectives = await prisma.objective.findMany({
     where: {
       workspaceId,
@@ -152,9 +157,10 @@ export async function getMyObjectiveRows(workspaceId: string, userId: string): P
         { keyResults: { some: { deletedAt: null, tasks: { some: { deletedAt: null, assignees: { some: { userId } } } } } } },
         { tasks: { some: { deletedAt: null, assignees: { some: { userId } } } } },
       ],
+      NOT: { projectId: { in: [...hidden] } },
     },
     include: OBJECTIVE_INCLUDE,
     orderBy: { createdAt: "desc" },
   });
-  return resolveObjectives(objectives);
+  return resolveObjectives(objectives, hidden);
 }

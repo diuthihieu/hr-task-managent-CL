@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfObjective } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfObjective, hiddenProjectIds } from "@/lib/authz";
 import { logActivity, diff } from "@/lib/activity";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 import { assertObjectiveRefs, parentObjectiveFor } from "@/lib/okr-write";
@@ -13,7 +13,7 @@ export const GET = route<P>(async (_req, { params }) => {
   const { objectiveId } = await params;
   await requireWorkspaceRole(user, await workspaceOfObjective(objectiveId), "viewer");
   const o = await prisma.objective.findUniqueOrThrow({ where: { id: objectiveId }, include: OBJECTIVE_INCLUDE });
-  return NextResponse.json(resolveObjectives([o])[0]);
+  return NextResponse.json(resolveObjectives([o], await hiddenProjectIds(user))[0]);
 });
 
 export const PATCH = route<P>(async (req, { params }) => {
@@ -54,7 +54,7 @@ export const PATCH = route<P>(async (req, { params }) => {
     if (changes) await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "objective", entityId: objectiveId, action: "updated", changes });
     return after;
   });
-  return NextResponse.json(resolveObjectives([objective])[0]);
+  return NextResponse.json(resolveObjectives([objective], await hiddenProjectIds(user))[0]);
 });
 
 /** Soft delete (objective + its key results). Linked tasks stay and are unlinked. */

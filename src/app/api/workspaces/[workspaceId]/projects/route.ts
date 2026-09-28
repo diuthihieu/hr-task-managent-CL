@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, badRequest } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, badRequest, visibleProjectWhere } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { dateOnlyToDate, projectInputSchema } from "@/lib/validation";
 import { serializeProject } from "@/lib/serializers";
@@ -14,7 +14,7 @@ export const GET = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { workspaceId } = await params;
   await requireWorkspaceRole(user, workspaceId, "viewer");
-  const projects = await prisma.project.findMany({ where: { workspaceId, deletedAt: null }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] });
+  const projects = await prisma.project.findMany({ where: { workspaceId, deletedAt: null, ...visibleProjectWhere(user) }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] });
   return NextResponse.json(projects.map(serializeProject));
 });
 

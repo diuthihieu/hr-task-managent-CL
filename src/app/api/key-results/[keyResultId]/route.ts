@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfKeyResult } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfKeyResult, hiddenProjectIds } from "@/lib/authz";
 import { logActivity, diff } from "@/lib/activity";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 import { assertObjectiveRefs } from "@/lib/okr-write";
@@ -22,7 +22,7 @@ export const PATCH = route<P>(async (req, { params }) => {
     if (changes) await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "key_result", entityId: keyResultId, action: "updated", changes });
     return tx.objective.findUniqueOrThrow({ where: { id: after.objectiveId }, include: OBJECTIVE_INCLUDE });
   });
-  return NextResponse.json(resolveObjectives([objective])[0]);
+  return NextResponse.json(resolveObjectives([objective], await hiddenProjectIds(user))[0]);
 });
 
 export const DELETE = route<P>(async (_req, { params }) => {
@@ -37,5 +37,5 @@ export const DELETE = route<P>(async (_req, { params }) => {
     await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "key_result", entityId: keyResultId, action: "deleted", summary: `Deleted key result "${kr.title}"` });
     return tx.objective.findUniqueOrThrow({ where: { id: kr.objectiveId }, include: OBJECTIVE_INCLUDE });
   });
-  return NextResponse.json(resolveObjectives([objective])[0]);
+  return NextResponse.json(resolveObjectives([objective], await hiddenProjectIds(user))[0]);
 });

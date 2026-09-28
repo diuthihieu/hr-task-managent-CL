@@ -198,7 +198,7 @@ export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: st
       {clarifying && (
         <ClarificationPanel
           thought={clarifying}
-          target={targets.find((t) => t.projectId === clarifying.projectId) ?? activeTarget!}
+          targets={targets}
           workspaceId={workspaceId}
           workspaceSlug={workspaceSlug}
           onClose={() => setClarifying(null)}
@@ -332,14 +332,14 @@ function DotCanvas({
 
 function ClarificationPanel({
   thought,
-  target,
+  targets,
   workspaceId,
   workspaceSlug,
   onClose,
   onConverted,
 }: {
   thought: CapturedThoughtRow;
-  target: CaptureTargetRow;
+  targets: CaptureTargetRow[];
   workspaceId: string;
   workspaceSlug: string;
   onClose: () => void;
@@ -347,6 +347,12 @@ function ClarificationPanel({
 }) {
   const { t } = useT();
   const router = useRouter();
+  // The thought was captured against a project, but it can be converted into any visible project.
+  const [projectId, setProjectId] = useState(targets.some((x) => x.projectId === thought.projectId) ? thought.projectId : (targets[0]?.projectId ?? ""));
+  const target = targets.find((x) => x.projectId === projectId) ?? targets[0];
+  const [categoryId, setCategoryId] = useState(thought.categoryId ?? "");
+  const categoryOptions = target?.categoryOptions ?? [];
+  const validCategory = categoryOptions.some((o) => o.id === categoryId) ? categoryId : "";
   const [okr, setOkr] = useState<OkrOption>({ objectives: [], keyResults: [] });
   const [members, setMembers] = useState<MemberLite[]>([]);
   const [objectiveId, setObjectiveId] = useState("");
@@ -355,8 +361,8 @@ function ClarificationPanel({
   const [ownerId, setOwnerId] = useState("");
   const [startAt, setStartAt] = useState(toDatetimeLocal(thought.plannedAt));
   const [dueAt, setDueAt] = useState("");
-  const [status, setStatus] = useState(target.statusOptions[0]?.id ?? "");
-  const [priority, setPriority] = useState(target.priorityOptions[0]?.id ?? "");
+  const [status, setStatus] = useState(target?.statusOptions[0]?.id ?? "");
+  const [priority, setPriority] = useState(target?.priorityOptions[0]?.id ?? "");
   const [output, setOutput] = useState("");
   const [process, setProcess] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -378,6 +384,8 @@ function ClarificationPanel({
     setSubmitting(true);
     try {
       const res = await api.post<{ taskId: string; projectId: string }>(`/api/thoughts/${thought.id}/convert`, {
+        projectId,
+        categoryId: validCategory || null,
         objectiveId: objectiveId || undefined,
         newObjectiveTitle: !objectiveId ? newGoal.trim() || undefined : undefined,
         keyResultId: keyResultId || undefined,
@@ -391,7 +399,7 @@ function ClarificationPanel({
       });
       toast.success(t("cap.converted"));
       onConverted(thought.id);
-      router.push(`/w/${workspaceSlug}/p/${res.projectId}?record=${res.taskId}`);
+      router.push(`/w/${workspaceSlug}/p/${res.projectId}/t/${res.taskId}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
@@ -402,8 +410,33 @@ function ClarificationPanel({
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg">
-        <DialogTitle>Clarify: {thought.taskName}</DialogTitle>
+        <DialogTitle>{t("cap.clarify", { name: thought.taskName })}</DialogTitle>
         <div className="space-y-3 max-h-[65vh] overflow-y-auto thin-scroll pr-1">
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">{t("cap.project")}</label>
+              <Select
+                className="w-full"
+                value={projectId}
+                onValueChange={(v) => {
+                  setProjectId(v);
+                  setCategoryId("");
+                }}
+                options={targets.map((x) => ({ value: x.projectId, label: x.projectName }))}
+                data-testid="clarify-project"
+              />
+            </div>
+            <div>
+              <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">{t("cap.category")}</label>
+              <Select
+                className="w-full"
+                value={validCategory}
+                onValueChange={setCategoryId}
+                options={[{ value: "", label: t("common.none") }, ...categoryOptions.map((o) => ({ value: o.id, label: o.label }))]}
+              />
+            </div>
+          </div>
+          <p className="text-[11px] text-neutral-400 -mt-1">{t("cap.projectHint")}</p>
           <div>
             <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">{t("cap.objective")}</label>
             <Select
@@ -418,7 +451,7 @@ function ClarificationPanel({
               placeholder={t("cap.selectGoal")}
             />
             {!objectiveId && (
-              <Input className="mt-1.5" value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder="...or type a new goal to create it" />
+              <Input className="mt-1.5" value={newGoal} onChange={(e) => setNewGoal(e.target.value)} placeholder={t("cap.newGoal")} />
             )}
           </div>
 
@@ -458,13 +491,13 @@ function ClarificationPanel({
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            {target.statusOptions.length > 0 && (
+            {target && target.statusOptions.length > 0 && (
               <div>
                 <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">{t("okr.f.status")}</label>
                 <Select className="w-full" value={status} onValueChange={setStatus} options={target.statusOptions.map((o) => ({ value: o.id, label: o.label }))} />
               </div>
             )}
-            {target.priorityOptions.length > 0 && (
+            {target && target.priorityOptions.length > 0 && (
               <div>
                 <label className="text-[11px] font-semibold text-neutral-400 uppercase tracking-wide mb-1 block">{t("okr.f.priority")}</label>
                 <Select className="w-full" value={priority} onValueChange={setPriority} options={target.priorityOptions.map((o) => ({ value: o.id, label: o.label }))} />
@@ -484,7 +517,7 @@ function ClarificationPanel({
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="secondary" onClick={onClose}>{t("common.cancel")}</Button>
-          <Button onClick={submit} disabled={submitting}>
+          <Button onClick={submit} disabled={submitting || !projectId} data-testid="clarify-convert">
             <Target size={13} /> {t("cap.convert")}
           </Button>
         </div>

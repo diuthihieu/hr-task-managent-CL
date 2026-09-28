@@ -1,4 +1,5 @@
 "use client";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -70,6 +71,7 @@ export function WorkspaceChooser({ user, workspaces }: { user: { id: string; nam
           <span className="font-semibold text-neutral-900 dark:text-neutral-50">Basework</span>
           <div className="ml-auto flex items-center gap-2">
             <LocaleSwitch signedIn />
+            <NotificationBell align="end" />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800" data-testid="user-menu">

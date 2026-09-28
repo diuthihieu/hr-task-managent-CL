@@ -176,3 +176,43 @@ body {
   pointer-events: none;
   height: 0;
 }
+
+/* Progress slider in grid cells: filled track up to --pct in the accent colour. */
+.progress-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 9999px;
+  background: linear-gradient(to right, var(--color-indigo-500) var(--pct, 0%), var(--color-neutral-200) var(--pct, 0%));
+  outline: none;
+}
+.dark .progress-range {
+  background: linear-gradient(to right, var(--color-indigo-500) var(--pct, 0%), var(--color-neutral-800) var(--pct, 0%));
+}
+.progress-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  background: white;
+  border: 2px solid var(--color-indigo-600);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.2);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.progress-range::-moz-range-thumb {
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  background: white;
+  border: 2px solid var(--color-indigo-600);
+  opacity: 0;
+}
+.progress-range:hover::-webkit-slider-thumb,
+.progress-range:focus-visible::-webkit-slider-thumb,
+.progress-range:active::-webkit-slider-thumb,
+.progress-range:hover::-moz-range-thumb,
+.progress-range:focus-visible::-moz-range-thumb {
+  opacity: 1;
+}

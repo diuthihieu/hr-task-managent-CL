@@ -1,3 +1,4 @@
+import { visibleProjectWhere } from "@/lib/authz";
 import { prisma } from "@/lib/prisma";
 import { requireWorkspacePage } from "@/lib/page-context";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
@@ -13,7 +14,7 @@ export default async function WorkspaceLayout({ children, params }: { children: 
   if (!workspaces.some((w) => w.id === workspace.id)) workspaces.unshift({ id: workspace.id, name: workspace.name, slug: workspace.slug });
 
   const projects = await prisma.project.findMany({
-    where: { workspaceId: workspace.id, deletedAt: null },
+    where: { workspaceId: workspace.id, deletedAt: null, ...visibleProjectWhere(user) },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     select: { id: true, name: true, color: true, views: { orderBy: { sortOrder: "asc" }, select: { id: true, name: true, type: true } } },
   });

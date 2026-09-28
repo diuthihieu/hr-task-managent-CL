@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { getFieldType, parseFieldConfig, resolveOkrTarget, SELECT_SINGLE_TYPES, type SelectOption, type AttachmentValue } from "@/lib/field-types";
 import { cn, initials, formatDate } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
+import { AttachmentsCell, type CellFile } from "./attachments-cell";
 
 export interface Member {
   id: string;
@@ -112,6 +113,50 @@ function DraftTextarea({ value, onCommit, ...rest }: DraftProps<HTMLTextAreaElem
   );
 }
 
+/**
+ * Draggable progress slider. The value is local while dragging and committed
+ * once on release (pointer up / keyboard / blur), so one drag = one update.
+ * Pointer events stop here so the row's drag-to-reorder never starts.
+ */
+function ProgressCell({ value, className, onChange }: { value: number; className: string; onChange: (v: number) => void }) {
+  const clamp = (n: number) => Math.max(0, Math.min(100, Math.round(n)));
+  const external = clamp(Number(value) || 0);
+  const [draft, setDraft] = useState<number | null>(null);
+  const shown = draft ?? external;
+  const commit = () => {
+    if (draft !== null && draft !== external) onChange(draft);
+    setDraft(null);
+  };
+  return (
+    <div className={cn(className, "gap-2")} onPointerDown={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={5}
+        value={shown}
+        aria-label="Progress"
+        data-testid="progress-slider"
+        onChange={(e) => setDraft(clamp(Number(e.target.value)))}
+        onPointerUp={commit}
+        onKeyUp={commit}
+        onBlur={commit}
+        className="progress-range flex-1 min-w-0 cursor-pointer"
+        style={{ ["--pct" as string]: `${shown}%` }}
+      />
+      <DraftInput
+        type="number"
+        min={0}
+        max={100}
+        className="w-9 bg-transparent outline-none text-xs text-neutral-500 tabular-nums text-right"
+        value={shown}
+        onCommit={(v) => onChange(clamp(Number(v) || 0))}
+      />
+      <span className="text-[10px] text-neutral-400 -ml-1.5">%</span>
+    </div>
+  );
+}
+
 function OptionBadge({ option }: { option: SelectOption }) {
   return (
     <span
@@ -123,7 +168,7 @@ function OptionBadge({ option }: { option: SelectOption }) {
   );
 }
 
-export function Cell({ field, value, members, linkTargets, okrOptions, wrapText, maxHeight, columnWidth, onChange, readOnlyOverride }: CellProps) {
+export function Cell({ field, value, record, members, linkTargets, okrOptions, wrapText, maxHeight, columnWidth, onChange, readOnlyOverride }: CellProps) {
   const typeDef = getFieldType(field.type);
   const config = parseFieldConfig(field.config);
   const base = "h-full w-full flex items-center px-2 text-sm";
@@ -318,22 +363,7 @@ export function Cell({ field, value, members, linkTargets, okrOptions, wrapText,
       );
     }
     case "progress": {
-      const pct = Math.max(0, Math.min(100, (value as number) ?? 0));
-      return (
-        <div className={cn(base, "gap-2")}>
-          <div className="flex-1 h-1.5 rounded-full bg-neutral-200 dark:bg-neutral-800 overflow-hidden">
-            <div className="h-full bg-indigo-500" style={{ width: `${pct}%` }} />
-          </div>
-          <DraftInput
-            type="number"
-            min={0}
-            max={100}
-            className="w-10 bg-transparent outline-none text-xs text-neutral-500 tabular-nums"
-            value={pct}
-            onCommit={(v) => onChange(Math.max(0, Math.min(100, Number(v) || 0)))}
-          />
-        </div>
-      );
+      return <ProgressCell value={(value as number) ?? 0} className={base} onChange={onChange} />;
     }
     case "person":
     case "people": {
@@ -466,24 +496,8 @@ export function Cell({ field, value, members, linkTargets, okrOptions, wrapText,
       );
     }
     case "task_attachments": {
-      const files = Array.isArray(value) ? (value as { id: string; name: string; type: string }[]) : [];
-      return (
-        <div className={cn(base, "gap-1 overflow-hidden")} title={files.map((f) => f.name).join("\n")}>
-          {files.length ? (
-            <>
-              {files.filter((f) => f.type.startsWith("image/")).slice(0, 3).map((f) => (
-                // eslint-disable-next-line @next/next/no-img-element -- authorized download route, not a static asset
-                <img key={f.id} src={`/api/attachments/${f.id}/download?inline=1`} alt={f.name} className="h-6 w-6 rounded object-cover border border-neutral-200 dark:border-neutral-700" />
-              ))}
-              <span className="inline-flex items-center gap-1 text-xs text-neutral-500">
-                <Paperclip size={11} /> {files.length}
-              </span>
-            </>
-          ) : (
-            <span className="text-neutral-300">—</span>
-          )}
-        </div>
-      );
+      const files = Array.isArray(value) ? (value as CellFile[]) : [];
+      return <AttachmentsCell taskId={record.id} files={files} className={base} onChange={onChange} />;
     }
     case "okr_objective": {
       const objectives = okrOptions?.objectives ?? [];

@@ -5,6 +5,7 @@ import { requireUser, requireWorkspaceRole, assertCanEditTask, route, readJson, 
 import { logActivity } from "@/lib/activity";
 import { sanitizeRichText } from "@/lib/rich-text";
 import { shouldLogContentEdit } from "@/lib/content-log";
+import { notifyTaskDetail } from "@/lib/notifications";
 
 type P = { taskId: string };
 
@@ -29,6 +30,7 @@ export const PUT = route<P>(async (req, { params }) => {
     // The editor autosaves; one log entry per editing session is enough.
     if (await shouldLogContentEdit(tx, "task", taskId, user.id)) {
       await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "task", entityId: taskId, action: "updated", summary: `Edited the page of "${t.title}"` });
+      await notifyTaskDetail(tx, taskId, user.id, "content");
     }
     return t;
   });

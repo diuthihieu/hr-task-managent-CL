@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, hiddenProjectIds, visibleProjectWhere } from "@/lib/authz";
 import { resolveTaskProgress } from "@/lib/okr-engine";
 import { getMyObjectiveRows } from "@/lib/okr-resolver";
 import { fromDateOnly } from "@/lib/task-grid";
@@ -15,7 +15,7 @@ export const GET = route<P>(async (_req, { params }) => {
   await requireWorkspaceRole(user, workspaceId, "viewer");
 
   const tasks = await prisma.task.findMany({
-    where: { workspaceId, deletedAt: null, project: { deletedAt: null }, assignees: { some: { userId: user.id } } },
+    where: { workspaceId, deletedAt: null, project: { deletedAt: null, ...visibleProjectWhere(user) }, assignees: { some: { userId: user.id } } },
     include: {
       project: { select: { id: true, name: true } },
       status: { select: { name: true, category: true } },
@@ -41,7 +41,7 @@ export const GET = route<P>(async (_req, { params }) => {
     contributesToOkr: Boolean(t.objectiveId),
   }));
 
-  const objectives = await getMyObjectiveRows(workspaceId, user.id);
+  const objectives = await getMyObjectiveRows(workspaceId, user.id, await hiddenProjectIds(user));
   const keyResults = objectives.flatMap((o) => o.keyResults.map((k) => ({ ...k, objectiveTitle: o.title, objectiveId: o.id })));
   return NextResponse.json({ tasks: rows, objectives, keyResults });
 });

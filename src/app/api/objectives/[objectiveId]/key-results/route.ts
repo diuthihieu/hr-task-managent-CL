@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfObjective } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfObjective, hiddenProjectIds } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 import { assertObjectiveRefs } from "@/lib/okr-write";
@@ -37,5 +37,5 @@ export const POST = route<P>(async (req, { params }) => {
     await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "key_result", entityId: kr.id, action: "created", summary: `Added key result "${kr.title}"` });
     return tx.objective.findUniqueOrThrow({ where: { id: objectiveId }, include: OBJECTIVE_INCLUDE });
   });
-  return NextResponse.json(resolveObjectives([objective])[0], { status: 201 });
+  return NextResponse.json(resolveObjectives([objective], await hiddenProjectIds(user))[0], { status: 201 });
 });

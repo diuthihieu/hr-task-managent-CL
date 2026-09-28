@@ -60,6 +60,7 @@ export const PATCH = route<P>(async (req, { params }) => {
         updatedById: user.id,
       },
     });
+    if (body.ownerId) await tx.projectHiddenMember.deleteMany({ where: { projectId, userId: body.ownerId } });
     const changes = diff(before, after, ["name", "description", "color", "status", "ownerId", "startDate", "endDate"]);
     if (changes) await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "project", entityId: projectId, action: "updated", changes });
     return after;

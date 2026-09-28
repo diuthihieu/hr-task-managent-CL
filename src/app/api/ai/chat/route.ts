@@ -59,19 +59,24 @@ export const POST = route(async (req) => {
   if (used >= DAILY_LIMIT) throw new HttpError(429, `Daily AI limit reached (${DAILY_LIMIT} questions per 24 hours)`);
 
   let conversationId = body.conversationId;
+  let history: { role: "user" | "model"; content: string }[] = [];
   if (conversationId) {
     const c = await prisma.aiConversation.findFirst({ where: { id: conversationId, userId: user.id, workspaceId, kind: body.kind, wikiId } });
     if (!c) throw notFound("Conversation");
-  } else {
+    history = (await prisma.aiMessage.findMany({ where: { conversationId }, orderBy: { createdAt: "desc" }, take: HISTORY, select: { role: true, content: true } })).reverse();
+  }
+  const contents: GeminiContent[] = [...history.map((m) => ({ role: m.role, parts: [{ text: m.content }] })), { role: "user", parts: [{ text: body.message }] }];
+
+  // Ask the model first: if Gemini is unavailable nothing is saved, so a retry
+  // doesn't leave empty chats or duplicate questions behind.
+  const usage: Usage = { tokensIn: null, tokensOut: null };
+  const chunks = await streamGenerate({ system, contents, temperature: body.kind === "wiki" ? 0.3 : 0.2 }, usage, req.signal);
+
+  if (!conversationId) {
     const c = await prisma.aiConversation.create({ data: { workspaceId, wikiId, userId: user.id, kind: body.kind, title: body.message.replace(/\s+/g, " ").slice(0, 120) } });
     conversationId = c.id;
   }
-  const history = await prisma.aiMessage.findMany({ where: { conversationId }, orderBy: { createdAt: "desc" }, take: HISTORY, select: { role: true, content: true } });
   await prisma.aiMessage.create({ data: { conversationId, role: "user", content: body.message } });
-  const contents: GeminiContent[] = [...history.reverse().map((m) => ({ role: m.role, parts: [{ text: m.content }] })), { role: "user", parts: [{ text: body.message }] }];
-
-  const usage: Usage = { tokensIn: null, tokensOut: null };
-  const chunks = await streamGenerate({ system, contents, temperature: body.kind === "wiki" ? 0.3 : 0.2 }, usage, req.signal);
   const encoder = new TextEncoder();
   const convId = conversationId;
   const stream = new ReadableStream<Uint8Array>({

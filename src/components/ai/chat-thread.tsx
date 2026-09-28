@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Square, Sparkles, Copy, FileDown, AlertTriangle } from "lucide-react";
+import { ArrowUp, Square, Sparkles, Copy, FileDown, AlertTriangle, RotateCw } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,9 @@ export function ChatThread({
   messages,
   busy,
   error,
+  errorStatus,
+  failedText,
+  onRetry,
   configured,
   onSend,
   onStop,
@@ -26,6 +29,9 @@ export function ChatThread({
   messages: ChatMessage[];
   busy: boolean;
   error: string | null;
+  errorStatus?: number | null;
+  failedText?: string | null;
+  onRetry?: () => void;
   configured: boolean;
   onSend: (text: string) => void;
   onStop: () => void;
@@ -116,8 +122,26 @@ export function ChatThread({
           )}
           {error && (
             <div className="rounded-lg bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-sm px-3 py-2 space-y-2" data-testid="ai-error">
-              <div className="break-words">{error}</div>
-              <AiHealthCheck />
+              {errorStatus === 503 || errorStatus === 429 ? (
+                <>
+                  <div className="font-medium">{errorStatus === 503 ? t("ai.busy") : t("ai.quota")}</div>
+                  {failedText && <div className="text-xs opacity-80 italic truncate">“{failedText}”</div>}
+                  <details className="text-xs opacity-80">
+                    <summary className="cursor-pointer">{t("ai.details")}</summary>
+                    <div className="break-words mt-1">{error}</div>
+                  </details>
+                </>
+              ) : (
+                <div className="break-words">{error}</div>
+              )}
+              <div className="flex flex-wrap items-start gap-2">
+                {onRetry && failedText && (
+                  <button onClick={onRetry} disabled={busy} className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 text-white px-2.5 py-1 text-xs font-medium hover:bg-indigo-500 disabled:opacity-50" data-testid="ai-retry">
+                    <RotateCw size={12} /> {t("ai.retry")}
+                  </button>
+                )}
+                <AiHealthCheck />
+              </div>
             </div>
           )}
           <div ref={endRef} />

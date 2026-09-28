@@ -74,43 +74,73 @@ async function discoverModels(): Promise<string[]> {
 
 // Worth trying the next model: not found, rate-limited, overloaded or a transient server error.
 const RETRYABLE = new Set([404, 429, 500, 502, 503, 504]);
+// Worth retrying the same model after a pause: overload / transient server errors.
+const TRANSIENT = new Set([500, 502, 503, 504]);
+const RETRY_DELAYS_MS = (process.env.GEMINI_RETRY_DELAYS_MS ?? "1500,4000")
+  .split(",")
+  .map((n) => Number(n.trim()))
+  .filter((n) => Number.isFinite(n) && n >= 0);
+const MAX_MODELS = 6;
 
-/** POST to the first model that answers; falls back to the next model on retryable errors. */
+const sleep = (ms: number, signal?: AbortSignal | null) =>
+  new Promise<void>((resolve, reject) => {
+    const t = setTimeout(resolve, ms + Math.round(Math.random() * 400));
+    signal?.addEventListener("abort", () => {
+      clearTimeout(t);
+      reject(Object.assign(new Error("Aborted"), { name: "AbortError" }));
+    });
+  });
+
+/**
+ * POST to the first model that answers. Overload errors (503 "high demand")
+ * are retried on the same model with a growing pause, then the next model is
+ * tried; if every configured model fails, the key's other Flash models are
+ * tried too. Google sheds load per model, so another model often answers.
+ */
 async function callWithFallback(method: "generateContent" | "streamGenerateContent", init: RequestInit): Promise<{ res: Response; model: string }> {
   const tried: { model: string; status: number | string; error: HttpError }[] = [];
-  const attempt = async (model: string): Promise<Response | null> => {
-    let res: Response;
-    try {
-      res = await fetch(endpoint(model, method), init);
-    } catch (e) {
-      if ((e as Error).name === "AbortError") throw e;
-      console.error("[gemini] network error", model, e);
-      tried.push({ model, status: "network", error: new HttpError(502, `Could not reach the Gemini API (${(e as Error).message})`) });
+  const attempt = async (model: string, retries: number[]): Promise<Response | null> => {
+    for (let i = 0; ; i++) {
+      let res: Response;
+      try {
+        res = await fetch(endpoint(model, method), init);
+      } catch (e) {
+        if ((e as Error).name === "AbortError") throw e;
+        console.error("[gemini] network error", model, e);
+        tried.push({ model, status: "network", error: new HttpError(502, `Could not reach the Gemini API (${(e as Error).message})`) });
+        return null;
+      }
+      if (res.ok) {
+        workingModel = model;
+        return res;
+      }
+      if (TRANSIENT.has(res.status) && i < retries.length) {
+        await res.body?.cancel().catch(() => {});
+        console.warn(`[gemini] ${model} -> ${res.status}; retrying in ${retries[i]} ms`);
+        await sleep(retries[i], init.signal);
+        continue;
+      }
+      tried.push({ model, status: res.status, error: await failure(res, model) });
       return null;
     }
-    if (res.ok) {
-      workingModel = model;
-      return res;
-    }
-    tried.push({ model, status: res.status, error: await failure(res, model) });
-    return null;
   };
 
-  for (const model of geminiModels()) {
-    const res = await attempt(model);
+  const configured = geminiModels();
+  for (const [i, model] of configured.entries()) {
+    // Full retries on the first model; one quick retry on the others keeps the total wait reasonable.
+    const res = await attempt(model, i === 0 ? RETRY_DELAYS_MS : RETRY_DELAYS_MS.slice(0, 1));
     if (res) return { res, model };
     const last = tried[tried.length - 1];
     if (typeof last.status === "number" && !RETRYABLE.has(last.status)) throw last.error;
   }
-  // Every configured model failed: ask the API which models this key can use.
-  if (tried.some((t) => t.status === 404)) {
-    const already = new Set(tried.map((t) => t.model));
-    for (const model of (await discoverModels()).filter((m) => !already.has(m)).slice(0, 4)) {
-      const res = await attempt(model);
-      if (res) {
-        console.warn(`[gemini] configured models unavailable; using discovered model ${model}. Set GEMINI_MODEL=${model} to skip discovery.`);
-        return { res, model };
-      }
+  // Every configured model failed: try the other Flash models this key can use.
+  const already = new Set(tried.map((t) => t.model));
+  const extra = (await discoverModels()).filter((m) => !already.has(m)).slice(0, Math.max(0, MAX_MODELS - configured.length) || 2);
+  for (const model of extra) {
+    const res = await attempt(model, RETRY_DELAYS_MS.slice(0, 1));
+    if (res) {
+      console.warn(`[gemini] configured models unavailable; answered by discovered model ${model}. Set GEMINI_MODEL=${model} to use it first.`);
+      return { res, model };
     }
   }
   if (workingModel && tried.some((t) => t.model === workingModel)) workingModel = null;
@@ -161,7 +191,11 @@ async function failure(res: Response, model: string): Promise<HttpError> {
   if (res.status === 400 && /location|region|country/i.test(msg)) return new HttpError(503, `Gemini isn't available in the server's region - set the Vercel function region to one Gemini supports (e.g. sin1, iad1).${detail}`);
   if (res.status === 403) return new HttpError(503, `Google refused this API key - create it in Google AI Studio (aistudio.google.com/apikey), make sure the Generative Language API is enabled for its project, and remove IP/referrer restrictions.${detail}`);
   if (res.status === 404) return new HttpError(503, `The model "${model}" is not available for this key - set GEMINI_MODEL to a model listed in Google AI Studio.${detail}`);
-  if (res.status >= 500) return new HttpError(503, `Gemini is overloaded or having trouble right now - please try again shortly.${detail}`);
+  if (res.status >= 500)
+    return new HttpError(
+      503,
+      `Google's Gemini servers are overloaded right now (every model we tried was busy, after automatic retries). This is on Google's side - please try again in a few minutes. Free-tier keys are the first to be turned away at busy times; enabling billing on the key in Google AI Studio usually avoids it.${detail}`
+    );
   return new HttpError(502, `The AI service rejected the request.${detail}`);
 }
 

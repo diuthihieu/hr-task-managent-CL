@@ -24,6 +24,8 @@ export function useAiChat(target: Target) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorStatus, setErrorStatus] = useState<number | null>(null);
+  const [failedText, setFailedText] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const qs = target.kind === "wiki" ? `kind=wiki&wikiId=${target.wikiId}` : `kind=assistant&workspaceId=${target.workspaceId}`;
 
@@ -60,6 +62,8 @@ export function useAiChat(target: Target) {
       const message = text.trim();
       if (!message || busy) return;
       setError(null);
+      setErrorStatus(null);
+      setFailedText(null);
       setBusy(true);
       const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content: message };
       const botId = `m-${Date.now()}`;
@@ -75,7 +79,7 @@ export function useAiChat(target: Target) {
         });
         if (!res.ok || !res.body) {
           const body = await res.json().catch(() => ({}));
-          throw new Error(body.error || `Request failed (${res.status})`);
+          throw Object.assign(new Error(body.error || `Request failed (${res.status})`), { status: res.status });
         }
         const newId = res.headers.get("X-Conversation-Id");
         if (newId && newId !== conversationId) setConversationId(newId);
@@ -93,7 +97,10 @@ export function useAiChat(target: Target) {
       } catch (e) {
         if ((e as Error).name === "AbortError") return;
         setError(e instanceof Error ? e.message : "Failed");
-        setMessages((prev) => prev.filter((m) => m.id !== botId));
+        setErrorStatus((e as { status?: number }).status ?? null);
+        setFailedText(message);
+        // Nothing was saved server-side: drop the unanswered question too, "Try again" re-asks it.
+        setMessages((prev) => prev.filter((m) => m.id !== botId && m.id !== userMsg.id));
       } finally {
         setBusy(false);
       }
@@ -103,6 +110,9 @@ export function useAiChat(target: Target) {
   );
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
+  const retry = useCallback(() => {
+    if (failedText) send(failedText);
+  }, [failedText, send]);
 
-  return { conversations, configured, conversationId, messages, busy, error, loadConversations, open, remove, send, stop };
+  return { conversations, configured, conversationId, messages, busy, error, errorStatus, failedText, loadConversations, open, remove, send, stop, retry };
 }

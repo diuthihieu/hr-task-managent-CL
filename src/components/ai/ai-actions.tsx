@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Sparkles, Loader2, Copy, ListChecks, ShieldAlert, MessageSquareText, FileText, AlertTriangle, TrendingUp, Link2, PenLine, ClipboardList, ScrollText, BarChart3, Check } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
@@ -71,12 +71,12 @@ export function AiActionMenu({
   const [items, setItems] = useState<Item[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const abort = useRef<AbortController | null>(null);
+  const [abort, setAbort] = useState<AbortController | null>(null);
 
   async function start(a: AiActionDef) {
-    abort.current?.abort();
+    abort?.abort();
     const ctrl = new AbortController();
-    abort.current = ctrl;
+    setAbort(ctrl);
     setOpen(a);
     setText("");
     setItems(null);
@@ -92,7 +92,7 @@ export function AiActionMenu({
     }
   }
   const close = () => {
-    abort.current?.abort();
+    abort?.abort();
     setOpen(null);
   };
 

@@ -74,7 +74,7 @@ export function ViewTabs({
 
   return (
     <div className="flex items-center gap-0.5 px-3 h-10 border-b border-neutral-200 dark:border-neutral-800 shrink-0 overflow-x-auto thin-scroll">
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <DndContext id="view-tabs-dnd" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={views.map((v) => v.id)} strategy={horizontalListSortingStrategy}>
           {views.map((view) => (
             <ViewTab

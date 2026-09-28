@@ -157,7 +157,7 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
 
   return (
     <div className="flex-1 flex overflow-hidden">
-      <aside className="w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col">
+      <aside className={cn("md:w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex-col", page ? "hidden md:flex" : "flex w-full")}>
         <div className="flex items-center gap-2 px-3 h-11 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
           <span className="h-6 w-6 rounded-md flex items-center justify-center text-sm shrink-0" style={{ backgroundColor: `${wiki.color}22`, color: wiki.color }}>
             {wiki.icon || <BookOpen size={13} />}
@@ -190,7 +190,7 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
         </div>
       </aside>
 
-      <div className="flex-1 overflow-y-auto thin-scroll">
+      <div className={cn("flex-1 overflow-y-auto thin-scroll", !page && "hidden md:block")}>
         {!page ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-8 text-neutral-500">
             <BookOpen size={36} className="text-indigo-400 mb-3" />
@@ -209,7 +209,10 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
             )}
           </div>
         ) : (
-          <div className="max-w-4xl mx-auto px-8 py-8" key={`${page.id}:${page.updatedAt}`}>
+          <div className="max-w-4xl mx-auto px-4 sm:px-8 py-5 sm:py-8" key={`${page.id}:${page.updatedAt}`}>
+            <Link href={base} className="md:hidden inline-flex items-center gap-1 text-xs text-neutral-500 mb-3">
+              <ChevronRight size={12} className="rotate-180" /> {wiki.name}
+            </Link>
             <div className="flex items-center gap-2 text-[11px] text-neutral-400 mb-2">
               <span>{t("wiki.lastEdited", { name: page.updatedBy ?? currentUserName, when: formatDate(page.updatedAt, true) })}</span>
               <span className="ml-auto" data-testid="wiki-save-state">

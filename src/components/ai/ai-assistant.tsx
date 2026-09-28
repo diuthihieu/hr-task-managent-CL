@@ -27,7 +27,7 @@ export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: {
 
   return (
     <div className="flex-1 flex overflow-hidden" data-testid="ai-assistant">
-      <aside className="w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col">
+      <aside className="hidden md:flex w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex-col">
         <div className="p-3">
           <Button className="w-full" onClick={() => chat.open(null)} data-testid="ai-new-chat">
             <Plus size={14} /> {t("ai.newChat")}

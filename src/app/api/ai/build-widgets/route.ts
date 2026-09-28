@@ -114,7 +114,7 @@ ${JSON.stringify(catalog)}`;
   if (!valid.length) throw new HttpError(502, "The AI couldn't map this request to charts - try naming the fields (e.g. 'tasks by status and assignee')");
 
   if (body.target === "report") {
-    return NextResponse.json({ widgets: valid.map(({ projectId: _p, ...w }) => ({ id: nanoid(8), ...w })) });
+    return NextResponse.json({ widgets: valid.map((w) => ({ id: nanoid(8), ...w, projectId: undefined })) });
   }
   const dashboardId = body.dashboardId!;
   const existing = await prisma.dashboardWidget.findMany({ where: { dashboardId }, select: { y: true, h: true } });

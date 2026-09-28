@@ -239,3 +239,12 @@ body {
 .ai-md th { background: var(--color-neutral-50); font-weight: 600; }
 .dark .ai-md th { background: var(--color-neutral-800); }
 .ai-md hr { border-color: var(--color-neutral-200); }
+
+/* Touch screens have no hover: reveal hover-only row actions (edit, delete,
+   quick actions) so they stay reachable on phones and tablets. */
+@media (hover: none) {
+  [class*="group-hover"][class*="opacity-0"],
+  [class*="group-hover/"][class*="opacity-0"] {
+    opacity: 1 !important;
+  }
+}

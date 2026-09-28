@@ -33,6 +33,7 @@ import {
   FileInput,
   Grid2x2,
   Search,
+  Menu,
   Sun,
   Moon,
   LogOut,
@@ -119,6 +120,13 @@ export function WorkspaceShell({
   const { t } = useT();
   // Projects are expanded unless the user collapsed them (new projects show their sections right away).
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // Mobile / small tablet: the sidebar is an off-canvas drawer, closed on navigation.
+  const [navOpen, setNavOpen] = useState(false);
+  const [navPath, setNavPath] = useState(pathname);
+  if (navPath !== pathname) {
+    setNavPath(pathname);
+    setNavOpen(false);
+  }
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -245,7 +253,15 @@ export function WorkspaceShell({
   return (
     <div className="flex h-screen w-full overflow-hidden bg-neutral-50 dark:bg-neutral-950 text-sm">
       {/* Sidebar */}
-      <aside className="w-[248px] shrink-0 border-r border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col">
+      {navOpen && <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setNavOpen(false)} data-testid="nav-backdrop" />}
+      <aside
+        className={cn(
+          "w-[272px] lg:w-[248px] shrink-0 border-r border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col",
+          "fixed inset-y-0 left-0 z-50 transition-transform duration-200 lg:static lg:translate-x-0",
+          navOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"
+        )}
+        data-testid="sidebar"
+      >
         <div className="h-14 flex items-center gap-2 px-3 shrink-0">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -460,19 +476,22 @@ export function WorkspaceShell({
 
       {/* Main column: global top bar, then each page renders its own header */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
-        <header className="h-14 shrink-0 flex items-center gap-3 px-5 border-b border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+        <header className="h-14 shrink-0 flex items-center gap-2 sm:gap-3 px-2 sm:px-5 border-b border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+          <button onClick={() => setNavOpen(true)} className="lg:hidden rounded-md p-2 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800" aria-label={t("nav.menu")} data-testid="nav-open">
+            <Menu size={18} />
+          </button>
           <button
             onClick={() => setSearchOpen(true)}
-            className="flex items-center gap-2 w-full max-w-md h-9 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/50 px-3 text-neutral-400 hover:border-neutral-300"
+            className="flex items-center gap-2 min-w-0 flex-1 sm:flex-none sm:w-full max-w-md h-9 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/50 px-3 text-neutral-400 hover:border-neutral-300"
             data-testid="topbar-search"
           >
-            <Search size={15} />
-            <span className="flex-1 text-left text-[13px]">{t("nav.searchPlaceholder")}</span>
-            <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-400">Ctrl K</kbd>
+            <Search size={15} className="shrink-0" />
+            <span className="flex-1 text-left text-[13px] truncate">{t("nav.searchPlaceholder")}</span>
+            <kbd className="hidden sm:inline text-[10px] px-1.5 py-0.5 rounded bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-400">Ctrl K</kbd>
           </button>
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ml-auto flex items-center gap-0.5 sm:gap-1.5 shrink-0">
             <NotificationBell align="end" />
-            <Link href={`/w/${workspace.slug}/ai`} className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800" title={t("nav.ai")}>
+            <Link href={`/w/${workspace.slug}/ai`} className="hidden sm:block rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800" title={t("nav.ai")}>
               <Sparkles size={16} />
             </Link>
             <DropdownMenu>
@@ -485,7 +504,7 @@ export function WorkspaceShell({
                     <span className="block text-[13px] font-semibold text-neutral-800 dark:text-neutral-100 max-w-40 truncate">{user.name}</span>
                     <span className="block text-[11px] text-neutral-400">{t(`role.${role}` as MessageKey)}</span>
                   </span>
-                  <ChevronDown size={13} className="text-neutral-400" />
+                  <ChevronDown size={13} className="text-neutral-400 hidden sm:block" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent className="w-56" align="end">
@@ -564,7 +583,7 @@ function ViewList({
   const isDefaultViewActive = activeProjectId === project.id && !activeViewId;
 
   return (
-    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+    <DndContext id="sidebar-dnd" sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
       <SortableContext items={project.views.map((v) => v.id)} strategy={verticalListSortingStrategy}>
         {project.views.map((view, i) => (
           <ViewRow

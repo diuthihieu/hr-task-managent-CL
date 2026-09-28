@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, assertCanEditTask, route, readJson, notFound, badRequest, workspaceOfTask } from "@/lib/authz";
-import { applyTaskPatch, SYS } from "@/lib/task-grid";
-import { notifyTaskPatched } from "@/lib/notifications";
-import { logActivity } from "@/lib/activity";
+import { requireUser, route, readJson, notFound, badRequest } from "@/lib/authz";
+import { quickTaskAction } from "@/lib/task-quick";
 
 type P = { notificationId: string };
 
@@ -28,18 +26,7 @@ export const PATCH = route<P>(async (req, { params }) => {
 
   if (body.completeTask) {
     if (!n.taskId) throw badRequest("This notification has no task");
-    const ctx = await requireWorkspaceRole(user, await workspaceOfTask(n.taskId), "contributor");
-    await assertCanEditTask(ctx, n.taskId);
-    const done = await prisma.status.findFirst({ where: { workspaceId: ctx.workspaceId, category: "done" }, orderBy: { sortOrder: "asc" } });
-    if (!done) throw badRequest("This workspace has no 'done' status");
-    const task = await prisma.task.findUniqueOrThrow({ where: { id: n.taskId }, select: { projectId: true } });
-    await prisma.$transaction(async (tx) => {
-      const res = await applyTaskPatch(tx, { taskId: n.taskId!, projectId: task.projectId, workspaceId: ctx.workspaceId, actorId: user.id, data: { [SYS.status]: done.id } });
-      if (Object.keys(res.changes).length) {
-        await notifyTaskPatched(tx, { taskId: n.taskId!, actorId: user.id, changedKeys: Object.keys(res.changes), statusChanged: res.statusChanged, newStatusName: res.newStatusName, assigned: [], reportAdded: [] });
-        await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "task", entityId: n.taskId!, action: "updated", changes: res.changes, summary: "Completed from the inbox" });
-      }
-    });
+    await quickTaskAction(user, n.taskId, "complete", "the action center");
   }
 
   const now = new Date();

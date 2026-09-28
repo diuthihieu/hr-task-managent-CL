@@ -7,7 +7,10 @@ import { Cell } from "@/components/grid/cell";
 import type { Member, LinkTarget } from "@/components/grid/cell";
 import { RichEditor, type SaveState } from "@/components/editor/rich-editor";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/input";
+import { MentionInput, CommentBody } from "@/components/comments/mention-input";
+import { StartFocusButton } from "@/components/focus/focus-mode";
+import { AiTaskActions } from "@/components/ai/ai-actions";
+import { stripMentions } from "@/lib/mentions";
 import { toast } from "@/components/ui/toast";
 import { useT } from "@/components/i18n-provider";
 import { getCellValue } from "@/lib/query-engine";
@@ -32,7 +35,7 @@ interface CommentItem {
 
 const ROLE_RANK: Record<string, number> = { viewer: 0, contributor: 1, editor: 2, admin: 3, owner: 4 };
 // Shown up front; the rest sits behind "show all fields".
-const PRIMARY_FIELDS = ["sys_status", "sys_assignees", "sys_report_to", "sys_priority", "sys_category", "sys_start_date", "sys_due_date", "sys_progress", "sys_objective", "sys_estimate", "sys_description"];
+const PRIMARY_FIELDS = ["sys_status", "sys_assignees", "sys_report_to", "sys_priority", "sys_category", "sys_start_date", "sys_due_date", "sys_progress", "sys_objective", "sys_estimate", "sys_actual", "sys_description"];
 const HIDDEN_ON_PAGE = new Set(["sys_title", "sys_attachments"]);
 
 function formatBytes(n: number) {
@@ -216,7 +219,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
         <div className="text-xs">
           <span className="font-medium text-neutral-800 dark:text-neutral-100">{c.user?.name ?? "—"}</span> <span className="text-neutral-400">{formatDate(c.createdAt, true)}</span>
         </div>
-        <p className="text-sm text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap break-words">{c.body}</p>
+        <CommentBody body={c.body} className="text-sm text-neutral-700 dark:text-neutral-300" />
         <div className="flex gap-3 text-[11px] text-neutral-400 mt-0.5">
           {!nested && (
             <button onClick={() => setReplyTo(c)} className="hover:text-indigo-600 flex items-center gap-0.5">
@@ -261,6 +264,10 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
           </div>
 
           <TitleInput value={title} disabled={!canEdit} placeholder={t("record.titlePlaceholder")} onCommit={(v) => change("sys_title", v)} />
+          <div className="flex flex-wrap items-center gap-2 mt-3" data-testid="record-actions">
+            <StartFocusButton taskId={taskId} />
+            <AiTaskActions taskId={taskId} projectId={projectId} canEdit={canEdit} onChanged={() => router.refresh()} />
+          </div>
           {!canEdit && <p className="text-xs text-amber-600 mt-1">{t("record.readOnly")}</p>}
           <p className="text-xs text-neutral-400 mt-1">
             {t("record.created", { when: formatDate(record.createdAt, true) })} · {t("common.updated", { when: formatDate(record.updatedAt, true) })}
@@ -383,7 +390,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
           <section className="mt-8 lg:hidden">
             <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100 mb-2">{t("record.comments")}</h2>
             <div className="space-y-3">{rootComments.length ? rootComments.map((c) => commentView(c)) : <p className="text-xs text-neutral-400">{t("record.noComments")}</p>}</div>
-            <CommentBox draft={draft} setDraft={setDraft} replyTo={replyTo} clearReply={() => setReplyTo(null)} onSend={postComment} testIdPrefix="record-comment-inline" />
+            <CommentBox taskId={taskId} draft={draft} setDraft={setDraft} replyTo={replyTo} clearReply={() => setReplyTo(null)} onSend={postComment} testIdPrefix="record-comment-inline" />
           </section>
         </div>
       </div>
@@ -432,7 +439,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
         </div>
         {side === "comments" && (
           <div className="border-t border-neutral-200 dark:border-neutral-800 p-3 shrink-0">
-            <CommentBox draft={draft} setDraft={setDraft} replyTo={replyTo} clearReply={() => setReplyTo(null)} onSend={postComment} />
+            <CommentBox taskId={taskId} draft={draft} setDraft={setDraft} replyTo={replyTo} clearReply={() => setReplyTo(null)} onSend={postComment} />
           </div>
         )}
       </aside>
@@ -440,29 +447,20 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
   );
 }
 
-function CommentBox({ draft, setDraft, replyTo, clearReply, onSend, testIdPrefix = "record-comment" }: { draft: string; setDraft: (v: string) => void; replyTo: CommentItem | null; clearReply: () => void; onSend: () => void; testIdPrefix?: string }) {
+function CommentBox({ taskId, draft, setDraft, replyTo, clearReply, onSend, testIdPrefix = "record-comment" }: { taskId: string; draft: string; setDraft: (v: string) => void; replyTo: CommentItem | null; clearReply: () => void; onSend: () => void; testIdPrefix?: string }) {
   const { t } = useT();
   return (
     <div className="mt-2">
       {replyTo && (
         <div className="text-[11px] text-neutral-500 mb-1 flex items-center gap-1">
-          <Reply size={11} /> {replyTo.user?.name}: <span className="truncate">{replyTo.body}</span>
+          <Reply size={11} /> {replyTo.user?.name}: <span className="truncate">{stripMentions(replyTo.body)}</span>
           <button onClick={clearReply} className="ml-auto text-neutral-400 hover:text-neutral-700" aria-label={t("common.cancel")}>
             ×
           </button>
         </div>
       )}
       <div className="flex gap-2">
-        <Textarea
-          rows={2}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => (e.ctrlKey || e.metaKey) && e.key === "Enter" && onSend()}
-          placeholder={t("record.commentPlaceholder")}
-          className="flex-1"
-          aria-label={t("record.comments")}
-          data-testid={`${testIdPrefix}-input`}
-        />
+        <MentionInput taskId={taskId} value={draft} onChange={setDraft} onSubmit={onSend} placeholder={t("record.commentPlaceholder")} testId={`${testIdPrefix}-input`} />
         <Button size="icon" onClick={onSend} aria-label={t("record.send")} data-testid={`${testIdPrefix}-send`}>
           <Send size={13} />
         </Button>

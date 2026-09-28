@@ -15,6 +15,9 @@ export type NotificationType =
   | "task_status"
   | "task_updated"
   | "task_comment"
+  | "mention"
+  | "task_due_changed"
+  | "objective_risk"
   | "task_due_soon"
   | "task_overdue"
   | "capture_due";
@@ -50,11 +53,11 @@ async function createMany(tx: Tx | typeof prisma, userIds: string[], base: Omit<
  */
 export async function notifyTaskPatched(
   tx: Tx,
-  opts: { taskId: string; actorId: string | null; changedKeys: string[]; statusChanged: boolean; newStatusName?: string; assigned: string[]; reportAdded: string[] }
+  opts: { taskId: string; actorId: string | null; changedKeys: string[]; statusChanged: boolean; newStatusName?: string; assigned: string[]; reportAdded: string[]; newDueDate?: string | null }
 ) {
   const task = await tx.task.findUnique({
     where: { id: opts.taskId },
-    select: { id: true, title: true, projectId: true, workspaceId: true, reportTo: { select: { userId: true } } },
+    select: { id: true, title: true, projectId: true, workspaceId: true, reportTo: { select: { userId: true } }, assignees: { select: { userId: true } } },
   });
   if (!task) return;
   const link = await taskLink(tx, task);
@@ -66,6 +69,12 @@ export async function notifyTaskPatched(
 
   const reportAdded = await visibleRecipients(tx, task.projectId, notMe(opts.reportAdded));
   await createMany(tx, reportAdded, { ...base, type: "task_report_added" });
+
+  // A moved deadline matters to the people doing the work.
+  if (opts.newDueDate !== undefined) {
+    const doers = await visibleRecipients(tx, task.projectId, notMe(task.assignees.map((a) => a.userId)).filter((u) => !opts.assigned.includes(u)));
+    await createMany(tx, doers, { ...base, type: "task_due_changed", data: { date: opts.newDueDate ?? "-" } });
+  }
 
   // Status/detail changes go to the report recipients (except the ones just added).
   const meaningful = opts.changedKeys.filter((k) => k !== "reportTo");
@@ -102,13 +111,26 @@ export async function notifyTaskCreated(tx: Tx, taskId: string, actorId: string 
 }
 
 /** New comment: assignees, report recipients and the task creator (not the author). */
-export async function notifyTaskComment(tx: Tx, opts: { taskId: string; actorId: string; excerpt: string }) {
+export async function notifyTaskComment(tx: Tx, opts: { taskId: string; actorId: string; excerpt: string; mentioned?: string[] }) {
   const task = await tx.task.findUnique({
     where: { id: opts.taskId },
     select: { id: true, title: true, projectId: true, workspaceId: true, createdById: true, assignees: { select: { userId: true } }, reportTo: { select: { userId: true } } },
   });
   if (!task) return;
-  const ids = [...task.assignees.map((a) => a.userId), ...task.reportTo.map((r) => r.userId), ...(task.createdById ? [task.createdById] : [])].filter((u) => u !== opts.actorId);
+  const link = await taskLink(tx, task);
+  // Tagged people get a "mentioned you" notification instead of the generic one.
+  const mentioned = (opts.mentioned ?? []).filter((u) => u !== opts.actorId);
+  await createMany(tx, await visibleRecipients(tx, task.projectId, mentioned), {
+    workspaceId: task.workspaceId,
+    projectId: task.projectId,
+    taskId: task.id,
+    actorId: opts.actorId,
+    type: "mention",
+    title: task.title,
+    body: opts.excerpt.slice(0, 280),
+    link,
+  });
+  const ids = [...task.assignees.map((a) => a.userId), ...task.reportTo.map((r) => r.userId), ...(task.createdById ? [task.createdById] : [])].filter((u) => u !== opts.actorId && !mentioned.includes(u));
   const recipients = await visibleRecipients(tx, task.projectId, ids);
   await createMany(tx, recipients, {
     workspaceId: task.workspaceId,
@@ -118,7 +140,7 @@ export async function notifyTaskComment(tx: Tx, opts: { taskId: string; actorId:
     type: "task_comment",
     title: task.title,
     body: opts.excerpt.slice(0, 280),
-    link: await taskLink(tx, task),
+    link,
   });
 }
 
@@ -139,7 +161,7 @@ export async function generateReminders(userId: string, now = new Date()) {
   const tomorrow = new Date(today.getTime() + DAY);
   const open = { deletedAt: null, status: { category: { in: ["todo", "in_progress"] as ("todo" | "in_progress")[] } }, project: { deletedAt: null, workspace: { deletedAt: null }, hiddenMembers: { none: { userId } } } };
 
-  const [dueSoon, overdue, thoughts] = await Promise.all([
+  const [dueSoon, overdue, thoughts, risky] = await Promise.all([
     prisma.task.findMany({
       where: { ...open, dueDate: { gte: today, lte: tomorrow }, assignees: { some: { userId } } },
       select: { id: true, title: true, projectId: true, workspaceId: true, dueDate: true, workspace: { select: { slug: true } } },
@@ -154,6 +176,18 @@ export async function generateReminders(userId: string, now = new Date()) {
       where: { userId, status: "captured", plannedAt: { lte: now }, workspace: { deletedAt: null } },
       select: { id: true, taskName: true, plannedAt: true, workspaceId: true, projectId: true, workspace: { select: { slug: true } } },
       take: 100,
+    }),
+    // Objectives the user owns (or owns a key result of) that are at risk / off track.
+    prisma.objective.findMany({
+      where: {
+        deletedAt: null,
+        status: { in: ["at_risk", "off_track"] },
+        workspace: { deletedAt: null },
+        OR: [{ projectId: null }, { project: { deletedAt: null, hiddenMembers: { none: { userId } } } }],
+        AND: [{ OR: [{ ownerId: userId }, { keyResults: { some: { deletedAt: null, ownerId: userId } } }] }],
+      },
+      select: { id: true, title: true, status: true, workspaceId: true, projectId: true, workspace: { select: { slug: true } } },
+      take: 50,
     }),
   ]);
 
@@ -190,6 +224,16 @@ export async function generateReminders(userId: string, now = new Date()) {
       data: { plannedAt: th.plannedAt!.toISOString() },
       link: `/w/${th.workspace.slug}/my-work`,
       dedupeKey: `capture:${th.id}:${th.plannedAt!.toISOString()}`,
+    })),
+    ...risky.map((o) => ({
+      userId,
+      workspaceId: o.workspaceId,
+      projectId: o.projectId,
+      type: "objective_risk",
+      title: o.title,
+      data: { status: o.status },
+      link: `/w/${o.workspace.slug}/okrs/${o.id}`,
+      dedupeKey: `objrisk:${o.id}:${o.status}`,
     })),
   ];
   if (rows.length) await prisma.notification.createMany({ data: rows, skipDuplicates: true });

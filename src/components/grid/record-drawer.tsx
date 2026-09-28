@@ -9,7 +9,7 @@ import { getCellValue } from "@/lib/query-engine";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/input";
+import { MentionInput, CommentBody } from "@/components/comments/mention-input";
 import { initials, formatDate, cn } from "@/lib/utils";
 import type { ActivityRow, AttachmentRow, FieldRow, RecordRow } from "@/types";
 
@@ -194,7 +194,7 @@ export function RecordDrawer({
                       <span className="font-medium text-neutral-800 dark:text-neutral-100">{c.user?.name ?? "Deleted user"}</span>{" "}
                       <span className="text-[11px] text-neutral-400">{formatDate(c.createdAt, true)}</span>
                     </div>
-                    <p className="text-neutral-600 dark:text-neutral-300 whitespace-pre-wrap break-words">{c.body}</p>
+                    <CommentBody body={c.body} className="text-neutral-600 dark:text-neutral-300" />
                   </div>
                 </div>
               ))}
@@ -262,7 +262,7 @@ export function RecordDrawer({
 
         {tab === "comments" && (
           <div className="border-t border-neutral-200 dark:border-neutral-800 p-3 shrink-0 flex gap-2">
-            <Textarea rows={1} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder={t("record.commentPlaceholder")} className="flex-1" aria-label="New comment" />
+            <MentionInput taskId={record.id} rows={1} value={draft} onChange={setDraft} onSubmit={postComment} placeholder={t("record.commentPlaceholder")} testId="drawer-comment-input" />
             <Button size="icon" onClick={postComment} aria-label="Post comment">
               <Send size={13} />
             </Button>

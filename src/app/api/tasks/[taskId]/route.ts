@@ -42,6 +42,7 @@ export const PATCH = route<P>(async (req, { params }) => {
           newStatusName: res.newStatusName,
           assigned: res.assigned,
           reportAdded: res.reportAdded,
+          newDueDate: res.changes.dueDate ? ((res.changes.dueDate as { to: string | null }).to ?? null) : undefined,
         });
       }
       if (Object.keys(res.changes).length) {

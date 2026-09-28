@@ -29,6 +29,7 @@ export const SYS = {
   dueDate: "sys_due_date",
   progress: "sys_progress",
   estimate: "sys_estimate",
+  actual: "sys_actual",
   keyResult: "sys_key_result",
   objective: "sys_objective",
   attachments: "sys_attachments",
@@ -173,6 +174,7 @@ export function buildFields(meta: ProjectMeta, t: TFunction = makeT("en")): Fiel
     sysField(pid, SYS.dueDate, n(SYS.dueDate), "date", 6),
     sysField(pid, SYS.progress, n(SYS.progress), "progress", 7),
     sysField(pid, SYS.estimate, n(SYS.estimate), "number", 8, { config: opts({ precision: 2 }) }),
+    sysField(pid, SYS.actual, n(SYS.actual), "number", 8.5, { config: opts({ precision: 2 }), description: t("fieldHint.sys_actual") }),
     ...(meta.objectives.length
       ? [sysField(pid, SYS.objective, n(SYS.objective), "okr_target", 9, { config: opts({ objectives: meta.objectives }) })]
       : []),
@@ -249,6 +251,7 @@ export function toRecord(task: TaskWithRelations, fieldTypes: Map<string, Custom
     [SYS.dueDate]: fromDateOnly(task.dueDate),
     [SYS.progress]: task.progress,
     [SYS.estimate]: task.estimateMinutes === null ? null : Math.round((task.estimateMinutes / 60) * 100) / 100,
+    [SYS.actual]: task.actualMinutes === null ? null : Math.round((task.actualMinutes / 60) * 100) / 100,
     [SYS.objective]: okrTargetToken(task),
     [SYS.importance]: task.importance,
     [SYS.urgency]: task.urgency,
@@ -426,6 +429,13 @@ export async function applyTaskPatch(
         if (hours !== null && hours < 0) throw badRequest("Estimate cannot be negative");
         update.estimateMinutes = hours === null ? null : Math.round(hours * 60);
         record("estimateMinutes", before.estimateMinutes, update.estimateMinutes);
+        break;
+      }
+      case SYS.actual: {
+        const hours = toNumber(value, "Actual time");
+        if (hours !== null && hours < 0) throw badRequest("Actual time cannot be negative");
+        update.actualMinutes = hours === null ? null : Math.round(hours * 60);
+        record("actualMinutes", before.actualMinutes, update.actualMinutes);
         break;
       }
       case SYS.keyResult:

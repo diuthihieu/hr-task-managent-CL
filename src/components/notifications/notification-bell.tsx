@@ -17,6 +17,10 @@ export interface NotificationItem {
   data: Record<string, unknown> | null;
   link: string | null;
   read: boolean;
+  actioned?: boolean;
+  snoozedUntil?: string | null;
+  taskId?: string | null;
+  taskOpen?: boolean;
   createdAt: string;
   actor: { id: string; name: string; avatarColor: string } | null;
   workspaceName: string | null;
@@ -76,6 +80,12 @@ export function describeNotification(n: NotificationItem, t: TFunction): string 
     }
     case "task_comment":
       return t("notif.task_comment", { actor });
+    case "mention":
+      return t("notif.mention", { actor });
+    case "task_due_changed":
+      return t("notif.task_due_changed", { actor, date: String(d.date ?? "") });
+    case "objective_risk":
+      return t("notif.objective_risk", { status: t(`okr.status.${String(d.status ?? "at_risk")}` as MessageKey) });
     case "task_due_soon":
       return t("notif.task_due_soon", { date: String(d.dueDate ?? "") });
     case "task_overdue":

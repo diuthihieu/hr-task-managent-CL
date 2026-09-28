@@ -229,6 +229,8 @@ model User {
   aiSettingsUpdated     WikiAiSettings[]
   wikisCreated          Wiki[]                 @relation("WikiCreatedByUser")
   wikiMemberships       WikiMember[]
+  commentMentions       CommentMention[]
+  focusSessions         FocusSession[]
 
   @@index([isActive, deletedAt])
   @@map("users")
@@ -414,6 +416,8 @@ model Task {
   startDate       DateTime?    @map("start_date") @db.Date
   dueDate         DateTime?    @map("due_date") @db.Date
   estimateMinutes Int?         @map("estimate_minutes")
+  /// Time actually spent (minutes): focus sessions add to it; can be edited by hand.
+  actualMinutes   Int?         @map("actual_minutes")
   progress        Int          @default(0)
   /// Weight of this task inside its key result's task-based progress.
   okrWeight       Decimal      @default(1) @map("okr_weight") @db.Decimal(8, 2)
@@ -445,6 +449,7 @@ model Task {
   attachments   Attachment[]
   customValues  TaskCustomFieldValue[]
   thoughts      CapturedThought[]
+  focusSessions FocusSession[]
 
   @@index([projectId, deletedAt, sortOrder])
   @@index([workspaceId, deletedAt, dueDate])
@@ -577,10 +582,11 @@ model Comment {
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
 
-  task    Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  author  User?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
-  parent  Comment?  @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
-  replies Comment[] @relation("CommentReplies")
+  task     Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author   User?            @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  parent   Comment?         @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies  Comment[]        @relation("CommentReplies")
+  mentions CommentMention[]
 
   @@index([taskId, createdAt])
   @@map("comments")
@@ -776,6 +782,9 @@ model KeyResult {
   weight         Decimal         @default(1) @db.Decimal(8, 2)
   manualProgress Decimal?        @map("manual_progress") @db.Decimal(5, 2)
   status         ObjectiveStatus @default(on_track)
+  /// Owner's confidence that the target will be hit (0-100).
+  confidence     Int             @default(70)
+  dueDate        DateTime?       @map("due_date") @db.Date
   sortOrder      Int             @default(0) @map("sort_order")
   createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -922,22 +931,26 @@ model TaskReportRecipient {
 /// In-app notification for one user. `dedupe_key` makes reminders (due soon,
 /// overdue, forgotten quick captures) idempotent.
 model Notification {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId      String    @map("user_id") @db.Uuid
-  workspaceId String?   @map("workspace_id") @db.Uuid
-  projectId   String?   @map("project_id") @db.Uuid
-  taskId      String?   @map("task_id") @db.Uuid
-  thoughtId   String?   @map("thought_id") @db.Uuid
-  actorId     String?   @map("actor_id") @db.Uuid
-  type        String    @db.VarChar(40)
-  title       String    @db.VarChar(300)
-  body        String?
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  workspaceId  String?   @map("workspace_id") @db.Uuid
+  projectId    String?   @map("project_id") @db.Uuid
+  taskId       String?   @map("task_id") @db.Uuid
+  thoughtId    String?   @map("thought_id") @db.Uuid
+  actorId      String?   @map("actor_id") @db.Uuid
+  type         String    @db.VarChar(40)
+  title        String    @db.VarChar(300)
+  body         String?
   /// Parameters for rendering the message in the reader's language (status name, field names...).
-  data        Json?
-  link        String?   @db.VarChar(500)
-  dedupeKey   String?   @map("dedupe_key") @db.VarChar(200)
-  readAt      DateTime? @map("read_at") @db.Timestamptz(6)
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  data         Json?
+  link         String?   @db.VarChar(500)
+  dedupeKey    String?   @map("dedupe_key") @db.VarChar(200)
+  readAt       DateTime? @map("read_at") @db.Timestamptz(6)
+  /// Hidden from the inbox until this time (Snooze).
+  snoozedUntil DateTime? @map("snoozed_until") @db.Timestamptz(6)
+  /// When the reader acted on it (Accept / Complete / Done) - it leaves the "To do" list.
+  actionedAt   DateTime? @map("actioned_at") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user      User             @relation("NotificationUser", fields: [userId], references: [id], onDelete: Cascade)
   actor     User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
@@ -1109,4 +1122,53 @@ model WikiMember {
   @@id([wikiId, userId])
   @@index([userId])
   @@map("wiki_members")
+}
+
+/// People tagged with @ in a comment (the body stores @[Name](userId) tokens).
+model CommentMention {
+  commentId String @map("comment_id") @db.Uuid
+  userId    String @map("user_id") @db.Uuid
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([commentId, userId])
+  @@index([userId])
+  @@map("comment_mentions")
+}
+
+enum FocusStatus {
+  running
+  paused
+  completed
+  cancelled
+}
+
+/// One focus block on a task. Time is accumulated across pauses; on completion
+/// the minutes are added to the task's actual time. Kept for productivity analytics.
+model FocusSession {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId    String      @map("workspace_id") @db.Uuid
+  taskId         String      @map("task_id") @db.Uuid
+  userId         String      @map("user_id") @db.Uuid
+  status         FocusStatus @default(running)
+  /// Planned length of this block (minutes).
+  plannedMinutes Int?        @map("planned_minutes")
+  /// Seconds counted before the current run (sum of previous runs).
+  elapsedSeconds Int         @default(0) @map("elapsed_seconds")
+  /// Start of the current run while status = running.
+  resumedAt      DateTime?   @map("resumed_at") @db.Timestamptz(6)
+  notes          String?
+  /// [{ text, done }]
+  checklist      Json?
+  startedAt      DateTime    @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt        DateTime?   @map("ended_at") @db.Timestamptz(6)
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([taskId])
+  @@index([workspaceId, startedAt])
+  @@map("focus_sessions")
 }

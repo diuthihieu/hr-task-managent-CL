@@ -4,6 +4,7 @@ import Link from "next/link";
 import { NotificationBell, UnreadCount } from "@/components/notifications/notification-bell";
 import { WorkspaceAvatar } from "@/components/workspaces/workspace-avatar";
 import { emitViewsChanged } from "@/lib/view-events";
+import { FocusDock } from "@/components/focus/focus-mode";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { signOut } from "next-auth/react";
 import {
@@ -521,6 +522,7 @@ export function WorkspaceShell({
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">{children}</div>
       </div>
 
+      <FocusDock />
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} workspaceId={workspace.id} workspaceSlug={workspace.slug} />
       <PreferencesDialog open={prefsOpen} onOpenChange={setPrefsOpen} />
 

@@ -1,5 +1,6 @@
 import { googleEnabled } from "@/lib/auth";
 import { HeroBackground, ScreenshotMarquee } from "@/components/landing/hero-visuals";
+import { HeroMascot, TaskMascot, KnowledgeMascot } from "@/components/landing/mascots";
 import Link from "next/link";
 import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
@@ -44,6 +45,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
     getLatestRelease(DEFAULT_PLATFORM, "stable").catch(() => null),
     ws ? prisma.workspace.findFirst({ where: { slug: ws, deletedAt: null }, select: { name: true, slug: true, logoUpdatedAt: true } }) : null,
   ]);
+  // The waving mascot greets visitors; once they ask to sign in / sign up (or
+  // arrive from a workspace link) the form takes its place.
+  const showAuth = Boolean(auth || ws || error || callbackUrl);
   const date = (d: Date) => d.toLocaleDateString(locale === "vi" ? "vi-VN" : "en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 
   const steps = [
@@ -96,7 +100,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       <section className="relative isolate overflow-hidden">
         <HeroBackground />
-        <div className="max-w-6xl mx-auto px-4 pt-12 pb-10 md:pt-20 md:pb-14 grid lg:grid-cols-[1fr_400px] gap-12 items-center">
+        <div className={`max-w-6xl mx-auto px-4 pt-12 pb-10 md:pt-20 md:pb-14 grid gap-10 lg:gap-12 items-center ${showAuth ? "lg:grid-cols-[1fr_400px]" : "lg:grid-cols-[1fr_minmax(0,460px)]"}`}>
           <div>
             <span className="inline-flex items-center gap-2 rounded-full border border-indigo-200/70 dark:border-indigo-900 bg-white/70 dark:bg-neutral-900/70 px-3 py-1 text-xs font-medium text-neutral-600 dark:text-neutral-300">
               <span className="h-1.5 w-1.5 rounded-full bg-indigo-600" /> {t("landing.hero.badge")}
@@ -121,6 +125,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               ))}
             </ul>
           </div>
+          {showAuth ? (
           <div className="w-full flex flex-col items-center gap-3">
             {invited && (
               <div className="w-full max-w-sm flex items-center gap-3 rounded-2xl border border-indigo-200 dark:border-indigo-900 bg-white dark:bg-neutral-900 px-4 py-3" data-testid="invited-workspace">
@@ -133,6 +138,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             )}
             <AuthCard initialMode={auth === "register" ? "register" : "login"} callbackUrl={callbackUrl} googleEnabled={googleEnabled} error={error} />
           </div>
+          ) : (
+            <HeroMascot alt={t("landing.mascot.hero")} />
+          )}
         </div>
         <div className="pb-14 md:pb-20">
           <p className="text-center text-xs font-medium uppercase tracking-[0.14em] text-neutral-400 mb-5">{t("landing.shots.caption")}</p>
@@ -154,7 +162,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
 
       <section id="features" className="scroll-mt-16 pb-16">
         <div className="max-w-6xl mx-auto px-4 grid gap-8 lg:grid-cols-[1.35fr_1fr] items-center">
-          <ProductPreview t={t} />
+          <div className="mascot-host relative min-w-0 lg:pl-36">
+            <ProductPreview t={t} />
+            {/* Beside the card (just touching its edge on desktop), never over its text. */}
+            <TaskMascot alt={t("landing.mascot.task")} className="relative z-10 mx-auto mt-6 w-[140px] sm:w-[160px] lg:absolute lg:mx-0 lg:mt-0 lg:-left-6 lg:-bottom-8 lg:w-[180px]" />
+          </div>
           <ul className="space-y-5">
             {features.map((f) => (
               <li key={f.t} className="flex gap-4">
@@ -168,6 +180,29 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               </li>
             ))}
           </ul>
+        </div>
+      </section>
+
+      <section id="knowledge" className="scroll-mt-16 py-16 md:py-20">
+        <div className="mascot-host max-w-6xl mx-auto px-4 grid gap-10 lg:grid-cols-[1fr_minmax(0,460px)] items-center">
+          <div>
+            <span className="inline-flex items-center gap-2 rounded-full bg-indigo-50 dark:bg-indigo-950/60 px-3 py-1 text-xs font-semibold text-indigo-700 dark:text-indigo-300">
+              <BookOpen size={13} /> {t("landing.kb.badge")}
+            </span>
+            <h2 className="mt-4 text-2xl md:text-4xl font-bold tracking-tight">{t("landing.kb.title")}</h2>
+            <p className="mt-3 text-neutral-600 dark:text-neutral-400 max-w-xl leading-relaxed">{t("landing.kb.subtitle")}</p>
+            <ul className="mt-6 space-y-3">
+              {[t("landing.kb.p1"), t("landing.kb.p2"), t("landing.kb.p3"), t("landing.kb.p4")].map((p) => (
+                <li key={p} className="flex items-start gap-2.5 text-sm text-neutral-700 dark:text-neutral-300">
+                  <span className="mt-0.5 h-5 w-5 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                    <Check size={12} />
+                  </span>
+                  {p}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <KnowledgeMascot alt={t("landing.mascot.knowledge")} className="mx-auto w-full max-w-[300px] sm:max-w-[380px] lg:max-w-[460px]" />
         </div>
       </section>
 
@@ -294,8 +329,8 @@ function ProductPreview({ t }: { t: (k: MessageKey, v?: Record<string, string | 
             {rows.map((r) => (
               <div key={r.title} className="flex items-center gap-3 px-4 py-2.5 border-b last:border-0 border-neutral-100 dark:border-neutral-800 text-sm">
                 <span className={`h-4 w-4 rounded-full border-2 shrink-0 ${r.done ? "bg-emerald-500 border-emerald-500" : "border-neutral-300"}`} />
-                <span className="flex-1 truncate">{r.title}</span>
-                <span className="rounded-md bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 text-[11px]">{r.tag}</span>
+                <span className="flex-1 min-w-0 truncate">{r.title}</span>
+                <span className="shrink-0 whitespace-nowrap rounded-md bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 text-[11px]">{r.tag}</span>
                 <span className="text-xs text-neutral-400 w-10 text-right">{r.due}</span>
               </div>
             ))}

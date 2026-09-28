@@ -273,3 +273,77 @@ body {
   .hero-glow-a, .hero-glow-b, .marquee-track { animation: none; }
   .marquee { overflow-x: auto; }
 }
+
+/* ---------------------------------------------------------------------------
+   Landing mascots. Motion lives on wrappers only (the art is static):
+   .mascot-hover  - reacts to hovering the host card (transition)
+   .mascot-enter  - one-time entrance when the section first scrolls in
+   .mascot-idle   - calm loop, paused while the section is off screen
+--------------------------------------------------------------------------- */
+.mascot .mascot-enter { opacity: 0; }
+.mascot[data-entered="true"] .mascot-rise { animation: mascot-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.mascot[data-entered="true"] .mascot-enter-left { animation: mascot-in-left 1s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.mascot[data-entered="true"] .mascot-enter-right { animation: mascot-in-right 1s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+.mascot-idle { transform-origin: 50% 92%; will-change: transform; }
+.mascot-idle-hero { animation: mascot-hero-idle 7s ease-in-out 0.9s infinite; }
+.mascot-idle-float { animation: mascot-float 6s ease-in-out 1s infinite; }
+.mascot-idle-tilt { animation: mascot-tilt 8s ease-in-out 1s infinite; }
+.mascot-glow { animation: mascot-glow 7s ease-in-out infinite; }
+.mascot-check-pulse { opacity: 0; animation: mascot-check-pulse 5s ease-out 1.6s infinite; }
+.mascot-panel-glow { opacity: 0; animation: mascot-panel-glow 7s ease-in-out 1.2s infinite; }
+.mascot-particle { opacity: 0; animation: mascot-particle 7s ease-in-out infinite; }
+
+.mascot-hover { transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+.mascot-host:hover .mascot-task .mascot-hover { transform: translateY(-6px) scale(1.03); }
+.mascot-host:hover .mascot-knowledge .mascot-hover { transform: translateX(-8px) scale(1.02); }
+
+/* Idle loops only run while their section is visible. */
+.mascot:not([data-inview="true"]) .mascot-idle,
+.mascot:not([data-inview="true"]) .mascot-glow,
+.mascot:not([data-inview="true"]) .mascot-check-pulse,
+.mascot:not([data-inview="true"]) .mascot-panel-glow,
+.mascot:not([data-inview="true"]) .mascot-particle { animation-play-state: paused; }
+
+@keyframes mascot-rise { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+@keyframes mascot-in-left {
+  0% { opacity: 0; transform: translate(-36px, 18px); }
+  70% { opacity: 1; transform: translate(0, -6px); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes mascot-in-right { from { opacity: 0; transform: translate(36px, 8px); } to { opacity: 1; transform: none; } }
+/* 7s loop: float ±6px, sway ±1.5deg, breathing scale, and a small greeting tilt near 60%. */
+@keyframes mascot-hero-idle {
+  0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+  22% { transform: translateY(-6px) rotate(1.2deg) scale(1.015); }
+  45% { transform: translateY(0) rotate(0deg) scale(1); }
+  58% { transform: translateY(-3px) rotate(-1.5deg) scale(1.008); }
+  64% { transform: translateY(-4px) rotate(1.5deg) scale(1.012); }
+  70% { transform: translateY(-2px) rotate(-0.8deg) scale(1.006); }
+  84% { transform: translateY(4px) rotate(0.4deg) scale(1); }
+}
+@keyframes mascot-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes mascot-tilt {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  30% { transform: translateY(-6px) rotate(-1.2deg); }
+  65% { transform: translateY(-2px) rotate(1deg); }
+}
+@keyframes mascot-glow { 0%, 100% { opacity: 0.7; transform: scale(0.96); } 50% { opacity: 1; transform: scale(1.04); } }
+@keyframes mascot-check-pulse {
+  0%, 70% { opacity: 0; transform: scale(0.9); }
+  80% { opacity: 0.55; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.25); }
+}
+@keyframes mascot-panel-glow { 0%, 60%, 100% { opacity: 0; } 75% { opacity: 0.6; } }
+@keyframes mascot-particle {
+  0% { opacity: 0; transform: translateY(6px); }
+  25%, 60% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-16px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mascot .mascot-enter { opacity: 1; animation: none !important; }
+  .mascot-idle, .mascot-glow, .mascot-check-pulse, .mascot-panel-glow, .mascot-particle { animation: none !important; }
+  .mascot-check-pulse, .mascot-panel-glow, .mascot-particle { display: none; }
+  .mascot-hover { transition: none; }
+}

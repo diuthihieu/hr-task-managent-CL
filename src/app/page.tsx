@@ -241,7 +241,11 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
       <footer className="border-t border-neutral-100 dark:border-neutral-900 py-8">
         <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center gap-3 justify-between text-sm text-neutral-500">
           <Brand size={24} textClassName="text-base" />
-          <span>{t("landing.footer", { year: new Date().getFullYear() })}</span>
+          <div className="flex items-center gap-4">
+            <Link href="/privacy" className="hover:text-neutral-900 dark:hover:text-white">{t("landing.privacy")}</Link>
+            <Link href="/terms" className="hover:text-neutral-900 dark:hover:text-white">{t("landing.terms")}</Link>
+            <span>{t("landing.footer", { year: new Date().getFullYear() })}</span>
+          </div>
         </div>
       </footer>
     </div>

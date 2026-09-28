@@ -1182,6 +1182,8 @@ export const MESSAGES = {
   "landing.shots.grid": ["Task table", "Bảng task"],
   "landing.shots.task": ["Task page", "Trang chi tiết task"],
   "landing.shots.gallery": ["Card gallery", "Thư viện thẻ"],
+  "landing.privacy": ["Privacy", "Quyền riêng tư"],
+  "landing.terms": ["Terms", "Điều khoản"],
   "cap.placeholder": ["What's on your mind? e.g. Prepare payroll reconciliation", "Bạn đang nghĩ gì? VD: Chuẩn bị đối soát lương"],
   "cap.capture": ["Capture", "Ghi lại"],
   "cap.category": ["Category", "Category"],

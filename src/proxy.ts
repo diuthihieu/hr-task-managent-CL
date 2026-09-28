@@ -9,7 +9,7 @@ export function proxy(request: NextRequest) {
   // The public landing page always uses the brand look (orange, neutral
   // surfaces); the root layout reads this header instead of the visitor's
   // saved accent / tone, which only apply inside the app.
-  if (request.nextUrl.pathname === "/") {
+  if (["/", "/privacy", "/terms"].includes(request.nextUrl.pathname)) {
     const headers = new Headers(request.headers);
     headers.set("x-woli-marketing", "1");
     return NextResponse.next({ request: { headers } });
@@ -27,4 +27,4 @@ export function proxy(request: NextRequest) {
   return NextResponse.redirect(url);
 }
 
-export const config = { matcher: ["/", "/w/:path*"] };
+export const config = { matcher: ["/", "/privacy", "/terms", "/w/:path*"] };

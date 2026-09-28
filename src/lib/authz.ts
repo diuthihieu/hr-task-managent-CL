@@ -235,7 +235,7 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
   comments_body_not_blank: "Comment cannot be empty",
 };
 
-const TRIGGER_MESSAGE = /(task (?:project|status|category|key result|objective) must belong to the task (?:workspace|project|objective)|parent (?:page|task) must belong to the same project|parent key result must belong to another objective in the workspace|assignee must be a member of the task workspace|custom field must be defined on the task project|option does not belong to this custom field|dependent tasks must belong to the same workspace|report recipient must be a member of the task workspace|hidden member must be a member of the project workspace)/;
+const TRIGGER_MESSAGE = /(task (?:project|status|category|key result|objective) must belong to the task (?:workspace|project|objective)|parent (?:page|task) must belong to the same project|parent key result must belong to another objective in the workspace|assignee must be a member of the task workspace|custom field must be defined on the task project|option does not belong to this custom field|dependent tasks must belong to the same workspace|report recipient must be a member of the task workspace|hidden member must be a member of the project workspace|project must belong to the same workspace)/;
 
 export function errorResponse(e: unknown): Response {
   if (e instanceof HttpError) return NextResponse.json({ error: e.message }, { status: e.status });

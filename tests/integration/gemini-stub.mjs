@@ -1,0 +1,34 @@
+// Stand-in for the Gemini REST API during integration tests (no real key, no
+// network). Answers generateContent / streamGenerateContent (SSE) and keeps
+// the last request so tests can inspect what the app sent to the model.
+import http from "node:http";
+
+const port = Number(process.env.GEMINI_STUB_PORT || 3999);
+let last = null;
+
+http
+  .createServer((req, res) => {
+    if (req.method === "GET" && req.url === "/last") {
+      res.writeHead(200, { "content-type": "application/json" });
+      return res.end(JSON.stringify(last));
+    }
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => {
+      const body = raw ? JSON.parse(raw) : {};
+      last = { url: req.url, apiKey: req.headers["x-goog-api-key"], body };
+      const userText = body.contents?.at(-1)?.parts?.map((p) => p.text ?? "[file]").join(" ") ?? "";
+      const hasFile = body.contents?.some((c) => c.parts?.some((p) => p.inlineData));
+      const answer = hasFile ? "Extracted text from the PDF: leave policy is 12 days per year." : ["# Stub report", "", `You asked: ${userText}`, "", "| a | b |", "|---|---|", "| 1 | 2 |"].join("\n");
+      if (req.url.includes(":streamGenerateContent")) {
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        const pieces = answer.match(/.{1,12}/gs) ?? [""];
+        for (const p of pieces) res.write(`data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: p }] } }] })}\r\n\r\n`);
+        res.write(`data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "" }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 111, candidatesTokenCount: 22 } })}\r\n\r\n`);
+        return res.end();
+      }
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: answer }] } }], usageMetadata: { promptTokenCount: 50, candidatesTokenCount: 10 } }));
+    });
+  })
+  .listen(port, () => console.log(`gemini stub on ${port}`));

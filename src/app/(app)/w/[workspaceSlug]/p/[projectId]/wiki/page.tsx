@@ -9,7 +9,7 @@ export default async function ProjectWikiPage({ params }: { params: Promise<{ wo
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <ProjectHeader workspaceSlug={workspaceSlug} workspaceName={workspace.name} projectId={project.id} projectName={project.name} />
-      <WikiWorkspace projectId={project.id} workspaceSlug={workspaceSlug} pageId={null} canEdit={roleAtLeast(role, "contributor")} canDeleteAny={roleAtLeast(role, "editor")} currentUserName={user.name} />
+      <WikiWorkspace projectId={project.id} projectName={project.name} workspaceSlug={workspaceSlug} pageId={null} canEdit={roleAtLeast(role, "contributor")} canDeleteAny={roleAtLeast(role, "editor")} currentUserName={user.name} />
     </div>
   );
 }

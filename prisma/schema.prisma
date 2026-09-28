@@ -192,7 +192,7 @@ model User {
   /// UI language: "vi" or "en".
   locale             String     @default("vi") @db.VarChar(5)
   /// Accent palette name (Tailwind palette, e.g. "indigo", "rose").
-  accentColor        String     @default("indigo") @map("accent_color") @db.VarChar(20)
+  accentColor        String     @default("orange") @map("accent_color") @db.VarChar(20)
   lastLoginAt        DateTime?  @map("last_login_at") @db.Timestamptz(6)
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -224,21 +224,28 @@ model User {
   objectiveContributes  ObjectiveContributor[]
   capturedThoughts      CapturedThought[]
   customFieldUserValues TaskCustomFieldValue[] @relation("CustomValueUser")
+  knowledgeDocs         KnowledgeDoc[]
+  aiConversations       AiConversation[]
+  aiSettingsUpdated     ProjectAiSettings[]
 
   @@index([isActive, deletedAt])
   @@map("users")
 }
 
 model Workspace {
-  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name        String    @db.VarChar(120)
-  slug        String    @unique @db.VarChar(80)
-  description String?
-  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt   DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdById String?   @map("created_by") @db.Uuid
-  updatedById String?   @map("updated_by") @db.Uuid
-  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name          String    @db.VarChar(120)
+  slug          String    @unique @db.VarChar(80)
+  description   String?
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdById   String?   @map("created_by") @db.Uuid
+  updatedById   String?   @map("updated_by") @db.Uuid
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
+  /// Workspace logo (PNG/JPEG/WebP, max 256 KB), served by /api/workspaces/[id]/logo and used as the favicon.
+  logoData      Bytes?    @map("logo_data")
+  logoMimeType  String?   @map("logo_mime_type") @db.VarChar(40)
+  logoUpdatedAt DateTime? @map("logo_updated_at") @db.Timestamptz(6)
 
   members          WorkspaceMember[]
   teams            Team[]
@@ -253,6 +260,8 @@ model Workspace {
   capturedThoughts CapturedThought[]
   wikiPages        WikiPage[]
   notifications    Notification[]
+  knowledgeDocs    KnowledgeDoc[]
+  aiConversations  AiConversation[]
 
   @@map("workspaces")
 }
@@ -324,6 +333,9 @@ model Project {
   notifications    Notification[]
   objectives       Objective[]
   wikiPages        WikiPage[]
+  aiSettings       ProjectAiSettings?
+  knowledgeDocs    KnowledgeDoc[]
+  aiConversations  AiConversation[]
 
   @@index([workspaceId, deletedAt, sortOrder])
   @@map("projects")
@@ -954,4 +966,89 @@ model ProjectHiddenMember {
   @@id([projectId, userId])
   @@index([userId])
   @@map("project_hidden_members")
+}
+
+/// Per-project wiki assistant: the owner's instructions (system prompt) and whether it's on.
+model ProjectAiSettings {
+  projectId    String   @id @map("project_id") @db.Uuid
+  enabled      Boolean  @default(true)
+  /// Owner-written instructions: role, tone, answer style, what to avoid.
+  instructions String   @default("")
+  /// Short welcome text shown above the chat.
+  greeting     String?  @db.VarChar(500)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedById  String?  @map("updated_by") @db.Uuid
+
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  updatedBy User?   @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("project_ai_settings")
+}
+
+/// Reference document uploaded by the project owner. Only the extracted text is
+/// stored; it's given to the model as grounding context (not fine-tuning).
+model KnowledgeDoc {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String    @map("workspace_id") @db.Uuid
+  projectId   String    @map("project_id") @db.Uuid
+  fileName    String    @map("file_name") @db.VarChar(200)
+  contentType String    @map("content_type") @db.VarChar(120)
+  sizeBytes   Int       @map("size_bytes")
+  text        String
+  charCount   Int       @map("char_count")
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdById String?   @map("created_by") @db.Uuid
+  deletedAt   DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdBy User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([projectId, deletedAt])
+  @@map("knowledge_docs")
+}
+
+enum AiConversationKind {
+  wiki
+  assistant
+}
+
+/// A user's private chat: with a project's wiki assistant, or with the workspace AI assistant.
+model AiConversation {
+  id          String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String             @map("workspace_id") @db.Uuid
+  projectId   String?            @map("project_id") @db.Uuid
+  userId      String             @map("user_id") @db.Uuid
+  kind        AiConversationKind
+  title       String             @db.VarChar(200)
+  createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project?    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  AiMessage[]
+
+  @@index([userId, workspaceId, kind, updatedAt(sort: Desc)])
+  @@map("ai_conversations")
+}
+
+enum AiMessageRole {
+  user
+  model
+}
+
+model AiMessage {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId String        @map("conversation_id") @db.Uuid
+  role           AiMessageRole
+  content        String
+  tokensIn       Int?          @map("tokens_in")
+  tokensOut      Int?          @map("tokens_out")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("ai_messages")
 }

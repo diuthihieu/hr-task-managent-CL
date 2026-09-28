@@ -539,6 +539,134 @@ test("project visibility: owners hide a project from chosen members", async () =
   assert.equal((await viewer.get(`/api/projects/${s.otherProject}`)).status, 200);
 });
 
+const BASE = process.env.TEST_BASE_URL ?? "http://localhost:3100";
+const STUB = `http://localhost:${process.env.GEMINI_STUB_PORT ?? 3999}`;
+const PNG_1PX = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+
+async function upload(client: Client, method: string, path: string, name: string, bytes: Uint8Array | string, type: string) {
+  const form = new FormData();
+  form.append("file", new Blob([bytes as BlobPart], { type }), name);
+  const res = await fetch(`${BASE}${path}`, { method, body: form, headers: { cookie: client.cookieHeader() } });
+  return { status: res.status, body: (await res.json().catch(() => null)) as Record<string, unknown> | null };
+}
+
+async function ask(client: Client, body: Record<string, unknown>) {
+  const res = await fetch(`${BASE}/api/ai/chat`, { method: "POST", headers: { cookie: client.cookieHeader(), "content-type": "application/json" }, body: JSON.stringify(body) });
+  return { status: res.status, conversationId: res.headers.get("x-conversation-id"), text: await res.text() };
+}
+
+async function lastModelRequest() {
+  return (await (await fetch(`${STUB}/last`)).json()) as { url: string; apiKey: string; body: { systemInstruction?: { parts: { text: string }[] }; contents: { role: string; parts: { text?: string }[] }[] } };
+}
+
+test("workspace logo: admins upload or generate one; it becomes the favicon and the link preview", async () => {
+  const ws = (await admin.get<{ name: string; slug: string; logoUrl: string | null }>(`/api/workspaces/${s.ws}`)).body;
+  s.wsSlug = ws.slug;
+  assert.equal(ws.logoUrl, null);
+  assert.equal((await upload(contributor, "PUT", `/api/workspaces/${s.ws}/logo`, "logo.png", PNG_1PX, "image/png")).status, 403);
+  assert.equal((await upload(admin, "PUT", `/api/workspaces/${s.ws}/logo`, "logo.png", "not an image", "image/png")).status, 400, "content is sniffed, not trusted");
+  const up = await upload(admin, "PUT", `/api/workspaces/${s.ws}/logo`, "logo.png", PNG_1PX, "image/png");
+  assert.equal(up.status, 200);
+  const logoUrl = up.body!.logoUrl as string;
+  assert.match(logoUrl, new RegExp(`^/api/public/workspace-logo/${ws.slug}\\?v=\\d+$`));
+  const img = await fetch(`${BASE}${logoUrl}`);
+  assert.equal(img.headers.get("content-type"), "image/png");
+  assert.equal(Buffer.from(await img.arrayBuffer()).length, PNG_1PX.length);
+  // Browser tab icon inside the workspace.
+  const page = await fetch(`${BASE}/w/${ws.slug}`, { headers: { cookie: admin.cookieHeader() } });
+  assert.match(await page.text(), new RegExp(`<link rel="icon" href="${logoUrl.replace(/[?]/g, "\\?")}`));
+  // Signed-out visitors (and link unfurlers) see the workspace name + logo on the sign-in page.
+  const anon = await fetch(`${BASE}/w/${ws.slug}/my-work`, { redirect: "manual" });
+  assert.equal(anon.status, 307);
+  const loc = new URL(anon.headers.get("location")!, BASE);
+  assert.equal(loc.searchParams.get("ws"), ws.slug);
+  assert.equal(loc.searchParams.get("callbackUrl"), `/w/${ws.slug}/my-work`);
+  const landing = await (await fetch(`${BASE}/?ws=${ws.slug}`)).text();
+  assert.match(landing, /<meta property="og:image" content="[^"]*workspace-logo/);
+  assert.ok(landing.includes(`<title>${ws.name} · woli.</title>`), "workspace name in the preview title");
+  assert.equal((await admin.del(`/api/workspaces/${s.ws}/logo`)).status, 204);
+  assert.equal((await fetch(`${BASE}${logoUrl}`)).status, 404);
+});
+
+test("wiki AI: owners set instructions and documents; members ask, grounded in this project's wiki only", async () => {
+  await contributor.post(`/api/projects/${s.project}/wiki`, { title: "Leave policy" }).then((r) => contributor.patch(`/api/wiki/${(r.body as { id: string }).id}`, { content: "<p>Annual leave is 12 days.</p>" }));
+  // Only the project owner / workspace admins configure the assistant.
+  assert.equal((await contributor.put(`/api/projects/${s.project}/ai-settings`, { instructions: "x" })).status, 403);
+  assert.equal((await admin.put(`/api/projects/${s.project}/ai-settings`, { instructions: "You are the HR onboarding buddy. Answer in bullet points.", greeting: "Hi!" })).status, 200);
+  const asViewer = await viewer.get<{ canManage: boolean; instructions?: string; greeting: string; configured: boolean }>(`/api/projects/${s.project}/ai-settings`);
+  assert.equal(asViewer.body.canManage, false);
+  assert.equal(asViewer.body.instructions, undefined, "members don't see the system prompt");
+  assert.equal(asViewer.body.greeting, "Hi!");
+  assert.equal(asViewer.body.configured, true);
+
+  assert.equal((await upload(contributor, "POST", `/api/projects/${s.project}/knowledge-docs`, "handbook.txt", "x", "text/plain")).status, 403);
+  assert.equal((await upload(admin, "POST", `/api/projects/${s.project}/knowledge-docs`, "virus.exe", "MZ", "application/octet-stream")).status, 400);
+  const txt = await upload(admin, "POST", `/api/projects/${s.project}/knowledge-docs`, "handbook.txt", "Probation lasts 60 days. Laptop pickup at IT desk.", "text/plain");
+  assert.equal(txt.status, 201, JSON.stringify(txt.body));
+  const pdf = await upload(admin, "POST", `/api/projects/${s.project}/knowledge-docs`, "policy.pdf", "%PDF-1.4 fake", "application/pdf");
+  assert.equal(pdf.status, 201, "PDF text is transcribed by the model");
+  const docs = await viewer.get<{ fileName: string; charCount: number }[]>(`/api/projects/${s.project}/knowledge-docs`);
+  assert.deepEqual(docs.body.map((d) => d.fileName).sort(), ["handbook.txt", "policy.pdf"]);
+  assert.equal((await viewer.get(`/api/knowledge-docs/${pdf.body!.id}`)).status, 403, "extracted text preview is for managers");
+
+  const a = await ask(viewer, { kind: "wiki", projectId: s.project, message: "How long is probation?" });
+  assert.equal(a.status, 200, a.text);
+  assert.match(a.text, /You asked: How long is probation\?/);
+  assert.ok(a.conversationId);
+  const req = await lastModelRequest();
+  assert.equal(req.apiKey, "integration-test-key", "key sent server-side in a header");
+  assert.match(req.url, /stub-model:streamGenerateContent\?alt=sse/);
+  const system = req.body.systemInstruction!.parts[0].text;
+  assert.match(system, /HR onboarding buddy/, "owner instructions");
+  assert.match(system, /Probation lasts 60 days/, "uploaded document");
+  assert.match(system, /leave policy is 12 days/i, "transcribed PDF");
+  assert.match(system, /Wiki page: Leave policy[\s\S]*Annual leave is 12 days/, "wiki pages");
+  assert.match(system, /Answer ONLY from the KNOWLEDGE/, "scope rule");
+  assert.doesNotMatch(system, /Call the insurer/, "no data from other projects");
+
+  // Follow-up keeps history; conversations are private.
+  await ask(viewer, { kind: "wiki", projectId: s.project, conversationId: a.conversationId, message: "And the laptop?" });
+  assert.deepEqual((await lastModelRequest()).body.contents.map((c) => c.role), ["user", "model", "user"]);
+  const conv = await viewer.get<{ messages: { role: string }[] }>(`/api/ai/conversations/${a.conversationId}`);
+  assert.equal(conv.body.messages.length, 4);
+  assert.equal((await contributor.get(`/api/ai/conversations/${a.conversationId}`)).status, 404);
+  assert.equal((await ask(contributor, { kind: "wiki", projectId: s.project, conversationId: a.conversationId, message: "hi" })).status, 404);
+  assert.equal((await ask(outsider, { kind: "wiki", projectId: s.project, message: "hi" })).status, 404);
+
+  // Turning the assistant off blocks questions.
+  await admin.put(`/api/projects/${s.project}/ai-settings`, { enabled: false });
+  assert.equal((await ask(viewer, { kind: "wiki", projectId: s.project, message: "hi" })).status, 403);
+  await admin.put(`/api/projects/${s.project}/ai-settings`, { enabled: true });
+});
+
+test("AI assistant: answers from what the user may see, declines the rest, and enforces a daily quota", async () => {
+  // Hide the other project from the viewer: its tasks must not reach the model.
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId] });
+  const r = await ask(viewer, { kind: "assistant", workspaceId: s.ws, message: "Write this week's progress report" });
+  assert.equal(r.status, 200, r.text);
+  const system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+  assert.match(system, /Onboarding Q4/);
+  assert.match(system, /Payroll reconciliation/, "tasks of visible projects");
+  assert.match(system, /Probation lasts 60 days/, "wiki documents of visible projects");
+  assert.doesNotMatch(system, /Call the insurer|Other project/, "hidden project stays out");
+  assert.match(system, /decline in one or two sentences/, "out-of-scope rule");
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
+  const again = await ask(admin, { kind: "assistant", workspaceId: s.ws, message: "report" });
+  assert.equal(again.status, 200);
+  assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /Call the insurer/, "admins see everything");
+
+  assert.equal((await ask(outsider, { kind: "assistant", workspaceId: s.ws, message: "hi" })).status, 404);
+  const list = await viewer.get<{ items: { id: string }[] }>(`/api/ai/conversations?kind=assistant&workspaceId=${s.ws}`);
+  assert.equal(list.body.items.length, 1);
+
+  // AI_DAILY_LIMIT=6 in the test environment; the viewer has asked 2 wiki + 1 assistant questions so far (rejected requests don't count).
+  let status = 200;
+  for (let i = 0; i < 4 && status === 200; i++) status = (await ask(viewer, { kind: "assistant", workspaceId: s.ws, message: `q${i}` })).status;
+  assert.equal(status, 429);
+  const saved = await prisma.aiMessage.findFirst({ where: { role: "model", conversation: { userId: s.viewerId } }, orderBy: { createdAt: "desc" } });
+  assert.equal(saved?.tokensIn, 111, "token usage recorded");
+});
+
 test("members can leave; only owners delete a workspace", async () => {
   const joined = await admin.post(`/api/workspaces/${s.contributorWs}/members`, { email: "viewer@integration.test", role: "admin" });
   assert.equal(joined.status, 201);

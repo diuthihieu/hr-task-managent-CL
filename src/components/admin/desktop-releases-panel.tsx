@@ -140,7 +140,7 @@ function RegisterDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenC
           </div>
           <div>
             <label htmlFor="rel-url" className="text-xs font-medium text-neutral-500 mb-1 block">{t("rel.url")}</label>
-            <Input id="rel-url" value={installerUrl} onChange={(e) => setInstallerUrl(e.target.value)} placeholder="https://github.com/…/releases/download/desktop-v1.0.0/Basework_1.0.0_x64_en-US.msi" required />
+            <Input id="rel-url" value={installerUrl} onChange={(e) => setInstallerUrl(e.target.value)} placeholder="https://github.com/…/releases/download/desktop-v1.0.0/woli_1.0.0_x64_en-US.msi" required />
           </div>
           <div>
             <label htmlFor="rel-notes" className="text-xs font-medium text-neutral-500 mb-1 block">{t("rel.notes")}</label>

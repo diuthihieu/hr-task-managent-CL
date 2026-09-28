@@ -2,7 +2,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookOpen, ChevronDown, ChevronRight, FileText, Plus, Trash2 } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, FileText, Plus, Trash2, Sparkles } from "lucide-react";
+import { WikiAiPanel } from "@/components/ai/wiki-ai-panel";
 import { RichEditor, type SaveState } from "@/components/editor/rich-editor";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
@@ -16,7 +17,7 @@ interface WikiPageFull extends WikiPageSummary {
 }
 
 /** Project wiki: page tree on the left, the selected page (rich editor) on the right. */
-export function WikiWorkspace({ projectId, workspaceSlug, pageId, canEdit, canDeleteAny, currentUserName }: { projectId: string; workspaceSlug: string; pageId: string | null; canEdit: boolean; canDeleteAny: boolean; currentUserName: string }) {
+export function WikiWorkspace({ projectId, projectName, workspaceSlug, pageId, canEdit, canDeleteAny, currentUserName }: { projectId: string; projectName: string; workspaceSlug: string; pageId: string | null; canEdit: boolean; canDeleteAny: boolean; currentUserName: string }) {
   const { t } = useT();
   const router = useRouter();
   const base = `/w/${workspaceSlug}/p/${projectId}/wiki`;
@@ -24,6 +25,7 @@ export function WikiWorkspace({ projectId, workspaceSlug, pageId, canEdit, canDe
   const [page, setPage] = useState<WikiPageFull | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [saveState, setSaveState] = useState<SaveState>("idle");
+  const [aiOpen, setAiOpen] = useState(false);
 
   const loadTree = useCallback(async () => {
     try {
@@ -160,6 +162,18 @@ export function WikiWorkspace({ projectId, workspaceSlug, pageId, canEdit, canDe
             </button>
           )}
         </div>
+        <div className="p-2 border-b border-neutral-200 dark:border-neutral-800">
+          <button
+            onClick={() => setAiOpen((v) => !v)}
+            className={cn(
+              "w-full flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] font-medium transition-colors",
+              aiOpen ? "bg-indigo-600 text-white" : "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100"
+            )}
+            data-testid="wiki-ask-ai"
+          >
+            <Sparkles size={14} /> {t("wikiAi.ask")}
+          </button>
+        </div>
         <div className="flex-1 overflow-y-auto thin-scroll p-2">
           {renderTree(null, 0)}
         </div>
@@ -218,6 +232,7 @@ export function WikiWorkspace({ projectId, workspaceSlug, pageId, canEdit, canDe
           </div>
         )}
       </div>
+      {aiOpen && <WikiAiPanel projectId={projectId} projectName={projectName} onClose={() => setAiOpen(false)} />}
     </div>
   );
 }

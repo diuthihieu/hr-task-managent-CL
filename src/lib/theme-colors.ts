@@ -34,5 +34,5 @@ export type AccentName = (typeof ACCENT_COLORS)[number]["name"];
 export const ACCENT_NAMES: string[] = ACCENT_COLORS.map((c) => c.name);
 
 export function normalizeAccent(v: string | null | undefined): AccentName {
-  return (ACCENT_NAMES.includes(v ?? "") ? v : "indigo") as AccentName;
+  return (ACCENT_NAMES.includes(v ?? "") ? v : "orange") as AccentName;
 }

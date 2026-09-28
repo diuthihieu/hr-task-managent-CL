@@ -1,7 +1,8 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { NotificationBell } from "@/components/notifications/notification-bell";
+import { NotificationBell, UnreadCount } from "@/components/notifications/notification-bell";
+import { WorkspaceAvatar } from "@/components/workspaces/workspace-avatar";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { signOut } from "next-auth/react";
 import {
@@ -17,12 +18,9 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   ChevronDown,
   ChevronRight,
-  FolderKanban,
   ShieldCheck,
   KeyRound,
   MonitorDown,
-  LayoutGrid,
-  LayoutDashboard,
   Plus,
   Settings,
   Sheet,
@@ -37,7 +35,6 @@ import {
   Moon,
   LogOut,
   Target,
-  Briefcase,
   MoreHorizontal,
   Pencil,
   Copy,
@@ -49,6 +46,10 @@ import {
   SlidersHorizontal,
   Palette,
   Building2,
+  Home,
+  ListChecks,
+  Inbox,
+  Sparkles,
 } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { PreferencesDialog } from "@/components/preferences/preferences-dialog";
@@ -85,7 +86,7 @@ export const NEW_VIEW_TYPES: { type: string; label: MessageKey }[] = [
 
 interface ViewLite { id: string; name: string; type: string }
 interface ProjectLite { id: string; name: string; color: string; views: ViewLite[] }
-interface WorkspaceLite { id: string; name: string; slug: string }
+interface WorkspaceLite { id: string; name: string; slug: string; logoUrl?: string | null }
 
 const ROLE_RANK: Record<string, number> = { viewer: 0, contributor: 1, editor: 2, admin: 3, owner: 4 };
 
@@ -114,6 +115,7 @@ export function WorkspaceShell({
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [okrOpen, setOkrOpen] = useState(() => /\/okrs(\/|$)/.test(pathname));
   const isAdmin = user.systemRole === "ADMIN";
   const desktopVersion = useDesktopVersion();
   const canEditViews = (ROLE_RANK[role] ?? -1) >= ROLE_RANK.editor;
@@ -215,25 +217,34 @@ export function WorkspaceShell({
     }
   }
 
+  const navItem = (active: boolean) =>
+    cn(
+      "flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[13px] transition-colors",
+      active ? "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-semibold" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800/70"
+    );
+  const isHome = pathname === `/w/${workspace.slug}`;
+  const isInbox = pathname.endsWith("/inbox");
+  const isAi = pathname.includes("/ai");
+  const okrActive = isTeamOkrs || isMyOkrs || isOkrDashboard || isOkrDetail;
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-neutral-50 dark:bg-neutral-950 text-sm">
       {/* Sidebar */}
-      <aside className="w-60 shrink-0 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col">
-        <div className="h-12 flex items-center gap-2 px-3 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+      <aside className="w-[248px] shrink-0 border-r border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col">
+        <div className="h-14 flex items-center gap-2 px-3 shrink-0">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-2 flex-1 rounded-md px-1.5 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800 min-w-0">
-                <div className="h-6 w-6 rounded-md bg-indigo-600 flex items-center justify-center text-white shrink-0">
-                  <LayoutGrid size={14} />
-                </div>
-                <span className="font-semibold text-neutral-900 dark:text-neutral-50 truncate">{workspace.name}</span>
-                <ChevronDown size={13} className="text-neutral-400 shrink-0" />
+              <button className="flex items-center gap-2.5 flex-1 rounded-lg px-1.5 py-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 min-w-0" data-testid="workspace-switcher">
+                <WorkspaceAvatar name={workspace.name} logoUrl={workspace.logoUrl} size={30} />
+                <span className="font-semibold text-neutral-900 dark:text-neutral-50 truncate text-[15px]">{workspace.name}</span>
+                <ChevronDown size={14} className="text-neutral-400 shrink-0 ml-auto" />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-56">
+            <DropdownMenuContent className="w-60">
               <DropdownMenuLabel>{t("ws.switch")}</DropdownMenuLabel>
               {workspaces.map((w) => (
                 <DropdownMenuItem key={w.id} onSelect={() => router.push(`/w/${w.slug}`)}>
+                  <WorkspaceAvatar name={w.name} logoUrl={w.logoUrl} size={20} className="rounded-md" />
                   <span className={cn("truncate", w.slug === workspace.slug && "font-semibold")}>{w.name}</span>
                 </DropdownMenuItem>
               ))}
@@ -243,85 +254,49 @@ export function WorkspaceShell({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <NotificationBell />
         </div>
 
-        <nav className="flex-1 overflow-y-auto thin-scroll py-2 px-2 space-y-0.5">
-          <button
-            onClick={() => setSearchOpen(true)}
-            className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800 mb-2"
-          >
-            <Search size={14} />
-            <span className="flex-1 text-left">{t("common.search")}</span>
-            <kbd className="text-[10px] px-1 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800 text-neutral-400">Ctrl K</kbd>
+        <nav className="flex-1 overflow-y-auto thin-scroll pb-2 px-3 space-y-0.5">
+          <Link href={`/w/${workspace.slug}`} className={navItem(isHome)} data-testid="nav-home">
+            <Home size={16} /> <span className="flex-1">{t("nav.home")}</span>
+          </Link>
+          <Link href={`/w/${workspace.slug}/my-work`} className={navItem(isMyWork)}>
+            <ListChecks size={16} /> <span className="flex-1">{t("nav.myWork")}</span>
+          </Link>
+          <Link href={`/w/${workspace.slug}/inbox`} className={navItem(isInbox)} data-testid="nav-inbox">
+            <Inbox size={16} /> <span className="flex-1">{t("nav.inbox")}</span>
+            <UnreadCount />
+          </Link>
+          <Link href={`/w/${workspace.slug}/ai`} className={navItem(isAi)} data-testid="nav-ai">
+            <Sparkles size={16} /> <span className="flex-1">{t("nav.ai")}</span>
+            <span className="text-[9px] font-bold uppercase tracking-wide rounded px-1 py-0.5 bg-indigo-600 text-white">AI</span>
+          </Link>
+          <button onClick={() => setOkrOpen((v) => !v)} className={cn(navItem(okrActive && !okrOpen), "w-full")}>
+            <Target size={16} /> <span className="flex-1 text-left">{t("nav.okrs")}</span>
+            {okrOpen ? <ChevronDown size={13} className="text-neutral-400" /> : <ChevronRight size={13} className="text-neutral-400" />}
           </button>
-
-          <Link
-            href={`/w/${workspace.slug}/my-work`}
-            className={cn(
-              "flex items-center gap-2 rounded-md px-2 py-1.5 mb-2",
-              isMyWork ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-            )}
-          >
-            <Briefcase size={14} />
-            <span className="flex-1 text-left">{t("nav.myWork")}</span>
-          </Link>
-
-          <div className="mb-2">
-            <div className="px-2 mb-0.5 flex items-center gap-1.5 text-xs font-semibold text-neutral-400 uppercase tracking-wide">
-              <Target size={12} /> {t("nav.okrs")}
+          {okrOpen && (
+            <div className="ml-[18px] pl-3 border-l border-neutral-200 dark:border-neutral-800 space-y-0.5">
+              <Link href={`/w/${workspace.slug}/okrs`} className={navItem(isTeamOkrs || isOkrDetail)}>{t("nav.teamOkrs")}</Link>
+              <Link href={`/w/${workspace.slug}/okrs/my`} className={navItem(isMyOkrs)}>{t("nav.myOkrs")}</Link>
+              <Link href={`/w/${workspace.slug}/okrs/dashboard`} className={navItem(isOkrDashboard)}>{t("nav.okrDashboard")}</Link>
             </div>
-            <Link
-              href={`/w/${workspace.slug}/okrs`}
-              className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-1 ml-1",
-                isTeamOkrs || isOkrDetail ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-              )}
-            >
-              <span className="flex-1 text-left text-sm">{t("nav.teamOkrs")}</span>
-            </Link>
-            <Link
-              href={`/w/${workspace.slug}/okrs/my`}
-              className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-1 ml-1",
-                isMyOkrs ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-              )}
-            >
-              <span className="flex-1 text-left text-sm">{t("nav.myOkrs")}</span>
-            </Link>
-            <Link
-              href={`/w/${workspace.slug}/okrs/dashboard`}
-              className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-1 ml-1",
-                isOkrDashboard ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-              )}
-            >
-              <span className="flex-1 text-left text-sm">{t("nav.okrDashboard")}</span>
-            </Link>
-          </div>
-
-          <Link
-            href={`/w/${workspace.slug}/dashboards`}
-            className={cn(
-              "flex items-center gap-2 rounded-md px-2 py-1.5 mb-2",
-              isDashboards ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-            )}
-          >
-            <LayoutDashboard size={14} />
-            <span className="flex-1 text-left">{t("nav.dashboards")}</span>
+          )}
+          <Link href={`/w/${workspace.slug}/dashboards`} className={navItem(isDashboards)}>
+            <BarChart3 size={16} /> <span className="flex-1">{t("nav.reports")}</span>
           </Link>
 
-          <div className="mt-1 mb-1 px-2 flex items-center justify-between text-xs font-semibold text-neutral-400 uppercase tracking-wide">
+          <div className="pt-4 pb-1 px-2.5 flex items-center justify-between text-[11px] font-semibold text-neutral-400 uppercase tracking-wider">
             <span>{t("nav.projects")}</span>
             {canCreateProject && (
-              <button onClick={() => setNewProjectOpen(true)} className="hover:text-neutral-700 dark:hover:text-neutral-200" title={t("nav.newProject")} data-testid="sidebar-new-project">
-                <Plus size={13} />
+              <button onClick={() => setNewProjectOpen(true)} className="rounded p-0.5 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200" title={t("nav.newProject")} data-testid="sidebar-new-project">
+                <Plus size={14} />
               </button>
             )}
           </div>
 
           {projects.length === 0 && (
-            <div className="px-2 py-1 text-xs text-neutral-400">
+            <div className="px-2.5 py-1 text-xs text-neutral-400">
               {canCreateProject ? (
                 <button onClick={() => setNewProjectOpen(true)} className="hover:text-neutral-600">{t("nav.createFirstProject")}</button>
               ) : (
@@ -334,16 +309,16 @@ export function WorkspaceShell({
             <div key={project.id}>
               <div
                 className={cn(
-                  "group flex items-center gap-1 rounded-md px-1.5 py-1.5 cursor-pointer",
-                  activeProjectId === project.id ? "bg-neutral-100 dark:bg-neutral-800" : "hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                  "group flex items-center gap-1 rounded-lg px-1.5 py-1.5 cursor-pointer",
+                  activeProjectId === project.id ? "bg-neutral-100 dark:bg-neutral-800" : "hover:bg-neutral-100 dark:hover:bg-neutral-800/70"
                 )}
               >
                 <button onClick={() => toggleExpand(project.id)} className="text-neutral-400 shrink-0">
                   {!collapsed.has(project.id) ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                 </button>
-                <Link href={`/w/${workspace.slug}/p/${project.id}`} className="flex items-center gap-1.5 flex-1 min-w-0">
-                  <FolderKanban size={14} style={{ color: project.color }} className="shrink-0" />
-                  <span className="truncate text-neutral-800 dark:text-neutral-200 font-medium">{project.name}</span>
+                <Link href={`/w/${workspace.slug}/p/${project.id}`} className="flex items-center gap-2 flex-1 min-w-0">
+                  <span className="h-2.5 w-2.5 rounded-[3px] shrink-0" style={{ backgroundColor: project.color }} />
+                  <span className="truncate text-neutral-800 dark:text-neutral-200 font-medium text-[13px]">{project.name}</span>
                 </Link>
                 {canEditViews && (
                   <DropdownMenu>
@@ -385,7 +360,7 @@ export function WorkspaceShell({
                 )}
               </div>
               {!collapsed.has(project.id) && (
-                <div className="ml-5 border-l border-neutral-200 dark:border-neutral-800 pl-2 space-y-0.5 mb-1">
+                <div className="ml-[13px] border-l border-neutral-200 dark:border-neutral-800 pl-2 space-y-0.5 mb-1">
                   <ViewList
                     project={project}
                     workspaceSlug={workspace.slug}
@@ -408,7 +383,7 @@ export function WorkspaceShell({
                       key={section}
                       href={`/w/${workspace.slug}/p/${project.id}/${section}`}
                       className={cn(
-                        "flex items-center gap-1.5 rounded-md px-1.5 py-1 ml-2.5 truncate",
+                        "flex items-center gap-1.5 rounded-md px-1.5 py-1 ml-2.5 truncate text-[13px]",
                         activeProjectId === project.id && projectSection === section
                           ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium"
                           : "text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
@@ -423,73 +398,92 @@ export function WorkspaceShell({
               )}
             </div>
           ))}
-
-          <div className="mt-3 pt-2 border-t border-neutral-200 dark:border-neutral-800 space-y-0.5">
-            {!desktopVersion && (
-              <Link href="/download" className="flex items-center gap-2 rounded-md px-2 py-1.5 text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800" data-testid="sidebar-download-desktop">
-                <MonitorDown size={14} />
-                <span className="flex-1 text-left">{t("nav.download")}</span>
-              </Link>
-            )}
-            <Link
-              href={`/w/${workspace.slug}/settings`}
-              className={cn(
-                "flex items-center gap-2 rounded-md px-2 py-1.5",
-                isSettings ? "bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-medium" : "text-neutral-600 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800"
-              )}
-            >
-              <Settings size={14} />
-              <span className="flex-1 text-left">{t("nav.settings")}</span>
-            </Link>
-          </div>
         </nav>
 
-        <div className="border-t border-neutral-200 dark:border-neutral-800 p-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="w-full flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800">
-                <div className="h-6 w-6 rounded-full flex items-center justify-center text-white text-[11px] font-medium shrink-0" style={{ backgroundColor: user.avatarColor }}>
-                  {initials(user.name)}
+        <div className="px-3 pb-3 space-y-1.5 shrink-0">
+          {!desktopVersion && (
+            <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/40 p-3" data-testid="sidebar-download-desktop">
+              <div className="flex items-center gap-2">
+                <MonitorDown size={16} className="text-indigo-600" />
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-neutral-800 dark:text-neutral-100">{t("nav.desktopCard")}</div>
+                  <div className="text-[11px] text-neutral-500 truncate">{t("nav.desktopCardSub")}</div>
                 </div>
-                <div className="flex-1 text-left min-w-0">
-                  <div className="truncate text-neutral-800 dark:text-neutral-200 font-medium">{user.name}</div>
-                </div>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-52">
-              <DropdownMenuLabel>
-                {user.email}
-                {desktopVersion && <div className="text-[10px] font-normal text-neutral-400">{t("nav.desktopVersion", { version: desktopVersion })}</div>}
-              </DropdownMenuLabel>
-              <DropdownMenuItem onSelect={() => setPrefsOpen(true)}>
-                <Palette size={14} /> {t("nav.preferences")}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => router.push("/account/password")}>
-                <KeyRound size={14} /> {t("nav.changePassword")}
-              </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => router.push("/workspaces")}>
-                <Building2 size={14} /> {t("ws.all")}
-              </DropdownMenuItem>
-              {isAdmin && (
-                <DropdownMenuItem onSelect={() => router.push("/admin")}>
-                  <ShieldCheck size={14} /> {t("nav.adminConsole")}
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuItem onSelect={toggle}>
-                {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-                {theme === "dark" ? t("nav.lightMode") : t("nav.darkMode")}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onSelect={() => signOut({ callbackUrl: "/" })}>
-                <LogOut size={14} /> {t("auth.signOut")}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+              </div>
+              <Link href="/download" className="mt-2 block text-center text-xs font-semibold rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 py-1.5 hover:bg-indigo-100">
+                {t("nav.download")}
+              </Link>
+            </div>
+          )}
+          <Link href={`/w/${workspace.slug}/settings`} className={navItem(isSettings && !projectSection)}>
+            <Settings size={16} /> <span className="flex-1">{t("nav.settings")}</span>
+          </Link>
         </div>
       </aside>
 
-      {/* Main content column, top bar rendered per-page (breadcrumb depends on table) */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0">{children}</div>
+      {/* Main column: global top bar, then each page renders its own header */}
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+        <header className="h-14 shrink-0 flex items-center gap-3 px-5 border-b border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="flex items-center gap-2 w-full max-w-md h-9 rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-800/50 px-3 text-neutral-400 hover:border-neutral-300"
+            data-testid="topbar-search"
+          >
+            <Search size={15} />
+            <span className="flex-1 text-left text-[13px]">{t("nav.searchPlaceholder")}</span>
+            <kbd className="text-[10px] px-1.5 py-0.5 rounded bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 text-neutral-400">Ctrl K</kbd>
+          </button>
+          <div className="ml-auto flex items-center gap-1.5">
+            <NotificationBell align="end" />
+            <Link href={`/w/${workspace.slug}/ai`} className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800" title={t("nav.ai")}>
+              <Sparkles size={16} />
+            </Link>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="flex items-center gap-2 rounded-lg pl-1 pr-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800 ml-1" data-testid="user-menu">
+                  <span className="h-8 w-8 rounded-full flex items-center justify-center text-white text-xs font-semibold shrink-0" style={{ backgroundColor: user.avatarColor }}>
+                    {initials(user.name)}
+                  </span>
+                  <span className="hidden md:block text-left leading-tight">
+                    <span className="block text-[13px] font-semibold text-neutral-800 dark:text-neutral-100 max-w-40 truncate">{user.name}</span>
+                    <span className="block text-[11px] text-neutral-400">{t(`role.${role}` as MessageKey)}</span>
+                  </span>
+                  <ChevronDown size={13} className="text-neutral-400" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-56" align="end">
+                <DropdownMenuLabel>
+                  {user.email}
+                  {desktopVersion && <div className="text-[10px] font-normal text-neutral-400">{t("nav.desktopVersion", { version: desktopVersion })}</div>}
+                </DropdownMenuLabel>
+                <DropdownMenuItem onSelect={() => setPrefsOpen(true)}>
+                  <Palette size={14} /> {t("nav.preferences")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => router.push("/account/password")}>
+                  <KeyRound size={14} /> {t("nav.changePassword")}
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => router.push("/workspaces")}>
+                  <Building2 size={14} /> {t("ws.all")}
+                </DropdownMenuItem>
+                {isAdmin && (
+                  <DropdownMenuItem onSelect={() => router.push("/admin")}>
+                    <ShieldCheck size={14} /> {t("nav.adminConsole")}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onSelect={toggle}>
+                  {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+                  {theme === "dark" ? t("nav.lightMode") : t("nav.darkMode")}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => signOut({ callbackUrl: "/" })}>
+                  <LogOut size={14} /> {t("auth.signOut")}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </header>
+        <div className="flex-1 flex flex-col overflow-hidden min-w-0">{children}</div>
+      </div>
 
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} workspaceId={workspace.id} workspaceSlug={workspace.slug} />
       <PreferencesDialog open={prefsOpen} onOpenChange={setPrefsOpen} />

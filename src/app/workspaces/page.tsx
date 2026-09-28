@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { workspaceLogoUrl } from "@/lib/workspace-logo";
 import { requirePageUser } from "@/lib/page-context";
 import { WorkspaceChooser, type WorkspaceCard } from "@/components/workspaces/workspace-chooser";
 
@@ -21,6 +22,7 @@ export default async function WorkspacesPage() {
     name: m.workspace.name,
     slug: m.workspace.slug,
     description: m.workspace.description,
+    logoUrl: workspaceLogoUrl(m.workspace),
     role: m.role,
     projects: m.workspace._count.projects,
     members: m.workspace._count.members,

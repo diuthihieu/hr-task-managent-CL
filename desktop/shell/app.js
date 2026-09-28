@@ -26,7 +26,7 @@
     clearTimeout(timer);
     retryEl.hidden = true;
     statusEl.textContent = "Connecting…";
-    if (!navigator.onLine) return offline("You are offline. Basework needs an internet connection - your data lives on the server.");
+    if (!navigator.onLine) return offline("You are offline. woli needs an internet connection - your data lives on the server.");
     var controller = new AbortController();
     var abort = setTimeout(function () { controller.abort(); }, 8000);
     fetch(serverUrl + "/login", { mode: "no-cors", cache: "no-store", signal: controller.signal })
@@ -36,7 +36,7 @@
       })
       .catch(function () {
         clearTimeout(abort);
-        offline("Can't reach the Basework server. Retrying automatically…");
+        offline("Can't reach the woli server. Retrying automatically…");
       });
   }
 

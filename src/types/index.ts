@@ -51,6 +51,7 @@ export interface ProjectRow {
   name: string;
   description: string | null;
   color: string;
+  icon: string | null;
   status: string;
   ownerId: string | null;
   startDate: string | null;

@@ -340,6 +340,8 @@ model Project {
   name        String        @db.VarChar(160)
   description String?
   color       String        @default("#6366f1") @db.VarChar(9)
+  /// Optional icon key (see src/lib/project-icons.ts); null = no icon.
+  icon        String?       @db.VarChar(40)
   status      ProjectStatus @default(active)
   ownerId     String?       @map("owner_id") @db.Uuid
   startDate   DateTime?     @map("start_date") @db.Date

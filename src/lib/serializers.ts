@@ -9,6 +9,7 @@ export function serializeProject(p: Project): ProjectRow {
     name: p.name,
     description: p.description,
     color: p.color,
+    icon: p.icon,
     status: p.status,
     ownerId: p.ownerId,
     startDate: fromDateOnly(p.startDate),

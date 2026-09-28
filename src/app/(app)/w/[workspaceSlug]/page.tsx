@@ -7,6 +7,7 @@ import { requireWorkspacePage } from "@/lib/page-context";
 import { getServerT } from "@/lib/prefs";
 import { getMyObjectiveRows, resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 import { NewProjectButton } from "@/components/projects/new-project-button";
+import { ProjectIcon } from "@/components/projects/project-icon";
 import { Greeting } from "@/components/home/greeting";
 import { CommandCenter, type HomeTask } from "@/components/home/command-center";
 import { cn, initials } from "@/lib/utils";
@@ -40,7 +41,7 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
     completedAt: true,
     objectiveId: true,
     projectId: true,
-    project: { select: { name: true, color: true } },
+    project: { select: { name: true, color: true, icon: true } },
     status: { select: { name: true, color: true, category: true } },
     assignees: { select: { user: { select: { id: true, name: true } } } },
     dependencies: { select: { dependsOn: { select: { title: true, deletedAt: true, status: { select: { category: true } } } } } },
@@ -117,6 +118,7 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
     projectId: x.projectId,
     projectName: x.project.name,
     projectColor: x.project.color,
+    projectIcon: x.project.icon,
     statusName: x.status.name,
     statusColor: x.status.color,
     category: x.status.category,
@@ -236,9 +238,11 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
               return (
                 <Link key={p.id} href={`${base}/p/${p.id}`} className={cn(card, "group p-4 hover:border-indigo-200 dark:hover:border-indigo-900 transition-colors")}>
                   <div className="flex items-center gap-2.5">
-                    <span className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: `${p.color}1f`, color: p.color }}>
-                      <FolderKanban size={17} />
-                    </span>
+                    {p.icon && (
+                      <span className="h-9 w-9 rounded-xl flex items-center justify-center shrink-0 bg-indigo-50 dark:bg-indigo-950/60">
+                        <ProjectIcon icon={p.icon} size={17} />
+                      </span>
+                    )}
                     <span className="font-semibold text-neutral-900 dark:text-neutral-100 truncate flex-1">{p.name}</span>
                     <ArrowUpRight size={15} className="text-neutral-300 group-hover:text-indigo-500" />
                   </div>

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
+import { ProjectIconPicker } from "./project-icon";
 
 const COLORS = ["#6366f1", "#0ea5e9", "#22c55e", "#f97316", "#ec4899", "#eab308", "#14b8a6", "#8b5cf6", "#ef4444", "#64748b"];
 
@@ -22,6 +23,7 @@ export function NewProjectDialog({ open, onOpenChange, workspaceId, workspaceSlu
   const router = useRouter();
   const [name, setName] = useState("");
   const [color, setColor] = useState(COLORS[0]);
+  const [icon, setIcon] = useState<string | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
   const [categoryDraft, setCategoryDraft] = useState("");
   const [objectives, setObjectives] = useState<ObjectiveDraft[]>([]);
@@ -29,6 +31,7 @@ export function NewProjectDialog({ open, onOpenChange, workspaceId, workspaceSlu
 
   function reset() {
     setName("");
+    setIcon(null);
     setColor(COLORS[0]);
     setCategories([]);
     setCategoryDraft("");
@@ -55,6 +58,7 @@ export function NewProjectDialog({ open, onOpenChange, workspaceId, workspaceSlu
       const project = await api.post<{ id: string }>(`/api/workspaces/${workspaceId}/projects`, {
         name: name.trim(),
         color,
+        icon,
         categories: cats.map((c) => ({ name: c })),
       });
       for (const o of objectives.filter((x) => x.title.trim())) {
@@ -88,7 +92,8 @@ export function NewProjectDialog({ open, onOpenChange, workspaceId, workspaceSlu
           <div>
             <label className="text-xs font-medium text-neutral-500 mb-1 block" htmlFor="np-name">{t("project.new.name")}</label>
             <Input id="np-name" autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t("project.new.namePlaceholder")} maxLength={160} data-testid="new-project-name" />
-            <div className="flex gap-1.5 mt-2">
+            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+              <ProjectIconPicker value={icon} onChange={setIcon} />
               {COLORS.map((c) => (
                 <button key={c} onClick={() => setColor(c)} className="h-5 w-5 rounded-full ring-offset-2 ring-offset-white dark:ring-offset-neutral-900" style={{ backgroundColor: c, boxShadow: color === c ? `0 0 0 2px ${c}` : undefined }} aria-label={c} />
               ))}

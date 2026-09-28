@@ -347,3 +347,24 @@ body {
   .mascot-check-pulse, .mascot-panel-glow, .mascot-particle { display: none; }
   .mascot-hover { transition: none; }
 }
+
+/* Resizable dashboard / report cards: accent grips on hover (react-grid-layout). Selectors
+   out-rank the library's own `.react-grid-item > .react-resizable-handle.react-resizable-handle-*`. */
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle { opacity: 0; transition: opacity 0.15s; z-index: 5; background: none; transform: none; margin: 0; padding: 0; }
+.woli-grid .react-grid-item:hover > .react-resizable-handle.react-resizable-handle,
+.woli-grid .react-grid-item.resizing > .react-resizable-handle.react-resizable-handle { opacity: 1; }
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle::after { content: ""; position: absolute; transform: none; border: 0; border-radius: 9999px; background: var(--color-indigo-400); }
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-se { width: 18px; height: 18px; right: 2px; bottom: 2px; top: auto; left: auto; cursor: se-resize; }
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-se::after {
+  right: 4px; bottom: 4px; width: 9px; height: 9px; top: auto; left: auto; background: none; border-radius: 0 0 3px 0;
+  border-right: 2.5px solid var(--color-indigo-500); border-bottom: 2.5px solid var(--color-indigo-500);
+}
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-e { top: 20%; bottom: auto; right: 0; left: auto; width: 8px; height: 60%; cursor: ew-resize; }
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-e::after { right: 2px; top: calc(50% - 12px); left: auto; bottom: auto; width: 3px; height: 24px; }
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-s { left: 20%; right: auto; bottom: 0; top: auto; height: 8px; width: 60%; cursor: ns-resize; }
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-s::after { bottom: 2px; left: calc(50% - 12px); right: auto; top: auto; height: 3px; width: 24px; }
+.woli-grid .react-grid-item.react-grid-placeholder { background: var(--color-indigo-400); opacity: 0.18; border-radius: 12px; }
+@media (hover: none) { .woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle { opacity: 1; } }
+/* Clicking a chart focuses its SVG; keep the focus ring for keyboard users only. */
+.recharts-wrapper:focus, .recharts-surface:focus, .recharts-sector:focus, .recharts-rectangle:focus { outline: none; }
+.recharts-surface:focus-visible { outline: 2px solid var(--color-indigo-400); outline-offset: 2px; }

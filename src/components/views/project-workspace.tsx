@@ -566,7 +566,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onOpenRecord={setOpenRecordId}
         />
       ) : activeView?.type === "report" ? (
-        <ReportView projectId={projectId} fields={fields} records={sorted} members={members} config={config.report ?? {}} canEdit={canEdit} onConfigChange={(next) => updateConfig({ report: next })} />
+        <ReportView projectId={projectId} fields={fields} records={sorted} members={members} config={config.report ?? {}} canEdit={canEdit} onConfigChange={(next) => updateConfig({ report: next })} onOpenRecord={setOpenRecordId} />
       ) : activeView?.type === "eisenhower" ? (
         <EisenhowerView
           fields={fields}

@@ -59,6 +59,7 @@ import {
 import { useT } from "@/components/i18n-provider";
 import { PreferencesDialog } from "@/components/preferences/preferences-dialog";
 import { NewProjectDialog } from "@/components/projects/new-project-dialog";
+import { ProjectIcon } from "@/components/projects/project-icon";
 import type { MessageKey } from "@/lib/i18n/core";
 import { useTheme } from "@/components/theme-provider";
 import { api } from "@/lib/api-client";
@@ -90,7 +91,7 @@ export const NEW_VIEW_TYPES: { type: string; label: MessageKey }[] = [
 ];
 
 interface ViewLite { id: string; name: string; type: string }
-interface ProjectLite { id: string; name: string; color: string; views: ViewLite[] }
+interface ProjectLite { id: string; name: string; color: string; icon: string | null; views: ViewLite[] }
 interface WorkspaceLite { id: string; name: string; slug: string; logoUrl?: string | null }
 
 const ROLE_RANK: Record<string, number> = { viewer: 0, contributor: 1, editor: 2, admin: 3, owner: 4 };
@@ -365,7 +366,7 @@ export function WorkspaceShell({
                   {!collapsed.has(project.id) ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                 </button>
                 <Link href={`/w/${workspace.slug}/p/${project.id}`} className="flex items-center gap-2 flex-1 min-w-0">
-                  <span className="h-2.5 w-2.5 rounded-[3px] shrink-0" style={{ backgroundColor: project.color }} />
+                  <ProjectIcon icon={project.icon} size={14} />
                   <span className="truncate text-neutral-800 dark:text-neutral-200 font-medium text-[13px]">{project.name}</span>
                 </Link>
                 {canEditViews && (

@@ -902,6 +902,9 @@ test("profile & appearance: avatars are visible to co-members only; theme mode a
 });
 
 test("approvals: request, approve from the Action Center, and optionally complete the task", async () => {
+  // An earlier test removes "Done"; completing on approval needs a done-category status.
+  const statuses = (await admin.get<{ category: string }[]>(`/api/workspaces/${s.ws}/statuses`)).body;
+  if (!statuses.some((x) => x.category === "done")) assert.equal((await admin.post(`/api/workspaces/${s.ws}/statuses`, { name: "Done", category: "done" })).status, 201);
   const people = await contributor.get<{ id: string }[]>(`/api/tasks/${s.r6task}/mentionable`);
   assert.ok(people.body.some((p) => p.id === s.viewerId));
   assert.equal((await viewer.post(`/api/tasks/${s.r6task}/approvals`, { approverId: s.contributorId })).status, 403, "viewers can't request approvals");
@@ -936,6 +939,33 @@ test("AI suggestions: rule-based nudges that open the matching AI action, create
   assert.equal(rows.length, 1, "deduplicated");
   assert.equal((rows[0].data as { kind: string }).kind, "task_breakdown");
   assert.match(rows[0].link!, /\?ai=task_breakdown$/);
+});
+
+test("project icons: optional, chosen from the basic set", async () => {
+  const none = await admin.post<{ id: string; icon: string | null }>(`/api/workspaces/${s.ws}/projects`, { name: "No icon project" });
+  assert.equal(none.status, 201, JSON.stringify(none.body));
+  assert.equal(none.body.icon, null, "no icon unless the user picks one");
+  assert.equal((await admin.patch(`/api/projects/${none.body.id}`, { icon: "not-an-icon" })).status, 400);
+  const set = await admin.patch<{ icon: string | null }>(`/api/projects/${none.body.id}`, { icon: "rocket" });
+  assert.equal(set.body.icon, "rocket");
+  assert.equal((await admin.patch<{ icon: string | null }>(`/api/projects/${none.body.id}`, { icon: null })).body.icon, null, "can be cleared");
+});
+
+test("dashboard drill-down: a clicked segment lists exactly the tasks it counts", async () => {
+  const d = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/dashboards`, { name: "Drill-down" });
+  const block = await admin.post<{ id: string }>(`/api/dashboards/${d.body.id}/blocks`, { type: "column", title: "By status", config: { dataSource: { projectId: s.project }, dimensionFieldId: "sys_status", aggregation: "count" } });
+  assert.equal(block.status, 201, JSON.stringify(block.body));
+  const data = await viewer.post<{ series: { key: string; label: string; value: number }[] }>(`/api/dashboard-blocks/${block.body.id}/data`, {});
+  const point = data.body.series[0];
+  assert.ok(point && point.value > 0, JSON.stringify(data.body));
+  const res = await viewer.post<{ tasks: { id: string; title: string; status: { label: string } | null }[]; total: number }>(`/api/dashboard-blocks/${block.body.id}/records`, { segment: { key: point.key, label: point.label } });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.total, point.value, "adds up to the bar");
+  assert.ok(res.body.tasks.every((x) => x.status?.label === point.label));
+  const kpi = await viewer.post<{ total: number }>(`/api/dashboard-blocks/${block.body.id}/records`, { segment: { key: "nope", label: "nope" } });
+  assert.equal(kpi.body.total, 0);
+  assert.equal((await outsider.post(`/api/dashboard-blocks/${block.body.id}/records`, { segment: { key: point.key, label: point.label } })).status, 404, "outsiders see nothing");
+  assert.equal((await viewer.post(`/api/dashboard-blocks/${block.body.id}/records`, {})).status, 400, "segment required");
 });
 
 test("members can leave; only owners delete a workspace", async () => {

@@ -52,6 +52,7 @@ export const PATCH = route<P>(async (req, { params }) => {
         name: body.name,
         description: body.description,
         color: body.color,
+        icon: body.icon,
         status: body.status,
         ownerId: body.ownerId,
         startDate: dateOnlyToDate(body.startDate),
@@ -61,7 +62,7 @@ export const PATCH = route<P>(async (req, { params }) => {
       },
     });
     if (body.ownerId) await tx.projectHiddenMember.deleteMany({ where: { projectId, userId: body.ownerId } });
-    const changes = diff(before, after, ["name", "description", "color", "status", "ownerId", "startDate", "endDate"]);
+    const changes = diff(before, after, ["name", "description", "color", "icon", "status", "ownerId", "startDate", "endDate"]);
     if (changes) await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "project", entityId: projectId, action: "updated", changes });
     return after;
   });

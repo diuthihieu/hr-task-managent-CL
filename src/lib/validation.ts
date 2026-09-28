@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isProjectIcon } from "@/lib/project-icons";
 
 export const uuid = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i, "must be a valid id");
 export const emailSchema = z
@@ -27,6 +28,7 @@ export const projectInputSchema = z.object({
   name: nameSchema,
   description: z.string().max(5000).nullable().optional(),
   color: colorSchema.optional(),
+  icon: z.string().refine(isProjectIcon, "must be a known icon").nullable().optional(),
   status: z.enum(["active", "on_hold", "completed", "archived"]).optional(),
   ownerId: uuid.nullable().optional(),
   startDate: dateOnlySchema,

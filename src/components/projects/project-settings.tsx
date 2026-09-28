@@ -11,6 +11,7 @@ import { useT } from "@/components/i18n-provider";
 import { cn } from "@/lib/utils";
 import type { CategoryRow } from "@/types";
 import { ProjectVisibility } from "./project-visibility";
+import { ProjectIconPicker } from "./project-icon";
 
 const COLORS = ["#6366f1", "#0ea5e9", "#22c55e", "#f97316", "#ec4899", "#eab308", "#14b8a6", "#8b5cf6", "#ef4444", "#64748b"];
 
@@ -19,6 +20,7 @@ interface ProjectInfo {
   name: string;
   description: string | null;
   color: string;
+  icon: string | null;
   status: string;
   ownerId: string | null;
   startDate: string | null;
@@ -138,6 +140,10 @@ export function ProjectSettings({ project, workspaceId, workspaceSlug, canManage
             <div>
               <label className={label}>{t("ps.end")}</label>
               <Input type="date" defaultValue={info.endDate ?? ""} disabled={!canManage} onChange={(e) => save({ endDate: e.target.value || null })} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={label}>{t("pi.label")}</label>
+              <ProjectIconPicker value={info.icon} disabled={!canManage} onChange={(icon) => save({ icon })} />
             </div>
             <div className="sm:col-span-2">
               <label className={label}>{t("ps.color")}</label>

@@ -12,7 +12,7 @@ export async function generateMetadata({ params }: { params: Promise<{ workspace
   if (!w) return {};
   const logo = workspaceLogoUrl(w);
   return {
-    title: { default: `${w.name} · woli.`, template: `%s · ${w.name}` },
+    title: { default: `${w.name} · woli`, template: `%s · ${w.name}` },
     ...(logo ? { icons: { icon: logo, apple: logo } } : {}),
   };
 }

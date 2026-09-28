@@ -6,9 +6,9 @@ import { getRequestPrefs } from "@/lib/prefs";
 
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.AUTH_URL ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000")),
-  title: { default: "woli. | Team Workspace", template: "%s · woli." },
+  title: { default: "woli | Team Workspace", template: "%s · woli" },
   description: "Projects, tasks, OKRs, a team wiki and an AI assistant in one workspace - on the web and on Windows.",
-  applicationName: "woli.",
+  applicationName: "woli",
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

@@ -184,7 +184,7 @@ export async function myDayContext(user: SessionUser, workspaceId: string) {
 }
 
 export function actionSystemPrompt(o: { area: string; workspace: string; user: string; locale: string; instructions: string; data: string; personal?: string }) {
-  return `You are woli. AI, embedded in the ${o.area} of the workspace "${o.workspace}". You are helping ${o.user}.
+  return `You are woli AI, embedded in the ${o.area} of the workspace "${o.workspace}". You are helping ${o.user}.
 
 TASK: ${o.instructions}
 

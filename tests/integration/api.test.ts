@@ -587,7 +587,7 @@ test("workspace logo: admins upload or generate one; it becomes the favicon and 
   assert.equal(loc.searchParams.get("callbackUrl"), `/w/${ws.slug}/my-work`);
   const landing = await (await fetch(`${BASE}/?ws=${ws.slug}`)).text();
   assert.match(landing, /<meta property="og:image" content="[^"]*workspace-logo/);
-  assert.ok(landing.includes(`<title>${ws.name} · woli.</title>`), "workspace name in the preview title");
+  assert.ok(landing.includes(`<title>${ws.name} · woli</title>`), "workspace name in the preview title");
   assert.equal((await admin.del(`/api/workspaces/${s.ws}/logo`)).status, 204);
   assert.equal((await fetch(`${BASE}${logoUrl}`)).status, 404);
 });

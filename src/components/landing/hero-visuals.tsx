@@ -38,7 +38,7 @@ export function ScreenshotMarquee({ shots, label }: { shots: Shot[]; label: stri
                 <span className="h-2 w-2 rounded-full bg-neutral-300 dark:bg-neutral-700" />
                 <span className="h-2 w-2 rounded-full bg-neutral-300 dark:bg-neutral-700" />
                 <span className="h-2 w-2 rounded-full bg-neutral-300 dark:bg-neutral-700" />
-                <span className="ml-2 text-[10px] text-neutral-400 truncate">woli. · {s.label}</span>
+                <span className="ml-2 text-[10px] text-neutral-400 truncate">woli · {s.label}</span>
               </div>
               <Image src={s.src} alt={s.label} width={1200} height={750} className="block w-full h-auto" sizes="(min-width: 1024px) 520px, (min-width: 640px) 420px, 300px" priority={i < 2} />
             </div>

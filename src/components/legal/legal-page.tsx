@@ -12,7 +12,7 @@ export function LegalPage({ title, updated, intro, sections, backLabel }: { titl
     <div className="min-h-screen bg-white dark:bg-neutral-950 text-neutral-800 dark:text-neutral-200">
       <header className="border-b border-neutral-100 dark:border-neutral-900">
         <div className="max-w-3xl mx-auto px-4 h-16 flex items-center justify-between">
-          <Link href="/" aria-label="woli.">
+          <Link href="/" aria-label="woli">
             <Brand size={28} textClassName="text-lg" />
           </Link>
           <Link href="/" className="text-sm text-neutral-500 hover:text-neutral-900 dark:hover:text-white">

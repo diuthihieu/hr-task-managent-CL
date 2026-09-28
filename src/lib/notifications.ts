@@ -18,6 +18,9 @@ export type NotificationType =
   | "mention"
   | "task_due_changed"
   | "objective_risk"
+  | "approval_request"
+  | "approval_result"
+  | "ai_suggestion"
   | "task_due_soon"
   | "task_overdue"
   | "capture_due";
@@ -161,7 +164,7 @@ export async function generateReminders(userId: string, now = new Date()) {
   const tomorrow = new Date(today.getTime() + DAY);
   const open = { deletedAt: null, status: { category: { in: ["todo", "in_progress"] as ("todo" | "in_progress")[] } }, project: { deletedAt: null, workspace: { deletedAt: null }, hiddenMembers: { none: { userId } } } };
 
-  const [dueSoon, overdue, thoughts, risky] = await Promise.all([
+  const [dueSoon, overdue, thoughts, risky, bigTasks] = await Promise.all([
     prisma.task.findMany({
       where: { ...open, dueDate: { gte: today, lte: tomorrow }, assignees: { some: { userId } } },
       select: { id: true, title: true, projectId: true, workspaceId: true, dueDate: true, workspace: { select: { slug: true } } },
@@ -186,10 +189,35 @@ export async function generateReminders(userId: string, now = new Date()) {
         OR: [{ projectId: null }, { project: { deletedAt: null, hiddenMembers: { none: { userId } } } }],
         AND: [{ OR: [{ ownerId: userId }, { keyResults: { some: { deletedAt: null, ownerId: userId } } }] }],
       },
-      select: { id: true, title: true, status: true, workspaceId: true, projectId: true, workspace: { select: { slug: true } } },
+      select: { id: true, title: true, status: true, workspaceId: true, projectId: true, workspace: { select: { slug: true } }, _count: { select: { tasks: { where: { deletedAt: null } } } }, keyResults: { where: { deletedAt: null }, select: { _count: { select: { tasks: { where: { deletedAt: null } } } } } } },
       take: 50,
     }),
+    // Big tasks of mine (>= 8h) not started and not broken down yet.
+    prisma.task.findMany({
+      where: { deletedAt: null, status: { category: "todo" }, project: open.project, assignees: { some: { userId } }, estimateMinutes: { gte: 480 }, subtasks: { none: { deletedAt: null } } },
+      select: { id: true, title: true, projectId: true, workspaceId: true, workspace: { select: { slug: true } } },
+      take: 20,
+    }),
   ]);
+
+  // AI suggestions: rule-triggered nudges whose action opens the matching AI tool
+  // (the AI itself only runs when the user clicks - no model call here).
+  const todayKey = dateKey(today);
+  const pressing = new Map<string, { slug: string; n: number }>();
+  for (const t of [...overdue, ...dueSoon.filter((x) => x.dueDate! <= today)]) {
+    const cur = pressing.get(t.workspaceId) ?? { slug: t.workspace.slug, n: 0 };
+    cur.n++;
+    pressing.set(t.workspaceId, cur);
+  }
+  const suggestions: Prisma.NotificationCreateManyInput[] = [
+    ...[...pressing.entries()]
+      .filter(([, v]) => v.n >= 3)
+      .map(([workspaceId, v]) => ({ userId, workspaceId, type: "ai_suggestion", title: "Plan my day", data: { kind: "plan_day", count: v.n }, link: `/w/${v.slug}?ai=home_plan`, dedupeKey: `aisug:plan:${workspaceId}:${todayKey}` })),
+    ...risky
+      .filter((o) => o._count.tasks + o.keyResults.reduce((sum, k) => sum + k._count.tasks, 0) === 0)
+      .map((o) => ({ userId, workspaceId: o.workspaceId, projectId: o.projectId, type: "ai_suggestion", title: o.title, data: { kind: "okr_unlinked" }, link: `/w/${o.workspace.slug}/okrs/${o.id}?ai=okr_unlinked`, dedupeKey: `aisug:okr:${o.id}` })),
+    ...bigTasks.map((t) => ({ userId, workspaceId: t.workspaceId, projectId: t.projectId, taskId: t.id, type: "ai_suggestion", title: t.title, data: { kind: "task_breakdown" }, link: `/w/${t.workspace.slug}/p/${t.projectId}/t/${t.id}?ai=task_breakdown`, dedupeKey: `aisug:breakdown:${t.id}` })),
+  ];
 
   const rows: Prisma.NotificationCreateManyInput[] = [
     ...dueSoon.map((t) => ({
@@ -235,6 +263,7 @@ export async function generateReminders(userId: string, now = new Date()) {
       link: `/w/${o.workspace.slug}/okrs/${o.id}`,
       dedupeKey: `objrisk:${o.id}:${o.status}`,
     })),
+    ...suggestions,
   ];
   if (rows.length) await prisma.notification.createMany({ data: rows, skipDuplicates: true });
 }

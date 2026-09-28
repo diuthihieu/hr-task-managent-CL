@@ -250,6 +250,8 @@ model User {
   wikiMemberships       WikiMember[]
   commentMentions       CommentMention[]
   wikiComments          WikiComment[]          @relation("WikiCommentAuthor")
+  approvalsRequested    TaskApproval[]         @relation("ApprovalRequester")
+  approvalsToDecide     TaskApproval[]         @relation("ApprovalApprover")
   wikiCommentMentions   WikiCommentMention[]   @relation("WikiCommentMentionUser")
   focusSessions         FocusSession[]
 
@@ -282,6 +284,7 @@ model Workspace {
   dashboards       Dashboard[]
   attachments      Attachment[]
   wikiComments     WikiComment[]
+  taskApprovals    TaskApproval[]
   activityLogs     ActivityLog[]
   capturedThoughts CapturedThought[]
   wikiPages        WikiPage[]
@@ -472,6 +475,7 @@ model Task {
   customValues  TaskCustomFieldValue[]
   thoughts      CapturedThought[]
   focusSessions FocusSession[]
+  approvals     TaskApproval[]
 
   @@index([projectId, deletedAt, sortOrder])
   @@index([workspaceId, deletedAt, dueDate])
@@ -1236,4 +1240,36 @@ model WikiCommentMention {
   @@id([commentId, userId])
   @@index([userId])
   @@map("wiki_comment_mentions")
+}
+
+enum ApprovalStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+/// A request for someone to sign off a task (e.g. payroll checked, offer letter OK).
+model TaskApproval {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId   String         @map("workspace_id") @db.Uuid
+  taskId        String         @map("task_id") @db.Uuid
+  requestedById String?        @map("requested_by") @db.Uuid
+  approverId    String         @map("approver_id") @db.Uuid
+  status        ApprovalStatus @default(pending)
+  note          String?        @db.VarChar(2000)
+  decisionNote  String?        @map("decision_note") @db.VarChar(2000)
+  /// Approving also moves the task to its first "done" status.
+  completeOnApprove Boolean    @default(false) @map("complete_on_approve")
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  decidedAt     DateTime?      @map("decided_at") @db.Timestamptz(6)
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  requestedBy User?     @relation("ApprovalRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  approver    User      @relation("ApprovalApprover", fields: [approverId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@index([approverId, status])
+  @@map("task_approvals")
 }

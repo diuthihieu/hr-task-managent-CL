@@ -901,6 +901,43 @@ test("profile & appearance: avatars are visible to co-members only; theme mode a
   assert.equal((await admin.patch("/api/account/profile", { aiTone: "sarcastic" })).status, 400);
 });
 
+test("approvals: request, approve from the Action Center, and optionally complete the task", async () => {
+  const people = await contributor.get<{ id: string }[]>(`/api/tasks/${s.r6task}/mentionable`);
+  assert.ok(people.body.some((p) => p.id === s.viewerId));
+  assert.equal((await viewer.post(`/api/tasks/${s.r6task}/approvals`, { approverId: s.contributorId })).status, 403, "viewers can't request approvals");
+  assert.equal((await contributor.post(`/api/tasks/${s.r6task}/approvals`, { approverId: s.contributorId })).status, 400, "not yourself");
+  assert.equal((await contributor.post(`/api/tasks/${s.r6task}/approvals`, { approverId: s.outsiderId })).status, 400, "approver must be a member");
+  const req = await contributor.post<{ id: string; status: string }>(`/api/tasks/${s.r6task}/approvals`, { approverId: s.viewerId, note: "Please check the offer amounts", completeOnApprove: true });
+  assert.equal(req.status, 201, JSON.stringify(req.body));
+  assert.equal((await contributor.post(`/api/tasks/${s.r6task}/approvals`, { approverId: s.viewerId })).status, 409, "one pending request per approver");
+  const inbox = await viewer.get<NotifList>("/api/notifications?view=todo");
+  const n = inbox.body.items.find((x) => x.type === "approval_request" && x.taskId === s.r6task);
+  assert.ok(n, "approver sees it in To do");
+  assert.equal((await contributor.patch(`/api/approvals/${req.body.id}`, { decision: "approve" })).status, 403, "only the approver decides");
+  const ok = await viewer.patch<{ status: string }>(`/api/approvals/${req.body.id}`, { decision: "approve", note: "Looks good" });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.equal(ok.body.status, "approved");
+  const task = await prisma.task.findUniqueOrThrow({ where: { id: s.r6task }, include: { status: true } });
+  assert.equal(task.status.category, "done", "completed on approval, even though the approver is a viewer");
+  assert.ok(!(await viewer.get<NotifList>("/api/notifications?view=todo")).body.items.some((x) => x.id === n!.id), "request leaves the approver's To do");
+  const result = await prisma.notification.findFirst({ where: { userId: s.contributorId, type: "approval_result", taskId: s.r6task } });
+  assert.equal((result!.data as { decision: string }).decision, "approved", "requester told the result");
+  assert.equal((await viewer.patch(`/api/approvals/${req.body.id}`, { decision: "reject" })).status, 400, "already decided");
+  const list = await contributor.get<{ status: string }[]>(`/api/tasks/${s.r6task}/approvals`);
+  assert.equal(list.body[0].status, "approved");
+});
+
+test("AI suggestions: rule-based nudges that open the matching AI action, created once", async () => {
+  const big = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Redesign the onboarding programme", sys_assignees: [s.contributorId], sys_estimate: 12 } });
+  assert.equal(big.status, 201, JSON.stringify(big.body));
+  await contributor.get("/api/notifications");
+  await contributor.get("/api/notifications");
+  const rows = await prisma.notification.findMany({ where: { userId: s.contributorId, type: "ai_suggestion", taskId: big.body.id } });
+  assert.equal(rows.length, 1, "deduplicated");
+  assert.equal((rows[0].data as { kind: string }).kind, "task_breakdown");
+  assert.match(rows[0].link!, /\?ai=task_breakdown$/);
+});
+
 test("members can leave; only owners delete a workspace", async () => {
   const joined = await admin.post(`/api/workspaces/${s.contributorWs}/members`, { email: "viewer@integration.test", role: "admin" });
   assert.equal(joined.status, 201);

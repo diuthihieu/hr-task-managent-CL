@@ -64,6 +64,12 @@ export function UnreadCount() {
   return <span className="min-w-5 h-5 px-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 text-[11px] font-semibold leading-5 text-center" data-testid="nav-unread">{unread > 99 ? "99+" : unread}</span>;
 }
 
+/** The row's headline: the task / objective title, or a translated label for workspace-wide AI suggestions. */
+export function notificationTitle(n: NotificationItem, t: TFunction): string {
+  if (n.type === "ai_suggestion" && (n.data as { kind?: string } | null)?.kind === "plan_day") return t("cc.ai.plan");
+  return n.title;
+}
+
 /** One sentence per notification type, in the viewer's language. */
 export function describeNotification(n: NotificationItem, t: TFunction): string {
   const actor = n.actor?.name ?? t("notif.someone");
@@ -85,6 +91,12 @@ export function describeNotification(n: NotificationItem, t: TFunction): string 
       return t("notif.mention", { actor });
     case "task_due_changed":
       return t("notif.task_due_changed", { actor, date: String(d.date ?? "") });
+    case "approval_request":
+      return t("notif.approval_request", { actor });
+    case "approval_result":
+      return t(d.decision === "approved" ? "notif.approval_approved" : "notif.approval_rejected", { actor });
+    case "ai_suggestion":
+      return t(`notif.ai.${String(d.kind ?? "plan_day")}` as MessageKey, { count: Number(d.count ?? 0) });
     case "objective_risk":
       return t("notif.objective_risk", { status: t(`okr.status.${String(d.status ?? "at_risk")}` as MessageKey) });
     case "task_due_soon":
@@ -134,7 +146,7 @@ export function NotificationBell({ className, align = "start" }: { className?: s
       }
       if (fresh.length && typeof document !== "undefined" && document.hidden && "Notification" in window && Notification.permission === "granted") {
         for (const n of fresh) {
-          const native = new Notification(n.title, { body: describeNotification(n, t), tag: n.id });
+          const native = new Notification(notificationTitle(n, t), { body: describeNotification(n, t), tag: n.id });
           native.onclick = () => {
             window.focus();
             if (n.link) router.push(n.link);
@@ -191,7 +203,7 @@ export function NotificationBell({ className, align = "start" }: { className?: s
                 openItem(n);
               }}
             >
-              <span className="block text-sm font-medium text-neutral-900 dark:text-neutral-50 line-clamp-2">{n.title}</span>
+              <span className="block text-sm font-medium text-neutral-900 dark:text-neutral-50 line-clamp-2">{notificationTitle(n, t)}</span>
               <span className="block text-xs text-neutral-500 line-clamp-2">{describeNotification(n, t)}</span>
               <span className="block text-[11px] font-medium text-indigo-600 mt-1">{t("notif.openIt")}</span>
             </button>
@@ -257,7 +269,7 @@ export function NotificationRow({ n, onOpen, large }: { n: NotificationItem; onO
       )}
       <span className="flex-1 min-w-0">
         <span className="block text-xs text-neutral-500">{describeNotification(n, t)}</span>
-        <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate">{n.title}</span>
+        <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate">{notificationTitle(n, t)}</span>
         {n.body && <span className="block text-xs text-neutral-500 line-clamp-2">{n.body}</span>}
         <span className="block text-[11px] text-neutral-400 mt-0.5 truncate">
           {[n.projectName, n.workspaceName].filter(Boolean).join(" · ")} · {timeAgo(n.createdAt, t)}

@@ -8,6 +8,7 @@ import type { Member, LinkTarget } from "@/components/grid/cell";
 import { RichEditor, type SaveState } from "@/components/editor/rich-editor";
 import { Button } from "@/components/ui/button";
 import { AttachmentViewer } from "@/components/attachments/attachment-viewer";
+import { TaskApprovals } from "@/components/approvals/task-approvals";
 import { MentionInput, CommentBody } from "@/components/comments/mention-input";
 import { StartFocusButton } from "@/components/focus/focus-mode";
 import { AiTaskActions } from "@/components/ai/ai-actions";
@@ -269,6 +270,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
           <div className="flex flex-wrap items-center gap-2 mt-3" data-testid="record-actions">
             <StartFocusButton taskId={taskId} />
             <AiTaskActions taskId={taskId} projectId={projectId} canEdit={canEdit} onChanged={() => router.refresh()} />
+            <TaskApprovals taskId={taskId} canEdit={canEdit} onChanged={() => router.refresh()} />
           </div>
           {!canEdit && <p className="text-xs text-amber-600 mt-1">{t("record.readOnly")}</p>}
           <p className="text-xs text-neutral-400 mt-1">

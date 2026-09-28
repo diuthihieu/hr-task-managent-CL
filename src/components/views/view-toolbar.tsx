@@ -1,5 +1,5 @@
 "use client";
-import { forwardRef } from "react";
+import { createContext, forwardRef, useContext } from "react";
 import { Search, ListFilter, ArrowUpDown, Group as GroupIcon, EyeOff, Paintbrush, Rows3, Trash2, X, Download, Copy } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
@@ -30,7 +30,10 @@ export function ViewToolbar({
   onSaveAsView,
   viewType = "grid",
   extra,
+  inline,
 }: {
+  /** Render only the controls (no own row), with icon-only buttons below xl - for a one-row header. */
+  inline?: boolean;
   /** View-specific controls (e.g. gallery card settings) kept on the same row. */
   extra?: React.ReactNode;
   fields: FieldRow[];
@@ -72,7 +75,8 @@ export function ViewToolbar({
   }
 
   return (
-    <div className="flex items-center gap-1.5 px-3 h-10 border-b border-neutral-200 dark:border-neutral-800 shrink-0 overflow-x-auto thin-scroll">
+    <CompactContext.Provider value={!!inline}>
+    <div className={inline ? "flex items-center gap-1" : "flex items-center gap-1.5 px-3 h-10 border-b border-neutral-200 dark:border-neutral-800 shrink-0 overflow-x-auto thin-scroll"}>
       <ToolbarPopover icon={<ListFilter size={13} />} label={t("tb.filter")} count={filterCount}>
         <FilterPanel
           fields={fields}
@@ -135,7 +139,7 @@ export function ViewToolbar({
 
       {extra}
 
-      <div className="ml-auto flex items-center gap-1.5 shrink-0">
+      <div className={cn("flex items-center gap-1.5 shrink-0", !inline && "ml-auto")}>
         {onSaveAsView && (
           <ToolbarButton
             icon={<Copy size={13} />}
@@ -147,7 +151,7 @@ export function ViewToolbar({
         <ToolbarButton icon={<Download size={13} />} label={t("tb.export")} onClick={onExportClick} />
         <div className="relative">
           <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-neutral-400" />
-          <Input value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder={t("tb.search")} className="w-32 sm:w-44 pl-7" />
+          <Input value={search} onChange={(e) => onSearchChange(e.target.value)} placeholder={t("tb.search")} className={cn("pl-7", inline ? "w-32 xl:w-40" : "w-32 sm:w-44")} />
         </div>
         {isGrid && (
           <Select
@@ -159,8 +163,12 @@ export function ViewToolbar({
         )}
       </div>
     </div>
+    </CompactContext.Provider>
   );
 }
+
+/** Inline (one-row) toolbars show icon-only buttons until there is room for labels. */
+const CompactContext = createContext(false);
 
 function ToolbarPopover({ icon, label, count, children }: { icon: React.ReactNode; label: string; count: number; children: React.ReactNode }) {
   return (
@@ -174,8 +182,12 @@ function ToolbarPopover({ icon, label, count, children }: { icon: React.ReactNod
 }
 
 const ToolbarButton = forwardRef<HTMLButtonElement, { icon: React.ReactNode; label: string; count?: number } & React.ButtonHTMLAttributes<HTMLButtonElement>>(
-  ({ icon, label, count, className, ...props }, ref) => (
+  ({ icon, label, count, className, ...props }, ref) => {
+    const compact = useContext(CompactContext);
+    return (
     <button
+      title={props.title ?? label}
+      aria-label={label}
       ref={ref}
       className={cn(
         "flex items-center gap-1.5 h-7 px-2 rounded-md text-sm shrink-0",
@@ -185,9 +197,10 @@ const ToolbarButton = forwardRef<HTMLButtonElement, { icon: React.ReactNode; lab
       {...props}
     >
       {icon}
-      {label}
+      <span className={compact ? "hidden 2xl:inline" : undefined}>{label}</span>
       {!!count && <span className="text-[10px] bg-indigo-600 text-white rounded-full h-4 w-4 flex items-center justify-center">{count}</span>}
     </button>
-  )
+    );
+  }
 );
 ToolbarButton.displayName = "ToolbarButton";

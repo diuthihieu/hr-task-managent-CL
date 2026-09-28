@@ -15,26 +15,30 @@ const IMAGE_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg
 
 export const SUPPORTED_DOC_HINT = "PDF, Word (.docx), Excel (.xlsx/.xls), PowerPoint (.pptx), TXT, Markdown, CSV, JSON, HTML, images (PNG/JPG/WebP/GIF)";
 
-/** Text of every slide (and its speaker notes) of a .pptx, in slide order. */
-async function pptxText(buf: Buffer): Promise<string> {
+/** Every slide's text (and speaker notes) of a .pptx, in slide order. */
+export async function pptxSlides(buf: Buffer): Promise<{ n: number; text: string; notes: string }[]> {
   const JSZip = (await import("jszip")).default;
   const zip = await JSZip.loadAsync(buf);
   const num = (n: string) => Number(n.match(/(\d+)\.xml$/)?.[1] ?? 0);
-  const texts = async (prefix: string) =>
+  const decode = (x: string) => x.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+  const read = async (prefix: string) =>
     Promise.all(
       Object.keys(zip.files)
         .filter((n) => n.startsWith(prefix) && n.endsWith(".xml"))
         .sort((a, b) => num(a) - num(b))
-        .map(async (n) => ({ n: num(n), text: [...(await zip.file(n)!.async("string")).matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]).join(" ") }))
+        .map(async (n) => {
+          const xml = await zip.file(n)!.async("string");
+          // One line per paragraph (<a:p>), runs (<a:t>) joined inside it.
+          const paras = xml.split(/<\/a:p>/).map((p) => [...p.matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => decode(m[1])).join("")).filter((l) => l.trim());
+          return { n: num(n), text: paras.join("\n") };
+        })
     );
-  const [slides, notes] = await Promise.all([texts("ppt/slides/slide"), texts("ppt/notesSlides/notesSlide")]);
-  const decode = (x: string) => x.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
-  return slides
-    .map((sl) => {
-      const note = notes.find((x) => x.n === sl.n)?.text;
-      return `## Slide ${sl.n}\n${decode(sl.text)}${note ? `\nNotes: ${decode(note)}` : ""}`;
-    })
-    .join("\n\n");
+  const [slides, notes] = await Promise.all([read("ppt/slides/slide"), read("ppt/notesSlides/notesSlide")]);
+  return slides.map((sl) => ({ n: sl.n, text: sl.text, notes: notes.find((x) => x.n === sl.n)?.text.replace(/^\d+$/m, "").trim() ?? "" }));
+}
+
+async function pptxText(buf: Buffer): Promise<string> {
+  return (await pptxSlides(buf)).map((sl) => `## Slide ${sl.n}\n${sl.text}${sl.notes ? `\nNotes: ${sl.notes}` : ""}`).join("\n\n");
 }
 
 /** Strip HTML to readable text (keeps line breaks between blocks). */

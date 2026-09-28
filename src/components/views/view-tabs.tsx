@@ -48,7 +48,10 @@ export function ViewTabs({
   onDelete,
   onDuplicate,
   onReorder,
+  trailing,
 }: {
+  /** Controls shown on the same row, right-aligned (one-row toolbar for some views). */
+  trailing?: React.ReactNode;
   views: ViewRow[];
   activeId: string;
   onSelect: (id: string) => void;
@@ -120,6 +123,7 @@ export function ViewTabs({
           })}
         </DropdownMenuContent>
       </DropdownMenu>
+      {trailing && <div className="ml-auto flex items-center gap-1 pl-3 shrink-0" data-testid="view-tabs-trailing">{trailing}</div>}
     </div>
   );
 }

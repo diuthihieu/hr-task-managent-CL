@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Sparkles, Loader2, Copy, ListChecks, ShieldAlert, MessageSquareText, FileText, AlertTriangle, TrendingUp, Link2, PenLine, ClipboardList, ScrollText, BarChart3, Check } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
@@ -95,13 +96,16 @@ export function AiActionMenu({
     }
   }
   const [autoDone, setAutoDone] = useState(false);
+  // ?ai=<action> (from an AI suggestion or Ctrl+K) runs that action once, if this menu has it.
+  const urlAction = useSearchParams().get("ai");
+  const wanted = autoAction ?? urlAction;
   useEffect(() => {
-    const a = autoAction ? actions.find((x) => x.action === autoAction) : undefined;
+    const a = wanted ? actions.find((x) => x.action === wanted) : undefined;
     if (!a || autoDone) return;
     setAutoDone(true); // eslint-disable-line react-hooks/set-state-in-effect -- one-shot trigger from the URL
     start(a);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoAction]);
+  }, [wanted]);
 
   const close = () => {
     abort?.abort();

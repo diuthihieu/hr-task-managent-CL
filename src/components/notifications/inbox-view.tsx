@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCheck, Inbox, ExternalLink, Check, CheckCircle2, AlarmClockOff, Clock, Eye, UserCheck } from "lucide-react";
+import { CheckCheck, Inbox, ExternalLink, Check, CheckCircle2, AlarmClockOff, Clock, Eye, UserCheck, ThumbsUp, ThumbsDown, Sparkles } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -9,7 +9,7 @@ import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api-client";
 import { cn, initials } from "@/lib/utils";
 import type { MessageKey } from "@/lib/i18n/core";
-import { describeNotification, fetchInbox, markAllRead, timeAgo, type NotificationItem } from "./notification-bell";
+import { describeNotification, fetchInbox, markAllRead, notificationTitle, timeAgo, type NotificationItem } from "./notification-bell";
 
 type View = "todo" | "all" | "snoozed";
 const GROUPS: { key: string; types: string[] }[] = [
@@ -19,7 +19,9 @@ const GROUPS: { key: string; types: string[] }[] = [
   { key: "due", types: ["task_due_soon", "task_overdue", "task_due_changed", "capture_due"] },
   { key: "comment", types: ["task_comment"] },
   { key: "updates", types: ["task_status", "task_updated"] },
+  { key: "approval", types: ["approval_request", "approval_result"] },
   { key: "okr", types: ["objective_risk"] },
+  { key: "ai", types: ["ai_suggestion"] },
 ];
 
 function snoozeTimes() {
@@ -79,6 +81,22 @@ export function InboxView() {
     }
   }
 
+  /** Approve / reject straight from the row (reject asks for a short reason). */
+  async function decide(n: NotificationItem, decision: "approve" | "reject") {
+    const approvalId = (n.data as { approvalId?: string } | null)?.approvalId;
+    if (!approvalId) return;
+    const note = decision === "reject" ? window.prompt(t("ac.rejectReason")) : "";
+    if (note === null) return;
+    try {
+      await api.patch(`/api/approvals/${approvalId}`, { decision, note: note || undefined });
+      toast.success(t(decision === "approve" ? "ac.approved" : "ac.rejected"));
+      await load();
+      fetchInbox().catch(() => {});
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+    }
+  }
+
   function open(n: NotificationItem) {
     if (!n.read) act(n, { read: true });
     if (n.link) router.push(n.link);
@@ -125,6 +143,10 @@ export function InboxView() {
                 <span className="h-9 w-9 rounded-full text-white text-[11px] font-semibold flex items-center justify-center shrink-0" style={{ backgroundColor: n.actor.avatarColor }}>
                   {initials(n.actor.name)}
                 </span>
+              ) : n.type === "ai_suggestion" ? (
+                <span className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 bg-indigo-100 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300">
+                  <Sparkles size={15} />
+                </span>
               ) : (
                 <span className={cn("h-9 w-9 rounded-full flex items-center justify-center shrink-0", n.type === "task_overdue" || n.type === "objective_risk" ? "bg-red-100 text-red-600 dark:bg-red-950" : "bg-amber-100 text-amber-600 dark:bg-amber-950")}>
                   <Clock size={15} />
@@ -132,7 +154,7 @@ export function InboxView() {
               )}
               <button onClick={() => open(n)} className="flex-1 min-w-0 text-left">
                 <span className="block text-xs text-neutral-500">{describeNotification(n, t)}</span>
-                <span className="block text-sm font-semibold text-neutral-800 dark:text-neutral-100 truncate">{n.title}</span>
+                <span className="block text-sm font-semibold text-neutral-800 dark:text-neutral-100 truncate">{notificationTitle(n, t)}</span>
                 {n.body && <span className="block text-xs text-neutral-500 line-clamp-2">{n.body}</span>}
                 <span className="block text-[11px] text-neutral-400 mt-0.5 truncate">
                   {[n.projectName, n.workspaceName].filter(Boolean).join(" · ")} · {timeAgo(n.createdAt, t)}
@@ -146,6 +168,23 @@ export function InboxView() {
                   <ActionButton icon={CheckCircle2} label={t("ac.complete")} onClick={() => act(n, { completeTask: true }, "ac.completed")} testId="ac-complete" />
                 )}
                 {n.type === "objective_risk" && <ActionButton icon={Eye} label={t("ac.review")} onClick={() => open(n)} />}
+                {n.type === "approval_request" && !n.actioned && (
+                  <>
+                    <ActionButton icon={ThumbsUp} label={t("ac.approve")} onClick={() => decide(n, "approve")} testId="ac-approve" />
+                    <ActionButton icon={ThumbsDown} label={t("ac.reject")} onClick={() => decide(n, "reject")} testId="ac-reject" />
+                  </>
+                )}
+                {n.type === "ai_suggestion" && (
+                  <ActionButton
+                    icon={Sparkles}
+                    label={t("ac.runAi")}
+                    onClick={() => {
+                      act(n, { actioned: true });
+                      if (n.link) router.push(n.link);
+                    }}
+                    testId="ac-run-ai"
+                  />
+                )}
                 {!n.actioned && n.type !== "task_assigned" && <ActionButton icon={Check} label={t("ac.done")} onClick={() => act(n, { actioned: true })} testId="ac-done" />}
                 {n.snoozedUntil ? (
                   <ActionButton icon={AlarmClockOff} label={t("ac.unsnooze")} onClick={() => act(n, { snoozeUntil: null })} />

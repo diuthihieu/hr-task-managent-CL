@@ -472,9 +472,25 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         onDelete={handleDeleteView}
         onDuplicate={handleDuplicateView}
         onReorder={handleReorderViews}
+        trailing={activeView?.type === "gallery" ? <ViewToolbar
+          inline
+          fields={fields}
+          config={config}
+          members={members}
+          search={search}
+          onSearchChange={setSearch}
+          onConfigChange={updateConfig}
+          selectedCount={selectedIds.size}
+          onBulkDelete={handleBulkDelete}
+          onClearSelection={() => setSelectedIds(new Set())}
+          onExportClick={() => setExportOpen(true)}
+          onSaveAsView={handleSaveAsView}
+          viewType={activeView?.type ?? "grid"}
+          extra={activeView?.type === "gallery" ? <GallerySettings fields={fields} config={config.gallery ?? {}} onChange={(patch) => updateConfig({ gallery: { ...(config.gallery ?? {}), ...patch } })} /> : undefined}
+        /> : undefined}
       />
 
-      {activeView?.type !== "form" && (
+      {activeView?.type !== "form" && activeView?.type !== "gallery" && (
         <ViewToolbar
           fields={fields}
           config={config}

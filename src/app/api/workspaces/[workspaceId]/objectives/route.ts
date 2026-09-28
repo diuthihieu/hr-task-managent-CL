@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, hiddenProjectIds, visibleProjectWhere } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { resolveObjectives, getMyObjectiveRows, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 import { assertObjectiveRefs, parentObjectiveFor } from "@/lib/okr-write";
@@ -20,14 +20,15 @@ export const GET = route<P>(async (req, { params }) => {
   const cycleType = url.searchParams.get("cycleType") as Prisma.ObjectiveWhereInput["cycleType"] | null;
   const projectId = url.searchParams.get("projectId");
 
+  const hidden = await hiddenProjectIds(user);
   let rows = url.searchParams.get("mine") === "1"
-    ? await getMyObjectiveRows(workspaceId, user.id)
+    ? await getMyObjectiveRows(workspaceId, user.id, hidden)
     : resolveObjectives(
         await prisma.objective.findMany({
           where: {
             workspaceId,
             deletedAt: null,
-            OR: [{ projectId: null }, { project: { deletedAt: null } }],
+            OR: [{ projectId: null }, { project: { deletedAt: null, ...visibleProjectWhere(user) } }],
             ...(teamId ? { teamId } : {}),
             ...(ownerId ? { ownerId } : {}),
             ...(status ? { status } : {}),
@@ -36,7 +37,8 @@ export const GET = route<P>(async (req, { params }) => {
           },
           include: OBJECTIVE_INCLUDE,
           orderBy: { createdAt: "desc" },
-        })
+        }),
+        hidden
       );
   if (url.searchParams.get("mine") === "1") {
     if (teamId) rows = rows.filter((o) => o.teamId === teamId);
@@ -98,5 +100,5 @@ export const POST = route<P>(async (req, { params }) => {
     await logActivity(tx, { workspaceId, actorId: user.id, entityType: "objective", entityId: o.id, action: "created", summary: `Created objective "${o.title}"` });
     return o;
   });
-  return NextResponse.json(resolveObjectives([objective])[0], { status: 201 });
+  return NextResponse.json(resolveObjectives([objective], await hiddenProjectIds(user))[0], { status: 201 });
 });

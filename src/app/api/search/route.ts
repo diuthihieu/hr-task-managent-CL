@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, visibleProjectWhere } from "@/lib/authz";
 
 /** Ctrl/Cmd+K: projects and tasks by name, case-insensitive, in SQL. */
 export const GET = route(async (req) => {
@@ -11,9 +11,9 @@ export const GET = route(async (req) => {
   if (!q || !workspaceId) return NextResponse.json({ projects: [], tasks: [] });
   await requireWorkspaceRole(user, workspaceId, "viewer");
   const [projects, tasks] = await Promise.all([
-    prisma.project.findMany({ where: { workspaceId, deletedAt: null, name: { contains: q, mode: "insensitive" } }, select: { id: true, name: true, color: true }, take: 6 }),
+    prisma.project.findMany({ where: { workspaceId, deletedAt: null, ...visibleProjectWhere(user), name: { contains: q, mode: "insensitive" } }, select: { id: true, name: true, color: true }, take: 6 }),
     prisma.task.findMany({
-      where: { workspaceId, deletedAt: null, project: { deletedAt: null }, title: { contains: q, mode: "insensitive" } },
+      where: { workspaceId, deletedAt: null, project: { deletedAt: null, ...visibleProjectWhere(user) }, title: { contains: q, mode: "insensitive" } },
       select: { id: true, title: true, project: { select: { id: true, name: true } } },
       orderBy: { updatedAt: "desc" },
       take: 15,

@@ -32,7 +32,7 @@ interface CommentItem {
 
 const ROLE_RANK: Record<string, number> = { viewer: 0, contributor: 1, editor: 2, admin: 3, owner: 4 };
 // Shown up front; the rest sits behind "show all fields".
-const PRIMARY_FIELDS = ["sys_status", "sys_assignees", "sys_priority", "sys_category", "sys_start_date", "sys_due_date", "sys_progress", "sys_objective", "sys_estimate", "sys_description"];
+const PRIMARY_FIELDS = ["sys_status", "sys_assignees", "sys_report_to", "sys_priority", "sys_category", "sys_start_date", "sys_due_date", "sys_progress", "sys_objective", "sys_estimate", "sys_description"];
 const HIDDEN_ON_PAGE = new Set(["sys_title", "sys_attachments"]);
 
 function formatBytes(n: number) {

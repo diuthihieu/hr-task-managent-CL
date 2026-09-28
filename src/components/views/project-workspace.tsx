@@ -156,6 +156,8 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
   // first.
   async function handleCellChangeMultiple(recordId: string, patch: Record<string, unknown>) {
     setRecords((prev) => prev.map((r) => (r.id === recordId ? { ...r, data: { ...r.data, ...patch } } : r)));
+    // Attachments are saved by their own upload/delete endpoints; the grid only mirrors the new list.
+    if (Object.keys(patch).every((k) => k === "sys_attachments")) return;
     try {
       // The server normalizes values (e.g. a "done" status sets progress to 100) - adopt its version.
       const saved = await api.patch<RecordRow>(`/api/tasks/${recordId}`, { data: patch });

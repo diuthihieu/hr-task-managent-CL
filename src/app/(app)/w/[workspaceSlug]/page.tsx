@@ -1,3 +1,4 @@
+import { visibleProjectWhere } from "@/lib/authz";
 import Link from "next/link";
 import { FolderKanban } from "lucide-react";
 import { prisma } from "@/lib/prisma";
@@ -10,10 +11,10 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
   const { workspaceSlug } = await params;
   const [{ user, workspace, role }, { t, locale }] = await Promise.all([requireWorkspacePage(workspaceSlug), getServerT()]);
   const [projects, openTaskCounts] = await Promise.all([
-    prisma.project.findMany({ where: { workspaceId: workspace.id, deletedAt: null }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
+    prisma.project.findMany({ where: { workspaceId: workspace.id, deletedAt: null, ...visibleProjectWhere(user) }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.task.groupBy({
       by: ["projectId"],
-      where: { workspaceId: workspace.id, deletedAt: null, status: { category: { in: ["todo", "in_progress"] } } },
+      where: { workspaceId: workspace.id, deletedAt: null, project: visibleProjectWhere(user), status: { category: { in: ["todo", "in_progress"] } } },
       _count: { _all: true },
     }),
   ]);

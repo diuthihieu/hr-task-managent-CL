@@ -16,7 +16,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Maximize2, Plus, ChevronDown, ChevronRight } from "lucide-react";
+import { GripVertical, Info, Maximize2, Plus, ChevronDown, ChevronRight } from "lucide-react";
 import { Checkbox } from "@/components/ui/misc";
 import { Cell, CellDisplayValue, type Member, type LinkTarget, type OkrOptions } from "./cell";
 import { FieldHeaderMenu } from "./field-header-menu";
@@ -240,7 +240,10 @@ function HeaderCell({
         <span {...attributes} {...listeners} className="cursor-grab text-neutral-300 opacity-0 group-hover:opacity-100 shrink-0">
           <GripVertical size={12} />
         </span>
-        <span className="truncate text-xs font-medium text-neutral-600 dark:text-neutral-300 flex-1">{field.name}</span>
+        <span className="truncate text-xs font-medium text-neutral-600 dark:text-neutral-300 flex-1" title={field.description ? `${field.name}\n${field.description}` : field.name}>
+          {field.name}
+          {field.description && <Info size={10} className="inline ml-1 -mt-0.5 text-neutral-400" />}
+        </span>
         <FieldHeaderMenu field={field} onAction={onAction} />
       </div>
       <div

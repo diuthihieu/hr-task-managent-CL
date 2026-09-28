@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, visibleProjectWhere } from "@/lib/authz";
 import { PRIORITY_OPTIONS_DEFAULT } from "@/lib/field-types";
 import type { CaptureTargetRow } from "@/types";
 
@@ -12,7 +12,7 @@ export const GET = route<P>(async (_req, { params }) => {
   const { workspaceId } = await params;
   await requireWorkspaceRole(user, workspaceId, "contributor");
   const [projects, categories, statuses] = await Promise.all([
-    prisma.project.findMany({ where: { workspaceId, deletedAt: null, status: { in: ["active", "on_hold"] } }, orderBy: { sortOrder: "asc" } }),
+    prisma.project.findMany({ where: { workspaceId, deletedAt: null, ...visibleProjectWhere(user), status: { in: ["active", "on_hold"] } }, orderBy: { sortOrder: "asc" } }),
     prisma.category.findMany({ where: { workspaceId }, orderBy: { sortOrder: "asc" } }),
     prisma.status.findMany({ where: { workspaceId }, orderBy: { sortOrder: "asc" } }),
   ]);

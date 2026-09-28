@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, assertCanEditTask, route, workspaceOfTask, badRequest } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
+import { notifyTaskDetail } from "@/lib/notifications";
 import { assertUploadAllowed, uploadAttachment, deleteAttachmentBlob, safeFileName } from "@/lib/storage";
 import type { AttachmentRow } from "@/types";
 
@@ -40,7 +41,7 @@ export const POST = route<P>(async (req, { params }) => {
           fileName: safeFileName(file.name),
           contentType: file.type || "application/octet-stream",
           sizeBytes: file.size,
-          storageProvider: "vercel_blob",
+          storageProvider: blob.provider,
           storageKey: blob.pathname,
           url: blob.url,
           uploadedById: user.id,
@@ -48,6 +49,7 @@ export const POST = route<P>(async (req, { params }) => {
         select,
       });
       await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "task", entityId: taskId, action: "updated", summary: `Attached "${a.fileName}"` });
+      await notifyTaskDetail(tx, taskId, user.id, "attachments");
       return a;
     });
     return NextResponse.json(toRow(row), { status: 201 });

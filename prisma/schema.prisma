@@ -215,6 +215,10 @@ model User {
   activityLogs          ActivityLog[]
   objectivesOwned       Objective[]            @relation("ObjectiveOwner")
   wikiPagesCreated      WikiPage[]             @relation("WikiCreatedBy")
+  reportRecipientOf     TaskReportRecipient[]  @relation("ReportRecipientUser")
+  notifications         Notification[]         @relation("NotificationUser")
+  notificationsActed    Notification[]         @relation("NotificationActor")
+  hiddenProjects        ProjectHiddenMember[]
   wikiPagesUpdated      WikiPage[]             @relation("WikiUpdatedBy")
   keyResultsOwned       KeyResult[]            @relation("KeyResultOwner")
   objectiveContributes  ObjectiveContributor[]
@@ -248,6 +252,7 @@ model Workspace {
   activityLogs     ActivityLog[]
   capturedThoughts CapturedThought[]
   wikiPages        WikiPage[]
+  notifications    Notification[]
 
   @@map("workspaces")
 }
@@ -308,13 +313,15 @@ model Project {
   deletedAt   DateTime?     @map("deleted_at") @db.Timestamptz(6)
   deletedById String?       @map("deleted_by") @db.Uuid
 
-  workspace        Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  owner            User?             @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  workspace        Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner            User?                 @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   tasks            Task[]
   customFields     CustomField[]
   views            View[]
   capturedThoughts CapturedThought[]
   categories       Category[]
+  hiddenMembers    ProjectHiddenMember[]
+  notifications    Notification[]
   objectives       Objective[]
   wikiPages        WikiPage[]
 
@@ -408,23 +415,25 @@ model Task {
   deletedAt       DateTime?    @map("deleted_at") @db.Timestamptz(6)
   deletedById     String?      @map("deleted_by") @db.Uuid
 
-  workspace    Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project      Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  parentTask   Task?                  @relation("Subtasks", fields: [parentTaskId], references: [id], onDelete: SetNull)
-  subtasks     Task[]                 @relation("Subtasks")
-  status       Status                 @relation(fields: [statusId], references: [id], onDelete: Restrict)
-  category     Category?              @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  keyResult    KeyResult?             @relation(fields: [keyResultId], references: [id], onDelete: SetNull)
-  objective    Objective?             @relation(fields: [objectiveId], references: [id], onDelete: SetNull)
-  createdBy    User?                  @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedBy    User?                  @relation("TaskUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  assignees    TaskAssignee[]
-  dependencies TaskDependency[]       @relation("DependencySuccessor")
-  dependents   TaskDependency[]       @relation("DependencyPredecessor")
-  comments     Comment[]
-  attachments  Attachment[]
-  customValues TaskCustomFieldValue[]
-  thoughts     CapturedThought[]
+  workspace     Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project       Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentTask    Task?                  @relation("Subtasks", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  subtasks      Task[]                 @relation("Subtasks")
+  status        Status                 @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  category      Category?              @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  keyResult     KeyResult?             @relation(fields: [keyResultId], references: [id], onDelete: SetNull)
+  objective     Objective?             @relation(fields: [objectiveId], references: [id], onDelete: SetNull)
+  createdBy     User?                  @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy     User?                  @relation("TaskUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  assignees     TaskAssignee[]
+  reportTo      TaskReportRecipient[]
+  notifications Notification[]
+  dependencies  TaskDependency[]       @relation("DependencySuccessor")
+  dependents    TaskDependency[]       @relation("DependencyPredecessor")
+  comments      Comment[]
+  attachments   Attachment[]
+  customValues  TaskCustomFieldValue[]
+  thoughts      CapturedThought[]
 
   @@index([projectId, deletedAt, sortOrder])
   @@index([workspaceId, deletedAt, dueDate])
@@ -791,11 +800,12 @@ model CapturedThought {
   createdAt                DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt                DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  workspace     Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  category      Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  convertedTask Task?     @relation(fields: [convertedTaskId], references: [id], onDelete: SetNull)
+  workspace     Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  category      Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  convertedTask Task?          @relation(fields: [convertedTaskId], references: [id], onDelete: SetNull)
+  notifications Notification[]
 
   @@index([workspaceId, userId, status])
   @@map("captured_thoughts")
@@ -877,4 +887,71 @@ model WikiPage {
   @@index([projectId, deletedAt, sortOrder])
   @@index([parentPageId])
   @@map("wiki_pages")
+}
+
+// ---------------------------------------------------------------------------
+// Reporting lines, notifications, project visibility
+// ---------------------------------------------------------------------------
+
+/// "Report to": people who are notified when the task's status or details change.
+model TaskReportRecipient {
+  taskId       String   @map("task_id") @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  assignedAt   DateTime @default(now()) @map("assigned_at") @db.Timestamptz(6)
+  assignedById String?  @map("assigned_by") @db.Uuid
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User @relation("ReportRecipientUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, userId])
+  @@index([userId])
+  @@map("task_report_recipients")
+}
+
+/// In-app notification for one user. `dedupe_key` makes reminders (due soon,
+/// overdue, forgotten quick captures) idempotent.
+model Notification {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String    @map("user_id") @db.Uuid
+  workspaceId String?   @map("workspace_id") @db.Uuid
+  projectId   String?   @map("project_id") @db.Uuid
+  taskId      String?   @map("task_id") @db.Uuid
+  thoughtId   String?   @map("thought_id") @db.Uuid
+  actorId     String?   @map("actor_id") @db.Uuid
+  type        String    @db.VarChar(40)
+  title       String    @db.VarChar(300)
+  body        String?
+  /// Parameters for rendering the message in the reader's language (status name, field names...).
+  data        Json?
+  link        String?   @db.VarChar(500)
+  dedupeKey   String?   @map("dedupe_key") @db.VarChar(200)
+  readAt      DateTime? @map("read_at") @db.Timestamptz(6)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user      User             @relation("NotificationUser", fields: [userId], references: [id], onDelete: Cascade)
+  actor     User?            @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  workspace Workspace?       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project   Project?         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  task      Task?            @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  thought   CapturedThought? @relation(fields: [thoughtId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt, createdAt(sort: Desc)])
+  @@index([taskId])
+  @@map("notifications")
+}
+
+/// A project is visible to every workspace member except the people listed here.
+model ProjectHiddenMember {
+  projectId   String   @map("project_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  createdById String?  @map("created_by") @db.Uuid
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@index([userId])
+  @@map("project_hidden_members")
 }

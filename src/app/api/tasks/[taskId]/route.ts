@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, assertCanEditTask, route, readJson, workspaceOfTask, notFound } from "@/lib/authz";
+import { notifyTaskPatched } from "@/lib/notifications";
 import { logActivity } from "@/lib/activity";
 import { applyTaskPatch, loadTaskRecord } from "@/lib/task-grid";
 
@@ -32,6 +33,17 @@ export const PATCH = route<P>(async (req, { params }) => {
     if (body.order !== undefined) await tx.task.update({ where: { id: taskId }, data: { sortOrder: body.order } });
     if (body.data && Object.keys(body.data).length) {
       const res = await applyTaskPatch(tx, { taskId, projectId: task.projectId, workspaceId: ctx.workspaceId, actorId: user.id, data: body.data });
+      if (Object.keys(res.changes).length || res.assigned.length || res.reportAdded.length) {
+        await notifyTaskPatched(tx, {
+          taskId,
+          actorId: user.id,
+          changedKeys: Object.keys(res.changes),
+          statusChanged: res.statusChanged,
+          newStatusName: res.newStatusName,
+          assigned: res.assigned,
+          reportAdded: res.reportAdded,
+        });
+      }
       if (Object.keys(res.changes).length) {
         await logActivity(tx, {
           workspaceId: ctx.workspaceId,

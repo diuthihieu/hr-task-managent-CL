@@ -23,7 +23,7 @@ export const POST = route<P>(async (req, { params }) => {
         fileName: safeFileName(file.name),
         contentType: file.type || "application/octet-stream",
         sizeBytes: file.size,
-        storageProvider: "vercel_blob",
+        storageProvider: blob.provider,
         storageKey: blob.pathname,
         url: blob.url,
         uploadedById: user.id,

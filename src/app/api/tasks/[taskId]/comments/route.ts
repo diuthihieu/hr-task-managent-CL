@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfTask, badRequest } from "@/lib/authz";
+import { notifyTaskComment } from "@/lib/notifications";
 import { logActivity } from "@/lib/activity";
 import { uuid } from "@/lib/validation";
 
@@ -35,6 +36,7 @@ export const POST = route<P>(async (req, { params }) => {
   if (body.parentCommentId && !(await prisma.comment.findFirst({ where: { id: body.parentCommentId, taskId, deletedAt: null } }))) throw badRequest("Parent comment not found");
   const comment = await prisma.$transaction(async (tx) => {
     const c = await tx.comment.create({ data: { taskId, authorId: user.id, body: body.body, parentCommentId: body.parentCommentId ?? null }, select });
+    await notifyTaskComment(tx, { taskId, actorId: user.id, excerpt: body.body });
     await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "comment", entityId: c.id, action: "created", summary: `Commented on task`, changes: { taskId: { from: null, to: taskId } } });
     return c;
   });

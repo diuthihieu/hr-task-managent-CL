@@ -31,19 +31,49 @@ export function safeFileName(name: string) {
   return (cleaned || "file").slice(0, 200);
 }
 
+/** Provider marker stored on each attachment row, so reads use the access mode the blob was written with. */
+export type StorageProvider = "vercel_blob" | "vercel_blob_public";
+const providerOf = (a: "public" | "private"): StorageProvider => (a === "public" ? "vercel_blob_public" : "vercel_blob");
+const accessOf = (p: string | null | undefined): "public" | "private" => (p === "vercel_blob_public" ? "public" : "private");
+
+/**
+ * Upload with the configured access mode. A Blob store is created either
+ * public or private, and writing with the wrong mode is rejected, so when the
+ * store rejects the configured mode we retry once with the other one instead
+ * of failing every upload on a misconfigured BLOB_ACCESS.
+ */
 export async function uploadAttachment(opts: { workspaceId: string; taskId?: string; wikiPageId?: string; file: File }) {
   const owner = opts.taskId ? `tasks/${opts.taskId}` : `wiki/${opts.wikiPageId}`;
   const pathname = `workspaces/${opts.workspaceId}/${owner}/${safeFileName(opts.file.name)}`;
-  const result = await put(pathname, opts.file, {
-    access: access(),
-    addRandomSuffix: true,
-    contentType: opts.file.type || "application/octet-stream",
-  });
-  return { url: result.url, pathname: result.pathname };
+  const write = (mode: "public" | "private") =>
+    put(pathname, opts.file, { access: mode, addRandomSuffix: true, contentType: opts.file.type || "application/octet-stream" });
+  const preferred = access();
+  let mode = preferred;
+  let result;
+  try {
+    result = await write(preferred);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!/access|public|private/i.test(msg)) throw storageError(e);
+    mode = preferred === "private" ? "public" : "private";
+    try {
+      result = await write(mode);
+    } catch (e2) {
+      throw storageError(e2);
+    }
+  }
+  return { url: result.url, pathname: result.pathname, provider: providerOf(mode) };
 }
 
-export async function openAttachment(url: string) {
-  return get(url, { access: access() });
+function storageError(e: unknown) {
+  console.error("[storage] upload failed:", e);
+  const msg = e instanceof Error ? e.message : "";
+  if (/token|unauthori[sz]ed|forbidden/i.test(msg)) return new HttpError(503, "File storage rejected the upload: check BLOB_READ_WRITE_TOKEN on the server");
+  return new HttpError(502, "File storage is unavailable, please try again");
+}
+
+export async function openAttachment(url: string, provider?: string | null) {
+  return get(url, { access: accessOf(provider) });
 }
 
 export async function deleteAttachmentBlob(url: string) {

@@ -27,6 +27,8 @@ export const PATCH = route<P>(async (req, { params }) => {
       data: { role },
       include: { user: { select: { id: true, name: true, email: true, avatarColor: true, isActive: true } } },
     });
+    // Admins and owners manage every project, so nothing can stay hidden from them.
+    if (role === "owner" || role === "admin") await tx.projectHiddenMember.deleteMany({ where: { userId, project: { workspaceId } } });
     await logActivity(tx, { workspaceId, actorId: user.id, entityType: "member", entityId: userId, action: "role_changed", changes: { role: { from: target.role, to: role } } });
     return m;
   });
@@ -47,6 +49,8 @@ export const DELETE = route<P>(async (_req, { params }) => {
   await prisma.$transaction(async (tx) => {
     // Unassign from this workspace's tasks, then drop the membership.
     await tx.taskAssignee.deleteMany({ where: { userId, task: { workspaceId } } });
+    await tx.taskReportRecipient.deleteMany({ where: { userId, task: { workspaceId } } });
+    await tx.projectHiddenMember.deleteMany({ where: { userId, project: { workspaceId } } });
     await tx.workspaceMember.delete({ where: { workspaceId_userId: { workspaceId, userId } } });
     await logActivity(tx, { workspaceId, actorId: user.id, entityType: "member", entityId: userId, action: "deleted" });
   });

@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { signOut } from "next-auth/react";
 import {
@@ -242,6 +243,7 @@ export function WorkspaceShell({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <NotificationBell />
         </div>
 
         <nav className="flex-1 overflow-y-auto thin-scroll py-2 px-2 space-y-0.5">

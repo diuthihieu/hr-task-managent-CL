@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/components/i18n-provider";
 import { cn } from "@/lib/utils";
 import type { CategoryRow } from "@/types";
+import { ProjectVisibility } from "./project-visibility";
 
 const COLORS = ["#6366f1", "#0ea5e9", "#22c55e", "#f97316", "#ec4899", "#eab308", "#14b8a6", "#8b5cf6", "#ef4444", "#64748b"];
 
@@ -189,6 +190,8 @@ export function ProjectSettings({ project, workspaceId, workspaceSlug, canManage
             <p className="text-xs text-neutral-400 mt-3">{t("ps.categoryReadOnly")}</p>
           )}
         </section>
+
+        <ProjectVisibility projectId={project.id} />
 
         {canManage && (
           <section className="rounded-lg border border-red-200 dark:border-red-900 p-4">

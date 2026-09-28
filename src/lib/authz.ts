@@ -73,55 +73,87 @@ export interface WorkspaceContext {
   user: SessionUser;
   workspaceId: string;
   role: WorkspaceRole;
+  /** Set when the request targets something that lives inside a project. */
+  projectId?: string;
 }
 
-/** Throws 404 when the workspace is missing or the caller isn't a member (don't leak existence), 403 when the role is too low. */
-export async function requireWorkspaceRole(user: SessionUser, workspaceId: string | null | undefined, min: WorkspaceRole): Promise<WorkspaceContext> {
-  if (!workspaceId) throw notFound();
-  const role = await effectiveRole(user, workspaceId);
+/** What a resource resolves to: its workspace, plus its project when it has one. */
+export interface Scope {
+  workspaceId: string;
+  projectId?: string | null;
+}
+
+/** True when a project's creator/admin hid it from this user. System admins are never hidden. */
+export async function isProjectHiddenFrom(user: SessionUser, projectId: string): Promise<boolean> {
+  if (user.systemRole === "ADMIN") return false;
+  const row = await prisma.projectHiddenMember.findUnique({ where: { projectId_userId: { projectId, userId: user.id } }, select: { projectId: true } });
+  return !!row;
+}
+
+/** Ids of projects hidden from this user (empty for system admins). */
+export async function hiddenProjectIds(user: SessionUser): Promise<Set<string>> {
+  if (user.systemRole === "ADMIN") return new Set();
+  const rows = await prisma.projectHiddenMember.findMany({ where: { userId: user.id }, select: { projectId: true } });
+  return new Set(rows.map((r) => r.projectId));
+}
+
+/** Prisma filter for "projects this user may see" — combine into every project/task listing. */
+export function visibleProjectWhere(user: SessionUser) {
+  return user.systemRole === "ADMIN" ? {} : { hiddenMembers: { none: { userId: user.id } } };
+}
+
+/**
+ * Throws 404 when the workspace is missing, the caller isn't a member, or the
+ * target project is hidden from them (don't leak existence); 403 when the role is too low.
+ */
+export async function requireWorkspaceRole(user: SessionUser, target: string | Scope | null | undefined, min: WorkspaceRole): Promise<WorkspaceContext> {
+  if (!target) throw notFound();
+  const scope: Scope = typeof target === "string" ? { workspaceId: target } : target;
+  const role = await effectiveRole(user, scope.workspaceId);
   if (!role) throw notFound();
+  if (scope.projectId && (await isProjectHiddenFrom(user, scope.projectId))) throw notFound();
   if (!roleAtLeast(role, min)) throw forbidden();
-  return { user, workspaceId, role };
+  return { user, workspaceId: scope.workspaceId, role, projectId: scope.projectId ?? undefined };
 }
 
 // ---------------------------------------------------------------------------
-// Resource -> workspace resolvers (soft-deleted rows resolve to null)
+// Resource -> scope resolvers (soft-deleted rows resolve to null)
 // ---------------------------------------------------------------------------
 
-export async function workspaceOfProject(projectId: string) {
+export async function workspaceOfProject(projectId: string): Promise<Scope | null> {
   const p = await prisma.project.findFirst({ where: { id: projectId, deletedAt: null }, select: { workspaceId: true } });
-  return p?.workspaceId ?? null;
+  return p ? { workspaceId: p.workspaceId, projectId } : null;
 }
-export async function workspaceOfTask(taskId: string) {
-  const t = await prisma.task.findFirst({ where: { id: taskId, deletedAt: null }, select: { workspaceId: true } });
-  return t?.workspaceId ?? null;
+export async function workspaceOfTask(taskId: string): Promise<Scope | null> {
+  const t = await prisma.task.findFirst({ where: { id: taskId, deletedAt: null }, select: { workspaceId: true, projectId: true } });
+  return t ? { workspaceId: t.workspaceId, projectId: t.projectId } : null;
 }
-export async function workspaceOfView(viewId: string) {
-  const v = await prisma.view.findFirst({ where: { id: viewId, project: { deletedAt: null } }, select: { project: { select: { workspaceId: true } } } });
-  return v?.project.workspaceId ?? null;
+export async function workspaceOfView(viewId: string): Promise<Scope | null> {
+  const v = await prisma.view.findFirst({ where: { id: viewId, project: { deletedAt: null } }, select: { projectId: true, project: { select: { workspaceId: true } } } });
+  return v ? { workspaceId: v.project.workspaceId, projectId: v.projectId } : null;
 }
-export async function workspaceOfCustomField(fieldId: string) {
-  const f = await prisma.customField.findFirst({ where: { id: fieldId, deletedAt: null, project: { deletedAt: null } }, select: { project: { select: { workspaceId: true } } } });
-  return f?.project.workspaceId ?? null;
+export async function workspaceOfCustomField(fieldId: string): Promise<Scope | null> {
+  const f = await prisma.customField.findFirst({ where: { id: fieldId, deletedAt: null, project: { deletedAt: null } }, select: { projectId: true, project: { select: { workspaceId: true } } } });
+  return f ? { workspaceId: f.project.workspaceId, projectId: f.projectId } : null;
 }
-export async function workspaceOfComment(commentId: string) {
-  const c = await prisma.comment.findFirst({ where: { id: commentId, deletedAt: null, task: { deletedAt: null } }, select: { task: { select: { workspaceId: true } } } });
-  return c?.task.workspaceId ?? null;
+export async function workspaceOfComment(commentId: string): Promise<Scope | null> {
+  const c = await prisma.comment.findFirst({ where: { id: commentId, deletedAt: null, task: { deletedAt: null } }, select: { task: { select: { workspaceId: true, projectId: true } } } });
+  return c ? { workspaceId: c.task.workspaceId, projectId: c.task.projectId } : null;
 }
-export async function workspaceOfAttachment(attachmentId: string) {
+export async function workspaceOfAttachment(attachmentId: string): Promise<Scope | null> {
   const a = await prisma.attachment.findFirst({
     where: { id: attachmentId, deletedAt: null, OR: [{ task: { deletedAt: null } }, { wikiPage: { deletedAt: null } }] },
-    select: { workspaceId: true },
+    select: { workspaceId: true, task: { select: { projectId: true } }, wikiPage: { select: { projectId: true } } },
   });
-  return a?.workspaceId ?? null;
+  return a ? { workspaceId: a.workspaceId, projectId: a.task?.projectId ?? a.wikiPage?.projectId ?? null } : null;
 }
-export async function workspaceOfObjective(objectiveId: string) {
-  const o = await prisma.objective.findFirst({ where: { id: objectiveId, deletedAt: null }, select: { workspaceId: true } });
-  return o?.workspaceId ?? null;
+export async function workspaceOfObjective(objectiveId: string): Promise<Scope | null> {
+  const o = await prisma.objective.findFirst({ where: { id: objectiveId, deletedAt: null }, select: { workspaceId: true, projectId: true } });
+  return o ? { workspaceId: o.workspaceId, projectId: o.projectId } : null;
 }
-export async function workspaceOfKeyResult(keyResultId: string) {
-  const k = await prisma.keyResult.findFirst({ where: { id: keyResultId, deletedAt: null, objective: { deletedAt: null } }, select: { objective: { select: { workspaceId: true } } } });
-  return k?.objective.workspaceId ?? null;
+export async function workspaceOfKeyResult(keyResultId: string): Promise<Scope | null> {
+  const k = await prisma.keyResult.findFirst({ where: { id: keyResultId, deletedAt: null, objective: { deletedAt: null } }, select: { objective: { select: { workspaceId: true, projectId: true } } } });
+  return k ? { workspaceId: k.objective.workspaceId, projectId: k.objective.projectId } : null;
 }
 export async function workspaceOfDashboard(dashboardId: string) {
   const d = await prisma.dashboard.findUnique({ where: { id: dashboardId }, select: { workspaceId: true } });
@@ -131,6 +163,7 @@ export async function workspaceOfWidget(widgetId: string) {
   const w = await prisma.dashboardWidget.findUnique({ where: { id: widgetId }, select: { dashboard: { select: { workspaceId: true } } } });
   return w?.dashboard.workspaceId ?? null;
 }
+/** Thoughts are private to their author; the project check happens at convert time. */
 export async function workspaceOfThought(thoughtId: string) {
   const t = await prisma.capturedThought.findUnique({ where: { id: thoughtId }, select: { workspaceId: true } });
   return t?.workspaceId ?? null;
@@ -139,13 +172,13 @@ export async function workspaceOfStatus(statusId: string) {
   const s = await prisma.status.findUnique({ where: { id: statusId }, select: { workspaceId: true } });
   return s?.workspaceId ?? null;
 }
-export async function workspaceOfWikiPage(pageId: string) {
-  const p = await prisma.wikiPage.findFirst({ where: { id: pageId, deletedAt: null, project: { deletedAt: null } }, select: { workspaceId: true } });
-  return p?.workspaceId ?? null;
+export async function workspaceOfWikiPage(pageId: string): Promise<Scope | null> {
+  const p = await prisma.wikiPage.findFirst({ where: { id: pageId, deletedAt: null, project: { deletedAt: null } }, select: { workspaceId: true, projectId: true } });
+  return p ? { workspaceId: p.workspaceId, projectId: p.projectId } : null;
 }
-export async function workspaceOfCategory(categoryId: string) {
-  const c = await prisma.category.findUnique({ where: { id: categoryId }, select: { workspaceId: true } });
-  return c?.workspaceId ?? null;
+export async function workspaceOfCategory(categoryId: string): Promise<Scope | null> {
+  const c = await prisma.category.findUnique({ where: { id: categoryId }, select: { workspaceId: true, projectId: true } });
+  return c ? { workspaceId: c.workspaceId, projectId: c.projectId } : null;
 }
 
 /** Workspace admins/owners manage every project; editors manage the projects they own or created. */
@@ -202,7 +235,7 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
   comments_body_not_blank: "Comment cannot be empty",
 };
 
-const TRIGGER_MESSAGE = /(task (?:project|status|category|key result|objective) must belong to the task (?:workspace|project|objective)|parent (?:page|task) must belong to the same project|parent key result must belong to another objective in the workspace|assignee must be a member of the task workspace|custom field must be defined on the task project|option does not belong to this custom field|dependent tasks must belong to the same workspace)/;
+const TRIGGER_MESSAGE = /(task (?:project|status|category|key result|objective) must belong to the task (?:workspace|project|objective)|parent (?:page|task) must belong to the same project|parent key result must belong to another objective in the workspace|assignee must be a member of the task workspace|custom field must be defined on the task project|option does not belong to this custom field|dependent tasks must belong to the same workspace|report recipient must be a member of the task workspace|hidden member must be a member of the project workspace)/;
 
 export function errorResponse(e: unknown): Response {
   if (e instanceof HttpError) return NextResponse.json({ error: e.message }, { status: e.status });

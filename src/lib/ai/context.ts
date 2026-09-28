@@ -1,4 +1,5 @@
 import "server-only";
+import { stripMentions } from "@/lib/mentions";
 import { prisma } from "../prisma";
 import type { WorkspaceRole } from "@prisma/client";
 import { visibleProjectWhere, visibleWikiWhere, hiddenProjectIds, type SessionUser } from "../authz";
@@ -40,13 +41,28 @@ const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "-");
 
 /** A wiki's pages and reference documents, for its assistant. */
 export async function wikiKnowledge(wikiId: string, budget = CONTEXT_CHARS) {
-  const [pages, docs] = await Promise.all([
-    prisma.wikiPage.findMany({ where: { wikiId, deletedAt: null }, orderBy: [{ parentPageId: "asc" }, { sortOrder: "asc" }], select: { title: true, content: true, updatedAt: true } }),
+  const [pages, docs, files] = await Promise.all([
+    prisma.wikiPage.findMany({
+      where: { wikiId, deletedAt: null },
+      orderBy: [{ parentPageId: "asc" }, { sortOrder: "asc" }],
+      select: {
+        title: true,
+        content: true,
+        updatedAt: true,
+        comments: { where: { deletedAt: null }, orderBy: { createdAt: "asc" }, take: 100, select: { body: true, createdAt: true, author: { select: { name: true } } } },
+      },
+    }),
     prisma.knowledgeDoc.findMany({ where: { wikiId, deletedAt: null }, orderBy: { createdAt: "asc" }, select: { fileName: true, text: true } }),
+    // Files attached to page comments, with the text extracted at upload.
+    prisma.attachment.findMany({ where: { wikiPage: { wikiId, deletedAt: null }, wikiCommentId: { not: null }, deletedAt: null, extractedText: { not: null } }, select: { fileName: true, extractedText: true, wikiPage: { select: { title: true } } } }),
   ]);
   const b = new Budget(budget);
   for (const d of docs) b.add(`### Reference document: ${d.fileName}\n${d.text}`);
-  for (const p of pages) b.add(`### Wiki page: ${p.title} (updated ${day(p.updatedAt)})\n${htmlToText(p.content) || "(empty)"}`);
+  for (const p of pages) {
+    const talk = p.comments.map((c) => `- ${c.author?.name ?? "?"} (${day(c.createdAt)}): ${stripMentions(c.body)}`).join("\n");
+    b.add(`### Wiki page: ${p.title} (updated ${day(p.updatedAt)})\n${htmlToText(p.content) || "(empty)"}${talk ? `\n#### Comments\n${talk}` : ""}`);
+  }
+  for (const f of files) b.add(`### File "${f.fileName}" (attached in a comment on "${f.wikiPage?.title ?? ""}")\n${f.extractedText}`);
   return { text: b.toString(), pageCount: pages.length, docCount: docs.length };
 }
 

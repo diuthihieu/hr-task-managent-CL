@@ -1,6 +1,7 @@
 "use client";
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { AtSign } from "lucide-react";
+import { AtSign, Bold, Italic, List, Code, Link2 } from "lucide-react";
+import { markdownToHtml } from "@/components/ai/markdown";
 import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
 import { cn, initials } from "@/lib/utils";
@@ -14,9 +15,9 @@ interface Person {
 }
 
 const peopleCache = new Map<string, Promise<Person[]>>();
-function loadPeople(taskId: string) {
-  if (!peopleCache.has(taskId)) peopleCache.set(taskId, api.get<Person[]>(`/api/tasks/${taskId}/mentionable`).catch(() => []));
-  return peopleCache.get(taskId)!;
+function loadPeople(url: string) {
+  if (!peopleCache.has(url)) peopleCache.set(url, api.get<Person[]>(url).catch(() => []));
+  return peopleCache.get(url)!;
 }
 
 export interface MentionInputHandle {
@@ -28,7 +29,12 @@ export interface MentionInputHandle {
  * person who can see the task. Stored as @[Name](id); shown as a chip.
  */
 export const MentionInput = forwardRef<MentionInputHandle, {
-  taskId: string;
+  /** People who can see this task are offered for @mentions... */
+  taskId?: string;
+  /** ...or any endpoint returning Person[] (e.g. a wiki page's readers). */
+  mentionUrl?: string;
+  /** Show a Markdown formatting toolbar (bold, italic, list, code, link). */
+  formatting?: boolean;
   value: string;
   onChange: (v: string) => void;
   onSubmit?: () => void;
@@ -36,7 +42,8 @@ export const MentionInput = forwardRef<MentionInputHandle, {
   rows?: number;
   className?: string;
   testId?: string;
-}>(function MentionInput({ taskId, value, onChange, onSubmit, placeholder, rows = 2, className, testId }, ref) {
+}>(function MentionInput({ taskId, mentionUrl, formatting, value, onChange, onSubmit, placeholder, rows = 2, className, testId }, ref) {
+  const peopleUrl = mentionUrl ?? (taskId ? `/api/tasks/${taskId}/mentionable` : "");
   const { t } = useT();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const [people, setPeople] = useState<Person[]>([]);
@@ -47,11 +54,38 @@ export const MentionInput = forwardRef<MentionInputHandle, {
   useImperativeHandle(ref, () => ({ focus: () => taRef.current?.focus() }));
   useEffect(() => {
     let alive = true;
-    loadPeople(taskId).then((p) => alive && setPeople(p));
+    if (peopleUrl) loadPeople(peopleUrl).then((p) => alive && setPeople(p));
     return () => {
       alive = false;
     };
-  }, [taskId]);
+  }, [peopleUrl]);
+
+  /** Wrap the selection (or insert a placeholder) with Markdown syntax. */
+  function wrap(before: string, after = before, placeholder = "text") {
+    const ta = taRef.current;
+    const a = ta?.selectionStart ?? value.length;
+    const b = ta?.selectionEnd ?? value.length;
+    const sel = value.slice(a, b) || placeholder;
+    onChange(value.slice(0, a) + before + sel + after + value.slice(b));
+    requestAnimationFrame(() => {
+      ta?.focus();
+      ta?.setSelectionRange(a + before.length, a + before.length + sel.length);
+    });
+  }
+  function format(kind: "bold" | "italic" | "list" | "code" | "link") {
+    if (kind === "bold") wrap("**");
+    else if (kind === "italic") wrap("_");
+    else if (kind === "list") linePrefix("- ");
+    else if (kind === "code") wrap("`");
+    else wrap("[", "](https://)", "link");
+  }
+  function linePrefix(prefix: string) {
+    const ta = taRef.current;
+    const a = ta?.selectionStart ?? value.length;
+    const start = value.lastIndexOf("\n", a - 1) + 1;
+    onChange(value.slice(0, start) + prefix + value.slice(start));
+    requestAnimationFrame(() => ta?.focus());
+  }
 
   const matches = useMemo(() => {
     if (query === null) return [];
@@ -100,6 +134,23 @@ export const MentionInput = forwardRef<MentionInputHandle, {
 
   return (
     <div className={cn("relative flex-1", className)}>
+      {formatting && (
+        <div className="flex items-center gap-0.5 mb-1" data-testid={testId ? `${testId}-toolbar` : undefined}>
+          {(
+            [
+              [Bold, t("fmt.bold"), "bold"],
+              [Italic, t("fmt.italic"), "italic"],
+              [List, t("fmt.list"), "list"],
+              [Code, t("fmt.code"), "code"],
+              [Link2, t("fmt.link"), "link"],
+            ] as const
+          ).map(([Icon, label, kind]) => (
+            <button key={kind} type="button" onClick={() => format(kind)} className="rounded p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800" title={label} aria-label={label}>
+              <Icon size={13} />
+            </button>
+          ))}
+        </div>
+      )}
       <textarea
         ref={taRef}
         rows={rows}
@@ -153,8 +204,16 @@ export const MentionInput = forwardRef<MentionInputHandle, {
   );
 });
 
-/** Renders a comment body with @mentions as highlighted chips. */
-export function CommentBody({ body, className }: { body: string; className?: string }) {
+/** Renders a comment body with @mentions as highlighted chips (and sanitized Markdown when `markdown`). */
+export function CommentBody({ body, className, markdown }: { body: string; className?: string; markdown?: boolean }) {
+  if (markdown) {
+    const esc = (x: string) => x.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+    // Mentions become placeholders first so Markdown never sees their brackets, then turn into chips.
+    const names: string[] = [];
+    const md = body.replace(MENTION_RE, (_m, name: string) => `MENTIONTOKEN${names.push(name) - 1}ENDTOKEN`);
+    const html = markdownToHtml(md).replace(/MENTIONTOKEN(\d+)ENDTOKEN/g, (_m, i: string) => `<span class="rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-1 font-medium" data-testid="mention-chip">@${esc(names[Number(i)] ?? "")}</span>`);
+    return <div className={cn("ai-md comment-md break-words", className)} dangerouslySetInnerHTML={{ __html: html }} />;
+  }
   const parts: React.ReactNode[] = [];
   let last = 0;
   for (const m of body.matchAll(MENTION_RE)) {

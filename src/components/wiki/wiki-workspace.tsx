@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { useT } from "@/components/i18n-provider";
 import { AiWikiActions } from "@/components/ai/ai-actions";
+import { WikiComments } from "./wiki-comments";
 import { api } from "@/lib/api-client";
 import { formatDate, cn } from "@/lib/utils";
 import type { WikiPageSummary, WikiRow } from "@/lib/wiki";
@@ -19,7 +20,7 @@ interface WikiPageFull extends WikiPageSummary {
 }
 
 /** Project wiki: page tree on the left, the selected page (rich editor) on the right. */
-export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, currentUserName }: { wiki: WikiRow; workspaceSlug: string; workspaceId: string; pageId: string | null; currentUserName: string }) {
+export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, currentUserName, currentUserId }: { wiki: WikiRow; workspaceSlug: string; workspaceId: string; pageId: string | null; currentUserName: string; currentUserId?: string }) {
   const { t } = useT();
   const router = useRouter();
   const base = `/w/${workspaceSlug}/wiki/${wiki.id}`;
@@ -249,6 +250,7 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
                 await api.patch(`/api/wiki/${page.id}`, { content: html || null });
               }}
             />
+            <WikiComments pageId={page.id} currentUserId={currentUserId ?? null} canManage={wiki.myRole === "manager"} />
           </div>
         )}
       </div>

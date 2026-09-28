@@ -10,8 +10,9 @@ export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { pageId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfWikiPage(pageId), "viewer");
-  if (!wikiRoleAtLeast(ctx.wikiRole, "editor")) throw forbidden("You can only read this wiki");
   const form = await req.formData().catch(() => null);
+  // Page images need edit rights; files for a comment only need read access (anyone who can read can comment).
+  if (form?.get("purpose") !== "comment" && !wikiRoleAtLeast(ctx.wikiRole, "editor")) throw forbidden("You can only read this wiki");
   const file = form?.get("file");
   if (!(file instanceof File)) throw badRequest("Send the file as multipart form field `file`");
   assertUploadAllowed(file);

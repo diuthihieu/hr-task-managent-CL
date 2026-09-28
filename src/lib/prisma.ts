@@ -5,7 +5,7 @@ import { PrismaClient } from "@prisma/client";
 const makeClient = () =>
   new PrismaClient({
     log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
-    omit: { workspace: { logoData: true }, knowledgeDoc: { text: true }, user: { avatarData: true } },
+    omit: { workspace: { logoData: true }, knowledgeDoc: { text: true }, user: { avatarData: true }, attachment: { extractedText: true } },
   });
 
 type Client = ReturnType<typeof makeClient>;

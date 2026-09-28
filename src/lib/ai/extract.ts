@@ -10,9 +10,32 @@ const HTML_EXT = /\.html?$/i;
 const DOCX_EXT = /\.docx$/i;
 const SHEET_EXT = /\.(xlsx|xls)$/i;
 const PDF_EXT = /\.pdf$/i;
-const IMAGE_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp" };
+const PPTX_EXT = /\.pptx$/i;
+const IMAGE_TYPES: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif", heic: "image/heic" };
 
-export const SUPPORTED_DOC_HINT = "PDF, Word (.docx), Excel (.xlsx), TXT, Markdown, CSV, JSON, HTML, PNG/JPG";
+export const SUPPORTED_DOC_HINT = "PDF, Word (.docx), Excel (.xlsx/.xls), PowerPoint (.pptx), TXT, Markdown, CSV, JSON, HTML, images (PNG/JPG/WebP/GIF)";
+
+/** Text of every slide (and its speaker notes) of a .pptx, in slide order. */
+async function pptxText(buf: Buffer): Promise<string> {
+  const JSZip = (await import("jszip")).default;
+  const zip = await JSZip.loadAsync(buf);
+  const num = (n: string) => Number(n.match(/(\d+)\.xml$/)?.[1] ?? 0);
+  const texts = async (prefix: string) =>
+    Promise.all(
+      Object.keys(zip.files)
+        .filter((n) => n.startsWith(prefix) && n.endsWith(".xml"))
+        .sort((a, b) => num(a) - num(b))
+        .map(async (n) => ({ n: num(n), text: [...(await zip.file(n)!.async("string")).matchAll(/<a:t>([^<]*)<\/a:t>/g)].map((m) => m[1]).join(" ") }))
+    );
+  const [slides, notes] = await Promise.all([texts("ppt/slides/slide"), texts("ppt/notesSlides/notesSlide")]);
+  const decode = (x: string) => x.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
+  return slides
+    .map((sl) => {
+      const note = notes.find((x) => x.n === sl.n)?.text;
+      return `## Slide ${sl.n}\n${decode(sl.text)}${note ? `\nNotes: ${decode(note)}` : ""}`;
+    })
+    .join("\n\n");
+}
 
 /** Strip HTML to readable text (keeps line breaks between blocks). */
 export function htmlToText(html: string | null | undefined): string {
@@ -48,8 +71,16 @@ async function transcribeWithGemini(buf: Buffer, mimeType: string) {
 export async function extractDocText(file: File): Promise<string> {
   if (!file.size) throw new HttpError(400, "File is empty");
   if (file.size > MAX_DOC_BYTES) throw new HttpError(413, "File is too large (max 4 MB) - split it or upload the key sections");
-  const name = file.name;
-  const buf = Buffer.from(await file.arrayBuffer());
+  return extractBufferText(file.name, Buffer.from(await file.arrayBuffer()));
+}
+
+/** Whether `extractBufferText` understands this file name. */
+export function isExtractable(name: string): boolean {
+  return TEXT_EXT.test(name) || HTML_EXT.test(name) || DOCX_EXT.test(name) || SHEET_EXT.test(name) || PDF_EXT.test(name) || PPTX_EXT.test(name) || !!IMAGE_TYPES[name.split(".").pop()?.toLowerCase() ?? ""];
+}
+
+/** Text of a file already in memory (uploads, stored attachments). */
+export async function extractBufferText(name: string, buf: Buffer): Promise<string> {
   let text: string;
   if (TEXT_EXT.test(name)) text = buf.toString("utf8");
   else if (HTML_EXT.test(name)) text = htmlToText(buf.toString("utf8"));
@@ -60,7 +91,8 @@ export async function extractDocText(file: File): Promise<string> {
     const XLSX = await import("xlsx");
     const wb = XLSX.read(buf, { type: "buffer" });
     text = wb.SheetNames.map((s) => `## ${s}\n${XLSX.utils.sheet_to_csv(wb.Sheets[s])}`).join("\n\n");
-  } else if (PDF_EXT.test(name)) text = await transcribeWithGemini(buf, "application/pdf");
+  } else if (PPTX_EXT.test(name)) text = await pptxText(buf);
+  else if (PDF_EXT.test(name)) text = await transcribeWithGemini(buf, "application/pdf");
   else {
     const ext = name.split(".").pop()?.toLowerCase() ?? "";
     if (!IMAGE_TYPES[ext]) throw new HttpError(400, `Unsupported file type. Use: ${SUPPORTED_DOC_HINT}`);

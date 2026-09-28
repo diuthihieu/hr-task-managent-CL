@@ -15,7 +15,7 @@ export interface DashboardBlockLite {
   config: string;
 }
 
-interface DataResponse {
+export interface DataResponse {
   kpi?: number;
   series?: SeriesPoint[];
   rows?: string[][];
@@ -34,7 +34,10 @@ export function WidgetCard({
   onDelete,
   onCrossFilter,
   crossFilterActive,
+  onData,
 }: {
+  /** Reports loaded data upward (feeds the dashboard's "AI Insight"). */
+  onData?: (data: DataResponse) => void;
   block: DashboardBlockLite;
   slicers?: CrossFilter[];
   crossFilter?: CrossFilter | null;
@@ -56,7 +59,10 @@ export function WidgetCard({
     api
       .post<DataResponse>(`/api/dashboard-blocks/${block.id}/data`, { slicers, crossFilter })
       .then((res) => {
-        if (!cancelled) setData(res);
+        if (!cancelled) {
+          setData(res);
+          onData?.(res);
+        }
       })
       .catch(() => {
         if (!cancelled) setData({ error: "Failed to load" });

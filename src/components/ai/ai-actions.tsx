@@ -51,6 +51,7 @@ async function runAction(body: Record<string, unknown>, onText: (t: string) => v
 export function AiActionMenu({
   actions,
   targetId,
+  targetKind,
   getData,
   renderApply,
   label,
@@ -58,6 +59,7 @@ export function AiActionMenu({
 }: {
   actions: AiActionDef[];
   targetId: string;
+  targetKind?: "dashboard" | "project";
   getData?: () => string;
   renderApply?: (ctx: { action: string; text: string; items: Item[] | null; close: () => void }) => React.ReactNode;
   label?: string;
@@ -81,7 +83,7 @@ export function AiActionMenu({
     setError(null);
     setBusy(true);
     try {
-      const r = await runAction({ action: a.action, targetId, ...(getData ? { data: getData().slice(0, 60000) } : {}) }, setText, ctrl.signal);
+      const r = await runAction({ action: a.action, targetId, ...(targetKind ? { targetKind } : {}), ...(getData ? { data: getData().slice(0, 60000) } : {}) }, setText, ctrl.signal);
       if (r) setItems(r);
     } catch (e) {
       if ((e as Error).name !== "AbortError") setError(e instanceof Error ? e.message : String(e));
@@ -292,10 +294,11 @@ export function AiWikiActions({ pageId, workspaceId, canEdit, onApplied }: { pag
   );
 }
 
-export function AiDashboardActions({ dashboardId, getData }: { dashboardId: string; getData: () => string }) {
+export function AiDashboardActions({ dashboardId, projectId, getData }: { dashboardId?: string; projectId?: string; getData: () => string }) {
   return (
     <AiActionMenu
-      targetId={dashboardId}
+      targetId={(dashboardId ?? projectId)!}
+      targetKind={projectId ? "project" : "dashboard"}
       getData={getData}
       label="AI Insight"
       actions={[
@@ -304,5 +307,89 @@ export function AiDashboardActions({ dashboardId, getData }: { dashboardId: stri
         { action: "dash_trends", label: "aiAct.dash_trends", icon: TrendingUp },
       ]}
     />
+  );
+}
+
+/**
+ * "Build with AI": describe the dashboard / report you want in plain words;
+ * the server turns it into validated widget specs over the real fields.
+ */
+export function AiBuildWidgetsButton({
+  target,
+  dashboardId,
+  projectId,
+  onBuilt,
+}: {
+  target: "dashboard" | "report";
+  dashboardId?: string;
+  projectId?: string;
+  onBuilt: (widgets: Record<string, unknown>[]) => void;
+}) {
+  const { t } = useT();
+  const [open, setOpen] = useState(false);
+  const [prompt, setPrompt] = useState("");
+  const [busy, setBusy] = useState(false);
+  const examples = [t("aiBuild.ex1"), t("aiBuild.ex2"), t("aiBuild.ex3")];
+
+  async function build() {
+    if (!prompt.trim()) return;
+    setBusy(true);
+    try {
+      const r = await api.post<{ widgets: Record<string, unknown>[] }>("/api/ai/build-widgets", { target, dashboardId, projectId, prompt: prompt.trim() });
+      if (!r.widgets.length) {
+        toast.error(t("aiBuild.none"));
+        return;
+      }
+      onBuilt(r.widgets);
+      toast.success(t("aiBuild.added", { n: r.widgets.length }));
+      setOpen(false);
+      setPrompt("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <>
+      <Button size="sm" variant="secondary" onClick={() => setOpen(true)} data-testid="ai-build">
+        <Sparkles size={13} className="text-indigo-500" /> {t("aiBuild.button")}
+      </Button>
+      <Dialog open={open} onOpenChange={(v) => !busy && setOpen(v)}>
+        <DialogContent className="max-w-lg">
+          <DialogTitle className="flex items-center gap-2">
+            <Sparkles size={15} className="text-indigo-500" /> {t(target === "dashboard" ? "aiBuild.titleDashboard" : "aiBuild.titleReport")}
+          </DialogTitle>
+          <p className="text-xs text-neutral-500 mt-1">{t("aiBuild.hint")}</p>
+          <textarea
+            autoFocus
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === "Enter" && build()}
+            rows={4}
+            maxLength={2000}
+            placeholder={t("aiBuild.placeholder")}
+            data-testid="ai-build-prompt"
+            className="mt-3 w-full rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+          />
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {examples.map((ex) => (
+              <button key={ex} onClick={() => setPrompt(ex)} className="text-[11px] rounded-full border border-neutral-200 dark:border-neutral-700 px-2 py-0.5 text-neutral-600 dark:text-neutral-300 hover:border-indigo-400">
+                {ex}
+              </button>
+            ))}
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={build} disabled={busy || !prompt.trim()} data-testid="ai-build-submit">
+              {busy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} {t("aiBuild.submit")}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

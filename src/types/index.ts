@@ -172,6 +172,10 @@ export interface KeyResultRow {
   weight: number;
   manualProgress: number | null;
   status: string;
+  /** Owner's confidence 0-100. */
+  confidence: number;
+  /** Deadline YYYY-MM-DD. */
+  dueDate: string | null;
   order: number;
   progress: number; // 0-100, always derived
   tasks: KeyResultTaskRow[];

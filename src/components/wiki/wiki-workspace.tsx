@@ -9,6 +9,7 @@ import { RichEditor, type SaveState } from "@/components/editor/rich-editor";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { useT } from "@/components/i18n-provider";
+import { AiWikiActions } from "@/components/ai/ai-actions";
 import { api } from "@/lib/api-client";
 import { formatDate, cn } from "@/lib/utils";
 import type { WikiPageSummary, WikiRow } from "@/lib/wiki";
@@ -208,12 +209,18 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
             )}
           </div>
         ) : (
-          <div className="max-w-4xl mx-auto px-8 py-8" key={page.id}>
+          <div className="max-w-4xl mx-auto px-8 py-8" key={`${page.id}:${page.updatedAt}`}>
             <div className="flex items-center gap-2 text-[11px] text-neutral-400 mb-2">
               <span>{t("wiki.lastEdited", { name: page.updatedBy ?? currentUserName, when: formatDate(page.updatedAt, true) })}</span>
               <span className="ml-auto" data-testid="wiki-save-state">
                 {saveState === "saving" ? t("editor.saving") : saveState === "saved" ? t("editor.saved") : saveState === "error" ? t("editor.error") : ""}
               </span>
+              <AiWikiActions
+                pageId={page.id}
+                workspaceId={workspaceId}
+                canEdit={canEdit}
+                onApplied={() => api.get<WikiPageFull>(`/api/wiki/${page.id}`).then(setPage).catch(() => {})}
+              />
               {canEdit && (
                 <button onClick={remove} className="flex items-center gap-1 hover:text-red-600">
                   <Trash2 size={12} /> {t("common.delete")}

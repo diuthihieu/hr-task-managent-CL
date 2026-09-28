@@ -18,6 +18,8 @@ export interface KeyResultDraft {
   weight: number;
   manualProgress: number;
   status: string;
+  confidence: number;
+  dueDate: string;
 }
 
 function toDraft(kr: KeyResultRow | null): KeyResultDraft {
@@ -32,6 +34,8 @@ function toDraft(kr: KeyResultRow | null): KeyResultDraft {
     weight: kr?.weight ?? 1,
     manualProgress: kr?.manualProgress ?? 0,
     status: kr?.status ?? "on_track",
+    confidence: kr?.confidence ?? 70,
+    dueDate: kr?.dueDate ?? "",
   };
 }
 
@@ -110,9 +114,20 @@ export function KeyResultDialog({
           {draft.type === "numeric" && (
             <div>
               <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.unit")}</label>
-              <Input value={draft.unit} onChange={(e) => patch({ unit: e.target.value })} placeholder="e.g. days, $, tickets" className="w-32" />
+              <Input value={draft.unit} onChange={(e) => patch({ unit: e.target.value })} placeholder="e.g. days, $, tickets" className="w-32" data-testid="kr-unit" />
             </div>
           )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.confidence")}</label>
+              <Input type="number" min={0} max={100} value={draft.confidence} onChange={(e) => patch({ confidence: Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0))) })} data-testid="kr-confidence" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.dueDate")}</label>
+              <Input type="date" value={draft.dueDate} onChange={(e) => patch({ dueDate: e.target.value })} data-testid="kr-due" />
+            </div>
+          </div>
 
           {draft.type === "percentage" && (
             <div>

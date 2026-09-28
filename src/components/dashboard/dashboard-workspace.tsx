@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import RGL, { WidthProvider, type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
@@ -9,7 +9,8 @@ import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { WidgetCard, type DashboardBlockLite } from "./widget-card";
+import { WidgetCard, type DashboardBlockLite, type DataResponse } from "./widget-card";
+import { AiDashboardActions, AiBuildWidgetsButton } from "@/components/ai/ai-actions";
 import { WidgetEditorDialog, type BlockDraft } from "./widget-editor-dialog";
 import { DashboardFilterBar } from "./filter-bar";
 import type { CrossFilter, SeriesPoint } from "@/lib/dashboard-engine";
@@ -51,6 +52,7 @@ export function DashboardWorkspace({
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [loading, setLoading] = useState(true);
+  const widgetData = useRef(new Map<string, DataResponse>());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -181,6 +183,25 @@ export function DashboardWorkspace({
     setCrossFilter({ sourceBlockId: block.id, filter: { fieldName, label: point.label } });
   }
 
+  /** Compact text snapshot of what every widget currently shows, for AI Insight. */
+  function snapshot(): string {
+    if (!dashboard) return "";
+    const lines: string[] = [`Dashboard: ${dashboard.name}`];
+    if (slicers.length) lines.push(`Filters: ${slicers.map((s) => `${s.fieldName}=${s.label}`).join(", ")}`);
+    if (crossFilter) lines.push(`Cross-filter: ${crossFilter.filter.fieldName}=${crossFilter.filter.label}`);
+    for (const b of dashboard.blocks) {
+      const d = widgetData.current.get(b.id);
+      lines.push(`\n## ${b.title || "Untitled"} (${b.type})`);
+      if (!d) lines.push("(not loaded)");
+      else if (d.error) lines.push(`(error: ${d.error})`);
+      else if (d.kpi !== undefined) lines.push(`Value: ${d.kpi}`);
+      else if (d.series) lines.push(d.series.slice(0, 60).map((p) => `${p.label}: ${p.value}${p.value2 !== undefined ? ` / ${p.value2}` : ""}`).join("\n"));
+      else if (d.columns) lines.push([d.columns.join(" | "), ...(d.rows ?? []).slice(0, 40).map((r) => r.join(" | "))].join("\n"));
+      else lines.push(JSON.stringify(d).slice(0, 3000));
+    }
+    return lines.join("\n");
+  }
+
   if (loading && !dashboard) {
     return <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm">{t("db.loading")}</div>;
   }
@@ -215,6 +236,8 @@ export function DashboardWorkspace({
           </span>
         )}
         <div className="ml-auto flex items-center gap-1.5">
+          {dashboard.blocks.length > 0 && <AiDashboardActions dashboardId={dashboardId} getData={snapshot} />}
+          <AiBuildWidgetsButton target="dashboard" dashboardId={dashboardId} onBuilt={() => load()} />
           <Button size="sm" onClick={addWidget}>
             <Plus size={13} /> {t("db.addWidget")}
           </Button>
@@ -286,6 +309,7 @@ export function DashboardWorkspace({
                   onDelete={() => deleteWidget(block.id)}
                   onCrossFilter={(point) => handleCrossFilterClick(block, point)}
                   crossFilterActive={crossFilter?.sourceBlockId === block.id ? crossFilter.filter.label : null}
+                  onData={(d) => widgetData.current.set(block.id, d)}
                 />
               </div>
             ))}

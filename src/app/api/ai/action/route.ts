@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfTask, workspaceOfObjective, workspaceOfWikiPage, workspaceOfDashboard, badRequest, HttpError } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfTask, workspaceOfObjective, workspaceOfWikiPage, workspaceOfDashboard, workspaceOfProject, badRequest, HttpError } from "@/lib/authz";
 import { aiConfigured, generate, streamGenerate, parseJsonAnswer, type Usage } from "@/lib/ai/gemini";
 import { ACTION_INSTRUCTIONS, STRUCTURED_ACTIONS, actionSystemPrompt, taskContext, objectiveContext, wikiPageContext, myDayContext, type AiActionName } from "@/lib/ai/actions";
 import { rateLimit } from "@/lib/rate-limit";
@@ -14,6 +14,8 @@ const schema = z.object({
   targetId: uuid,
   /** Dashboard actions: the chart data the viewer is looking at. */
   data: z.string().max(60000).optional(),
+  /** Dashboard actions: targetId is a dashboard (default) or a project (its report view). */
+  targetKind: z.enum(["dashboard", "project"]).optional(),
   /** Optional extra instruction from the user ("make it shorter"...). */
   note: z.string().max(2000).optional(),
 });
@@ -44,10 +46,16 @@ export const POST = route(async (req) => {
     workspaceId = (await requireWorkspaceRole(user, await workspaceOfWikiPage(body.targetId), "viewer")).workspaceId;
     data = await wikiPageContext(body.targetId);
   } else if (kind === "dash") {
-    workspaceId = (await requireWorkspaceRole(user, await workspaceOfDashboard(body.targetId), "viewer")).workspaceId;
     if (!body.data) throw badRequest("Send the dashboard's chart data");
-    const d = await prisma.dashboard.findUniqueOrThrow({ where: { id: body.targetId }, select: { name: true } });
-    data = `Dashboard: ${d.name}\n\n${body.data}`;
+    if (body.targetKind === "project") {
+      workspaceId = (await requireWorkspaceRole(user, await workspaceOfProject(body.targetId), "viewer")).workspaceId;
+      const p = await prisma.project.findUniqueOrThrow({ where: { id: body.targetId }, select: { name: true } });
+      data = `Report view of project: ${p.name}\n\n${body.data}`;
+    } else {
+      workspaceId = (await requireWorkspaceRole(user, await workspaceOfDashboard(body.targetId), "viewer")).workspaceId;
+      const d = await prisma.dashboard.findUniqueOrThrow({ where: { id: body.targetId }, select: { name: true } });
+      data = `Dashboard: ${d.name}\n\n${body.data}`;
+    }
   } else {
     workspaceId = (await requireWorkspaceRole(user, body.targetId, "viewer")).workspaceId;
     data = await myDayContext(user, workspaceId);

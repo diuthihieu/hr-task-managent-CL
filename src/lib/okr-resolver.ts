@@ -99,6 +99,8 @@ export function resolveObjectives(objectives: ObjectiveWithIncludes[], hidden: S
         weight: Number(kr.weight),
         manualProgress: kr.manualProgress === null ? null : Number(kr.manualProgress),
         status: kr.status,
+        confidence: kr.confidence,
+        dueDate: kr.dueDate ? kr.dueDate.toISOString().slice(0, 10) : null,
         order: kr.sortOrder,
         progress,
         tasks: shown(tasks, kr.tasks),

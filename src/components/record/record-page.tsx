@@ -7,6 +7,7 @@ import { Cell } from "@/components/grid/cell";
 import type { Member, LinkTarget } from "@/components/grid/cell";
 import { RichEditor, type SaveState } from "@/components/editor/rich-editor";
 import { Button } from "@/components/ui/button";
+import { AttachmentViewer } from "@/components/attachments/attachment-viewer";
 import { MentionInput, CommentBody } from "@/components/comments/mention-input";
 import { StartFocusButton } from "@/components/focus/focus-mode";
 import { AiTaskActions } from "@/components/ai/ai-actions";
@@ -53,6 +54,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
   const [record, setRecord] = useState<RecordRow | null>(null);
   const [content, setContent] = useState<string | null | undefined>(undefined);
   const [attachments, setAttachments] = useState<AttachmentRow[]>([]);
+  const [viewing, setViewing] = useState<number | null>(null);
   const [comments, setComments] = useState<CommentItem[]>([]);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [siblings, setSiblings] = useState<{ id: string; label: string }[]>([]);
@@ -353,14 +355,14 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
                 {attachments.map((a) => (
                   <div key={a.id} className="group rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden bg-white dark:bg-neutral-900" data-testid="record-attachment">
                     {isImage(a.contentType) ? (
-                      <a href={`${a.downloadUrl}?inline=1`} target="_blank" rel="noreferrer" className="block h-28 bg-neutral-100 dark:bg-neutral-800">
+                      <button onClick={() => setViewing(attachments.indexOf(a))} className="block w-full h-28 bg-neutral-100 dark:bg-neutral-800" title={t("att.view")} data-testid="record-attachment-open">
                         {/* eslint-disable-next-line @next/next/no-img-element -- authorized, private attachment route */}
                         <img src={`${a.downloadUrl}?inline=1`} alt={a.fileName} className="h-full w-full object-cover" loading="lazy" />
-                      </a>
+                      </button>
                     ) : (
-                      <div className="h-28 flex items-center justify-center bg-neutral-50 dark:bg-neutral-800/50 text-neutral-400">
+                      <button onClick={() => setViewing(attachments.indexOf(a))} className="w-full h-28 flex items-center justify-center bg-neutral-50 dark:bg-neutral-800/50 text-neutral-400 hover:text-indigo-500" title={t("att.view")} data-testid="record-attachment-open">
                         {a.contentType === "application/pdf" ? <FileText size={30} /> : a.contentType.startsWith("image/") ? <FileImage size={30} /> : <FileIcon size={30} />}
-                      </div>
+                      </button>
                     )}
                     <div className="px-2 py-1.5 flex items-center gap-1">
                       <div className="min-w-0 flex-1">
@@ -443,6 +445,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
           </div>
         )}
       </aside>
+      {viewing !== null && <AttachmentViewer files={attachments} index={viewing} onIndexChange={setViewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }

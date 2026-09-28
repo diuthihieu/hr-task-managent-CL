@@ -59,7 +59,17 @@ export function ConfidenceDot({ confidence }: { confidence: number }) {
     <span className="inline-flex items-center gap-1 text-[11px] text-neutral-500 shrink-0" title={t("okr.confidence", { value: confidence })}>
       {confidence < 40 && <AlertTriangle size={11} style={{ color }} />}
       <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
-      {confidence}%
+      {t("okr.confShort")} {confidence}%
+    </span>
+  );
+}
+
+/** A percentage that always says what it measures (never a bare "45%"). */
+export function PctLabel({ label, value, className, strong }: { label: string; value: number; className?: string; strong?: boolean }) {
+  return (
+    <span className={`inline-flex items-baseline gap-1 shrink-0 tabular-nums ${className ?? ""}`}>
+      <span className="text-[10px] text-neutral-400 font-normal">{label}</span>
+      <span className={strong ? "font-semibold text-neutral-800 dark:text-neutral-100" : "text-neutral-600 dark:text-neutral-300"}>{Math.round(value)}%</span>
     </span>
   );
 }

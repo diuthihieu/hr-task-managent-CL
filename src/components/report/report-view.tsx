@@ -13,6 +13,7 @@ import { computeSeries, computeStackedSeries, computeKpi, type DashboardBlockCon
 import type { MemberLite, ReportChartType, ReportConfig, ReportWidget } from "@/lib/query-engine";
 import type { TFunction } from "@/lib/i18n/core";
 import { cn } from "@/lib/utils";
+import { AiDashboardActions, AiBuildWidgetsButton } from "@/components/ai/ai-actions";
 import type { FieldRow, RecordRow } from "@/types";
 
 const NUMERIC_TYPES = ["number", "currency", "percent", "rating", "progress", "integer"];
@@ -56,7 +57,24 @@ function presets(fields: FieldRow[], t: TFunction): ReportWidget[] {
  * tasks (Power BI-style, but configured in the browser and saved in the
  * view's config). Uses the same aggregation engine as workspace dashboards.
  */
+/** Text snapshot of every report widget's numbers, for AI Insight. */
+function reportSnapshot(widgets: ReportWidget[], fields: FieldRow[], records: RecordRow[], members: MemberLite[]): string {
+  const lines = [`Tasks in view: ${records.length}`];
+  for (const w of widgets) {
+    const block = toBlock(w);
+    lines.push(`\n## ${w.title || w.type} (${w.type})`);
+    if (w.type === "kpi") lines.push(`Value: ${computeKpi(records, fields, block)}`);
+    else if (STACKED.includes(w.type)) {
+      if (!w.dimensionFieldId || !w.dimension2FieldId) continue;
+      const st = computeStackedSeries(records, fields, block, members);
+      lines.push(st.rows.slice(0, 40).map((r) => Object.entries(r).map(([k, v]) => `${k}=${v}`).join(", ")).join("\n"));
+    } else lines.push(computeSeries(records, fields, block, members).slice(0, 60).map((p) => `${p.label}: ${p.value}`).join("\n"));
+  }
+  return lines.join("\n");
+}
+
 export function ReportView({
+  projectId,
   fields,
   records,
   members,
@@ -64,6 +82,7 @@ export function ReportView({
   canEdit,
   onConfigChange,
 }: {
+  projectId: string;
   fields: FieldRow[];
   records: RecordRow[];
   members: MemberLite[];
@@ -98,8 +117,17 @@ export function ReportView({
     <div className="flex-1 overflow-y-auto thin-scroll p-4">
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <span className="text-xs text-neutral-500">{t("report.basedOn", { count: records.length })}</span>
+        <div className="ml-auto" />
+        {widgets.length > 0 && <AiDashboardActions projectId={projectId} getData={() => reportSnapshot(widgets, fields, records, members)} />}
         {canEdit && (
-          <Button size="sm" className="ml-auto" onClick={() => setEditing({ id: "", title: "", type: "column", aggregation: "count" })} data-testid="report-add-chart">
+          <AiBuildWidgetsButton
+            target="report"
+            projectId={projectId}
+            onBuilt={(ws) => onConfigChange({ ...config, widgets: [...widgets, ...(ws as unknown as ReportWidget[])] })}
+          />
+        )}
+        {canEdit && (
+          <Button size="sm" onClick={() => setEditing({ id: "", title: "", type: "column", aggregation: "count" })} data-testid="report-add-chart">
             <Plus size={13} /> {t("report.addChart")}
           </Button>
         )}

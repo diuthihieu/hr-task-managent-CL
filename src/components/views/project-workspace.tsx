@@ -12,7 +12,7 @@ import { GridView } from "@/components/grid/grid-view";
 import { GanttView } from "@/components/gantt/gantt-view";
 import { KanbanView } from "@/components/kanban/kanban-view";
 import { CalendarView } from "@/components/calendar/calendar-view";
-import { GalleryView } from "@/components/gallery/gallery-view";
+import { GalleryView, GallerySettings } from "@/components/gallery/gallery-view";
 import { FormView } from "@/components/form/form-view";
 import { RecordDrawer } from "@/components/grid/record-drawer";
 import { FieldEditorDialog, type FieldDraft } from "@/components/fields/field-editor-dialog";
@@ -488,6 +488,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onExportClick={() => setExportOpen(true)}
           onSaveAsView={handleSaveAsView}
           viewType={activeView?.type ?? "grid"}
+          extra={activeView?.type === "gallery" ? <GallerySettings fields={fields} config={config.gallery ?? {}} onChange={(patch) => updateConfig({ gallery: { ...(config.gallery ?? {}), ...patch } })} /> : undefined}
         />
       )}
 
@@ -518,8 +519,11 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           flatRecords={sorted}
           members={members}
           config={config.gallery ?? {}}
-          onConfigChange={(patch) => updateConfig({ gallery: { ...(config.gallery ?? {}), ...patch } })}
+          canEdit={canEdit}
           onOpenRecord={setOpenRecordId}
+          onOpenPage={(id) => router.push(`/w/${table.workspace.slug}/p/${projectId}/t/${id}`)}
+          onRecordUpdated={(rec) => setRecords((prev) => prev.map((r) => (r.id === rec.id ? rec : r)))}
+          onDeleteRecord={(id) => confirm(t("record.deleteConfirm")) && handleDeleteRecord(id)}
         />
       ) : activeView?.type === "form" ? (
         <FormView

@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { ConvertToWikiDialog } from "./convert-to-wiki-dialog";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { Plus, Trash2, Sparkles, ShieldCheck, MessageSquare } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
@@ -17,6 +18,8 @@ export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: {
   const router = useRouter();
   const pathname = usePathname();
   const initialQuestion = searchParams.get("q");
+  const [convert, setConvert] = useState<string | null>(null);
+  const workspaceSlug = pathname.split("/")[2] ?? "";
 
   // Ctrl+K "Ask AI": /ai?q=... starts a new chat with that question.
   useEffect(() => {
@@ -92,12 +95,14 @@ export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: {
           onSend={chat.send}
           onStop={chat.stop}
           onExportPdf={exportPdf}
+          onConvertToWiki={(m) => setConvert(m.content)}
           emptyTitle={t("ai.emptyTitle", { name: userName.split(" ").slice(-1)[0] })}
           emptyBody={t("ai.emptyBody")}
           suggestions={suggestions}
           placeholder={t("ai.placeholder")}
         />
       </main>
+      <ConvertToWikiDialog markdown={convert} workspaceId={workspaceId} workspaceSlug={workspaceSlug} onClose={() => setConvert(null)} />
     </div>
   );
 }

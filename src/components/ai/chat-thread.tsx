@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { ArrowUp, Square, Sparkles, Copy, FileDown, AlertTriangle, RotateCw } from "lucide-react";
+import { ArrowUp, Square, Sparkles, Copy, FileDown, AlertTriangle, RotateCw, BookOpen } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
@@ -20,6 +20,7 @@ export function ChatThread({
   onSend,
   onStop,
   onExportPdf,
+  onConvertToWiki,
   emptyTitle,
   emptyBody,
   suggestions = [],
@@ -36,6 +37,7 @@ export function ChatThread({
   onSend: (text: string) => void;
   onStop: () => void;
   onExportPdf?: (m: ChatMessage) => void;
+  onConvertToWiki?: (m: ChatMessage) => void;
   emptyTitle: string;
   emptyBody?: string | null;
   suggestions?: string[];
@@ -112,6 +114,11 @@ export function ChatThread({
                       {onExportPdf && (
                         <button onClick={() => onExportPdf(m)} className="inline-flex items-center gap-1 hover:text-indigo-600" data-testid="ai-export-pdf">
                           <FileDown size={11} /> {t("ai.exportPdf")}
+                        </button>
+                      )}
+                      {onConvertToWiki && (
+                        <button onClick={() => onConvertToWiki(m)} className="inline-flex items-center gap-1 hover:text-indigo-600" data-testid="ai-convert-wiki">
+                          <BookOpen size={11} /> {t("c2w.button")}
                         </button>
                       )}
                     </div>

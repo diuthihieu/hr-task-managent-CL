@@ -1,7 +1,6 @@
 "use client";
 import { useState } from "react";
 import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "@/components/ui/toast";
@@ -13,7 +12,6 @@ type Mode = "login" | "register";
 
 export function AuthCard({ initialMode = "login", callbackUrl = "/workspaces", googleEnabled = false, error }: { initialMode?: Mode; callbackUrl?: string; googleEnabled?: boolean; error?: string }) {
   const { t, locale } = useT();
-  const router = useRouter();
   const [mode, setMode] = useState<Mode>(initialMode);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -27,8 +25,9 @@ export function AuthCard({ initialMode = "login", callbackUrl = "/workspaces", g
   async function doSignIn() {
     const result = await signIn("credentials", { email, password, redirect: false });
     if (result?.error) throw new Error(t("auth.invalid"));
-    router.push(target);
-    router.refresh();
+    // Full navigation: the app renders with the user's own accent / tone,
+    // which the (always-orange) landing page's root layout doesn't carry.
+    window.location.assign(target);
   }
 
   async function submit(e: React.FormEvent) {

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { headers } from "next/headers";
 import { getRequestPrefs } from "@/lib/prefs";
 
 export const metadata: Metadata = {
@@ -11,7 +12,11 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const { locale, accent, themeMode, tone } = await getRequestPrefs();
+  const prefs = await getRequestPrefs();
+  const marketing = (await headers()).get("x-woli-marketing") === "1";
+  const { locale, themeMode } = prefs;
+  const accent = marketing ? "orange" : prefs.accent;
+  const tone = marketing ? "neutral" : prefs.tone;
   return (
     <html lang={locale} data-accent={accent} data-tone={tone} data-theme-mode={themeMode} className={`h-full antialiased${themeMode === "dark" ? " dark" : ""}`} suppressHydrationWarning>
       <head>

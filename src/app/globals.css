@@ -404,3 +404,20 @@ body { font-size: calc(1rem * var(--font-scale)); }
 .text-\[13px\] { font-size: calc(13px * var(--ui-scale) * var(--font-scale)); }
 .text-\[15px\] { font-size: calc(15px * var(--ui-scale) * var(--font-scale)); }
 .text-\[22px\] { font-size: calc(22px * var(--ui-scale) * var(--font-scale)); }
+
+/* Block links (#b-<id>): the target block flashes when opened. */
+.block-flash {
+  border-radius: 6px;
+  animation: block-flash 2.2s ease-out;
+}
+@keyframes block-flash {
+  0%,
+  40% {
+    background-color: color-mix(in oklab, var(--color-indigo-400, #818cf8) 28%, transparent);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-indigo-400, #818cf8) 28%, transparent);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}

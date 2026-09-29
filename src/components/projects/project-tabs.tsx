@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { ChevronRight, ListChecks, Target, SlidersHorizontal } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { cn } from "@/lib/utils";
+import { RetroButton } from "@/components/brain/retro-dialog";
 
 /** Breadcrumb + section tabs shared by every project page (tasks, objectives, settings). */
 export function ProjectHeader({ workspaceSlug, workspaceName, projectId, projectName, right }: { workspaceSlug: string; workspaceName: string; projectId: string; projectName: string; right?: React.ReactNode }) {
@@ -37,7 +38,10 @@ export function ProjectHeader({ workspaceSlug, workspaceName, projectId, project
           </Link>
         ))}
       </nav>
-      {right && <div className="ml-auto flex items-center gap-2 text-xs text-neutral-400">{right}</div>}
+      <div className="ml-auto flex items-center gap-2 text-xs text-neutral-400">
+        {section === "settings" && <RetroButton projectId={projectId} />}
+        {right}
+      </div>
     </div>
   );
 }

@@ -34,7 +34,7 @@ interface Doc {
 }
 
 /** Right-hand panel in the project wiki: ask the wiki assistant, and (for project managers) set it up. */
-export function WikiAiPanel({ wikiId, wikiName, onClose }: { wikiId: string; wikiName: string; onClose: () => void }) {
+export function WikiAiPanel({ wikiId, wikiName, onClose, ask }: { wikiId: string; wikiName: string; onClose: () => void; ask?: { text: string; nonce: number } | null }) {
   const { t } = useT();
   const [tab, setTab] = useState<"chat" | "settings">("chat");
   const [settings, setSettings] = useState<AiSettings | null>(null);
@@ -50,6 +50,15 @@ export function WikiAiPanel({ wikiId, wikiName, onClose }: { wikiId: string; wik
     chat.loadConversations().catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps -- load once per wiki
   }, [wikiId]);
+
+  // "Ask AI" on highlighted text sends it as a question.
+  useEffect(() => {
+    if (!ask?.text) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- switching to the chat tab for the new question
+    setTab("chat");
+    chat.send(ask.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one send per ask
+  }, [ask?.nonce]);
 
   return (
     <aside className="fixed inset-0 z-40 md:static md:z-auto md:w-[26.25rem] shrink-0 border-l border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 flex flex-col" data-testid="wiki-ai-panel">

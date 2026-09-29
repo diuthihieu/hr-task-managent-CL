@@ -23,6 +23,8 @@ export type EntityType =
   | "key_result"
   | "dashboard"
   | "desktop_release"
+  | "decision"
+  | "journal"
   | "wiki_page";
 
 export type ActivityAction =

@@ -3,7 +3,7 @@ import { KnowledgeGraphView } from "@/components/graph/knowledge-graph-view";
 
 export const metadata = { title: "Graph view" };
 
-const FOCUS = /^(wiki|task|project|objective|kr|person|tag|file):[0-9a-f-]{36}$/i;
+const FOCUS = /^(wiki|task|project|objective|kr|decision|person|tag|file):[0-9a-f-]{36}$/i;
 
 export default async function WikiGraphPage({ params, searchParams }: { params: Promise<{ workspaceSlug: string }>; searchParams: Promise<{ focus?: string; mode?: string }> }) {
   const { workspaceSlug } = await params;

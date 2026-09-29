@@ -1,6 +1,8 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useEditor, EditorContent, type Editor } from "@tiptap/react";
+import { BubbleMenu } from "@tiptap/react/menus";
 import { StarterKit } from "@tiptap/starter-kit";
 import { Image } from "@tiptap/extension-image";
 import { Placeholder } from "@tiptap/extension-placeholder";
@@ -28,7 +30,10 @@ import {
   Undo2,
   Redo2,
   Highlighter,
+  FileSymlink,
 } from "lucide-react";
+import { BlockId } from "./block-id";
+import { LinkPicker, type LinkTarget } from "@/components/brain/link-picker";
 import { useT } from "@/components/i18n-provider";
 import { toast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
@@ -49,6 +54,9 @@ export function RichEditor({
   placeholder,
   onSaveStateChange,
   minHeight = 320,
+  workspaceId,
+  renderBubble,
+  onEditor,
 }: {
   content: string | null;
   editable: boolean;
@@ -57,7 +65,16 @@ export function RichEditor({
   placeholder?: string;
   onSaveStateChange?: (s: SaveState) => void;
   minHeight?: number;
+  /** Enables [[ links and "Link to…" (pages, tasks, OKRs, people, decisions…). */
+  workspaceId?: string;
+  /** Actions shown when text is selected (wiki pages); works in read-only mode too. */
+  renderBubble?: (editor: Editor) => React.ReactNode;
+  onEditor?: (editor: Editor) => void;
 }) {
+  const router = useRouter();
+  // [[ link picker: where it opens and where the "[[" starts (to replace it).
+  const [picker, setPicker] = useState<{ left: number; top: number; from: number | null } | null>(null);
+  const wsRef = useRef(workspaceId);
   const { t } = useT();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastSaved = useRef<string>(content ?? "");
@@ -83,9 +100,20 @@ export function RichEditor({
       TableRow,
       TableHeader,
       TableCell,
+      BlockId,
     ],
     content: content ?? "",
-    editorProps: { attributes: { class: "rich-content focus:outline-none" } },
+    editorProps: {
+      attributes: { class: "rich-content focus:outline-none" },
+      handleTextInput: (view, from, _to, text) => {
+        // Typing "[[" opens the link picker.
+        if (text === "[" && wsRef.current && view.state.doc.textBetween(Math.max(0, from - 1), from) === "[") {
+          const c = view.coordsAtPos(from);
+          setTimeout(() => setPicker({ left: c.left, top: c.bottom + 6, from: from - 1 }), 0);
+        }
+        return false;
+      },
+    },
     onUpdate: ({ editor: ed }) => {
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => flush(ed), 900);
@@ -121,6 +149,33 @@ export function RichEditor({
   useEffect(() => {
     editor?.setEditable(editable);
   }, [editor, editable]);
+
+  useEffect(() => {
+    wsRef.current = workspaceId;
+    if (editor) onEditor?.(editor);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- report the instance once it exists
+  }, [editor, workspaceId]);
+
+  function insertLink(target: LinkTarget) {
+    if (!editor) return;
+    const at = picker?.from;
+    setPicker(null);
+    const chain = editor.chain().focus();
+    if (at !== null && at !== undefined) {
+      // Replace the typed "[[" with the link.
+      chain.deleteRange({ from: at, to: at + 2 }).insertContent([{ type: "text", text: target.label, marks: [{ type: "link", attrs: { href: target.href } }] }, { type: "text", text: " " }]).run();
+    } else if (!editor.state.selection.empty) {
+      chain.extendMarkRange("link").setLink({ href: target.href }).run();
+    } else {
+      chain.insertContent([{ type: "text", text: target.label, marks: [{ type: "link", attrs: { href: target.href } }] }, { type: "text", text: " " }]).run();
+    }
+  }
+
+  function openPickerAtSelection() {
+    if (!editor) return;
+    const c = editor.view.coordsAtPos(editor.state.selection.from);
+    setPicker({ left: c.left, top: c.bottom + 6, from: null });
+  }
 
   async function insertImage(file: File) {
     if (!onUploadImage || !editor) return;
@@ -187,6 +242,11 @@ export function RichEditor({
           <button className={btn(editor.isActive("codeBlock"))} onClick={() => editor.chain().focus().toggleCodeBlock().run()} title={t("editor.code")}><Code2 size={14} /></button>
           <span className="w-px h-5 bg-neutral-200 dark:bg-neutral-800 mx-1" />
           <button className={btn(editor.isActive("link"))} onClick={setLink} title={t("editor.link")}><Link2 size={14} /></button>
+          {workspaceId && (
+            <button className={btn(false)} onClick={openPickerAtSelection} title={t("brain.link.toolbar")} data-testid="editor-link-to">
+              <FileSymlink size={14} />
+            </button>
+          )}
           {onUploadImage && (
             <>
               <button className={btn(false)} onClick={() => fileRef.current?.click()} title={t("editor.image")}><ImagePlus size={14} /></button>
@@ -208,7 +268,33 @@ export function RichEditor({
           )}
         </div>
       )}
-      <EditorContent editor={editor} style={{ minHeight }} />
+      <EditorContent
+        editor={editor}
+        style={{ minHeight }}
+        onClickCapture={(e) => {
+          // Internal links open inside the app: always when reading, Ctrl/Cmd+click while editing.
+          const a = (e.target as HTMLElement).closest("a");
+          const href = a?.getAttribute("href");
+          if (!href || !/^\/(?!\/)/.test(href) || href.startsWith("/api/")) return;
+          if (!editable || e.metaKey || e.ctrlKey) {
+            e.preventDefault();
+            e.stopPropagation();
+            router.push(href);
+          }
+        }}
+      />
+      {renderBubble && (
+        <BubbleMenu
+          editor={editor}
+          shouldShow={({ editor: ed, from, to }) => from !== to && !ed.isActive("codeBlock") && !ed.isActive("image")}
+          options={{ placement: "top" }}
+          // Above the sticky formatting toolbar (z-10).
+          className="z-40"
+        >
+          {renderBubble(editor)}
+        </BubbleMenu>
+      )}
+      {picker && workspaceId && <LinkPicker workspaceId={workspaceId} position={{ left: picker.left, top: picker.top }} onPick={insertLink} onClose={() => setPicker(null)} />}
     </div>
   );
 }

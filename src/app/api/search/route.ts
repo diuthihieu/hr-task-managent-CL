@@ -2,8 +2,10 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, visibleProjectWhere, visibleWikiWhere, hiddenProjectIds } from "@/lib/authz";
 import { visiblePageWhere } from "@/lib/wiki-sources";
+import { brainAccess } from "@/lib/brain/access";
+import { normalizeTag } from "@/lib/brain/links-core";
 
-const EMPTY = { projects: [], tasks: [], pages: [], objectives: [], people: [], files: [] };
+const EMPTY = { projects: [], tasks: [], pages: [], objectives: [], people: [], files: [], decisions: [] };
 
 /**
  * Universal search (Ctrl/Cmd+K): tasks, projects, wiki pages, objectives,
@@ -22,8 +24,11 @@ export const GET = route(async (req) => {
   const liveProject = { deletedAt: null, ...visible };
   const wikiWhere = visibleWikiWhere(user, role);
   const pageWhere = visiblePageWhere(await hiddenProjectIds(user));
+  const access = await brainAccess(user, workspaceId, role);
+  // "#tag" searches wiki pages by tag.
+  const tag = q.startsWith("#") ? normalizeTag(q) : null;
 
-  const [projects, tasks, pages, objectives, people, files] = await Promise.all([
+  const [projects, tasks, pages, objectives, people, files, decisions] = await Promise.all([
     prisma.project.findMany({ where: { workspaceId, ...liveProject, name: like }, select: { id: true, name: true, color: true }, take: 6 }),
     prisma.task.findMany({
       where: { workspaceId, deletedAt: null, project: liveProject, OR: [{ title: like }, { description: like }] },
@@ -32,8 +37,8 @@ export const GET = route(async (req) => {
       take: 12,
     }),
     prisma.wikiPage.findMany({
-      where: { workspaceId, deletedAt: null, wiki: wikiWhere, title: like, ...pageWhere },
-      select: { id: true, title: true, wikiId: true, wiki: { select: { name: true } } },
+      where: { workspaceId, deletedAt: null, wiki: wikiWhere, ...pageWhere, ...(tag ? { tags: { has: tag } } : { OR: [{ title: like }, { tags: { has: normalizeTag(q) } }] }) },
+      select: { id: true, title: true, wikiId: true, kind: true, status: true, wiki: { select: { name: true } } },
       orderBy: { updatedAt: "desc" },
       take: 8,
     }),
@@ -59,12 +64,19 @@ export const GET = route(async (req) => {
       orderBy: { createdAt: "desc" },
       take: 8,
     }),
+    prisma.decision.findMany({
+      where: { ...access.decision, OR: [{ title: like }, { reason: like }] },
+      select: { id: true, title: true, status: true, decidedAt: true, project: { select: { name: true } } },
+      orderBy: { decidedAt: "desc" },
+      take: 6,
+    }),
   ]);
 
   return NextResponse.json({
     projects,
     tasks: tasks.map((t) => ({ id: t.id, label: t.title, projectId: t.project.id, projectName: t.project.name, status: t.status.name, statusColor: t.status.color })),
-    pages: pages.map((p) => ({ id: p.id, label: p.title, wikiId: p.wikiId, wikiName: p.wiki.name })),
+    pages: pages.map((p) => ({ id: p.id, label: p.title, wikiId: p.wikiId, wikiName: p.wiki.name, kind: p.kind, status: p.status })),
+    decisions: decisions.map((d) => ({ id: d.id, label: d.title, status: d.status, decidedAt: d.decidedAt.toISOString().slice(0, 10), projectName: d.project?.name ?? null })),
     objectives: objectives.map((o) => ({ id: o.id, label: o.title, projectName: o.project?.name ?? null })),
     people: people.map((m) => ({ ...m.user, role: m.role })),
     files: files.map((f) => ({

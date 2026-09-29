@@ -1,6 +1,6 @@
 // Types and pure helpers shared by the graph API and the Graph View (no server imports).
 
-export const GRAPH_NODE_TYPES = ["wiki", "task", "project", "objective", "kr", "person", "tag", "file"] as const;
+export const GRAPH_NODE_TYPES = ["wiki", "task", "project", "objective", "kr", "decision", "person", "tag", "file"] as const;
 export type GraphNodeType = (typeof GRAPH_NODE_TYPES)[number];
 
 export interface GraphNode {
@@ -17,7 +17,7 @@ export interface GraphNode {
   depth?: number;
   done?: boolean;
 }
-export type GraphLinkKind = "child" | "link" | "project" | "assignee" | "owner" | "contributor" | "tag" | "okr" | "depends" | "subtask" | "file" | "mention" | "author" | "cascade" | "source";
+export type GraphLinkKind = "child" | "link" | "project" | "assignee" | "owner" | "contributor" | "tag" | "okr" | "depends" | "subtask" | "file" | "mention" | "author" | "cascade" | "source" | "decision" | "supersedes" | "involved";
 export interface GraphLink {
   source: string;
   target: string;
@@ -39,6 +39,7 @@ export const GRAPH_COLORS: Record<GraphNodeType, string> = {
   project: "#f97316",
   objective: "#22c55e",
   kr: "#14b8a6",
+  decision: "#a855f7",
   person: "#ec4899",
   tag: "#eab308",
   file: "#94a3b8",

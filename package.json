@@ -34,6 +34,8 @@
     "@radix-ui/react-tooltip": "^1.2.16",
     "@tanstack/react-table": "^9.2.4",
     "@tanstack/react-virtual": "^3.14.12",
+    "@tiptap/core": "^3.31.3",
+    "@tiptap/extension-bubble-menu": "^3.31.3",
     "@tiptap/extension-highlight": "^3.31.3",
     "@tiptap/extension-image": "^3.31.3",
     "@tiptap/extension-placeholder": "^3.31.3",

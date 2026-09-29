@@ -109,6 +109,8 @@ export function describeNotification(n: NotificationItem, t: TFunction): string 
       return t("notif.task_overdue", { date: String(d.dueDate ?? "") });
     case "capture_due":
       return t("notif.capture_due");
+    case "reminder":
+      return t("notif.reminder");
     default:
       return n.type;
   }

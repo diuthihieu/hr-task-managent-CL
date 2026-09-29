@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { BookOpen, ChevronDown, ChevronRight, FileText, Plus, Trash2, Sparkles, Lock, Users, Waypoints } from "lucide-react";
@@ -11,12 +11,20 @@ import { toast } from "@/components/ui/toast";
 import { useT } from "@/components/i18n-provider";
 import { AiWikiActions } from "@/components/ai/ai-actions";
 import { WikiComments } from "./wiki-comments";
+import type { Editor } from "@tiptap/react";
+import { PageProperties } from "@/components/brain/page-properties";
+import { PageConnections } from "@/components/brain/page-connections";
+import { LayersPanel } from "@/components/brain/layers-panel";
+import { SelectionBar, SelectionDialogs, useSelectionActions } from "@/components/brain/selection-actions";
+import { revealBlock } from "@/components/editor/block-id";
+import type { KnowledgeMeta } from "@/lib/wiki";
 import { api } from "@/lib/api-client";
 import { formatDate, cn } from "@/lib/utils";
 import type { WikiPageSummary, WikiRow } from "@/lib/wiki";
 
 interface WikiPageFull extends WikiPageSummary {
   content: string | null;
+  meta: KnowledgeMeta;
   /** Projects this page quotes that are hidden from some members - they can't see the page. */
   restrictedTo?: { id: string; name: string }[];
 }
@@ -34,6 +42,13 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [aiOpen, setAiOpen] = useState(false);
+  const [aiAsk, setAiAsk] = useState<{ text: string; nonce: number } | null>(null);
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const revealed = useRef<string | null>(null);
+  const [savedTick, setSavedTick] = useState(0);
+  const [layersTick, setLayersTick] = useState(0);
+  const pageHref = page ? `${base}/${page.id}` : base;
+  const selection = useSelectionActions({ editor, canEdit });
 
   const loadTree = useCallback(async () => {
     try {
@@ -65,6 +80,33 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
       cancelled = true;
     };
   }, [pageId, base, router]);
+
+  // Block links (#b-<id>): scroll to the block once the page is rendered.
+  useEffect(() => {
+    const m = /^#b-([a-z0-9]{6,16})$/i.exec(window.location.hash);
+    if (!page || !editor || !m) return;
+    const key = `${page.id}${m[0]}`;
+    if (revealed.current === key) return;
+    // The editor attaches its DOM a moment after it is created: retry briefly.
+    let tries = 0;
+    const timer = window.setInterval(() => {
+      if (revealBlock(document, m[1].toLowerCase())) {
+        revealed.current = key;
+        window.clearInterval(timer);
+      } else if (++tries > 20) window.clearInterval(timer);
+    }, 150);
+    return () => window.clearInterval(timer);
+  }, [page, editor]);
+
+  // Block links followed within the same page (only the hash changes).
+  useEffect(() => {
+    const onHash = () => {
+      const m = /^#b-([a-z0-9]{6,16})$/i.exec(window.location.hash);
+      if (m) revealBlock(document, m[1].toLowerCase());
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
 
   const children = useMemo(() => {
     const map = new Map<string | null, WikiPageSummary[]>();
@@ -247,6 +289,7 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
                 </button>
               )}
             </div>
+            {page.meta && <PageProperties pageId={page.id} meta={page.meta} canEdit={canEdit} base={base} onSaved={(meta) => setPage((p) => (p ? { ...p, meta, status: meta.status, kind: meta.kind, tags: meta.tags } : p))} />}
             <input
               defaultValue={page.title}
               disabled={!canEdit}
@@ -262,17 +305,40 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
               onSaveStateChange={setSaveState}
               onUploadImage={uploadImage}
               minHeight={420}
+              workspaceId={workspaceId}
+              onEditor={setEditor}
+              renderBubble={(ed) => (
+                <SelectionBar
+                  editor={ed}
+                  canEdit={canEdit}
+                  pageHref={pageHref}
+                  pageId={page.id}
+                  onOpen={(a, assign) => {
+                    selection.capture(assign);
+                    selection.setAction(a);
+                  }}
+                  onAskAi={(text) => {
+                    setAiOpen(true);
+                    setAiAsk({ text: `${t("brain.sel.askPrefix")}\n\n> ${text.trim().slice(0, 1500)}`, nonce: Date.now() });
+                  }}
+                  onHighlighted={() => setLayersTick((n) => n + 1)}
+                />
+              )}
               onSave={async (html) => {
                 const saved = await api.patch<{ restrictedTo?: { id: string; name: string }[] }>(`/api/wiki/${page.id}`, { content: html || null });
                 // Only the notice changes; the editor keeps its own content.
                 setPage((p) => (p ? { ...p, restrictedTo: saved.restrictedTo ?? [] } : p));
+                setSavedTick((n) => n + 1);
               }}
             />
+            <SelectionDialogs state={selection} workspaceId={workspaceId} pageId={page.id} editor={editor} />
+            <LayersPanel pageId={page.id} canEdit={canEdit} refreshKey={layersTick} onJumpToBlock={(id) => revealBlock(document, id)} />
+            <PageConnections pageId={page.id} version={`${page.updatedAt}:${savedTick}`} onLinkMention={(m) => m.href && router.push(m.href)} />
             <WikiComments pageId={page.id} currentUserId={currentUserId ?? null} canManage={wiki.myRole === "manager"} />
           </div>
         )}
       </div>
-      {aiOpen && <WikiAiPanel wikiId={wiki.id} wikiName={wiki.name} onClose={() => setAiOpen(false)} />}
+      {aiOpen && <WikiAiPanel wikiId={wiki.id} wikiName={wiki.name} ask={aiAsk} onClose={() => setAiOpen(false)} />}
       {shareOpen && <WikiShareDialog wiki={wiki} workspaceId={workspaceId} onClose={() => setShareOpen(false)} />}
     </div>
   );

@@ -49,8 +49,16 @@ http
       if (body.generationConfig?.responseMimeType === "application/json") {
         const system = body.systemInstruction?.parts?.map((p) => p.text).join("\n") ?? "";
         const catalog = system.match(/CATALOG:\n(.+)$/s)?.[1];
+        const schema = system.match(/RESPONSE_SCHEMA: (\w+)/)?.[1];
+        const brain = {
+          layers: { keyPoints: ["Probation is 60 days", "Laptops ship on day one"], summary: "Onboarding summary.", insights: ["Start IT setup earlier"] },
+          conflicts: { conflicts: [{ pair: 1, issue: "Different probation length", quoteA: "60 days", quoteB: "90 days", suggestion: "Update the older page" }] },
+          retro: { title: "Retro: stub", retrospective: "It went fine.", lessons: ["Order laptops early"], decisions: [{ title: "Use vendor A", reason: "Faster delivery", alternatives: ["Vendor B"] }], process: ["Order", "Configure", "Hand over"], knowledgeNote: "Keep a checklist." },
+        }[schema];
         const projectId = catalog ? JSON.parse(catalog)[0]?.id : undefined;
-        const json = catalog
+        const json = brain
+          ? brain
+          : catalog
           ? { widgets: [
               { title: "Tasks by status", type: "pie", projectId, dimensionFieldId: "sys_status", aggregation: "count" },
               { title: "Hours by assignee", type: "bar", projectId, dimensionFieldId: "sys_assignees", measureFieldId: "sys_estimate", aggregation: "sum" },
@@ -60,7 +68,10 @@ http
         res.writeHead(200, { "content-type": "application/json" });
         return res.end(JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: JSON.stringify(json) }] } }], usageMetadata: { promptTokenCount: 50, candidatesTokenCount: 10 } }));
       }
-      const answer = hasFile ? "Extracted text from the PDF: leave policy is 12 days per year." : ["# Stub report", "", `You asked: ${userText}`, "", "| a | b |", "|---|---|", "| 1 | 2 |"].join("\n");
+      const system = body.systemInstruction?.parts?.map((p) => p.text).join("\n") ?? "";
+      // Ask My Brain: cite the first source when there is one.
+      const brainAnswer = system.includes("SOURCES:") ? (/\n\[S1\] [A-Z]+:/.test(system) ? `Answer from the brain [S1]. You asked: ${userText}` : `No source covers this. You asked: ${userText}`) : null;
+      const answer = brainAnswer ?? (hasFile ? "Extracted text from the PDF: leave policy is 12 days per year." : ["# Stub report", "", `You asked: ${userText}`, "", "| a | b |", "|---|---|", "| 1 | 2 |"].join("\n"));
       if (req.url.includes(":streamGenerateContent")) {
         res.writeHead(200, { "content-type": "text/event-stream" });
         const pieces = answer.match(/.{1,12}/gs) ?? [""];

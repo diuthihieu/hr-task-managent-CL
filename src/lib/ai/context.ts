@@ -6,6 +6,7 @@ import { visibleProjectWhere, visibleWikiWhere, hiddenProjectIds, type SessionUs
 import { visiblePageWhere } from "../wiki-sources";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "../okr-resolver";
 import { htmlToText } from "./extract";
+import { isCurrentKnowledge } from "../wiki";
 
 // Grounding context for the AI. Everything given to the model is read with
 // the same permission filters as the rest of the app, so the model can only
@@ -45,12 +46,18 @@ export async function wikiKnowledge(wikiId: string, budget = CONTEXT_CHARS, hidd
   const pageWhere = visiblePageWhere(hidden);
   const [pages, docs, files] = await Promise.all([
     prisma.wikiPage.findMany({
-      where: { wikiId, deletedAt: null, ...pageWhere },
+      // Archived knowledge is left out; superseded / outdated pages are labelled as history.
+      where: { wikiId, deletedAt: null, status: { not: "archived" }, ...pageWhere },
       orderBy: [{ parentPageId: "asc" }, { sortOrder: "asc" }],
       select: {
         title: true,
         content: true,
         updatedAt: true,
+        status: true,
+        version: true,
+        validFrom: true,
+        validTo: true,
+        kind: true,
         comments: { where: { deletedAt: null }, orderBy: { createdAt: "asc" }, take: 100, select: { body: true, createdAt: true, author: { select: { name: true } } } },
       },
     }),
@@ -62,7 +69,9 @@ export async function wikiKnowledge(wikiId: string, budget = CONTEXT_CHARS, hidd
   for (const d of docs) b.add(`### Reference document: ${d.fileName}\n${d.text}`);
   for (const p of pages) {
     const talk = p.comments.map((c) => `- ${c.author?.name ?? "?"} (${day(c.createdAt)}): ${stripMentions(c.body)}`).join("\n");
-    b.add(`### Wiki page: ${p.title} (updated ${day(p.updatedAt)})\n${htmlToText(p.content) || "(empty)"}${talk ? `\n#### Comments\n${talk}` : ""}`);
+    const historical = !isCurrentKnowledge(p);
+    const temporal = [p.kind !== "page" ? p.kind : "", `status ${p.status}`, p.version > 1 ? `v${p.version}` : "", p.validFrom || p.validTo ? `valid ${day(p.validFrom)} → ${day(p.validTo)}` : "", historical ? "HISTORICAL - not current" : ""].filter(Boolean).join(", ");
+    b.add(`### Wiki page: ${p.title} (updated ${day(p.updatedAt)}; ${temporal})\n${htmlToText(p.content) || "(empty)"}${talk ? `\n#### Comments\n${talk}` : ""}`);
   }
   for (const f of files) b.add(`### File "${f.fileName}" (attached in a comment on "${f.wikiPage?.title ?? ""}")\n${f.extractedText}`);
   return { text: b.toString(), pageCount: pages.length, docCount: docs.length };

@@ -16,7 +16,7 @@ const GROUPS: { key: string; types: string[] }[] = [
   { key: "all", types: [] },
   { key: "assigned", types: ["task_assigned", "task_report_added"] },
   { key: "mention", types: ["mention"] },
-  { key: "due", types: ["task_due_soon", "task_overdue", "task_due_changed", "capture_due"] },
+  { key: "due", types: ["task_due_soon", "task_overdue", "task_due_changed", "capture_due", "reminder"] },
   { key: "comment", types: ["task_comment"] },
   { key: "updates", types: ["task_status", "task_updated"] },
   { key: "approval", types: ["approval_request", "approval_result"] },

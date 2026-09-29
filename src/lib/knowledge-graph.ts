@@ -4,36 +4,21 @@ import { prisma } from "./prisma";
 import { hiddenProjectIds, visibleProjectWhere, visibleWikiWhere, type SessionUser } from "./authz";
 import { visiblePageWhere } from "./wiki-sources";
 import type { GraphLink, GraphLinkKind, GraphNode, KnowledgeGraph } from "./knowledge-graph-core";
+import { linkedTargets, normalizeTag } from "./brain/links-core";
+import { brainAccess } from "./brain/access";
 
 export { localSubgraph } from "./knowledge-graph-core";
 
 // Knowledge graph: a read-only view over relations that already exist in the
 // database (wiki tree, links written in page/task content, task -> project /
 // assignee / category / OKR / dependency / parent / files, OKR tree, wiki page
-// source projects, comment mentions). Nothing is stored; every node is filtered
+// source projects and tags, comment mentions, decisions and their people). Nothing is stored; every node is filtered
 // by the viewer's access exactly like the lists they come from.
 
 const MAX_TASKS = 1500;
-const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
-const LINK_PATTERNS: [RegExp, (m: RegExpExecArray) => string][] = [
-  [new RegExp(`/wiki/${UUID}/(${UUID})`, "gi"), (m) => `wiki:${m[1].toLowerCase()}`],
-  [new RegExp(`/t/(${UUID})`, "gi"), (m) => `task:${m[1].toLowerCase()}`],
-  [new RegExp(`/okrs/(${UUID})`, "gi"), (m) => `objective:${m[1].toLowerCase()}`],
-  [new RegExp(`/p/(${UUID})(?!/t/)`, "gi"), (m) => `project:${m[1].toLowerCase()}`],
-];
-
-/** Internal links written in rich content (href="/w/<slug>/p/<id>/t/<id>" …) -> node ids. */
+/** Internal links written in rich content -> node ids ("<type>:<uuid>"). */
 export function linkedNodeIds(html: string | null | undefined): string[] {
-  if (!html || !html.includes("href")) return [];
-  const hrefs = [...html.matchAll(/href="([^"]+)"/gi)].map((m) => m[1]);
-  const out = new Set<string>();
-  for (const href of hrefs)
-    for (const [re, id] of LINK_PATTERNS) {
-      re.lastIndex = 0;
-      let m: RegExpExecArray | null;
-      while ((m = re.exec(href))) out.add(id(m));
-    }
-  return [...out];
+  return linkedTargets(html);
 }
 
 export async function buildKnowledgeGraph(user: SessionUser, workspace: { id: string; slug: string }, role: WorkspaceRole): Promise<KnowledgeGraph> {
@@ -42,7 +27,8 @@ export async function buildKnowledgeGraph(user: SessionUser, workspace: { id: st
   const hidden = await hiddenProjectIds(user);
   const liveProject = { deletedAt: null, ...visibleProjectWhere(user) };
 
-  const [projects, tasks, taskCount, objectives, pages, members] = await Promise.all([
+  const access = await brainAccess(user, wsId, role);
+  const [projects, tasks, taskCount, objectives, pages, members, decisions] = await Promise.all([
     prisma.project.findMany({ where: { workspaceId: wsId, ...liveProject }, select: { id: true, name: true, status: true, categories: { select: { id: true, name: true } } } }),
     prisma.task.findMany({
       where: { workspaceId: wsId, deletedAt: null, project: liveProject },
@@ -88,12 +74,21 @@ export async function buildKnowledgeGraph(user: SessionUser, workspace: { id: st
         content: true,
         createdById: true,
         sourceProjectIds: true,
+        tags: true,
+        kind: true,
+        status: true,
+        supersedesId: true,
         wiki: { select: { name: true } },
         attachments: { where: { deletedAt: null }, select: { id: true, fileName: true } },
         comments: { where: { deletedAt: null }, select: { authorId: true, mentions: { select: { userId: true } } } },
       },
     }),
     prisma.workspaceMember.findMany({ where: { workspaceId: wsId, user: { isActive: true, deletedAt: null } }, select: { user: { select: { id: true, name: true, email: true } } } }),
+    prisma.decision.findMany({
+      where: access.decision,
+      select: { id: true, title: true, status: true, decidedAt: true, projectId: true, wikiPageId: true, taskId: true, objectiveId: true, supersedesId: true, createdById: true, evidence: true, reason: true, people: { select: { userId: true } } },
+      take: 1000,
+    }),
   ]);
 
   const nodes = new Map<string, GraphNode>();
@@ -147,9 +142,20 @@ export async function buildKnowledgeGraph(user: SessionUser, workspace: { id: st
     }
   }
 
+  // Wiki tags: one node per tag name, joined to project categories of the same name.
+  const categoryByTag = new Map<string, string[]>();
+  for (const p of projects) for (const c of p.categories) (categoryByTag.get(normalizeTag(c.name)) ?? categoryByTag.set(normalizeTag(c.name), []).get(normalizeTag(c.name))!).push(`tag:${c.id}`);
   for (const pg of pages) {
     const id = `wiki:${pg.id}`;
-    add({ id, type: "wiki", label: pg.title || "Untitled", sub: `Wiki · ${pg.wiki.name}`, href: `${base}/wiki/${pg.wikiId}/${pg.id}` });
+    const kindLabel = pg.kind === "page" ? "Wiki" : pg.kind[0].toUpperCase() + pg.kind.slice(1);
+    add({ id, type: "wiki", label: pg.title || "Untitled", sub: `${kindLabel} · ${pg.wiki.name}${pg.status !== "current" ? ` · ${pg.status}` : ""}`, href: `${base}/wiki/${pg.wikiId}/${pg.id}`, done: pg.status === "superseded" || pg.status === "archived" });
+    if (pg.supersedesId) link(id, `wiki:${pg.supersedesId}`, "supersedes");
+    for (const tag of pg.tags) {
+      const tid = `tag:#${tag}`;
+      add({ id: tid, type: "tag", label: `#${tag}`, sub: "Tag" });
+      link(id, tid, "tag");
+      for (const cat of categoryByTag.get(tag) ?? []) link(tid, cat, "tag");
+    }
     if (pg.parentPageId) link(id, `wiki:${pg.parentPageId}`, "child");
     const author = person(pg.createdById);
     if (author) link(id, author, "author");
@@ -160,6 +166,18 @@ export async function buildKnowledgeGraph(user: SessionUser, workspace: { id: st
     }
     for (const c of pg.comments) for (const m of c.mentions) link(id, `person:${m.userId}`, "mention");
     for (const target of linkedNodeIds(pg.content)) link(id, target, "link");
+  }
+
+  for (const d of decisions) {
+    const id = `decision:${d.id}`;
+    add({ id, type: "decision", label: d.title, sub: `Decision · ${d.status} · ${d.decidedAt.toISOString().slice(0, 10)}`, href: `${base}/brain/decisions/${d.id}`, done: d.status === "superseded" || d.status === "revoked" });
+    if (d.projectId) link(id, `project:${d.projectId}`, "project");
+    if (d.wikiPageId) link(id, `wiki:${d.wikiPageId}`, "decision");
+    if (d.taskId) link(id, `task:${d.taskId}`, "decision");
+    if (d.objectiveId) link(id, `objective:${d.objectiveId}`, "okr");
+    if (d.supersedesId) link(id, `decision:${d.supersedesId}`, "supersedes");
+    for (const p of d.people) link(id, `person:${p.userId}`, "involved");
+    for (const target of [...linkedNodeIds(d.evidence), ...linkedNodeIds(d.reason)]) link(id, target, "link");
   }
 
   // Keep only links whose both ends are visible nodes (a link never reveals a hidden item), deduplicated.

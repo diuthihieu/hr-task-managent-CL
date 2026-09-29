@@ -11,6 +11,14 @@ export const MAX_RICH_TEXT_CHARS = 400_000;
 // Images may only point at our own authorized attachment route.
 const IMG_SRC = /^\/api\/attachments\/[0-9a-f-]{36}\/download\?inline=1$/i;
 
+// Block ids (data-block-id) make block-level links possible (#b-<id>).
+const BLOCK_ID = /^[a-z0-9]{6,16}$/;
+const BLOCK_TAGS = ["p", "h1", "h2", "h3", "h4", "li", "blockquote", "pre"];
+const keepBlockId: sanitizeHtml.Transformer = (tagName, attribs) => {
+  const { ["data-block-id"]: id, ...rest } = attribs;
+  return { tagName, attribs: id && BLOCK_ID.test(id) ? { ...rest, "data-block-id": id } : rest };
+};
+
 const OPTIONS: sanitizeHtml.IOptions = {
   allowedTags: [
     "p", "br", "hr", "h1", "h2", "h3", "h4", "strong", "b", "em", "i", "u", "s", "strike", "code", "pre", "blockquote", "mark",
@@ -20,12 +28,18 @@ const OPTIONS: sanitizeHtml.IOptions = {
     a: ["href", "target", "rel"],
     img: ["src", "alt", "title", "width", "height"],
     ul: ["data-type"],
-    li: ["data-type", "data-checked"],
+    li: ["data-type", "data-checked", "data-block-id"],
+    p: ["data-block-id"],
+    h1: ["data-block-id"],
+    h2: ["data-block-id"],
+    h3: ["data-block-id"],
+    h4: ["data-block-id"],
+    blockquote: ["data-block-id"],
     input: ["type", "checked", "disabled"],
     th: ["colspan", "rowspan", "colwidth"],
     td: ["colspan", "rowspan", "colwidth"],
     col: ["style"],
-    pre: ["class"],
+    pre: ["class", "data-block-id"],
     code: ["class"],
     mark: ["data-color"],
   },
@@ -35,7 +49,12 @@ const OPTIONS: sanitizeHtml.IOptions = {
   allowedStyles: { col: { "min-width": [/^\d+px$/], width: [/^\d+px$/] } },
   exclusiveFilter: (frame) => frame.tag === "img" && !IMG_SRC.test(frame.attribs.src ?? ""),
   transformTags: {
-    a: (tagName, attribs) => ({ tagName, attribs: { ...attribs, target: "_blank", rel: "noopener noreferrer nofollow" } }),
+    ...Object.fromEntries(BLOCK_TAGS.map((t) => [t, keepBlockId])),
+    // Internal links (/w/...) open in the app; external ones in a new tab.
+    a: (tagName, attribs): sanitizeHtml.Tag => {
+      const href = attribs.href ?? "";
+      return { tagName, attribs: /^\/(?!\/)/.test(href) ? { href } : { ...attribs, target: "_blank", rel: "noopener noreferrer nofollow" } };
+    },
     input: (tagName, attribs) => ({ tagName, attribs: attribs.type === "checkbox" ? { type: "checkbox", ...(attribs.checked !== undefined ? { checked: "checked" } : {}) } : {} }),
   },
 };

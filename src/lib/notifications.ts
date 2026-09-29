@@ -25,7 +25,8 @@ export type NotificationType =
   | "workspace_invite_result"
   | "task_due_soon"
   | "task_overdue"
-  | "capture_due";
+  | "capture_due"
+  | "reminder";
 
 interface TaskRef {
   id: string;

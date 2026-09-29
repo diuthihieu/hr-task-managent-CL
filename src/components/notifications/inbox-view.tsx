@@ -23,6 +23,7 @@ const GROUPS: { key: string; types: string[] }[] = [
   { key: "invite", types: ["workspace_invite", "workspace_invite_result"] },
   { key: "okr", types: ["objective_risk"] },
   { key: "ai", types: ["ai_suggestion"] },
+  { key: "recognition", types: ["kudos", "reward_request", "reward_result"] },
 ];
 
 function snoozeTimes() {

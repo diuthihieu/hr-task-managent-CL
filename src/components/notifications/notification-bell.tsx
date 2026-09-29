@@ -100,6 +100,7 @@ export function describeNotification(n: NotificationItem, t: TFunction): string 
     case "workspace_invite_result":
       return t(d.decision === "accepted" ? "notif.invite_accepted" : "notif.invite_declined", { actor });
     case "ai_suggestion":
+      if (d.kind === "reward_reachable") return t("notif.ai.reward_reachable", { points: Number(d.points ?? 0), cost: Number(d.cost ?? 0) });
       return t(`notif.ai.${String(d.kind ?? "plan_day")}` as MessageKey, { count: Number(d.count ?? 0) });
     case "objective_risk":
       return t("notif.objective_risk", { status: t(`okr.status.${String(d.status ?? "at_risk")}` as MessageKey) });
@@ -111,6 +112,12 @@ export function describeNotification(n: NotificationItem, t: TFunction): string 
       return t("notif.capture_due");
     case "reminder":
       return t("notif.reminder");
+    case "kudos":
+      return t("notif.kudos", { actor });
+    case "reward_request":
+      return t("notif.reward_request", { actor });
+    case "reward_result":
+      return t(d.decision === "approved" ? "notif.reward_approved" : "notif.reward_rejected", { actor });
     default:
       return n.type;
   }
@@ -197,7 +204,22 @@ export function NotificationBell({ className, align = "start" }: { className?: s
     <>
     {popups.length > 0 && (
       <div className="fixed z-[70] bottom-4 right-4 left-4 sm:left-auto sm:w-96 flex flex-col gap-2" role="status" aria-live="polite" data-testid="notif-popups">
-        {popups.map((n) => (
+        {popups.map((n) => n.type === "kudos" ? (
+          <button
+            key={n.id}
+            onClick={() => {
+              setPopups((prev) => prev.filter((x) => x.id !== n.id));
+              openItem(n);
+            }}
+            className="kudos-envelope text-left rounded-2xl shadow-2xl p-4 animate-in"
+            data-testid="kudos-popup"
+          >
+            <span className="flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] text-amber-800/80">✉ {t("reco.popup.label")}</span>
+            <span className="block mt-1.5 font-serif text-lg leading-snug text-amber-950">{t("reco.popup.title", { name: n.actor?.name ?? t("notif.someone") })}</span>
+            <span className="block mt-1 text-xs text-amber-900/80 line-clamp-2">“{n.title}”</span>
+            <span className="mt-2 inline-flex items-center gap-1 rounded-full bg-amber-900 text-amber-50 text-xs font-medium px-3 py-1">{t("reco.popup.open")}</span>
+          </button>
+        ) : (
           <div key={n.id} className="flex items-start gap-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-2xl p-3 animate-in" data-testid="notif-popup">
             <span className="h-8 w-8 rounded-full flex items-center justify-center text-white text-[11px] font-semibold shrink-0" style={{ backgroundColor: n.actor?.avatarColor ?? "var(--color-indigo-500)" }}>
               {n.actor ? initials(n.actor.name) : <Bell size={14} />}

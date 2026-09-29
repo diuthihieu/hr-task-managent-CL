@@ -3,6 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, route } from "@/lib/authz";
 import { generateReminders } from "@/lib/notifications";
 import { syncInvitations } from "@/lib/invitations";
+import { syncPointsIfStale } from "@/lib/recognition/points";
+
+/** Keeps points (and "you can redeem a reward" notices) fresh; at most every 10 minutes per workspace. */
+async function syncMyWorkspacesPoints(userId: string) {
+  const ws = await prisma.workspaceMember.findMany({ where: { userId, workspace: { deletedAt: null } }, select: { workspaceId: true }, take: 20 });
+  await Promise.all(ws.map((w) => syncPointsIfStale(w.workspaceId, 10 * 60_000).catch((e) => console.error("[recognition] sync failed", e))));
+}
 
 /**
  * The caller's notifications (reminders are generated on the fly).
@@ -11,7 +18,7 @@ import { syncInvitations } from "@/lib/invitations";
  */
 export const GET = route(async (req) => {
   const user = await requireUser();
-  await Promise.all([generateReminders(user.id), syncInvitations(user)]);
+  await Promise.all([generateReminders(user.id), syncInvitations(user), syncMyWorkspacesPoints(user.id)]);
   const url = new URL(req.url);
   const now = new Date();
   const view = url.searchParams.get("view") ?? "all";

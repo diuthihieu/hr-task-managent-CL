@@ -48,6 +48,7 @@ import {
   Target as TargetIcon,
   BookOpen,
   Brain,
+  Award,
   SlidersHorizontal,
   Palette,
   Building2,
@@ -251,6 +252,7 @@ export function WorkspaceShell({
   const activeWikiId = pathname.match(/\/wiki\/([0-9a-f-]{36})/)?.[1];
   const isWikiHome = pathname.endsWith("/wiki");
   const isBrain = pathname.includes(`/w/${workspace.slug}/brain`);
+  const isRecognition = pathname.includes(`/w/${workspace.slug}/recognition`);
   const isAi = pathname.includes("/ai");
   const okrActive = isTeamOkrs || isMyOkrs || isOkrDashboard || isOkrDetail;
 
@@ -319,6 +321,9 @@ export function WorkspaceShell({
           )}
           <Link href={`/w/${workspace.slug}/dashboards`} className={navItem(isDashboards)}>
             <BarChart3 size={16} /> <span className="flex-1">{t("nav.reports")}</span>
+          </Link>
+          <Link href={`/w/${workspace.slug}/recognition`} className={navItem(isRecognition)} data-testid="nav-recognition">
+            <Award size={16} /> <span className="flex-1">{t("nav.recognition")}</span>
           </Link>
           <Link href={`/w/${workspace.slug}/brain`} className={navItem(isBrain)} data-testid="nav-brain">
             <Brain size={16} /> <span className="flex-1">{t("nav.brain")}</span>

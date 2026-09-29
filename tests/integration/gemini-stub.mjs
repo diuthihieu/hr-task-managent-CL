@@ -53,6 +53,7 @@ http
         const brain = {
           layers: { keyPoints: ["Probation is 60 days", "Laptops ship on day one"], summary: "Onboarding summary.", insights: ["Start IT setup earlier"] },
           conflicts: { conflicts: [{ pair: 1, issue: "Different probation length", quoteA: "60 days", quoteB: "90 days", suggestion: "Update the older page" }] },
+          kudos: { title: "Thank you for the payroll", message: "Thank you for fixing the payroll export - it saved the whole team a late night." },
           retro: { title: "Retro: stub", retrospective: "It went fine.", lessons: ["Order laptops early"], decisions: [{ title: "Use vendor A", reason: "Faster delivery", alternatives: ["Vendor B"] }], process: ["Order", "Configure", "Hand over"], knowledgeNote: "Keep a checklist." },
         }[schema];
         const projectId = catalog ? JSON.parse(catalog)[0]?.id : undefined;

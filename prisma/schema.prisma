@@ -265,6 +265,12 @@ model User {
   decisionsInvolved     DecisionPerson[]       @relation("DecisionPeople")
   journalEntries        JournalEntry[]         @relation("JournalUser")
   knowledgeReviews      KnowledgeReview[]      @relation("ReviewUser")
+  pointEvents           PointEvent[]           @relation("PointEventUser")
+  recognitionManagerOf  RecognitionManager[]   @relation("RecognitionManagerUser")
+  recognitionMemberOf   RecognitionMember[]    @relation("RecognitionMemberUser")
+  kudosSent             Kudos[]                @relation("KudosFrom")
+  kudosReceived         Kudos[]                @relation("KudosTo")
+  redemptions           RewardRedemption[]     @relation("RedemptionUser")
 
   @@index([isActive, deletedAt])
   @@map("users")
@@ -285,28 +291,36 @@ model Workspace {
   logoMimeType  String?   @map("logo_mime_type") @db.VarChar(40)
   logoUpdatedAt DateTime? @map("logo_updated_at") @db.Timestamptz(6)
 
-  members          WorkspaceMember[]
-  teams            Team[]
-  projects         Project[]
-  statuses         Status[]
-  categories       Category[]
-  tasks            Task[]
-  objectives       Objective[]
-  dashboards       Dashboard[]
-  attachments      Attachment[]
-  wikiComments     WikiComment[]
-  taskApprovals    TaskApproval[]
-  invitations      WorkspaceInvitation[]
-  inviteLinks      WorkspaceInviteLink[]
-  activityLogs     ActivityLog[]
-  capturedThoughts CapturedThought[]
-  wikiPages        WikiPage[]
-  notifications    Notification[]
-  knowledgeDocs    KnowledgeDoc[]
-  aiConversations  AiConversation[]
-  wikis            Wiki[]
-  decisions        Decision[]
-  journalEntries   JournalEntry[]
+  members             WorkspaceMember[]
+  teams               Team[]
+  projects            Project[]
+  statuses            Status[]
+  categories          Category[]
+  tasks               Task[]
+  objectives          Objective[]
+  dashboards          Dashboard[]
+  attachments         Attachment[]
+  wikiComments        WikiComment[]
+  taskApprovals       TaskApproval[]
+  invitations         WorkspaceInvitation[]
+  inviteLinks         WorkspaceInviteLink[]
+  activityLogs        ActivityLog[]
+  capturedThoughts    CapturedThought[]
+  wikiPages           WikiPage[]
+  notifications       Notification[]
+  knowledgeDocs       KnowledgeDoc[]
+  aiConversations     AiConversation[]
+  wikis               Wiki[]
+  decisions           Decision[]
+  journalEntries      JournalEntry[]
+  recognitionSettings RecognitionSettings?
+  pointRules          PointRule[]
+  pointEvents         PointEvent[]
+  recognitionManagers RecognitionManager[]
+  recognitionMembers  RecognitionMember[]
+  kudos               Kudos[]
+  rewards             Reward[]
+  redemptions         RewardRedemption[]
 
   @@map("workspaces")
 }
@@ -380,6 +394,7 @@ model Project {
   notifications    Notification[]
   objectives       Objective[]
   decisions        Decision[]
+  kudos            Kudos[]
 
   @@index([workspaceId, deletedAt, sortOrder])
   @@map("projects")
@@ -484,6 +499,7 @@ model Task {
   recurrenceParent Task?                  @relation("Recurrence", fields: [recurrenceParentId], references: [id], onDelete: SetNull)
   recurrenceNext   Task?                  @relation("Recurrence")
   decisions        Decision[]
+  kudos            Kudos[]
   parentTask       Task?                  @relation("Subtasks", fields: [parentTaskId], references: [id], onDelete: SetNull)
   subtasks         Task[]                 @relation("Subtasks")
   status           Status                 @relation(fields: [statusId], references: [id], onDelete: Restrict)
@@ -1555,4 +1571,202 @@ model KnowledgeReview {
   @@unique([userId, pageId])
   @@index([userId, nextReviewAt])
   @@map("knowledge_reviews")
+}
+
+// ---------------------------------------------------------------------------
+// Recognition: points, kudos letters, rewards
+// ---------------------------------------------------------------------------
+
+enum PointAction {
+  task_completed
+  task_on_time
+  task_created
+  comment_posted
+  helped_colleague
+  kudos_received
+  kudos_sent
+  wiki_page_created
+  decision_recorded
+  focus_hour
+  approval_given
+}
+
+enum KudosStyle {
+  gratitude
+  appreciation
+  teamwork
+  above_beyond
+  mentor
+}
+
+enum RedemptionStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+/// Recognition settings of a workspace (created with defaults on first use).
+model RecognitionSettings {
+  workspaceId      String    @id @map("workspace_id") @db.Uuid
+  enabled          Boolean   @default(true)
+  /// Default for members: may they see other people's points?
+  membersSeePoints Boolean   @default(true) @map("members_see_points")
+  /// Activity before this date earns no points (null = all history).
+  pointsSince      DateTime? @map("points_since") @db.Timestamptz(6)
+  /// Points are materialized from activity incrementally; this is the high-water mark.
+  lastSyncedAt     DateTime? @map("last_synced_at") @db.Timestamptz(6)
+  updatedById      String?   @map("updated_by") @db.Uuid
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("recognition_settings")
+}
+
+/// Points per action, set by admins / recognition managers.
+model PointRule {
+  workspaceId String      @map("workspace_id") @db.Uuid
+  action      PointAction
+  points      Int
+  enabled     Boolean     @default(true)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, action])
+  @@map("point_rules")
+}
+
+/// Points ledger: one row per rewarded action (idempotent per source).
+model PointEvent {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String      @map("workspace_id") @db.Uuid
+  userId      String      @map("user_id") @db.Uuid
+  action      PointAction
+  points      Int
+  /// What earned it (task, comment, kudos… id, or a composite key).
+  sourceId    String      @map("source_id") @db.VarChar(120)
+  occurredAt  DateTime    @map("occurred_at") @db.Timestamptz(6)
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("PointEventUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId, action, sourceId])
+  @@index([workspaceId, occurredAt])
+  @@index([workspaceId, userId])
+  @@map("point_events")
+}
+
+/// People an admin delegated recognition management to.
+model RecognitionManager {
+  workspaceId String   @map("workspace_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  grantedById String?  @map("granted_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("RecognitionManagerUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId])
+  @@map("recognition_managers")
+}
+
+/// Per-member override: may this member see other people's points?
+model RecognitionMember {
+  workspaceId         String  @map("workspace_id") @db.Uuid
+  userId              String  @map("user_id") @db.Uuid
+  canViewOthersPoints Boolean @map("can_view_others_points")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("RecognitionMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId])
+  @@map("recognition_members")
+}
+
+/// A thank-you letter from one member to another.
+model Kudos {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String     @map("workspace_id") @db.Uuid
+  fromId      String     @map("from_id") @db.Uuid
+  toId        String     @map("to_id") @db.Uuid
+  style       KudosStyle @default(gratitude)
+  title       String     @db.VarChar(200)
+  /// Letter body (plain text).
+  message     String
+  /// What it is for ("for staying late to finish payroll").
+  reason      String?    @db.VarChar(500)
+  taskId      String?    @map("task_id") @db.Uuid
+  projectId   String?    @map("project_id") @db.Uuid
+  /// Values shown on the card (teamwork, ownership…).
+  values      String[]   @default([])
+  /// Shown on the recognition wall (otherwise only sender and receiver see it).
+  isPublic    Boolean    @default(true) @map("is_public")
+  readAt      DateTime?  @map("read_at") @db.Timestamptz(6)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt   DateTime?  @map("deleted_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  from      User      @relation("KudosFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to        User      @relation("KudosTo", fields: [toId], references: [id], onDelete: Cascade)
+  task      Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([toId, createdAt(sort: Desc)])
+  @@index([fromId])
+  @@map("kudos")
+}
+
+/// Reward catalog item: costs points, has a money value and a limited stock.
+model Reward {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId   String    @map("workspace_id") @db.Uuid
+  name          String    @db.VarChar(200)
+  description   String?
+  imageData     Bytes?    @map("image_data")
+  imageMimeType String?   @map("image_mime_type") @db.VarChar(40)
+  pointsCost    Int       @map("points_cost")
+  price         Decimal?  @db.Decimal(14, 2)
+  currency      String    @default("VND") @db.VarChar(8)
+  /// Stock: how many can be approved in total.
+  quantity      Int
+  /// Approved redemptions so far (never more than quantity).
+  approvedCount Int       @default(0) @map("approved_count")
+  active        Boolean   @default(true)
+  sortOrder     Int       @default(0) @map("sort_order")
+  createdById   String?   @map("created_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  workspace   Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  redemptions RewardRedemption[]
+
+  @@index([workspaceId, deletedAt, sortOrder])
+  @@map("rewards")
+}
+
+model RewardRedemption {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId  String           @map("workspace_id") @db.Uuid
+  rewardId     String           @map("reward_id") @db.Uuid
+  userId       String           @map("user_id") @db.Uuid
+  /// Points reserved (pending) or spent (approved).
+  points       Int
+  status       RedemptionStatus @default(pending)
+  note         String?          @db.VarChar(1000)
+  decisionNote String?          @map("decision_note") @db.VarChar(1000)
+  decidedById  String?          @map("decided_by") @db.Uuid
+  decidedAt    DateTime?        @map("decided_at") @db.Timestamptz(6)
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  reward    Reward    @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+  user      User      @relation("RedemptionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status, createdAt(sort: Desc)])
+  @@index([userId, status])
+  @@map("reward_redemptions")
 }

@@ -26,7 +26,10 @@ export type NotificationType =
   | "task_due_soon"
   | "task_overdue"
   | "capture_due"
-  | "reminder";
+  | "reminder"
+  | "kudos"
+  | "reward_request"
+  | "reward_result";
 
 interface TaskRef {
   id: string;

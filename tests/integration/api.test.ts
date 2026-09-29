@@ -1409,6 +1409,143 @@ test("second brain: Ask My Brain is scoped, grounded and traceable; layers and r
   assert.equal(rd.wikiPageId, rp.id);
 });
 
+test("recognition: points from real activity, leaderboards, supporters, visibility and delegation", async () => {
+  type Board = { rows: { rank: number; user: { id: string }; value: number; detail?: Record<string, number> }[]; me: { rank: number } | null; total: number };
+  // Settings exist with defaults; points are materialized from what already happened.
+  const o = await contributor.get<{ points: { earned: number; balance: number }; canManage: boolean; canSeeOthersPoints: boolean }>(`/api/workspaces/${s.ws}/recognition`);
+  assert.equal(o.status, 200, JSON.stringify(o.body));
+  assert.ok(o.body.points.earned > 0, "earlier completed tasks / comments earned points");
+  assert.equal(o.body.canManage, false);
+  const ev = await prisma.pointEvent.findMany({ where: { workspaceId: s.ws, userId: s.contributorId, action: "task_completed" } });
+  assert.ok(ev.some((e) => e.sourceId === s.brainTask && e.points === 10), "task completed = 10 pts (default rule)");
+  const before = await prisma.pointEvent.count({ where: { workspaceId: s.ws } });
+  await contributor.get(`/api/workspaces/${s.ws}/recognition`);
+  assert.equal(await prisma.pointEvent.count({ where: { workspaceId: s.ws } }), before, "syncing again adds nothing (idempotent)");
+
+  // Leaderboards: metric x period x top N.
+  const year = await contributor.get<Board>(`/api/workspaces/${s.ws}/recognition/leaderboard?metric=tasks&period=year&top=1`);
+  assert.equal(year.status, 200);
+  assert.ok(year.body.rows.length <= 1);
+  const today = new Date().toISOString().slice(0, 10);
+  const custom = await contributor.get<Board>(`/api/workspaces/${s.ws}/recognition/leaderboard?metric=points&period=custom&from=2020-01-01&to=${today}&top=50`);
+  assert.ok(custom.body.rows.some((r) => r.user.id === s.contributorId && r.value > 0));
+  assert.ok(custom.body.me);
+  assert.equal((await contributor.get(`/api/workspaces/${s.ws}/recognition/leaderboard?metric=bogus`)).status, 400);
+  assert.equal((await contributor.get(`/api/workspaces/${s.ws}/recognition/leaderboard?period=custom&from=2026-05-01&to=2026-01-01`)).status, 400);
+  assert.equal((await outsider.get(`/api/workspaces/${s.ws}/recognition/leaderboard`)).status, 404);
+
+  // Supporters: someone commenting on my task shows up as supporting me.
+  assert.equal((await viewer.post(`/api/tasks/${s.task1}/comments`, { body: "Here's the vendor contact for the laptop" })).status, 201);
+  const sup = await contributor.get<Board>(`/api/workspaces/${s.ws}/recognition/supporters?period=month&top=5`);
+  const v = sup.body.rows.find((r) => r.user.id === s.viewerId);
+  assert.ok(v && (v.detail?.comments ?? 0) >= 1, JSON.stringify(sup.body));
+
+  // Only admins / delegated managers change the rules; only admins delegate.
+  assert.equal((await contributor.get(`/api/workspaces/${s.ws}/recognition/settings`)).status, 403);
+  assert.equal((await contributor.put(`/api/workspaces/${s.ws}/recognition/managers`, { userIds: [s.contributorId] })).status, 403);
+  assert.equal((await admin.put(`/api/workspaces/${s.ws}/recognition/managers`, { userIds: [s.contributorId] })).status, 200);
+  const st = await contributor.get<{ rules: { action: string; points: number }[]; canDelegate: boolean }>(`/api/workspaces/${s.ws}/recognition/settings`);
+  assert.equal(st.status, 200);
+  assert.equal(st.body.canDelegate, false, "delegated managers can't delegate further");
+  assert.equal((await contributor.put(`/api/workspaces/${s.ws}/recognition/settings`, { rules: [{ action: "comment_posted", points: 2, enabled: true }], membersSeePoints: false })).status, 200);
+
+  // Visibility: points boards hidden from members by default now; per-person override.
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/recognition/leaderboard?metric=points`)).status, 403);
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/recognition/leaderboard?metric=tasks`)).status, 200, "task boards stay visible");
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/recognition/history?userId=${s.contributorId}`)).status, 403);
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/recognition/history`)).status, 200, "own points always visible");
+  assert.equal((await contributor.put(`/api/workspaces/${s.ws}/recognition/members/${s.viewerId}`, { canViewOthersPoints: true })).status, 200);
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/recognition/leaderboard?metric=points`)).status, 200);
+});
+
+test("recognition: thank-you letters notify, open, stay private when asked, and can't be farmed", async () => {
+  type K = { id: string; href: string; read: boolean; isPublic: boolean };
+  assert.equal((await viewer.post(`/api/workspaces/${s.ws}/kudos`, { toId: s.viewerId, title: "Me", message: "Thanks to myself for everything" })).status, 400, "not to yourself");
+  assert.equal((await viewer.post(`/api/workspaces/${s.ws}/kudos`, { toId: s.outsiderId, title: "Hi", message: "Thanks for all your help!" })).status, 400, "only members");
+  const k = await viewer.post<K>(`/api/workspaces/${s.ws}/kudos`, { toId: s.contributorId, style: "gratitude", title: "Thank you for the laptop", message: "You set everything up before day one. It made the new hire feel welcome.", reason: "preparing the laptop", taskId: s.task1, values: ["teamwork"] });
+  assert.equal(k.status, 201, JSON.stringify(k.body));
+  const n = await prisma.notification.findFirst({ where: { userId: s.contributorId, type: "kudos" }, orderBy: { createdAt: "desc" } });
+  assert.ok(n && n.link?.endsWith(`/recognition/kudos/${k.body.id}`) && n.actorId === s.viewerId, "the receiver is notified (pop-up)");
+  const opened = await contributor.get<K>(`/api/kudos/${k.body.id}`);
+  assert.equal(opened.status, 200);
+  assert.ok((await prisma.kudos.findUniqueOrThrow({ where: { id: k.body.id } })).readAt, "opening marks it read");
+  assert.ok((await prisma.notification.findUniqueOrThrow({ where: { id: n!.id } })).readAt);
+  // Points: the receiver earns once per sender per day.
+  const pts = () => prisma.pointEvent.count({ where: { workspaceId: s.ws, userId: s.contributorId, action: "kudos_received" } });
+  const once = await pts();
+  assert.ok(once >= 1);
+  await viewer.post(`/api/workspaces/${s.ws}/kudos`, { toId: s.contributorId, title: "Again", message: "And thanks again for the follow-up!" });
+  await contributor.get(`/api/workspaces/${s.ws}/recognition`);
+  assert.equal(await pts(), once, "a second letter the same day earns no extra points");
+
+  // Private letters: only sender and receiver; lists per scope.
+  const priv = await admin.post<K>(`/api/workspaces/${s.ws}/kudos`, { toId: s.contributorId, title: "Just between us", message: "Thank you for covering for me this week.", isPublic: false });
+  assert.equal((await viewer.get(`/api/kudos/${priv.body.id}`)).status, 404);
+  const wall = await viewer.get<{ items: { id: string }[] }>(`/api/workspaces/${s.ws}/kudos?scope=wall`);
+  assert.ok(wall.body.items.some((x) => x.id === k.body.id) && !wall.body.items.some((x) => x.id === priv.body.id));
+  const mine = await contributor.get<{ items: { id: string }[] }>(`/api/workspaces/${s.ws}/kudos?scope=received`);
+  assert.ok(mine.body.items.some((x) => x.id === priv.body.id), "the receiver keeps every letter");
+  assert.equal((await contributor.del(`/api/kudos/${k.body.id}`)).status, 403, "only the sender can withdraw");
+
+  // AI helps write the letter (draft only).
+  const draft = await viewer.post<{ title: string; message: string }>(`/api/workspaces/${s.ws}/kudos/draft`, { toId: s.contributorId, reason: "fixed the payroll export", style: "appreciation" });
+  assert.equal(draft.status, 200, JSON.stringify(draft.body));
+  assert.ok(draft.body.title && draft.body.message.length > 20, "a draft letter comes back");
+  assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /fixed the payroll export/);
+});
+
+test("recognition: reward catalog, redemption with reserved points, approval and stock limits, reachable-reward alerts", async () => {
+  type R = { id: string; remaining: number; soldOut: boolean };
+  assert.equal((await viewer.post(`/api/workspaces/${s.ws}/rewards`, { name: "Nope", pointsCost: 1, quantity: 1 })).status, 403);
+  const bal = async (c: Client) => (await c.get<{ points: { balance: number } }>(`/api/workspaces/${s.ws}/recognition`)).body.points.balance;
+  const cBal = await bal(contributor);
+  const aBal = await bal(admin);
+  const cheapCost = Math.max(1, Math.min(cBal, aBal));
+  // Delegated manager adds several rewards at once.
+  const created = await contributor.post<R[]>(`/api/workspaces/${s.ws}/rewards`, { items: [{ name: "Coffee voucher", pointsCost: cheapCost, price: 50000, currency: "VND", quantity: 1 }, { name: "Extra day off", pointsCost: 1_000_000, quantity: 5 }] });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const [coffee, dayOff] = created.body;
+  // Anyone whose balance covers it gets a reachable-reward notice (once).
+  const alert = await prisma.notification.findFirst({ where: { userId: s.contributorId, dedupeKey: `reward-reachable:${coffee.id}` } });
+  assert.ok(alert && (alert.data as { kind: string }).kind === "reward_reachable");
+  assert.ok(!(await prisma.notification.findFirst({ where: { dedupeKey: `reward-reachable:${dayOff.id}` } })), "not for rewards nobody can afford");
+  // Picture upload (PNG magic bytes).
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+  const form = new FormData();
+  form.append("file", new Blob([png], { type: "image/png" }), "c.png");
+  const up = await fetch(`${BASE}/api/rewards/${coffee.id}/image`, { method: "PUT", headers: { cookie: contributor.cookieHeader() }, body: form });
+  assert.equal(up.status, 200);
+
+  assert.equal((await contributor.post(`/api/rewards/${dayOff.id}/redeem`, {})).status, 400, "not enough points");
+  const r1 = await contributor.post<{ id: string; status: string }>(`/api/rewards/${coffee.id}/redeem`, { note: "Thanks!" });
+  assert.equal(r1.status, 201, JSON.stringify(r1.body));
+  assert.equal(await bal(contributor), cBal - cheapCost, "points are reserved while pending");
+  const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } });
+  assert.ok(await prisma.notification.findFirst({ where: { userId: adminUser.id, type: "reward_request", actorId: s.contributorId } }), "approvers are told about the request");
+  const r2 = await admin.post<{ id: string }>(`/api/rewards/${coffee.id}/redeem`, {});
+  assert.equal(r2.status, 201);
+  assert.equal((await viewer.patch(`/api/redemptions/${r1.body.id}`, { action: "approve" })).status, 403, "members can't approve");
+  assert.equal((await contributor.patch(`/api/redemptions/${r1.body.id}`, { action: "approve" })).status, 200);
+  const out = await contributor.patch<{ error: string }>(`/api/redemptions/${r2.body.id}`, { action: "approve" });
+  assert.equal(out.status, 400);
+  assert.match(out.body.error, /out of stock/i, "stock is never exceeded");
+  assert.equal((await contributor.patch(`/api/redemptions/${r2.body.id}`, { action: "reject", note: "Sold out" })).status, 200);
+  assert.equal(await bal(admin), aBal, "rejected points are released");
+  const list = await viewer.get<R[]>(`/api/workspaces/${s.ws}/rewards`);
+  assert.ok(list.body.find((x) => x.id === coffee.id)?.soldOut);
+  assert.equal((await admin.post(`/api/rewards/${coffee.id}/redeem`, {})).status, 400, "sold out");
+  const res = await prisma.notification.findFirst({ where: { userId: s.contributorId, type: "reward_result" } });
+  assert.equal((res?.data as { decision: string }).decision, "approved");
+  assert.equal((await contributor.patch(`/api/rewards/${coffee.id}`, { quantity: 0 })).status, 400, "stock can't drop below what was given");
+  assert.equal(await prisma.$queryRaw<{ n: number }[]>`SELECT approved_count AS n FROM rewards WHERE id = ${coffee.id}::uuid`.then((x) => Number(x[0].n)), 1);
+
+  // Recalculate with the current rules keeps reservations intact.
+  assert.equal((await contributor.post(`/api/workspaces/${s.ws}/recognition/recalculate`, {})).status, 200);
+  assert.equal(await bal(contributor) <= cBal, true);
+  await admin.put(`/api/workspaces/${s.ws}/recognition/managers`, { userIds: [] });
+  assert.equal((await contributor.get(`/api/workspaces/${s.ws}/recognition/settings`)).status, 403, "delegation revoked");
+});
+
 test("invite links and invitations for people without an account: accept, decline, revoke, replace", async () => {
   const ws = await admin.post<{ id: string }>("/api/workspaces", { name: "Invite Co" });
   // Join link: off by default; admins turn it on and pick the role.

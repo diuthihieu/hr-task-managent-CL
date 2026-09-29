@@ -19,7 +19,7 @@ export function WikiHome({ workspaceId, workspaceSlug, wikis, canCreate }: { wor
   const [open, setOpen] = useState(false);
   return (
     <div className="flex-1 overflow-y-auto thin-scroll">
-      <div className="max-w-[1100px] mx-auto px-6 py-6">
+      <div className="max-w-[68.75rem] mx-auto px-6 py-6">
         <div className="flex flex-wrap items-end justify-between gap-3 mb-5">
           <div>
             <h1 className="text-[22px] font-bold tracking-tight text-neutral-900 dark:text-neutral-50">{t("nav.wiki")}</h1>

@@ -896,6 +896,14 @@ test("profile & appearance: avatars are visible to co-members only; theme mode a
   assert.equal((await fetch(`${BASE}/api/users/${s.viewerId}/avatar`, { headers: { cookie: outsider.cookieHeader() } })).status, 404);
   assert.equal((await admin.patch("/api/account/preferences", { themeMode: "system", surfaceTone: "ocean" })).status, 200);
   assert.equal((await admin.patch("/api/account/preferences", { surfaceTone: "neon" })).status, 400);
+  const sized = await admin.patch<{ fontSize: string; displaySize: string }>("/api/account/preferences", { fontSize: "lg", displaySize: "compact" });
+  assert.equal(sized.status, 200);
+  assert.deepEqual([sized.body.fontSize, sized.body.displaySize], ["lg", "compact"], "text and display size are saved");
+  assert.equal((await admin.patch("/api/account/preferences", { fontSize: "huge" })).status, 400);
+  assert.equal((await admin.patch("/api/account/preferences", { displaySize: "200%" })).status, 400);
+  const home = await fetch(`${BASE}/workspaces`, { headers: { cookie: admin.cookieHeader() } });
+  assert.match(await home.text(), /data-font-size="lg"[^>]*data-display="compact"/, "rendered on <html> by the server");
+  await admin.patch("/api/account/preferences", { fontSize: "md", displaySize: "default" });
   const u = await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } });
   assert.equal(u.surfaceTone, "ocean");
   assert.equal((await admin.patch("/api/account/profile", { aiTone: "sarcastic" })).status, 400);

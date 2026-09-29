@@ -258,7 +258,7 @@ export function WorkspaceShell({
       {navOpen && <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setNavOpen(false)} data-testid="nav-backdrop" />}
       <aside
         className={cn(
-          "w-[272px] lg:w-[248px] shrink-0 border-r border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col",
+          "w-[17rem] lg:w-[15.5rem] shrink-0 border-r border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col",
           "fixed inset-y-0 left-0 z-50 transition-transform duration-200 lg:static lg:translate-x-0",
           navOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full"
         )}

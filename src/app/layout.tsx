@@ -17,8 +17,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const { locale, themeMode } = prefs;
   const accent = marketing ? "orange" : prefs.accent;
   const tone = marketing ? "neutral" : prefs.tone;
+  // The landing / legal pages keep their designed size; the app follows the user's choice.
+  const fontSize = marketing ? "md" : prefs.fontSize;
+  const displaySize = marketing ? "default" : prefs.displaySize;
   return (
-    <html lang={locale} data-accent={accent} data-tone={tone} data-theme-mode={themeMode} className={`h-full antialiased${themeMode === "dark" ? " dark" : ""}`} suppressHydrationWarning>
+    <html lang={locale} data-accent={accent} data-tone={tone} data-theme-mode={themeMode} data-font-size={fontSize} data-display={displaySize} className={`h-full antialiased${themeMode === "dark" ? " dark" : ""}`} suppressHydrationWarning>
       <head>
         {/* "System" mode: pick light/dark before first paint so there is no flash. */}
         <script
@@ -28,7 +31,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
       </head>
       <body className="min-h-full flex flex-col">
-        <Providers locale={locale} accent={accent} themeMode={themeMode} tone={tone}>{children}</Providers>
+        <Providers locale={locale} accent={accent} themeMode={themeMode} tone={tone} fontSize={fontSize} displaySize={displaySize}>{children}</Providers>
       </body>
     </html>
   );

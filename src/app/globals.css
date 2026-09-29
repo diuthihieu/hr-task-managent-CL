@@ -368,3 +368,39 @@ body {
 /* Clicking a chart focuses its SVG; keep the focus ring for keyboard users only. */
 .recharts-wrapper:focus, .recharts-surface:focus, .recharts-sector:focus, .recharts-rectangle:focus { outline: none; }
 .recharts-surface:focus-visible { outline: 2px solid var(--color-indigo-400); outline-offset: 2px; }
+
+/* ---- Text & display size (per-user, set on <html> by the root layout) ----
+   Display size scales the whole UI: Tailwind spacing and text are rem-based, so
+   changing the root font-size works like browser zoom without breaking 100dvh
+   layouts. Text size multiplies text only: the --text-* theme tokens, body text,
+   and the few fixed-pixel sizes used across the app. Keep in sync with
+   FONT_SIZES / DISPLAY_SIZES in src/lib/theme-colors.ts. */
+:root { --font-scale: 1; --ui-scale: 1; }
+:root[data-font-size="sm"] { --font-scale: 0.92; }
+:root[data-font-size="lg"] { --font-scale: 1.12; }
+:root[data-font-size="xl"] { --font-scale: 1.25; }
+:root[data-display="compact"] { --ui-scale: 0.9; }
+:root[data-display="comfortable"] { --ui-scale: 1.08; }
+:root[data-display="large"] { --ui-scale: 1.2; }
+html { font-size: calc(100% * var(--ui-scale)); }
+:root {
+  --text-xs: calc(0.75rem * var(--font-scale));
+  --text-sm: calc(0.875rem * var(--font-scale));
+  --text-base: calc(1rem * var(--font-scale));
+  --text-lg: calc(1.125rem * var(--font-scale));
+  --text-xl: calc(1.25rem * var(--font-scale));
+  --text-2xl: calc(1.5rem * var(--font-scale));
+  --text-3xl: calc(1.875rem * var(--font-scale));
+  --text-4xl: calc(2.25rem * var(--font-scale));
+  --text-5xl: calc(3rem * var(--font-scale));
+  --text-6xl: calc(3.75rem * var(--font-scale));
+}
+body { font-size: calc(1rem * var(--font-scale)); }
+.text-\[8px\] { font-size: calc(8px * var(--ui-scale) * var(--font-scale)); }
+.text-\[9px\] { font-size: calc(9px * var(--ui-scale) * var(--font-scale)); }
+.text-\[10px\] { font-size: calc(10px * var(--ui-scale) * var(--font-scale)); }
+.text-\[11px\] { font-size: calc(11px * var(--ui-scale) * var(--font-scale)); }
+.text-\[12px\] { font-size: calc(12px * var(--ui-scale) * var(--font-scale)); }
+.text-\[13px\] { font-size: calc(13px * var(--ui-scale) * var(--font-scale)); }
+.text-\[15px\] { font-size: calc(15px * var(--ui-scale) * var(--font-scale)); }
+.text-\[22px\] { font-size: calc(22px * var(--ui-scale) * var(--font-scale)); }

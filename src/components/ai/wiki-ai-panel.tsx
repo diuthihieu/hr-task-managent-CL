@@ -52,7 +52,7 @@ export function WikiAiPanel({ wikiId, wikiName, onClose }: { wikiId: string; wik
   }, [wikiId]);
 
   return (
-    <aside className="fixed inset-0 z-40 md:static md:z-auto md:w-[420px] shrink-0 border-l border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 flex flex-col" data-testid="wiki-ai-panel">
+    <aside className="fixed inset-0 z-40 md:static md:z-auto md:w-[26.25rem] shrink-0 border-l border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 flex flex-col" data-testid="wiki-ai-panel">
       <div className="h-11 px-3 flex items-center gap-2 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shrink-0">
         <Sparkles size={15} className="text-indigo-600" />
         <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-50 truncate">{t("wikiAi.title")}</span>

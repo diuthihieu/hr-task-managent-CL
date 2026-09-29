@@ -200,6 +200,10 @@ model User {
   themeMode          String     @default("system") @map("theme_mode") @db.VarChar(10)
   /// Surface tone: "neutral" | cool ("slate", "ocean", "mint") | warm ("sand", "rose", "amber").
   surfaceTone        String     @default("neutral") @map("surface_tone") @db.VarChar(20)
+  /// Text size: "sm" | "md" | "lg" | "xl" (text only; layout stays put).
+  fontSize           String     @default("md") @map("font_size") @db.VarChar(10)
+  /// Display size (whole-UI scale): "compact" | "default" | "comfortable" | "large".
+  displaySize        String     @default("default") @map("display_size") @db.VarChar(12)
   /// Uploaded profile picture (PNG/JPEG/WebP, <= 512 KB); omitted from queries by default.
   avatarData         Bytes?     @map("avatar_data")
   avatarType         String?    @map("avatar_type") @db.VarChar(40)

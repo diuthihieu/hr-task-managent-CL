@@ -30,8 +30,9 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
     title,
     description: `Sign in to open the ${w.name} workspace on woli`,
     ...(logo ? { icons: { icon: logo, apple: logo } } : {}),
-    openGraph: { title, siteName: "woli", ...(logo ? { images: [{ url: logo, width: 256, height: 256 }] } : {}) },
-    twitter: { card: "summary", title, ...(logo ? { images: [logo] } : {}) },
+    // With a workspace logo the preview shows it; otherwise the standard woli card.
+    openGraph: { title, siteName: "woli", type: "website", images: logo ? [{ url: logo, width: 256, height: 256 }] : [{ url: "/og/woli-og.png?v=1", width: 1200, height: 630 }] },
+    twitter: logo ? { card: "summary", title, images: [logo] } : { card: "summary_large_image", title, images: ["/og/woli-og.png?v=1"] },
   };
 }
 

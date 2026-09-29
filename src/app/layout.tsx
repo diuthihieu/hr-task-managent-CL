@@ -4,11 +4,24 @@ import { Providers } from "@/components/providers";
 import { headers } from "next/headers";
 import { getRequestPrefs } from "@/lib/prefs";
 
+/** Versioned so chat apps that cache previews pick up a new card when it changes. */
+const OG_IMAGE = "/og/woli-og.png?v=1";
+
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.AUTH_URL ?? (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "http://localhost:3000")),
   title: { default: "woli | Team Workspace", template: "%s · woli" },
   description: "Projects, tasks, OKRs, a team wiki and an AI assistant in one workspace - on the web and on Windows.",
   applicationName: "woli",
+  // Link previews (Teams, Zalo, Messenger, Slack, LinkedIn...): one 1200x630 card for every page.
+  openGraph: {
+    type: "website",
+    siteName: "woli",
+    title: "woli | Team Workspace",
+    description: "Projects, tasks, OKRs, a team wiki and an AI assistant in one workspace - on the web and on Windows.",
+    locale: "vi_VN",
+    images: [{ url: OG_IMAGE, width: 1200, height: 630, alt: "woli - Không gian làm việc thông minh cho đội ngũ" }],
+  },
+  twitter: { card: "summary_large_image", title: "woli | Team Workspace", description: "Projects, tasks, OKRs, a team wiki and an AI assistant in one workspace.", images: [OG_IMAGE] },
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

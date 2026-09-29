@@ -11,8 +11,9 @@ import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api-client";
 import { cn, formatDate } from "@/lib/utils";
 import type { RewardDto } from "@/lib/recognition/rewards";
-import { REDEMPTION_TONE, money, type Redemption } from "./rewards";
+import { REDEMPTION_TONE, type Redemption } from "./rewards";
 import { Avatar, fmtNumber } from "./shared";
+import { NumberInput, formatThousands } from "@/components/ui/number-input";
 import type { MessageKey } from "@/lib/i18n/core";
 
 interface Settings {
@@ -23,8 +24,19 @@ interface Settings {
   rules: { action: string; points: number; enabled: boolean }[];
   members: { id: string; name: string; email: string; avatarColor: string; role: string; isManager: boolean; canViewOthersPoints: boolean | null }[];
 }
-type Draft = { name: string; description: string; pointsCost: number; price: string; currency: string; quantity: number };
-const emptyDraft = (): Draft => ({ name: "", description: "", pointsCost: 100, price: "", currency: "VND", quantity: 1 });
+type Draft = { name: string; description: string; pointsCost: number | null; price: number | null; currency: string; quantity: number | null };
+const emptyDraft = (): Draft => ({ name: "", description: "", pointsCost: 100, price: null, currency: "VND", quantity: 1 });
+
+/** A labelled form field: the title says what goes in, the hint gives an example. */
+function Field({ label, hint, children, className }: { label: string; hint?: string; children: React.ReactNode; className?: string }) {
+  return (
+    <label className={cn("block text-xs", className)}>
+      <span className="block font-medium text-neutral-700 dark:text-neutral-200 mb-1">{label}</span>
+      {children}
+      {hint && <span className="block mt-0.5 text-[10px] text-neutral-400">{hint}</span>}
+    </label>
+  );
+}
 
 export function RecognitionAdmin({ workspaceId }: { workspaceId: string }) {
   const { t } = useT();
@@ -77,8 +89,10 @@ export function RecognitionAdmin({ workspaceId }: { workspaceId: string }) {
     }
   }
   async function addRewards() {
-    const items = drafts.filter((d) => d.name.trim()).map((d) => ({ name: d.name.trim(), description: d.description.trim() || null, pointsCost: d.pointsCost, price: d.price ? Number(d.price) : null, currency: d.currency || "VND", quantity: d.quantity }));
-    if (!items.length) return;
+    const filled = drafts.filter((d) => d.name.trim());
+    if (!filled.length) return toast.error(t("reco.admin.needName"));
+    if (filled.some((d) => !d.pointsCost || d.pointsCost < 1)) return toast.error(t("reco.admin.needCost"));
+    const items = filled.map((d) => ({ name: d.name.trim(), description: d.description.trim() || null, pointsCost: d.pointsCost!, price: d.price, currency: d.currency || "VND", quantity: d.quantity ?? 0 }));
     try {
       await api.post(`/api/workspaces/${workspaceId}/rewards`, { items });
       toast.success(t("reco.admin.rewardsAdded", { n: items.length }));
@@ -130,7 +144,7 @@ export function RecognitionAdmin({ workspaceId }: { workspaceId: string }) {
                 <span className="text-neutral-400">→</span>
                 <span>{r.reward.name}</span>
                 <span className="text-xs text-neutral-500">
-                  {t("reco.unit.points", { n: fmtNumber(r.points) })} · {formatDate(r.createdAt)} · {t("reco.rewards.left", { n: r.reward.remaining })}
+                  {t("reco.unit.points", { n: fmtNumber(r.points) })} · {formatDate(r.createdAt)} · {t("reco.rewards.left", { n: fmtNumber(r.reward.remaining) })}
                 </span>
                 {r.note && <span className="text-xs text-neutral-500">“{r.note}”</span>}
                 <span className={cn("text-[11px] px-1.5 py-0.5 rounded-md", REDEMPTION_TONE[r.status])}>{t(`reco.redemption.${r.status}` as MessageKey)}</span>
@@ -165,7 +179,7 @@ export function RecognitionAdmin({ workspaceId }: { workspaceId: string }) {
                 <tr key={r.action} className="border-t border-neutral-100 dark:border-neutral-800">
                   <td className="py-1.5 pr-2">{t(`reco.action.${r.action}` as MessageKey)}</td>
                   <td className="py-1.5 w-24">
-                    <Input type="number" value={r.points} onChange={(e) => setS({ ...s, rules: s.rules.map((x, j) => (j === i ? { ...x, points: Math.round(Number(e.target.value) || 0) } : x)) })} className="h-7" data-testid={`rule-${r.action}`} />
+                    <NumberInput value={r.points} min={0} max={1000} onValueChange={(v) => setS({ ...s, rules: s.rules.map((x, j) => (j === i ? { ...x, points: v ?? 0 } : x)) })} className="h-7 text-right" aria-label={t(`reco.action.${r.action}` as MessageKey)} data-testid={`rule-${r.action}`} />
                   </td>
                   <td className="py-1.5 pl-2 w-12">
                     <Switch checked={r.enabled} onCheckedChange={(v) => setS({ ...s, rules: s.rules.map((x, j) => (j === i ? { ...x, enabled: v } : x)) })} />
@@ -231,20 +245,41 @@ export function RecognitionAdmin({ workspaceId }: { workspaceId: string }) {
         </div>
         <div className="mt-4 rounded-xl border border-dashed border-neutral-300 dark:border-neutral-700 p-3 space-y-2">
           <p className="text-xs font-medium">{t("reco.admin.addRewards")}</p>
-          {drafts.map((d, i) => (
-            <div key={i} className="grid gap-1.5 grid-cols-2 md:grid-cols-[2fr_2fr_1fr_1fr_5rem_1fr_auto] items-center">
-              <Input placeholder={t("reco.admin.rewardName")} value={d.name} onChange={(e) => setDrafts(drafts.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))} data-testid="reward-draft-name" />
-              <Input placeholder={t("reco.admin.rewardDesc")} value={d.description} onChange={(e) => setDrafts(drafts.map((x, j) => (j === i ? { ...x, description: e.target.value } : x)))} />
-              <Input type="number" min={1} title={t("reco.admin.cost")} value={d.pointsCost} onChange={(e) => setDrafts(drafts.map((x, j) => (j === i ? { ...x, pointsCost: Math.max(1, Number(e.target.value) || 1) } : x)))} data-testid="reward-draft-cost" />
-              <Input type="number" min={0} placeholder={t("reco.admin.price")} value={d.price} onChange={(e) => setDrafts(drafts.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))} />
-              <Input value={d.currency} onChange={(e) => setDrafts(drafts.map((x, j) => (j === i ? { ...x, currency: e.target.value.toUpperCase().slice(0, 8) } : x)))} />
-              <Input type="number" min={0} title={t("reco.admin.quantity")} value={d.quantity} onChange={(e) => setDrafts(drafts.map((x, j) => (j === i ? { ...x, quantity: Math.max(0, Number(e.target.value) || 0) } : x)))} data-testid="reward-draft-qty" />
-              <button onClick={() => setDrafts(drafts.filter((_, j) => j !== i))} className="text-neutral-400 hover:text-red-600 px-1" aria-label={t("common.delete")}>
-                <X size={13} />
-              </button>
-            </div>
-          ))}
-          <p className="text-[10px] text-neutral-400">{t("reco.admin.columns")}</p>
+          {drafts.map((d, i) => {
+            const set = (patch: Partial<Draft>) => setDrafts(drafts.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+            return (
+              <div key={i} className="relative rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-900/60 p-3" data-testid="reward-draft">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">{t("reco.admin.rewardN", { n: i + 1 })}</span>
+                {drafts.length > 1 && (
+                  <button onClick={() => setDrafts(drafts.filter((_, j) => j !== i))} className="absolute right-2 top-2 text-neutral-400 hover:text-red-600" aria-label={t("common.delete")}>
+                    <X size={14} />
+                  </button>
+                )}
+                <div className="mt-1.5 grid gap-3 md:grid-cols-2">
+                  <Field label={`${t("reco.admin.rewardName")} *`} hint={t("reco.admin.rewardNameHint")}>
+                    <Input value={d.name} onChange={(e) => set({ name: e.target.value })} placeholder={t("reco.admin.rewardNamePh")} data-testid="reward-draft-name" />
+                  </Field>
+                  <Field label={t("reco.admin.rewardDesc")} hint={t("reco.admin.rewardDescHint")}>
+                    <Input value={d.description} onChange={(e) => set({ description: e.target.value })} placeholder={t("reco.admin.rewardDescPh")} />
+                  </Field>
+                </div>
+                <div className="mt-3 grid gap-3 grid-cols-2 md:grid-cols-4">
+                  <Field label={`${t("reco.admin.cost")} *`} hint={t("reco.admin.costHint")}>
+                    <NumberInput value={d.pointsCost} min={1} onValueChange={(v) => set({ pointsCost: v })} placeholder="1,000" className="text-right" data-testid="reward-draft-cost" />
+                  </Field>
+                  <Field label={t("reco.admin.price")} hint={t("reco.admin.priceHint")}>
+                    <NumberInput value={d.price} min={0} onValueChange={(v) => set({ price: v })} placeholder="50,000" className="text-right" data-testid="reward-draft-price" />
+                  </Field>
+                  <Field label={t("reco.admin.currency")} hint={t("reco.admin.currencyHint")}>
+                    <Input value={d.currency} onChange={(e) => set({ currency: e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 8) })} placeholder="VND" />
+                  </Field>
+                  <Field label={`${t("reco.admin.quantity")} *`} hint={t("reco.admin.quantityHint")}>
+                    <NumberInput value={d.quantity} min={0} onValueChange={(v) => set({ quantity: v })} placeholder="10" className="text-right" data-testid="reward-draft-qty" />
+                  </Field>
+                </div>
+              </div>
+            );
+          })}
           <div className="flex gap-2">
             <Button size="sm" variant="outline" onClick={() => setDrafts([...drafts, emptyDraft()])}>
               <Plus size={12} /> {t("reco.admin.addRow")}
@@ -280,21 +315,24 @@ function RewardRow({ r, onPatch, onDelete, onUploaded }: { r: RewardDto; onPatch
         )}
       </button>
       <input ref={file} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
-      <span className={cn("font-medium flex-1 min-w-[8rem]", !r.active && "line-through text-neutral-400")}>{r.name}</span>
-      <span className="text-xs text-neutral-500">{t("reco.unit.points", { n: fmtNumber(r.pointsCost) })}</span>
-      {r.price !== null && <span className="text-xs text-neutral-400">{money(r.price, r.currency)}</span>}
-      <span className={cn("text-xs", r.soldOut ? "text-red-600 font-medium" : "text-neutral-500")}>
-        {r.soldOut ? t("reco.rewards.soldOut") : t("reco.admin.stock", { given: r.approvedCount, total: r.quantity })}
-      </span>
-      <Input
-        type="number"
-        min={r.approvedCount}
-        defaultValue={r.quantity}
-        onBlur={(e) => Number(e.target.value) !== r.quantity && onPatch({ quantity: Number(e.target.value) })}
-        className="h-7 w-20"
-        title={t("reco.admin.quantity")}
-      />
-      <Switch checked={r.active} onCheckedChange={(v) => onPatch({ active: v })} />
+      <div className="flex-1 min-w-[10rem]">
+        <p className={cn("font-medium", !r.active && "line-through text-neutral-400")}>{r.name}</p>
+        <p className={cn("text-[11px]", r.soldOut ? "text-red-600 font-medium" : "text-neutral-500")}>
+          {r.soldOut ? t("reco.rewards.soldOut") : t("reco.admin.stock", { given: formatThousands(r.approvedCount), total: formatThousands(r.quantity) })}
+        </p>
+      </div>
+      <Field label={t("reco.admin.cost")} className="w-28">
+        <NumberInput value={r.pointsCost} min={1} onValueChange={() => {}} onBlur={(e) => { const n = Number(e.target.value.replace(/,/g, "")); if (n && n !== r.pointsCost) onPatch({ pointsCost: n }); }} className="h-7 text-right" />
+      </Field>
+      <Field label={`${t("reco.admin.price")} (${r.currency})`} className="w-32">
+        <NumberInput value={r.price} min={0} onValueChange={() => {}} onBlur={(e) => { const v = e.target.value.replace(/,/g, ""); const n = v ? Number(v) : null; if (n !== r.price) onPatch({ price: n }); }} className="h-7 text-right" />
+      </Field>
+      <Field label={t("reco.admin.quantity")} className="w-24">
+        <NumberInput value={r.quantity} min={r.approvedCount} onValueChange={() => {}} onBlur={(e) => { const n = Number(e.target.value.replace(/,/g, "")); if (n !== r.quantity) onPatch({ quantity: n }); }} className="h-7 text-right" data-testid="reward-row-qty" />
+      </Field>
+      <Field label={t("reco.admin.active")} className="w-14">
+        <Switch checked={r.active} onCheckedChange={(v) => onPatch({ active: v })} />
+      </Field>
       <button onClick={onDelete} className="text-neutral-400 hover:text-red-600" aria-label={t("common.delete")}>
         <Trash2 size={13} />
       </button>

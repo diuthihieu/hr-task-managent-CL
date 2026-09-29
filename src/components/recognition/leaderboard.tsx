@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { Avatar, fmtNumber, type PersonLite } from "./shared";
+import { NumberInput } from "@/components/ui/number-input";
 import type { MessageKey } from "@/lib/i18n/core";
 
 interface Row {
@@ -47,7 +48,7 @@ export function PeriodFilter({ period, setPeriod, from, setFrom, to, setTo, top,
       )}
       <label className="inline-flex items-center gap-1.5 text-neutral-500">
         {t("reco.top")}
-        <input type="number" min={1} max={100} value={top} onChange={(e) => setTop(Math.min(100, Math.max(1, Number(e.target.value) || 1)))} className="h-8 w-16 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 text-neutral-800 dark:text-neutral-100" data-testid="reco-top" />
+        <NumberInput value={top} min={1} max={100} onValueChange={(v) => v && setTop(Math.min(100, v))} className="h-8 w-16" data-testid="reco-top" />
       </label>
     </div>
   );

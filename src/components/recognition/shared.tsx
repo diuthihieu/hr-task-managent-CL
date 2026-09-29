@@ -27,4 +27,5 @@ export const STYLE_META: Record<string, { emoji: string; tone: string; ring: str
   mentor: { emoji: "🌱", tone: "from-emerald-50 to-teal-50 dark:from-emerald-950/40 dark:to-teal-950/30", ring: "border-emerald-200 dark:border-emerald-900" },
 };
 
-export const fmtNumber = (n: number) => new Intl.NumberFormat().format(n);
+/** Thousands separated with "," everywhere (6000 -> 6,000). */
+export const fmtNumber = (n: number) => new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 }).format(n);

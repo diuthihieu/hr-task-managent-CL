@@ -30,7 +30,8 @@ export const REDEMPTION_TONE: Record<string, string> = {
   cancelled: "bg-neutral-100 text-neutral-500 dark:bg-neutral-800",
 };
 
-export const money = (v: number | null, cur: string) => (v === null ? "" : new Intl.NumberFormat(undefined, { style: "currency", currency: cur, maximumFractionDigits: 0 }).format(v));
+/** 50000 VND -> "50,000 VND" (thousands with ",", any currency code). */
+export const money = (v: number | null, cur: string) => (v === null ? "" : `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(v)} ${cur}`);
 
 export function Rewards({ workspaceId, balance, onChanged }: { workspaceId: string; balance: number; onChanged: () => void }) {
   const { t } = useT();
@@ -94,7 +95,7 @@ export function Rewards({ workspaceId, balance, onChanged }: { workspaceId: stri
                 <div className="mt-2 flex items-center gap-2 text-xs">
                   <span className="font-bold text-indigo-600 tabular-nums">{t("reco.unit.points", { n: fmtNumber(r.pointsCost) })}</span>
                   {r.price !== null && <span className="text-neutral-400">≈ {money(r.price, r.currency)}</span>}
-                  <span className="ml-auto text-neutral-500">{t("reco.rewards.left", { n: r.remaining })}</span>
+                  <span className="ml-auto text-neutral-500">{t("reco.rewards.left", { n: fmtNumber(r.remaining) })}</span>
                 </div>
                 <div className="mt-2 h-1.5 rounded-full bg-neutral-100 dark:bg-neutral-800 overflow-hidden">
                   <div className={cn("h-full rounded-full", enough ? "bg-emerald-500" : "bg-indigo-400")} style={{ width: `${pct}%` }} />

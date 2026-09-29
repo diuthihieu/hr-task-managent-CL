@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Globe2, Lock, Search, Trash2 } from "lucide-react";
+import { Globe2, Info, Lock, Search, Trash2 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -87,11 +87,21 @@ export function WikiShareDialog({ wiki, onClose }: { wiki: WikiRow; workspaceId:
   }
 
   const label = "text-[11px] font-semibold text-neutral-500 uppercase tracking-wide mb-1 block";
+  const managers = members.filter((m) => m.lockedReason || m.role === "manager").map((m) => m.name);
   return (
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogTitle>{canManage ? t("wikis.settingsTitle") : t("wikis.whoHasAccess")}</DialogTitle>
         <div className="space-y-4 max-h-[70vh] overflow-y-auto thin-scroll pr-1" data-testid="wiki-share-dialog">
+          {!canManage && (
+            <div className="flex items-start gap-2 rounded-lg border border-indigo-200 bg-indigo-50 dark:border-indigo-900 dark:bg-indigo-950/40 px-3 py-2.5 text-xs text-indigo-900 dark:text-indigo-100" data-testid="wiki-share-readonly">
+              <Info size={14} className="shrink-0 mt-0.5 text-indigo-600 dark:text-indigo-400" />
+              <span>
+                {t("wikis.readOnlyNotice", { role: wiki.myRole ? t(`wikis.role.${wiki.myRole}` as MessageKey) : t("wikis.noAccess") })}
+                {managers.length > 0 && <> {t("wikis.readOnlyAsk", { names: managers.join(", ") })}</>}
+              </span>
+            </div>
+          )}
           {canManage && (
             <div className="grid gap-3 sm:grid-cols-[1fr_90px]">
               <div>
@@ -117,7 +127,12 @@ export function WikiShareDialog({ wiki, onClose }: { wiki: WikiRow; workspaceId:
                   key={a}
                   disabled={!canManage}
                   onClick={() => setAccess(a)}
-                  className={cn("text-left rounded-lg border p-3 flex gap-2.5", access === a ? "border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/40" : "border-neutral-200 dark:border-neutral-800", !canManage && "cursor-default")}
+                  className={cn(
+                    "text-left rounded-lg border p-3 flex gap-2.5",
+                    access === a ? "border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/40" : "border-neutral-200 dark:border-neutral-800",
+                    !canManage && "cursor-default",
+                    !canManage && access !== a && "opacity-50"
+                  )}
                   data-testid={`wiki-access-${a}`}
                 >
                   {a === "workspace" ? <Globe2 size={16} className="text-indigo-600 mt-0.5" /> : <Lock size={16} className="text-indigo-600 mt-0.5" />}
@@ -131,7 +146,11 @@ export function WikiShareDialog({ wiki, onClose }: { wiki: WikiRow; workspaceId:
             {access === "workspace" && (
               <div className="flex items-center gap-2 mt-2 text-sm">
                 <span className="text-neutral-500">{t("wikis.defaultRole")}</span>
-                <Select className="w-40" value={defaultRole} onValueChange={(v) => canManage && setDefaultRole(v as "viewer" | "editor")} options={[{ value: "viewer", label: t("wikis.role.viewer") }, { value: "editor", label: t("wikis.role.editor") }]} />
+                {canManage ? (
+                  <Select className="w-40" value={defaultRole} onValueChange={(v) => setDefaultRole(v as "viewer" | "editor")} options={[{ value: "viewer", label: t("wikis.role.viewer") }, { value: "editor", label: t("wikis.role.editor") }]} />
+                ) : (
+                  <span className="font-medium text-neutral-800 dark:text-neutral-100">{t(`wikis.role.${defaultRole}` as MessageKey)}</span>
+                )}
               </div>
             )}
           </div>

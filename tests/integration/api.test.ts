@@ -1076,6 +1076,54 @@ test("wiki pages that quote a hidden project are hidden too - in the UI, search 
   assert.deepEqual((await admin.get<{ restrictedTo: unknown[] }>(`/api/wiki/${report.body.id}`)).body.restrictedTo, [], "no notice when nobody is hidden");
 });
 
+test("knowledge graph: built from existing relations, filtered by access, with a local view around one node", async () => {
+  type G = { nodes: { id: string; type: string; depth?: number; href?: string; degree: number }[]; links: { source: string; target: string; kind: string }[]; focus?: string };
+  const slug = (await admin.get<{ slug: string }>(`/api/workspaces/${s.ws}`)).body.slug;
+  const task = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Graph: collect IDs", sys_category: s.category, sys_assignees: [s.contributorId] } });
+  const hiddenTask = await admin.post<Rec>(`/api/projects/${s.otherProject}/tasks`, { data: { sys_title: "Graph: secret task" } });
+  // A wiki page linking to the task and to the hidden task through ordinary links in its content.
+  const page = await admin.post<{ id: string }>(`/api/wikis/${s.wiki}/pages`, {
+    title: "Graph: onboarding guide",
+    content: `<p>See <a href="/w/${slug}/p/${s.project}/t/${task.body.id}">the task</a> and <a href="/w/${slug}/p/${s.otherProject}/t/${hiddenTask.body.id}">that one</a>.</p>`,
+  });
+  assert.equal(page.status, 201, JSON.stringify(page.body));
+  const secretWiki = await contributor.post<{ id: string }>(`/api/workspaces/${s.ws}/wikis`, { name: "Graph secrets", access: "restricted" });
+  const secretPage = await contributor.post<{ id: string }>(`/api/wikis/${secretWiki.body.id}/pages`, { title: "Graph: salary bands" });
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId] });
+
+  const has = (g: G, a: string, b: string, kind: string) => g.links.some((l) => l.kind === kind && ((l.source === a && l.target === b) || (l.source === b && l.target === a)));
+  const full = (await admin.get<G>(`/api/workspaces/${s.ws}/graph`)).body;
+  const [T, H, W] = [`task:${task.body.id}`, `task:${hiddenTask.body.id}`, `wiki:${page.body.id}`];
+  assert.ok(has(full, W, T, "link") && has(full, W, H, "link"), "links written in content become edges");
+  assert.ok(has(full, T, `project:${s.project}`, "project") && has(full, T, `tag:${s.category}`, "tag") && has(full, T, `person:${s.contributorId}`, "assignee"));
+  assert.ok(has(full, `kr:${s.krLaptop}`, full.nodes.find((n) => n.type === "objective" && has(full, `kr:${s.krLaptop}`, n.id, "okr"))!.id, "okr"), "OKR tree");
+  assert.equal(full.nodes.find((n) => n.id === T)!.href, `/w/${slug}/p/${s.project}/t/${task.body.id}`);
+  assert.ok(full.nodes.every((n) => n.degree === full.links.filter((l) => l.source === n.id || l.target === n.id).length), "size = number of links");
+  assert.ok(full.links.every((l) => full.nodes.some((n) => n.id === l.source) && full.nodes.some((n) => n.id === l.target)));
+  assert.ok(full.nodes.some((n) => n.id === `wiki:${secretPage.body.id}`), "workspace admins see every wiki");
+
+  const v = (await viewer.get<G>(`/api/workspaces/${s.ws}/graph`)).body;
+  const ids = new Set(v.nodes.map((n) => n.id));
+  assert.ok(ids.has(W) && ids.has(T));
+  assert.ok(!ids.has(H) && !ids.has(`project:${s.otherProject}`) && !ids.has(`tag:${s.otherCategory}`), "hidden project, its tasks and tags are absent");
+  assert.ok(!has(v, W, H, "link"), "a link never reveals a hidden item");
+  assert.ok(!ids.has(`wiki:${secretPage.body.id}`), "restricted wiki pages are absent");
+
+  const local = await viewer.get<G>(`/api/workspaces/${s.ws}/graph?focus=${W}&depth=1`);
+  assert.equal(local.status, 200);
+  assert.equal(local.body.focus, W);
+  assert.equal(local.body.nodes.find((n) => n.id === W)!.depth, 0);
+  assert.ok(local.body.nodes.some((n) => n.id === T && n.depth === 1));
+  assert.ok(local.body.nodes.every((n) => n.depth! <= 1) && !local.body.nodes.some((n) => n.id === `tag:${s.category}`), "depth 1 = direct neighbours only");
+  const two = (await viewer.get<G>(`/api/workspaces/${s.ws}/graph?focus=${W}&depth=2`)).body;
+  assert.ok(two.nodes.some((n) => n.id === `tag:${s.category}` && n.depth === 2), "the task's tag is two hops away");
+
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/graph?focus=wiki:nope`)).status, 400);
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/graph?depth=5`)).status, 400);
+  assert.equal((await outsider.get(`/api/workspaces/${s.ws}/graph`)).status, 404);
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
+});
+
 test("invite links and invitations for people without an account: accept, decline, revoke, replace", async () => {
   const ws = await admin.post<{ id: string }>("/api/workspaces", { name: "Invite Co" });
   // Join link: off by default; admins turn it on and pick the role.

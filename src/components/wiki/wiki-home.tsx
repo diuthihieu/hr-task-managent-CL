@@ -2,7 +2,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookOpen, Plus, Lock, Globe2, FileText } from "lucide-react";
+import { BookOpen, Plus, Lock, Globe2, FileText, Waypoints } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
@@ -25,11 +25,16 @@ export function WikiHome({ workspaceId, workspaceSlug, wikis, canCreate }: { wor
             <h1 className="text-[22px] font-bold tracking-tight text-neutral-900 dark:text-neutral-50">{t("nav.wiki")}</h1>
             <p className="text-sm text-neutral-500 mt-0.5">{t("wikis.subtitle")}</p>
           </div>
-          {canCreate && (
-            <Button onClick={() => setOpen(true)} data-testid="wiki-create">
-              <Plus size={14} /> {t("wikis.new")}
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            <Link href={`/w/${workspaceSlug}/wiki/graph`} data-testid="wiki-graph" className="h-8 px-3 text-sm gap-1.5 inline-flex items-center rounded-lg border border-neutral-300 dark:border-neutral-700 hover:bg-neutral-50 dark:hover:bg-neutral-800 text-neutral-800 dark:text-neutral-200">
+              <Waypoints size={14} /> {t("graph.open")}
+            </Link>
+            {canCreate && (
+              <Button onClick={() => setOpen(true)} data-testid="wiki-create">
+                <Plus size={14} /> {t("wikis.new")}
+              </Button>
+            )}
+          </div>
         </div>
         {wikis.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-10 text-center">

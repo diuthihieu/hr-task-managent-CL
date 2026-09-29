@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { BookOpen, ChevronDown, ChevronRight, FileText, Plus, Trash2, Sparkles, Lock, Users } from "lucide-react";
+import { BookOpen, ChevronDown, ChevronRight, FileText, Plus, Trash2, Sparkles, Lock, Users, Waypoints } from "lucide-react";
 import { WikiShareDialog } from "./wiki-share-dialog";
 import { WikiAiPanel } from "@/components/ai/wiki-ai-panel";
 import { RichEditor, type SaveState } from "@/components/editor/rich-editor";
@@ -227,6 +227,14 @@ export function WikiWorkspace({ wiki, workspaceSlug, workspaceId, pageId, curren
               <span className="ml-auto" data-testid="wiki-save-state">
                 {saveState === "saving" ? t("editor.saving") : saveState === "saved" ? t("editor.saved") : saveState === "error" ? t("editor.error") : ""}
               </span>
+              <Link
+                href={`/w/${workspaceSlug}/wiki/graph?mode=local&focus=wiki:${page.id}`}
+                className="inline-flex items-center gap-1 h-6 px-2 rounded-md text-[11px] font-medium text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800"
+                title={t("graph.local")}
+                data-testid="wiki-local-graph"
+              >
+                <Waypoints size={12} /> {t("graph.localShort")}
+              </Link>
               <AiWikiActions
                 pageId={page.id}
                 workspaceId={workspaceId}

@@ -443,7 +443,7 @@ export const MESSAGES = {
   "set.general": ["Workspace", "Thông tin workspace"],
   "set.generalDesc": ["Basic information about this workspace.", "Thông tin cơ bản của workspace."],
   "set.members": ["Members & roles", "Thành viên & phân quyền"],
-  "set.membersDesc": ["People with access to this workspace and what they can do. Anyone with a woli account can be added by their email.", "Những người có quyền vào workspace và quyền hạn của họ. Ai đã có tài khoản woli đều có thể được thêm bằng email."],
+  "set.membersDesc": ["People who can open this workspace and their permissions. Invite people by email or with an invite link - they join after accepting.", "Những người có quyền vào workspace và quyền hạn của họ. Mời bằng email hoặc link mời - người được mời vào sau khi đồng ý."],
   "set.permissions": ["Permissions", "Quyền hạn"],
   "set.statuses": ["Task statuses", "Trạng thái task"],
   "set.views": ["View management", "Quản lý view"],

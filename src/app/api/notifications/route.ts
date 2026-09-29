@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, route } from "@/lib/authz";
 import { generateReminders } from "@/lib/notifications";
+import { syncInvitations } from "@/lib/invitations";
 
 /**
  * The caller's notifications (reminders are generated on the fly).
@@ -10,7 +11,7 @@ import { generateReminders } from "@/lib/notifications";
  */
 export const GET = route(async (req) => {
   const user = await requireUser();
-  await generateReminders(user.id);
+  await Promise.all([generateReminders(user.id), syncInvitations(user)]);
   const url = new URL(req.url);
   const now = new Date();
   const view = url.searchParams.get("view") ?? "all";

@@ -95,6 +95,10 @@ export function describeNotification(n: NotificationItem, t: TFunction): string 
       return t("notif.approval_request", { actor });
     case "approval_result":
       return t(d.decision === "approved" ? "notif.approval_approved" : "notif.approval_rejected", { actor });
+    case "workspace_invite":
+      return t("notif.workspace_invite", { actor, role: t(`role.${String(d.role ?? "editor")}` as MessageKey) });
+    case "workspace_invite_result":
+      return t(d.decision === "accepted" ? "notif.invite_accepted" : "notif.invite_declined", { actor });
     case "ai_suggestion":
       return t(`notif.ai.${String(d.kind ?? "plan_day")}` as MessageKey, { count: Number(d.count ?? 0) });
     case "objective_risk":

@@ -256,6 +256,9 @@ model User {
   wikiComments          WikiComment[]          @relation("WikiCommentAuthor")
   approvalsRequested    TaskApproval[]         @relation("ApprovalRequester")
   approvalsToDecide     TaskApproval[]         @relation("ApprovalApprover")
+  invitationsSent       WorkspaceInvitation[]  @relation("InvitationSender")
+  invitationsReceived   WorkspaceInvitation[]  @relation("InvitationInvitee")
+  inviteLinksCreated    WorkspaceInviteLink[]
   wikiCommentMentions   WikiCommentMention[]   @relation("WikiCommentMentionUser")
   focusSessions         FocusSession[]
 
@@ -289,6 +292,8 @@ model Workspace {
   attachments      Attachment[]
   wikiComments     WikiComment[]
   taskApprovals    TaskApproval[]
+  invitations      WorkspaceInvitation[]
+  inviteLinks      WorkspaceInviteLink[]
   activityLogs     ActivityLog[]
   capturedThoughts CapturedThought[]
   wikiPages        WikiPage[]
@@ -1282,4 +1287,63 @@ model TaskApproval {
   @@index([taskId, createdAt])
   @@index([approverId, status])
   @@map("task_approvals")
+}
+
+enum InvitationStatus {
+  pending
+  accepted
+  declined
+  revoked
+
+  @@map("invitation_status")
+}
+
+/// A personal invitation to join a workspace, by email. The person must accept
+/// before they become a member. Works before they have an account: it is
+/// matched by email when they sign up.
+model WorkspaceInvitation {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId   String           @map("workspace_id") @db.Uuid
+  email         String           @db.VarChar(254)
+  /// Set when the email belongs to an account (at invite time or when they sign up).
+  invitedUserId String?          @map("invited_user_id") @db.Uuid
+  role          WorkspaceRole    @default(editor)
+  /// Secret for the personal link /invite/<token>.
+  token         String           @unique @db.VarChar(64)
+  status        InvitationStatus @default(pending)
+  message       String?          @db.VarChar(500)
+  invitedById   String?          @map("invited_by") @db.Uuid
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt     DateTime         @map("expires_at") @db.Timestamptz(6)
+  respondedAt   DateTime?        @map("responded_at") @db.Timestamptz(6)
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedUser User?     @relation("InvitationInvitee", fields: [invitedUserId], references: [id], onDelete: SetNull)
+  invitedBy   User?     @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, status])
+  @@index([email, status])
+  @@index([invitedUserId, status])
+  @@map("workspace_invitations")
+}
+
+/// Shareable join link for a workspace. Anyone signed in who opens it sees the
+/// workspace and must accept to join, with the link's role. Admins can turn it
+/// off or replace it (the old link stops working).
+model WorkspaceInviteLink {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String        @map("workspace_id") @db.Uuid
+  token       String        @unique @db.VarChar(64)
+  role        WorkspaceRole @default(contributor)
+  createdById String?       @map("created_by") @db.Uuid
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt   DateTime?     @map("expires_at") @db.Timestamptz(6)
+  revokedAt   DateTime?     @map("revoked_at") @db.Timestamptz(6)
+  useCount    Int           @default(0) @map("use_count")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, revokedAt])
+  @@map("workspace_invite_links")
 }

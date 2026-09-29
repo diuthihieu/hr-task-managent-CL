@@ -21,6 +21,8 @@ export type NotificationType =
   | "approval_request"
   | "approval_result"
   | "ai_suggestion"
+  | "workspace_invite"
+  | "workspace_invite_result"
   | "task_due_soon"
   | "task_overdue"
   | "capture_due";

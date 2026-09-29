@@ -1,12 +1,11 @@
 "use client";
 import { useEffect, useState } from "react";
-import { UserPlus, Trash2 } from "lucide-react";
+import { UserPlus, Trash2, Copy, Mail, Clock } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/misc";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { InviteDialog } from "@/components/invitations/invite-dialog";
 import { initials } from "@/lib/utils";
 import { SettingsSection } from "./settings-shell";
 import { useT } from "@/components/i18n-provider";
@@ -21,6 +20,17 @@ interface MemberRow {
   isActive?: boolean;
 }
 
+interface PendingInvite {
+  id: string;
+  email: string;
+  role: string;
+  url: string;
+  expiresAt: string;
+  expired: boolean;
+  hasAccount: boolean;
+  invitedBy: string | null;
+}
+
 const ROLE_KEYS = ["owner", "admin", "editor", "contributor", "viewer"] as const;
 
 export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }: { workspaceId: string; currentUserId: string; currentUserRole: string; isSystemAdmin?: boolean }) {
@@ -29,8 +39,7 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
-  const [email, setEmail] = useState("");
-  const [inviteRole, setInviteRole] = useState("editor");
+  const [pending, setPending] = useState<PendingInvite[]>([]);
   const canManage = ["owner", "admin"].includes(currentUserRole);
 
   function load() {
@@ -38,9 +47,29 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
       .get<MemberRow[]>(`/api/workspaces/${workspaceId}/members?withRoles=1`)
       .then(setMembers)
       .finally(() => setLoading(false));
+    if (canManage) api.get<PendingInvite[]>(`/api/workspaces/${workspaceId}/invitations`).then(setPending).catch(() => {});
   }
 
-  useEffect(load, [workspaceId]);
+  async function revoke(inv: PendingInvite) {
+    if (!confirm(t("inv.revokeConfirm", { email: inv.email }))) return;
+    try {
+      await api.delete(`/api/invitations/${inv.id}`);
+      setPending((prev) => prev.filter((x) => x.id !== inv.id));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+    }
+  }
+
+  async function copyLink(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success(t("inv.copied"));
+    } catch {
+      window.prompt(t("inv.copyManually"), url);
+    }
+  }
+
+  useEffect(load, [workspaceId, canManage]);
 
   async function changeRole(userId: string, role: string) {
     setMembers((prev) => prev.map((m) => (m.id === userId ? { ...m, role } : m)));
@@ -62,18 +91,6 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
     }
   }
 
-  async function invite() {
-    try {
-      const member = await api.post<MemberRow>(`/api/workspaces/${workspaceId}/members`, { email, role: inviteRole });
-      setMembers((prev) => [...prev, member]);
-      setInviteOpen(false);
-      setEmail("");
-      toast.success(t("set.memberAdded", { name: member.name }));
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("common.failed"));
-    }
-  }
-
   return (
     <SettingsSection
       title={t("set.members")}
@@ -81,7 +98,7 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
       action={
         canManage && (
           <Button size="sm" onClick={() => setInviteOpen(true)}>
-            <UserPlus size={13} /> {t("set.addMember")}
+            <UserPlus size={13} /> {t("inv.invite")}
           </Button>
         )
       }
@@ -117,26 +134,36 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
         </div>
       )}
 
-      <Dialog open={inviteOpen} onOpenChange={setInviteOpen}>
-        <DialogContent>
-          <DialogTitle>{t("set.addMember")}</DialogTitle>
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("common.email")}</label>
-              <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="name@company.com" autoFocus />
-              <p className="text-[11px] text-neutral-400 mt-1">{t("set.addMemberHint")}</p>
-            </div>
-            <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("common.role")}</label>
-              <Select className="w-full" value={inviteRole} onValueChange={setInviteRole} options={currentUserRole === "owner" ? ROLES : ROLES.filter((r) => r.value !== "owner")} />
-            </div>
+      {canManage && pending.length > 0 && (
+        <div className="max-w-2xl mt-6" data-testid="pending-invites">
+          <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100 mb-2 flex items-center gap-1.5">
+            <Clock size={14} className="text-indigo-600" /> {t("inv.pending")} <span className="text-neutral-400 font-normal">{pending.length}</span>
+          </h3>
+          <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg divide-y divide-neutral-100 dark:divide-neutral-900">
+            {pending.map((p) => (
+              <div key={p.id} className="flex items-center gap-3 px-3 py-2.5" data-testid="pending-invite">
+                <span className="h-8 w-8 rounded-full flex items-center justify-center bg-neutral-100 dark:bg-neutral-800 text-neutral-500 shrink-0">
+                  <Mail size={14} />
+                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate">{p.email}</div>
+                  <div className="text-xs text-neutral-400 truncate">
+                    {t(`role.${p.role}` as MessageKey)} · {p.expired ? t("inv.expired") : p.hasAccount ? t("inv.waiting") : t("inv.waitingSignup")}
+                  </div>
+                </div>
+                <button onClick={() => copyLink(p.url)} className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:underline shrink-0">
+                  <Copy size={12} /> {t("inv.copyLink")}
+                </button>
+                <button onClick={() => revoke(p)} className="text-neutral-400 hover:text-red-600 shrink-0" title={t("inv.revoke")} aria-label={t("inv.revoke")}>
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            ))}
           </div>
-          <div className="flex justify-end gap-2 mt-4">
-            <Button variant="secondary" onClick={() => setInviteOpen(false)}>{t("common.cancel")}</Button>
-            <Button onClick={invite} disabled={!email.trim()} data-testid="add-member-submit">{t("set.addMember")}</Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
+
+      <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} workspaceId={workspaceId} onInvited={load} />
     </SettingsSection>
   );
 }

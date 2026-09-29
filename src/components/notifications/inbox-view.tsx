@@ -20,6 +20,7 @@ const GROUPS: { key: string; types: string[] }[] = [
   { key: "comment", types: ["task_comment"] },
   { key: "updates", types: ["task_status", "task_updated"] },
   { key: "approval", types: ["approval_request", "approval_result"] },
+  { key: "invite", types: ["workspace_invite", "workspace_invite_result"] },
   { key: "okr", types: ["objective_risk"] },
   { key: "ai", types: ["ai_suggestion"] },
 ];
@@ -90,6 +91,25 @@ export function InboxView() {
     try {
       await api.patch(`/api/approvals/${approvalId}`, { decision, note: note || undefined });
       toast.success(t(decision === "approve" ? "ac.approved" : "ac.rejected"));
+      await load();
+      fetchInbox().catch(() => {});
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+    }
+  }
+
+  /** Workspace invitation: the notification links to /invite/<token>. */
+  async function answerInvite(n: NotificationItem, decision: "accept" | "decline") {
+    const token = n.link?.split("/invite/")[1];
+    if (!token) return;
+    try {
+      const r = await api.post<{ joined: boolean; slug: string | null }>(`/api/invite/${token}`, { decision });
+      toast.success(decision === "accept" ? t("inv.joined", { name: n.title }) : t("inv.declinedTitle"));
+      if (r.joined && r.slug) {
+        router.push(`/w/${r.slug}`);
+        router.refresh();
+        return;
+      }
       await load();
       fetchInbox().catch(() => {});
     } catch (e) {
@@ -172,6 +192,12 @@ export function InboxView() {
                   <>
                     <ActionButton icon={ThumbsUp} label={t("ac.approve")} onClick={() => decide(n, "approve")} testId="ac-approve" />
                     <ActionButton icon={ThumbsDown} label={t("ac.reject")} onClick={() => decide(n, "reject")} testId="ac-reject" />
+                  </>
+                )}
+                {n.type === "workspace_invite" && !n.actioned && (
+                  <>
+                    <ActionButton icon={UserCheck} label={t("inv.accept")} onClick={() => answerInvite(n, "accept")} testId="ac-invite-accept" />
+                    <ActionButton icon={ThumbsDown} label={t("inv.decline")} onClick={() => answerInvite(n, "decline")} testId="ac-invite-decline" />
                   </>
                 )}
                 {n.type === "ai_suggestion" && (

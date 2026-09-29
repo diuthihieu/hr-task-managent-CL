@@ -15,6 +15,8 @@ export const decisionSchema = z.object({
   evidence: z.string().max(20000).nullable().optional(),
   sourceUrl: z.string().trim().max(1000).refine((u) => /^(https?:\/\/|\/)/i.test(u), "Source link must be a web address or an app link").nullable().optional(),
   decidedAt: date.optional(),
+  ownerId: uuid.nullable().optional(),
+  reviewDate: date.nullable().optional(),
   status: z.enum(["proposed", "active", "superseded", "revoked"]).optional(),
   validFrom: date.nullable().optional(),
   validTo: date.nullable().optional(),
@@ -37,6 +39,7 @@ export const DECISION_INCLUDE = {
   task: { select: { id: true, title: true, projectId: true, deletedAt: true } },
   objective: { select: { id: true, title: true, deletedAt: true } },
   createdBy: { select: { id: true, name: true } },
+  owner: { select: { id: true, name: true, avatarColor: true } },
   people: { select: { user: { select: { id: true, name: true, avatarColor: true } } } },
   supersedes: { select: { id: true, title: true, deletedAt: true } },
   supersededBy: { select: { id: true, title: true, deletedAt: true } },
@@ -57,6 +60,10 @@ export function serializeDecision(r: Row, base: string) {
     evidence: r.evidence,
     sourceUrl: r.sourceUrl,
     decidedAt: r.decidedAt.toISOString().slice(0, 10),
+    owner: r.owner,
+    reviewDate: r.reviewDate?.toISOString().slice(0, 10) ?? null,
+    /** Review date reached while the decision still applies. */
+    reviewDue: !!(r.reviewDate && r.reviewDate <= new Date(new Date().toISOString().slice(0, 10)) && (r.status === "active" || r.status === "proposed")),
     status: r.status,
     validFrom: r.validFrom?.toISOString().slice(0, 10) ?? null,
     validTo: r.validTo?.toISOString().slice(0, 10) ?? null,
@@ -88,6 +95,7 @@ export async function assertDecisionRefs(user: SessionUser, workspaceId: string,
   if (b.wikiPageId) await check(await workspaceOfWikiPage(b.wikiPageId), "wiki page");
   if (b.taskId) await check(await workspaceOfTask(b.taskId), "task");
   if (b.objectiveId) await check(await workspaceOfObjective(b.objectiveId), "objective");
+  if (b.ownerId && !(await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId: b.ownerId } } }))) throw badRequest("The owner must be a member of this workspace");
   if (b.people?.length) {
     const n = await prisma.workspaceMember.count({ where: { workspaceId, userId: { in: b.people } } });
     if (n !== new Set(b.people).size) throw badRequest("People must be members of this workspace");
@@ -103,6 +111,8 @@ export function decisionData(b: DecisionInput) {
     evidence: b.evidence,
     sourceUrl: b.sourceUrl,
     decidedAt: d(b.decidedAt) ?? undefined,
+    ownerId: b.ownerId,
+    reviewDate: d(b.reviewDate),
     status: b.status,
     validFrom: d(b.validFrom),
     validTo: d(b.validTo),

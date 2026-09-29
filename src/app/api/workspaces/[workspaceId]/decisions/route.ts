@@ -24,6 +24,8 @@ export const GET = route<P>(async (req, { params }) => {
     ...(url.searchParams.get("projectId") ? { projectId: url.searchParams.get("projectId")! } : {}),
     ...(url.searchParams.get("pageId") ? { wikiPageId: url.searchParams.get("pageId")! } : {}),
     ...(url.searchParams.get("personId") ? { people: { some: { userId: url.searchParams.get("personId")! } } } : {}),
+    ...(url.searchParams.get("ownerId") ? { ownerId: url.searchParams.get("ownerId")! } : {}),
+    ...(url.searchParams.get("review") === "due" ? { reviewDate: { lte: new Date(new Date().toISOString().slice(0, 10)) }, status: { in: ["active", "proposed"] } } : {}),
   };
   const [rows, ws] = await Promise.all([
     prisma.decision.findMany({ where, include: DECISION_INCLUDE, orderBy: [{ decidedAt: "desc" }, { createdAt: "desc" }], take: 300 }),
@@ -40,7 +42,8 @@ export const POST = route<P>(async (req, { params }) => {
   await assertDecisionRefs(user, workspaceId, body);
   const ws = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { slug: true } });
   const row = await prisma.$transaction(async (tx) => {
-    const created = await tx.decision.create({ data: { ...decisionData(body), supersedesId: undefined, workspaceId, createdById: user.id }, select: { id: true, decidedAt: true, title: true } });
+    // The person recording it owns it unless someone else is named.
+    const created = await tx.decision.create({ data: { ...decisionData(body), ownerId: body.ownerId === undefined ? user.id : body.ownerId, supersedesId: undefined, workspaceId, createdById: user.id }, select: { id: true, decidedAt: true, title: true } });
     if (body.people?.length) await tx.decisionPerson.createMany({ data: [...new Set(body.people)].map((userId) => ({ decisionId: created.id, userId })) });
     if (body.supersedesId) await supersede(tx, workspaceId, created.id, body.supersedesId, created.decidedAt);
     await logActivity(tx, { workspaceId, actorId: user.id, entityType: "decision", entityId: created.id, action: "created", summary: `Recorded decision "${created.title}"` });

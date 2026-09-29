@@ -57,3 +57,10 @@ export function periodRange(kind: PeriodKind, now = new Date(), from?: string, t
   }
   return { from: new Date(Date.UTC(d.getUTCFullYear(), 0, 1)), to: new Date(Date.UTC(d.getUTCFullYear() + 1, 0, 1)) };
 }
+
+/** Card designs a letter can be written on (see .tpl-* in globals.css). */
+export const KUDOS_TEMPLATES = ["classic", "sunrise", "botanical", "ocean", "confetti", "night", "minimal", "elegant"] as const;
+export type KudosTemplate = (typeof KUDOS_TEMPLATES)[number];
+
+/** Letters typed with decomposed accents (NFD) render badly: always store NFC. */
+export const nfc = (s: string) => s.normalize("NFC");

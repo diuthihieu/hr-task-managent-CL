@@ -61,6 +61,7 @@ export const GET = route(async (req) => {
       snoozedUntil: n.snoozedUntil && n.snoozedUntil > now ? n.snoozedUntil.toISOString() : null,
       createdAt: n.createdAt.toISOString(),
       actor: n.actor,
+      workspaceId: n.workspaceId,
       workspaceName: n.workspace?.name ?? null,
       projectName: n.project?.name ?? null,
       taskId: n.task && !n.task.deletedAt ? n.task.id : null,

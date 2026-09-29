@@ -148,7 +148,8 @@ export async function buildKnowledgeGraph(user: SessionUser, workspace: { id: st
   for (const pg of pages) {
     const id = `wiki:${pg.id}`;
     const kindLabel = pg.kind === "page" ? "Wiki" : pg.kind[0].toUpperCase() + pg.kind.slice(1);
-    add({ id, type: "wiki", label: pg.title || "Untitled", sub: `${kindLabel} · ${pg.wiki.name}${pg.status !== "current" ? ` · ${pg.status}` : ""}`, href: `${base}/wiki/${pg.wikiId}/${pg.id}`, done: pg.status === "superseded" || pg.status === "archived" });
+    // Meetings are wiki pages of kind "meeting": their own node type (same "wiki:" id, so links still resolve).
+    add({ id, type: pg.kind === "meeting" ? "meeting" : "wiki", label: pg.title || "Untitled", sub: `${kindLabel} · ${pg.wiki.name}${pg.status !== "current" ? ` · ${pg.status}` : ""}`, href: `${base}/wiki/${pg.wikiId}/${pg.id}`, done: pg.status === "superseded" || pg.status === "archived" });
     if (pg.supersedesId) link(id, `wiki:${pg.supersedesId}`, "supersedes");
     for (const tag of pg.tags) {
       const tid = `tag:#${tag}`;

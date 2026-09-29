@@ -5,6 +5,7 @@ import { Award, Gift, Inbox, Send, Settings2, Sparkles, Trophy, Heart } from "lu
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
+import { isRecognitionNotification, markRead, useInbox, type NotificationItem } from "@/components/notifications/notification-bell";
 import { cn } from "@/lib/utils";
 import { Leaderboards } from "./leaderboard";
 import { KudosList } from "./kudos-list";
@@ -25,6 +26,7 @@ interface Overview {
   affordable: number;
   unreadKudos: number;
   kudosReceived: number;
+  pendingRequests: number;
 }
 
 export function RecognitionHub({ workspaceId, workspaceSlug, tab, me }: { workspaceId: string; workspaceSlug: string; tab: RecoTab; me: { id: string; name: string } }) {
@@ -38,13 +40,25 @@ export function RecognitionHub({ workspaceId, workspaceSlug, tab, me }: { worksp
   useEffect(() => {
     load();
   }, [load, tick]);
+  // Opening a tab clears the sidebar badge for the notifications it answers.
+  useEffect(() => {
+    const kinds: Record<RecoTab, (n: NotificationItem) => boolean> = {
+      leaderboard: () => false,
+      wall: () => false,
+      mine: () => false, // letters are marked read when opened
+      rewards: (n) => n.type === "reward_result" || n.type === "ai_suggestion",
+      manage: (n) => n.type === "reward_request",
+    };
+    const inbox = useInbox.getState().items;
+    inbox.filter((n) => !n.read && isRecognitionNotification(n) && kinds[tab](n) && (!n.workspaceId || n.workspaceId === workspaceId)).forEach((n) => markRead(n));
+  }, [tab, workspaceId]);
   const go = (k: RecoTab) => router.replace(`/w/${workspaceSlug}/recognition?tab=${k}`);
   const tabs: { key: RecoTab; icon: typeof Trophy; badge?: number }[] = [
     { key: "leaderboard", icon: Trophy },
     { key: "wall", icon: Heart },
     { key: "mine", icon: Inbox, badge: o?.unreadKudos },
     { key: "rewards", icon: Gift, badge: o?.affordable },
-    ...(o?.canManage ? [{ key: "manage" as const, icon: Settings2 }] : []),
+    ...(o?.canManage ? [{ key: "manage" as const, icon: Settings2, badge: o?.pendingRequests }] : []),
   ];
   return (
     <div className="flex-1 overflow-y-auto thin-scroll">

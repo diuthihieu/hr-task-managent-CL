@@ -1,17 +1,17 @@
 "use client";
 // Recognition management (workspace admins and the people they delegate to):
 // scoring rules, who sees points, managers, reward catalog, approvals.
-import { useEffect, useRef, useState } from "react";
-import { Check, Gift, ImagePlus, Loader2, Plus, RefreshCcw, Save, ShieldCheck, Trash2, X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Check, Gift, ImagePlus, Loader2, Pencil, Plus, RefreshCcw, Save, ShieldCheck, Trash2, X } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/misc";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api-client";
 import { cn, formatDate } from "@/lib/utils";
 import type { RewardDto } from "@/lib/recognition/rewards";
-import { REDEMPTION_TONE, type Redemption } from "./rewards";
+import { REDEMPTION_TONE, money, type Redemption } from "./rewards";
+import { RewardDialog } from "./reward-editor";
 import { Avatar, fmtNumber } from "./shared";
 import { NumberInput, formatThousands } from "@/components/ui/number-input";
 import type { MessageKey } from "@/lib/i18n/core";
@@ -24,26 +24,13 @@ interface Settings {
   rules: { action: string; points: number; enabled: boolean }[];
   members: { id: string; name: string; email: string; avatarColor: string; role: string; isManager: boolean; canViewOthersPoints: boolean | null }[];
 }
-type Draft = { name: string; description: string; pointsCost: number | null; price: number | null; currency: string; quantity: number | null };
-const emptyDraft = (): Draft => ({ name: "", description: "", pointsCost: 100, price: null, currency: "VND", quantity: 1 });
-
-/** A labelled form field: the title says what goes in, the hint gives an example. */
-function Field({ label, hint, children, className }: { label: string; hint?: string; children: React.ReactNode; className?: string }) {
-  return (
-    <label className={cn("block text-xs", className)}>
-      <span className="block font-medium text-neutral-700 dark:text-neutral-200 mb-1">{label}</span>
-      {children}
-      {hint && <span className="block mt-0.5 text-[10px] text-neutral-400">{hint}</span>}
-    </label>
-  );
-}
 
 export function RecognitionAdmin({ workspaceId }: { workspaceId: string }) {
   const { t } = useT();
   const [s, setS] = useState<Settings | null>(null);
   const [rewards, setRewards] = useState<RewardDto[]>([]);
   const [requests, setRequests] = useState<Redemption[]>([]);
-  const [drafts, setDrafts] = useState<Draft[]>([emptyDraft()]);
+  const [editing, setEditing] = useState<RewardDto | "new" | null>(null);
   const [busy, setBusy] = useState(false);
   const loadAll = () => {
     api.get<Settings>(`/api/workspaces/${workspaceId}/recognition/settings`).then(setS).catch((e) => toast.error(e.message));
@@ -84,20 +71,6 @@ export function RecognitionAdmin({ workspaceId }: { workspaceId: string }) {
     try {
       await api.put(`/api/workspaces/${workspaceId}/recognition/managers`, { userIds: ids });
       setS({ ...s, members: s.members.map((m) => ({ ...m, isManager: ids.includes(m.id) })) });
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("common.failed"));
-    }
-  }
-  async function addRewards() {
-    const filled = drafts.filter((d) => d.name.trim());
-    if (!filled.length) return toast.error(t("reco.admin.needName"));
-    if (filled.some((d) => !d.pointsCost || d.pointsCost < 1)) return toast.error(t("reco.admin.needCost"));
-    const items = filled.map((d) => ({ name: d.name.trim(), description: d.description.trim() || null, pointsCost: d.pointsCost!, price: d.price, currency: d.currency || "VND", quantity: d.quantity ?? 0 }));
-    try {
-      await api.post(`/api/workspaces/${workspaceId}/rewards`, { items });
-      toast.success(t("reco.admin.rewardsAdded", { n: items.length }));
-      setDrafts([emptyDraft()]);
-      loadAll();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
@@ -235,107 +208,76 @@ export function RecognitionAdmin({ workspaceId }: { workspaceId: string }) {
       </div>
 
       <section className={card} data-testid="reco-catalog">
-        <h3 className="text-sm font-semibold mb-2 inline-flex items-center gap-1.5">
-          <Gift size={14} /> {t("reco.admin.catalog")}
-        </h3>
-        <div className="space-y-2">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
+            <Gift size={14} /> {t("reco.admin.catalog")} <span className="text-neutral-400 font-normal">· {rewards.length}</span>
+          </h3>
+          <Button size="sm" onClick={() => setEditing("new")} data-testid="reward-new">
+            <Plus size={12} /> {t("reco.admin.newReward")}
+          </Button>
+        </div>
+        {!rewards.length && (
+          <button onClick={() => setEditing("new")} className="w-full rounded-xl border border-dashed border-neutral-300 dark:border-neutral-700 py-8 text-sm text-neutral-500 hover:border-indigo-400 hover:text-indigo-600 flex flex-col items-center gap-1.5">
+            <Gift size={22} /> {t("reco.admin.catalogEmpty")}
+          </button>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {rewards.map((r) => (
-            <RewardRow key={r.id} r={r} onPatch={(p) => patchReward(r.id, p)} onDelete={async () => { if (confirm(t("common.confirmDelete", { name: r.name }))) { await api.delete(`/api/rewards/${r.id}`); loadAll(); } }} onUploaded={loadAll} />
+            <RewardAdminCard
+              key={r.id}
+              r={r}
+              onEdit={() => setEditing(r)}
+              onToggle={(v) => patchReward(r.id, { active: v })}
+              onDelete={async () => {
+                if (!confirm(t("reco.admin.confirmDeleteReward", { name: r.name, n: r.pending }))) return;
+                await api.delete(`/api/rewards/${r.id}`).catch((e) => toast.error(e.message));
+                loadAll();
+              }}
+            />
           ))}
         </div>
-        <div className="mt-4 rounded-xl border border-dashed border-neutral-300 dark:border-neutral-700 p-3 space-y-2">
-          <p className="text-xs font-medium">{t("reco.admin.addRewards")}</p>
-          {drafts.map((d, i) => {
-            const set = (patch: Partial<Draft>) => setDrafts(drafts.map((x, j) => (j === i ? { ...x, ...patch } : x)));
-            return (
-              <div key={i} className="relative rounded-lg border border-neutral-200 dark:border-neutral-800 bg-neutral-50/60 dark:bg-neutral-900/60 p-3" data-testid="reward-draft">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400">{t("reco.admin.rewardN", { n: i + 1 })}</span>
-                {drafts.length > 1 && (
-                  <button onClick={() => setDrafts(drafts.filter((_, j) => j !== i))} className="absolute right-2 top-2 text-neutral-400 hover:text-red-600" aria-label={t("common.delete")}>
-                    <X size={14} />
-                  </button>
-                )}
-                <div className="mt-1.5 grid gap-3 md:grid-cols-2">
-                  <Field label={`${t("reco.admin.rewardName")} *`} hint={t("reco.admin.rewardNameHint")}>
-                    <Input value={d.name} onChange={(e) => set({ name: e.target.value })} placeholder={t("reco.admin.rewardNamePh")} data-testid="reward-draft-name" />
-                  </Field>
-                  <Field label={t("reco.admin.rewardDesc")} hint={t("reco.admin.rewardDescHint")}>
-                    <Input value={d.description} onChange={(e) => set({ description: e.target.value })} placeholder={t("reco.admin.rewardDescPh")} />
-                  </Field>
-                </div>
-                <div className="mt-3 grid gap-3 grid-cols-2 md:grid-cols-4">
-                  <Field label={`${t("reco.admin.cost")} *`} hint={t("reco.admin.costHint")}>
-                    <NumberInput value={d.pointsCost} min={1} onValueChange={(v) => set({ pointsCost: v })} placeholder="1,000" className="text-right" data-testid="reward-draft-cost" />
-                  </Field>
-                  <Field label={t("reco.admin.price")} hint={t("reco.admin.priceHint")}>
-                    <NumberInput value={d.price} min={0} onValueChange={(v) => set({ price: v })} placeholder="50,000" className="text-right" data-testid="reward-draft-price" />
-                  </Field>
-                  <Field label={t("reco.admin.currency")} hint={t("reco.admin.currencyHint")}>
-                    <Input value={d.currency} onChange={(e) => set({ currency: e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 8) })} placeholder="VND" />
-                  </Field>
-                  <Field label={`${t("reco.admin.quantity")} *`} hint={t("reco.admin.quantityHint")}>
-                    <NumberInput value={d.quantity} min={0} onValueChange={(v) => set({ quantity: v })} placeholder="10" className="text-right" data-testid="reward-draft-qty" />
-                  </Field>
-                </div>
-              </div>
-            );
-          })}
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => setDrafts([...drafts, emptyDraft()])}>
-              <Plus size={12} /> {t("reco.admin.addRow")}
-            </Button>
-            <Button size="sm" onClick={addRewards} data-testid="reward-add">
-              <Save size={12} /> {t("reco.admin.saveRewards")}
-            </Button>
-          </div>
-        </div>
       </section>
+      {editing && <RewardDialog workspaceId={workspaceId} reward={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={loadAll} />}
     </div>
   );
 }
 
-function RewardRow({ r, onPatch, onDelete, onUploaded }: { r: RewardDto; onPatch: (p: Record<string, unknown>) => void; onDelete: () => void; onUploaded: () => void }) {
+function RewardAdminCard({ r, onEdit, onToggle, onDelete }: { r: RewardDto; onEdit: () => void; onToggle: (v: boolean) => void; onDelete: () => void }) {
   const { t } = useT();
-  const file = useRef<HTMLInputElement>(null);
-  async function upload(f: File) {
-    const form = new FormData();
-    form.append("file", f);
-    const res = await fetch(`/api/rewards/${r.id}/image`, { method: "PUT", body: form });
-    if (!res.ok) toast.error((await res.json().catch(() => ({}))).error ?? t("common.failed"));
-    else onUploaded();
-  }
   return (
-    <div className="flex flex-wrap items-center gap-2 text-sm rounded-lg px-2 py-1.5 hover:bg-neutral-50 dark:hover:bg-neutral-800/60" data-testid="reward-row">
-      <button onClick={() => file.current?.click()} className="h-10 w-10 rounded-lg overflow-hidden bg-neutral-100 dark:bg-neutral-800 flex items-center justify-center shrink-0" title={t("reco.admin.image")}>
+    <div className={cn("rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden flex flex-col bg-white dark:bg-neutral-900", !r.active && "opacity-60")} data-testid="reward-row">
+      <button onClick={onEdit} className="relative aspect-[16/10] bg-gradient-to-br from-indigo-50 to-rose-50 dark:from-indigo-950/40 dark:to-rose-950/30 flex items-center justify-center" title={t("common.edit")}>
         {r.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- authorized image route
           <img src={r.imageUrl} alt="" className="h-full w-full object-cover" />
         ) : (
-          <ImagePlus size={15} className="text-neutral-400" />
+          <span className="flex flex-col items-center gap-1 text-[11px] text-neutral-400">
+            <ImagePlus size={20} /> {t("reco.admin.image")}
+          </span>
         )}
+        {!r.active && <span className="absolute left-2 top-2 rounded-md bg-neutral-900/70 text-white text-[10px] px-1.5 py-0.5">{t("reco.admin.hidden")}</span>}
+        {r.pending > 0 && <span className="absolute right-2 top-2 rounded-md bg-amber-500 text-white text-[10px] px-1.5 py-0.5">{t("reco.admin.pendingN", { n: r.pending })}</span>}
       </button>
-      <input ref={file} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
-      <div className="flex-1 min-w-[10rem]">
-        <p className={cn("font-medium", !r.active && "line-through text-neutral-400")}>{r.name}</p>
+      <div className="p-3 flex-1 flex flex-col gap-1">
+        <p className="font-semibold text-sm leading-tight line-clamp-1">{r.name}</p>
+        <div className="flex items-center gap-2 text-xs">
+          <span className="font-bold text-indigo-600 tabular-nums">{t("reco.unit.points", { n: fmtNumber(r.pointsCost) })}</span>
+          {r.price !== null && <span className="text-neutral-400">≈ {money(r.price, r.currency)}</span>}
+        </div>
         <p className={cn("text-[11px]", r.soldOut ? "text-red-600 font-medium" : "text-neutral-500")}>
           {r.soldOut ? t("reco.rewards.soldOut") : t("reco.admin.stock", { given: formatThousands(r.approvedCount), total: formatThousands(r.quantity) })}
         </p>
+        <div className="mt-auto pt-2 flex items-center gap-1.5">
+          <Switch checked={r.active} onCheckedChange={onToggle} />
+          <span className="text-[11px] text-neutral-500">{t("reco.admin.active")}</span>
+          <Button size="sm" variant="outline" className="ml-auto h-7" onClick={onEdit} data-testid="reward-edit">
+            <Pencil size={11} /> {t("common.edit")}
+          </Button>
+          <button onClick={onDelete} className="h-7 w-7 inline-flex items-center justify-center rounded-md text-neutral-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40" aria-label={t("common.delete")} data-testid="reward-delete">
+            <Trash2 size={13} />
+          </button>
+        </div>
       </div>
-      <Field label={t("reco.admin.cost")} className="w-28">
-        <NumberInput value={r.pointsCost} min={1} onValueChange={() => {}} onBlur={(e) => { const n = Number(e.target.value.replace(/,/g, "")); if (n && n !== r.pointsCost) onPatch({ pointsCost: n }); }} className="h-7 text-right" />
-      </Field>
-      <Field label={`${t("reco.admin.price")} (${r.currency})`} className="w-32">
-        <NumberInput value={r.price} min={0} onValueChange={() => {}} onBlur={(e) => { const v = e.target.value.replace(/,/g, ""); const n = v ? Number(v) : null; if (n !== r.price) onPatch({ price: n }); }} className="h-7 text-right" />
-      </Field>
-      <Field label={t("reco.admin.quantity")} className="w-24">
-        <NumberInput value={r.quantity} min={r.approvedCount} onValueChange={() => {}} onBlur={(e) => { const n = Number(e.target.value.replace(/,/g, "")); if (n !== r.quantity) onPatch({ quantity: n }); }} className="h-7 text-right" data-testid="reward-row-qty" />
-      </Field>
-      <Field label={t("reco.admin.active")} className="w-14">
-        <Switch checked={r.active} onCheckedChange={(v) => onPatch({ active: v })} />
-      </Field>
-      <button onClick={onDelete} className="text-neutral-400 hover:text-red-600" aria-label={t("common.delete")}>
-        <Trash2 size={13} />
-      </button>
     </div>
   );
 }

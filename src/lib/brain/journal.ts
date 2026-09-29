@@ -6,6 +6,14 @@ import type { BrainAccess } from "./access";
 // Daily note / work journal. Only the user's manual notes are stored
 // (journal_entries); everything else is assembled from existing data.
 
+export interface TimelineEvent {
+  at: string;
+  type: "completed" | "created" | "meeting" | "decision" | "wrote" | "edited" | "reviewed" | "focus" | "comment";
+  title: string;
+  sub?: string;
+  href?: string;
+}
+
 export interface JournalItem {
   type: "task" | "wiki" | "decision";
   id: string;
@@ -26,29 +34,45 @@ export async function journalDay(access: BrainAccess, base: string, date: string
   const me = access.userId;
   const inDay = { gte: start, lt: end };
   const taskSelect = { id: true, title: true, projectId: true, completedAt: true, createdAt: true, project: { select: { name: true } } } as const;
-  const [completed, created, meetings, decisions, pages, reviewed, focus, entry] = await Promise.all([
+  const [completed, created, meetings, decisions, pages, reviewed, focus, entry, comments] = await Promise.all([
     prisma.task.findMany({ where: { ...access.task, completedAt: inDay, assignees: { some: { userId: me } } }, select: taskSelect, orderBy: { completedAt: "asc" }, take: 100 }),
     prisma.task.findMany({ where: { ...access.task, createdAt: inDay, createdById: me }, select: taskSelect, orderBy: { createdAt: "asc" }, take: 100 }),
     prisma.wikiPage.findMany({
       where: { ...access.page, kind: "meeting", OR: [{ eventDate: dateOnly }, { eventDate: null, createdAt: inDay }] },
-      select: { id: true, title: true, wikiId: true, wiki: { select: { name: true } } },
+      select: { id: true, title: true, wikiId: true, createdAt: true, eventDate: true, wiki: { select: { name: true } } },
       take: 50,
     }),
-    prisma.decision.findMany({ where: { ...access.decision, OR: [{ decidedAt: dateOnly }, { createdAt: inDay }], AND: [{ OR: [{ createdById: me }, { people: { some: { userId: me } } }] }] }, select: { id: true, title: true, project: { select: { name: true } } }, take: 50 }),
+    prisma.decision.findMany({ where: { ...access.decision, OR: [{ decidedAt: dateOnly }, { createdAt: inDay }], AND: [{ OR: [{ createdById: me }, { ownerId: me }, { people: { some: { userId: me } } }] }] }, select: { id: true, title: true, createdAt: true, project: { select: { name: true } } }, take: 50 }),
     // Learning / notes: pages I wrote or edited that day (other than meetings).
     prisma.wikiPage.findMany({
       where: { ...access.page, kind: { not: "meeting" }, OR: [{ createdById: me, createdAt: inDay }, { updatedById: me, updatedAt: inDay }] },
-      select: { id: true, title: true, wikiId: true, createdAt: true, wiki: { select: { name: true } } },
+      select: { id: true, title: true, wikiId: true, createdAt: true, updatedAt: true, createdById: true, wiki: { select: { name: true } } },
       take: 50,
     }),
-    prisma.knowledgeReview.findMany({ where: { userId: me, lastReviewedAt: inDay, page: access.page }, select: { page: { select: { id: true, title: true, wikiId: true } } }, take: 50 }),
-    prisma.focusSession.findMany({ where: { userId: me, workspaceId: access.workspaceId, startedAt: inDay }, select: { elapsedSeconds: true, status: true, resumedAt: true } }),
+    prisma.knowledgeReview.findMany({ where: { userId: me, lastReviewedAt: inDay, page: access.page }, select: { lastReviewedAt: true, page: { select: { id: true, title: true, wikiId: true } } }, take: 50 }),
+    prisma.focusSession.findMany({ where: { userId: me, workspaceId: access.workspaceId, startedAt: inDay }, select: { elapsedSeconds: true, status: true, resumedAt: true, startedAt: true, task: { select: { id: true, title: true, projectId: true } } } }),
     prisma.journalEntry.findUnique({ where: { userId_workspaceId_date: { userId: me, workspaceId: access.workspaceId, date: dateOnly } } }),
+    prisma.comment.findMany({ where: { authorId: me, deletedAt: null, createdAt: inDay, task: access.task }, select: { id: true, createdAt: true, body: true, task: { select: { id: true, title: true, projectId: true } } }, orderBy: { createdAt: "asc" }, take: 50 }),
   ]);
   const task = (t: (typeof completed)[number], at: Date | null): JournalItem => ({ type: "task", id: t.id, label: t.title, sub: t.project.name, href: entityHref(base, { type: "task", id: t.id, projectId: t.projectId }), at: at?.toISOString() });
   const focusMinutes = Math.round(focus.reduce((s, f) => s + f.elapsedSeconds + (f.status === "running" && f.resumedAt ? (Date.now() - f.resumedAt.getTime()) / 1000 : 0), 0) / 60);
+  // One chronological story of the day.
+  const taskHref = (t: { id: string; projectId: string }) => entityHref(base, { type: "task", id: t.id, projectId: t.projectId });
+  const pageHref = (p: { id: string; wikiId: string }) => entityHref(base, { type: "wiki", id: p.id, wikiId: p.wikiId });
+  const timeline: TimelineEvent[] = [
+    ...completed.map((t) => ({ at: t.completedAt!.toISOString(), type: "completed" as const, title: t.title, sub: t.project.name, href: taskHref(t) })),
+    ...created.filter((t) => !completed.some((c) => c.id === t.id)).map((t) => ({ at: t.createdAt.toISOString(), type: "created" as const, title: t.title, sub: t.project.name, href: taskHref(t) })),
+    ...meetings.map((m) => ({ at: (m.createdAt >= start && m.createdAt < end ? m.createdAt : start).toISOString(), type: "meeting" as const, title: m.title, sub: m.wiki.name, href: pageHref(m) })),
+    ...decisions.map((d) => ({ at: d.createdAt.toISOString(), type: "decision" as const, title: d.title, sub: d.project?.name, href: entityHref(base, { type: "decision", id: d.id }) })),
+    ...pages.map((p) => ({ at: (p.createdById === me && p.createdAt >= start ? p.createdAt : p.updatedAt).toISOString(), type: (p.createdById === me && p.createdAt >= start ? "wrote" : "edited") as "wrote" | "edited", title: p.title, sub: p.wiki.name, href: pageHref(p) })),
+    ...reviewed.map((r) => ({ at: r.lastReviewedAt!.toISOString(), type: "reviewed" as const, title: r.page.title, href: pageHref(r.page) })),
+    ...focus.map((f) => ({ at: f.startedAt.toISOString(), type: "focus" as const, title: f.task.title, sub: `${Math.round(f.elapsedSeconds / 60)} min`, href: taskHref(f.task) })),
+    ...comments.map((c) => ({ at: c.createdAt.toISOString(), type: "comment" as const, title: c.task.title, sub: c.body.replace(/@\[([^\]]+)\]\([^)]+\)/g, "@$1").slice(0, 120), href: taskHref(c.task) })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+
   return {
     date,
+    timeline,
     completed: completed.map((t) => task(t, t.completedAt)),
     created: created.map((t) => task(t, t.createdAt)),
     meetings: meetings.map((p) => ({ type: "wiki" as const, id: p.id, label: p.title, sub: p.wiki.name, href: entityHref(base, { type: "wiki", id: p.id, wikiId: p.wikiId }) })),

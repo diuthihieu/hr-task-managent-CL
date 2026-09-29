@@ -23,6 +23,7 @@ export interface NotificationItem {
   taskOpen?: boolean;
   createdAt: string;
   actor: { id: string; name: string; avatarColor: string } | null;
+  workspaceId?: string | null;
   workspaceName: string | null;
   projectName: string | null;
 }
@@ -56,6 +57,18 @@ export async function markAllRead() {
   const st = useInbox.getState();
   st.set({ items: st.items.map((x) => ({ ...x, read: true })), unread: 0 });
   await api.post("/api/notifications/read-all").catch(() => {});
+}
+
+/** Notifications that belong to the Recognition area: letters, reward requests/results, "you can redeem" alerts. */
+export function isRecognitionNotification(n: NotificationItem) {
+  return n.type === "kudos" || n.type === "reward_request" || n.type === "reward_result" || (n.type === "ai_suggestion" && (n.data as { kind?: string } | null)?.kind === "reward_reachable");
+}
+
+/** Unread Recognition notifications for one workspace (sidebar badge). */
+export function RecognitionCount({ workspaceId }: { workspaceId: string }) {
+  const n = useInbox((s) => s.items.filter((x) => !x.read && isRecognitionNotification(x) && (!x.workspaceId || x.workspaceId === workspaceId)).length);
+  if (!n) return null;
+  return <span className="min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-semibold leading-5 text-center" data-testid="nav-recognition-count">{n > 99 ? "99+" : n}</span>;
 }
 
 export function UnreadCount() {

@@ -1,6 +1,6 @@
 // Types and pure helpers shared by the graph API and the Graph View (no server imports).
 
-export const GRAPH_NODE_TYPES = ["wiki", "task", "project", "objective", "kr", "decision", "person", "tag", "file"] as const;
+export const GRAPH_NODE_TYPES = ["wiki", "meeting", "task", "project", "objective", "kr", "decision", "person", "tag", "file"] as const;
 export type GraphNodeType = (typeof GRAPH_NODE_TYPES)[number];
 
 export interface GraphNode {
@@ -35,6 +35,7 @@ export interface KnowledgeGraph {
 /** Colour per entity type (fixed, so the legend means the same thing for everyone). */
 export const GRAPH_COLORS: Record<GraphNodeType, string> = {
   wiki: "#6366f1",
+  meeting: "#f43f5e",
   task: "#0ea5e9",
   project: "#f97316",
   objective: "#22c55e",

@@ -3,6 +3,7 @@ import "./globals.css";
 import { Providers } from "@/components/providers";
 import { headers } from "next/headers";
 import { getRequestPrefs } from "@/lib/prefs";
+import { letterFontVars } from "./fonts";
 
 /** Versioned so chat apps that cache previews pick up a new card when it changes. */
 const OG_IMAGE = "/og/woli-og.png?v=1";
@@ -34,7 +35,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   const fontSize = marketing ? "md" : prefs.fontSize;
   const displaySize = marketing ? "default" : prefs.displaySize;
   return (
-    <html lang={locale} data-accent={accent} data-tone={tone} data-theme-mode={themeMode} data-font-size={fontSize} data-display={displaySize} className={`h-full antialiased${themeMode === "dark" ? " dark" : ""}`} suppressHydrationWarning>
+    <html lang={locale} data-accent={accent} data-tone={tone} data-theme-mode={themeMode} data-font-size={fontSize} data-display={displaySize} className={`h-full antialiased ${letterFontVars}${themeMode === "dark" ? " dark" : ""}`} suppressHydrationWarning>
       <head>
         {/* "System" mode: pick light/dark before first paint so there is no flash. */}
         <script

@@ -16,6 +16,9 @@ export function serializeKudos(k: Row, base: string, viewerId: string) {
   return {
     id: k.id,
     style: k.style,
+    template: k.template,
+    greeting: k.greeting,
+    closing: k.closing,
     title: k.title,
     message: k.message,
     reason: k.reason,

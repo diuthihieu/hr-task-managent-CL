@@ -455,3 +455,16 @@ body { font-size: calc(1rem * var(--font-scale)); }
   transform-origin: top;
   animation: flap-open 0.6s ease-in forwards;
 }
+
+/* Thank-you card templates. Every template uses fonts with Vietnamese glyphs. */
+.kudos-card-face { font-family: var(--font-letter), "Noto Serif", Georgia, serif; font-feature-settings: "kern"; }
+.kudos-card-face .kudos-script { font-family: var(--font-script), "Segoe Script", cursive; }
+.tpl-classic { background: repeating-linear-gradient(0deg, transparent 0 31px, rgba(160, 110, 40, 0.09) 31px 32px), #fffaf0; color: #3b2a14; border: 1px solid #efdcb4; }
+.tpl-sunrise { background: linear-gradient(160deg, #fff1e6 0%, #ffd9c2 55%, #ffc4a3 100%); color: #5a2410; border: 1px solid #ffc9a8; }
+.tpl-botanical { background: radial-gradient(circle at 100% 0%, rgba(34, 197, 94, 0.18), transparent 45%), radial-gradient(circle at 0% 100%, rgba(20, 184, 166, 0.18), transparent 45%), #f4fbf6; color: #14391f; border: 1px solid #c7ead2; }
+.tpl-ocean { background: linear-gradient(180deg, #eef7ff 0%, #d9ecff 100%); color: #0c2a4a; border: 1px solid #c3dcf5; }
+.tpl-confetti { background: radial-gradient(circle, rgba(236, 72, 153, 0.25) 2px, transparent 2.5px) 0 0 / 28px 28px, radial-gradient(circle, rgba(59, 130, 246, 0.22) 2px, transparent 2.5px) 14px 14px / 28px 28px, #fffdf7; color: #312218; border: 1px solid #f1e3c8; }
+.tpl-night { background: radial-gradient(circle at 20% 15%, rgba(255, 255, 255, 0.12) 1px, transparent 1.5px) 0 0 / 22px 22px, linear-gradient(160deg, #1e1b4b 0%, #312e81 100%); color: #eef2ff; border: 1px solid #3730a3; }
+.tpl-minimal { background: #ffffff; color: #1f2937; border: 1px solid #e5e7eb; font-family: var(--font-letter-sans), system-ui, sans-serif; }
+.tpl-elegant { background: linear-gradient(180deg, #fbf7ef, #f3ead8); color: #2d2416; border: 1px solid #d9c49a; box-shadow: inset 0 0 0 6px #fbf7ef, inset 0 0 0 7px #d9c49a; font-family: var(--font-letter-display), var(--font-letter), serif; }
+.tpl-night .kudos-muted, .tpl-night input::placeholder, .tpl-night textarea::placeholder { color: rgba(238, 242, 255, 0.55); }

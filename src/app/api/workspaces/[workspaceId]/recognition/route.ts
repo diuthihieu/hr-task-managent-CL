@@ -10,11 +10,12 @@ type P = { workspaceId: string };
 export const GET = route<P>(async (_req, { params }) => {
   const { workspaceId } = await params;
   const { user, canManage, seePoints, settings } = await recoContext(workspaceId);
-  const [balances, rewards, unreadKudos, received] = await Promise.all([
+  const [balances, rewards, unreadKudos, received, pendingRequests] = await Promise.all([
     pointBalances(prisma, workspaceId, [user.id]),
     prisma.reward.findMany({ where: { workspaceId, active: true, deletedAt: null }, select: { id: true, name: true, pointsCost: true, quantity: true, approvedCount: true }, orderBy: { pointsCost: "asc" } }),
     prisma.kudos.count({ where: { workspaceId, toId: user.id, deletedAt: null, readAt: null } }),
     prisma.kudos.count({ where: { workspaceId, toId: user.id, deletedAt: null } }),
+    canManage ? prisma.rewardRedemption.count({ where: { workspaceId, status: "pending" } }) : Promise.resolve(0),
   ]);
   const me = balances.get(user.id) ?? { earned: 0, pending: 0, spent: 0, balance: 0 };
   const next = rewards.find((r) => r.approvedCount < r.quantity && r.pointsCost > me.balance) ?? null;
@@ -27,5 +28,6 @@ export const GET = route<P>(async (_req, { params }) => {
     affordable: rewards.filter((r) => r.approvedCount < r.quantity && r.pointsCost <= me.balance).length,
     unreadKudos,
     kudosReceived: received,
+    pendingRequests,
   });
 });

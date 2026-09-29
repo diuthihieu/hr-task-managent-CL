@@ -7,7 +7,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { recoContext } from "@/lib/recognition/route-helpers";
 import { KUDOS_INCLUDE, serializeKudos } from "@/lib/recognition/kudos";
 import { syncPoints } from "@/lib/recognition/points";
-import { KUDOS_STYLES } from "@/lib/recognition/core";
+import { KUDOS_STYLES, KUDOS_TEMPLATES, nfc } from "@/lib/recognition/core";
 import { uuid } from "@/lib/validation";
 
 type P = { workspaceId: string };
@@ -42,6 +42,9 @@ export const GET = route<P>(async (req, { params }) => {
 const schema = z.object({
   toId: uuid,
   style: z.enum(KUDOS_STYLES).default("gratitude"),
+  template: z.enum(KUDOS_TEMPLATES).default("classic"),
+  greeting: z.string().trim().max(200).optional(),
+  closing: z.string().trim().max(200).optional(),
   title: z.string().trim().min(1).max(200),
   message: z.string().trim().min(10, "Write a few words").max(8000),
   reason: z.string().trim().max(500).optional(),
@@ -68,9 +71,27 @@ export const POST = route<P>(async (req, { params }) => {
     projectId = scope.projectId ?? null;
   }
   const k = await prisma.$transaction(async (tx) => {
-    const created = await tx.kudos.create({ data: { workspaceId, fromId: user.id, toId: body.toId, style: body.style, title: body.title, message: body.message, reason: body.reason || null, taskId: body.taskId ?? null, projectId, values: body.values, isPublic: body.isPublic }, include: KUDOS_INCLUDE });
+    const created = await tx.kudos.create({
+      data: {
+        workspaceId,
+        fromId: user.id,
+        toId: body.toId,
+        style: body.style,
+        template: body.template,
+        greeting: body.greeting ? nfc(body.greeting) : null,
+        closing: body.closing ? nfc(body.closing) : null,
+        title: nfc(body.title),
+        message: nfc(body.message),
+        reason: body.reason ? nfc(body.reason) : null,
+        taskId: body.taskId ?? null,
+        projectId,
+        values: body.values,
+        isPublic: body.isPublic,
+      },
+      include: KUDOS_INCLUDE,
+    });
     await tx.notification.create({
-      data: { userId: body.toId, workspaceId, actorId: user.id, type: "kudos", title: body.title, body: body.reason ?? null, data: { style: body.style }, link: `${base}/recognition/kudos/${created.id}` },
+      data: { userId: body.toId, workspaceId, actorId: user.id, type: "kudos", title: nfc(body.title), body: body.reason ?? null, data: { style: body.style }, link: `${base}/recognition/kudos/${created.id}` },
     });
     return created;
   });

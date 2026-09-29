@@ -8,7 +8,7 @@ import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api-client";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import type { KudosDto } from "@/lib/recognition/kudos";
 import { Avatar, STYLE_META } from "./shared";
 import { KudosComposer } from "./kudos-composer";
@@ -31,6 +31,10 @@ export function KudosLetter({ workspaceId, workspaceSlug, kudosId, me }: { works
       })
       .catch(() => setMissing(true));
   }, [kudosId]);
+  // The composer stores "closing\n— signature" when the signature differs from the sender's name.
+  const [closingRaw, sig] = (k?.closing ?? "").split(/\n— /);
+  const closingLine = closingRaw || (k ? t(`reco.letter.closing.${k.style}` as MessageKey) : "");
+  const signature = sig || k?.from.name || "";
   const back = `/w/${workspaceSlug}/recognition?tab=${k?.mine ? "mine" : "wall"}`;
 
   if (missing) return <div className="p-10 text-center text-sm text-neutral-500">{t("reco.letter.notFound")}</div>;
@@ -54,29 +58,27 @@ export function KudosLetter({ workspaceId, workspaceSlug, kudosId, me }: { works
             <span className="rounded-full bg-amber-900 text-amber-50 text-sm font-medium px-4 py-1.5">{t("reco.popup.open")}</span>
           </button>
         ) : (
-          <article className="kudos-paper rounded-3xl p-8 sm:p-10 font-serif shadow-xl kudos-open" data-testid="kudos-letter">
+          <article className={cn("kudos-card-face rounded-3xl p-8 sm:p-10 shadow-xl kudos-open", `tpl-${k.template || "classic"}`)} data-testid="kudos-letter" data-template={k.template}>
             <div className="flex items-start gap-3">
               <span className="text-4xl" aria-hidden>
                 {STYLE_META[k.style]?.emoji}
               </span>
               <div className="flex-1">
-                <p className="text-[11px] uppercase tracking-[0.2em] text-amber-800/70 font-sans">{t(`reco.style.${k.style}` as MessageKey)}</p>
+                <p className="text-[11px] uppercase tracking-[0.2em] opacity-60 font-sans">{t(`reco.style.${k.style}` as MessageKey)}</p>
                 <h1 className="text-2xl font-semibold leading-tight">{k.title}</h1>
               </div>
             </div>
-            <p className="mt-6 text-[16px]">{t("reco.letter.dear", { name: k.to.name })}</p>
-            <div className="mt-2 text-[16px] leading-8 whitespace-pre-wrap">{k.message}</div>
-            {k.reason && <p className="mt-4 text-sm italic text-amber-900/80">— {t("reco.letter.for", { reason: k.reason })}</p>}
-            <p className="mt-6 italic">{t(`reco.letter.closing.${k.style}` as MessageKey)}</p>
+            <p className="mt-6 text-[17px]" data-testid="kudos-letter-greeting">{k.greeting ?? t("reco.letter.dear", { name: k.to.name })}</p>
+            <div className="mt-2 text-[17px] leading-8 whitespace-pre-wrap">{k.message}</div>
+            {k.reason && <p className="mt-4 text-sm italic opacity-75">— {t("reco.letter.for", { reason: k.reason })}</p>}
+            <p className="mt-6 italic whitespace-pre-wrap">{closingLine}</p>
             <div className="mt-1 flex items-center gap-2">
               <Avatar p={k.from} size={28} />
-              <span className="text-xl" style={{ fontFamily: "'Brush Script MT', 'Segoe Script', cursive" }}>
-                {k.from.name}
-              </span>
-              <span className="ml-auto text-xs text-amber-900/60 font-sans">{formatDate(k.createdAt, true)}</span>
+              <span className="kudos-script text-2xl">{signature}</span>
+              <span className="ml-auto text-xs opacity-60 font-sans">{formatDate(k.createdAt, true)}</span>
             </div>
             {(!!k.values.length || k.task) && (
-              <div className="mt-6 pt-4 border-t border-amber-900/10 flex flex-wrap items-center gap-2 font-sans text-xs">
+              <div className="mt-6 pt-4 border-t border-current/10 flex flex-wrap items-center gap-2 font-sans text-xs">
                 {k.values.map((v) => (
                   <span key={v} className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900">
                     #{t(`reco.value.${v}` as MessageKey)}

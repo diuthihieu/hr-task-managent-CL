@@ -1337,6 +1337,35 @@ test("second brain: journal, for-you resurfacing, spaced review, weekly review a
   const conflicts = await admin.post<{ conflicts: unknown[]; checkedPairs: number }>(`/api/workspaces/${s.ws}/brain/health/conflicts`, {});
   assert.equal(conflicts.status, 200);
   assert.ok(conflicts.body.checkedPairs >= 1);
+
+  // Daily Intelligence: prioritized attention items + a chronological timeline of the day.
+  const di = await contributor.get<{ hero: unknown; needsAttention: { kind: string }[]; insights: { kind: string }[]; activity: unknown[]; myTasks: unknown[] }>(`/api/workspaces/${s.ws}/brain/for-you`);
+  assert.ok(Array.isArray(di.body.needsAttention) && Array.isArray(di.body.insights) && Array.isArray(di.body.activity));
+  const tl = await contributor.get<{ timeline: { type: string; title: string; at: string }[] }>(`/api/workspaces/${s.ws}/journal?date=${today}&tz=0`);
+  assert.ok(tl.body.timeline.some((e) => e.type === "completed" && e.title === "Run probation review"), JSON.stringify(tl.body.timeline));
+  assert.deepEqual([...tl.body.timeline].map((e) => e.at), [...tl.body.timeline].map((e) => e.at).sort(), "the timeline is chronological");
+  const insights = await contributor.post<{ insights: { title: string; action: string }[] }>(`/api/workspaces/${s.ws}/brain/insights`, {});
+  assert.equal(insights.status, 200, JSON.stringify(insights.body));
+  assert.ok(insights.body.insights.length >= 1);
+
+  // Structured decisions: owner (must be a member) and review date; due reviews resurface.
+  const dec = await contributor.post<{ id: string; owner: { id: string } | null; reviewDue: boolean }>(`/api/workspaces/${s.ws}/decisions`, { title: "Review the intern stipend", reviewDate: "2026-01-01", ownerId: s.contributorId });
+  assert.equal(dec.status, 201, JSON.stringify(dec.body));
+  assert.equal(dec.body.owner?.id, s.contributorId);
+  assert.equal(dec.body.reviewDue, true);
+  assert.equal((await contributor.post(`/api/workspaces/${s.ws}/decisions`, { title: "x", ownerId: s.outsiderId })).status, 400, "owners are members");
+  const due = await contributor.get<{ id: string }[]>(`/api/workspaces/${s.ws}/decisions?review=due`);
+  assert.ok(due.body.some((d) => d.id === dec.body.id));
+  const defOwner = await contributor.post<{ owner: { id: string } | null }>(`/api/workspaces/${s.ws}/decisions`, { title: "Default owner is the author" });
+  assert.equal(defOwner.body.owner?.id, s.contributorId);
+  const fy2 = await contributor.get<{ needsAttention: { kind: string; id: string }[] }>(`/api/workspaces/${s.ws}/brain/for-you`);
+  assert.ok(fy2.body.needsAttention.some((a) => a.kind === "decision_review" && a.id === dec.body.id), JSON.stringify(fy2.body.needsAttention));
+
+  // Weekly reflection: structured sections, not a wall of text.
+  const refl = await contributor.post<{ reflection: { headline: string; wins: string[]; nextWeek: string[] }; markdown: string }>(`/api/workspaces/${s.ws}/brain/weekly/summary`, {});
+  assert.equal(refl.status, 200, JSON.stringify(refl.body));
+  assert.ok(refl.body.reflection.headline && Array.isArray(refl.body.reflection.wins));
+  assert.match(refl.body.markdown, /Open loops|Việc còn dang dở/);
 });
 
 test("second brain: Ask My Brain is scoped, grounded and traceable; layers and retrospectives stay drafts", async () => {
@@ -1492,6 +1521,24 @@ test("recognition: thank-you letters notify, open, stay private when asked, and 
   assert.equal(draft.status, 200, JSON.stringify(draft.body));
   assert.ok(draft.body.title && draft.body.message.length > 20, "a draft letter comes back");
   assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /fixed the payroll export/);
+
+  // Card designs, an editable greeting/closing, and Vietnamese typed with decomposed accents is stored as NFC.
+  const nfd = "Cảm ơn bạn rất nhiều vì đã hỗ trợ".normalize("NFD");
+  const card = await viewer.post<{ id: string; template: string; greeting: string; closing: string; message: string }>(`/api/workspaces/${s.ws}/kudos`, { toId: s.contributorId, template: "botanical", greeting: "Chào Linh thân mến,", closing: "Thương mến,\n— Team HR", title: "Cảm ơn", message: nfd });
+  assert.equal(card.status, 201, JSON.stringify(card.body));
+  assert.equal(card.body.template, "botanical");
+  assert.equal(card.body.greeting, "Chào Linh thân mến,");
+  assert.equal(card.body.message, nfd.normalize("NFC"), "accents are composed (NFC) so fonts render them");
+  assert.equal((await viewer.post(`/api/workspaces/${s.ws}/kudos`, { toId: s.contributorId, template: "nope", title: "x", message: "Thanks for everything!" })).status, 400);
+  // AI suggestions grounded in shared history; the reason is optional.
+  const ctx = await viewer.get<{ facts: { kind: string; n: number }[] }>(`/api/workspaces/${s.ws}/kudos/context?toId=${s.contributorId}`);
+  assert.equal(ctx.status, 200);
+  assert.ok(Array.isArray(ctx.body.facts));
+  const noReason = await viewer.post<{ message: string; reasons: string[] }>(`/api/workspaces/${s.ws}/kudos/draft`, { toId: s.contributorId, style: "teamwork" });
+  assert.equal(noReason.status, 200, JSON.stringify(noReason.body));
+  assert.ok(noReason.body.reasons.length >= 1, "AI proposes reasons to thank them");
+  assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /OUR WORK TOGETHER/);
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/kudos/context?toId=${s.outsiderId}`)).status, 400, "only members");
 });
 
 test("recognition: reward catalog, redemption with reserved points, approval and stock limits, reachable-reward alerts", async () => {
@@ -1515,10 +1562,23 @@ test("recognition: reward catalog, redemption with reserved points, approval and
   form.append("file", new Blob([png], { type: "image/png" }), "c.png");
   const up = await fetch(`${BASE}/api/rewards/${coffee.id}/image`, { method: "PUT", headers: { cookie: contributor.cookieHeader() }, body: form });
   assert.equal(up.status, 200);
+  assert.ok((await viewer.get<R[]>(`/api/workspaces/${s.ws}/rewards`)).body.find((x) => x.id === dayOff.id), "members see the catalog");
+  const form2 = new FormData();
+  form2.append("file", new Blob([png], { type: "image/png" }), "d.png");
+  await fetch(`${BASE}/api/rewards/${dayOff.id}/image`, { method: "PUT", headers: { cookie: contributor.cookieHeader() }, body: form2 });
+  assert.equal((await viewer.del(`/api/rewards/${dayOff.id}/image`)).status, 403, "members can't remove pictures");
+  assert.equal((await contributor.del(`/api/rewards/${dayOff.id}/image`)).status, 204);
+  assert.equal((await viewer.get<{ id: string; imageUrl: string | null }[]>(`/api/workspaces/${s.ws}/rewards`)).body.find((x) => x.id === dayOff.id)?.imageUrl, null);
+  // Edit in place.
+  const edited = await contributor.patch<{ name: string; description: string; price: number }>(`/api/rewards/${dayOff.id}`, { name: "Extra day off (1 day)", description: "Book it with your manager", price: 1500000 });
+  assert.equal(edited.status, 200);
+  assert.equal(edited.body.price, 1500000);
 
   assert.equal((await contributor.post(`/api/rewards/${dayOff.id}/redeem`, {})).status, 400, "not enough points");
   const r1 = await contributor.post<{ id: string; status: string }>(`/api/rewards/${coffee.id}/redeem`, { note: "Thanks!" });
   assert.equal(r1.status, 201, JSON.stringify(r1.body));
+  assert.ok((await contributor.get<{ pendingRequests: number }>(`/api/workspaces/${s.ws}/recognition`)).body.pendingRequests >= 1, "managers see how many requests wait");
+  assert.equal((await viewer.get<{ pendingRequests: number }>(`/api/workspaces/${s.ws}/recognition`)).body.pendingRequests, 0);
   assert.equal(await bal(contributor), cBal - cheapCost, "points are reserved while pending");
   const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } });
   assert.ok(await prisma.notification.findFirst({ where: { userId: adminUser.id, type: "reward_request", actorId: s.contributorId } }), "approvers are told about the request");

@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
-import { NotificationBell, UnreadCount } from "@/components/notifications/notification-bell";
+import { NotificationBell, RecognitionCount, UnreadCount } from "@/components/notifications/notification-bell";
 import { WorkspaceAvatar } from "@/components/workspaces/workspace-avatar";
 import { emitViewsChanged } from "@/lib/view-events";
 import { FocusDock } from "@/components/focus/focus-mode";
@@ -324,6 +324,7 @@ export function WorkspaceShell({
           </Link>
           <Link href={`/w/${workspace.slug}/recognition`} className={navItem(isRecognition)} data-testid="nav-recognition">
             <Award size={16} /> <span className="flex-1">{t("nav.recognition")}</span>
+            <RecognitionCount workspaceId={workspace.id} />
           </Link>
           <Link href={`/w/${workspace.slug}/brain`} className={navItem(isBrain)} data-testid="nav-brain">
             <Brain size={16} /> <span className="flex-1">{t("nav.brain")}</span>

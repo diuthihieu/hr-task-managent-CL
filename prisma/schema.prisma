@@ -262,6 +262,7 @@ model User {
   wikiCommentMentions   WikiCommentMention[]   @relation("WikiCommentMentionUser")
   focusSessions         FocusSession[]
   decisionsCreated      Decision[]             @relation("DecisionCreatedBy")
+  decisionsOwned        Decision[]             @relation("DecisionOwner")
   decisionsInvolved     DecisionPerson[]       @relation("DecisionPeople")
   journalEntries        JournalEntry[]         @relation("JournalUser")
   knowledgeReviews      KnowledgeReview[]      @relation("ReviewUser")
@@ -1478,6 +1479,10 @@ model Decision {
   evidence      String?
   sourceUrl     String?         @map("source_url") @db.VarChar(1000)
   decidedAt     DateTime        @default(dbgenerated("CURRENT_DATE")) @map("decided_at") @db.Date
+  /// Who owns the decision (accountable for it and its review).
+  ownerId       String?         @map("owner_id") @db.Uuid
+  /// When the decision should be looked at again.
+  reviewDate    DateTime?       @map("review_date") @db.Date
   status        DecisionStatus  @default(active)
   validFrom     DateTime?       @map("valid_from") @db.Date
   validTo       DateTime?       @map("valid_to") @db.Date
@@ -1494,11 +1499,13 @@ model Decision {
   task         Task?            @relation(fields: [taskId], references: [id], onDelete: SetNull)
   objective    Objective?       @relation(fields: [objectiveId], references: [id], onDelete: SetNull)
   createdBy    User?            @relation("DecisionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  owner        User?            @relation("DecisionOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   supersedes   Decision?        @relation("DecisionSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
   supersededBy Decision?        @relation("DecisionSupersedes")
   people       DecisionPerson[]
 
   @@index([workspaceId, deletedAt, decidedAt(sort: Desc)])
+  @@index([workspaceId, reviewDate])
   @@index([projectId])
   @@index([wikiPageId])
   @@map("decisions")
@@ -1693,6 +1700,11 @@ model Kudos {
   toId        String     @map("to_id") @db.Uuid
   style       KudosStyle @default(gratitude)
   title       String     @db.VarChar(200)
+  /// Card design the letter is shown on (classic, sunrise, botanical…).
+  template    String     @default("classic") @db.VarChar(30)
+  /// Editable opening and closing lines (default: "Dear <name>," / style closing).
+  greeting    String?    @db.VarChar(200)
+  closing     String?    @db.VarChar(200)
   /// Letter body (plain text).
   message     String
   /// What it is for ("for staying late to finish payroll").

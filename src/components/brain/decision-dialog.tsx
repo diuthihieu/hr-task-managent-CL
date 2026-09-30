@@ -57,8 +57,12 @@ export function DecisionDialog({
   useEffect(() => {
     api.get<{ id: string; name: string }[]>(`/api/workspaces/${workspaceId}/projects`).then(setProjects).catch(() => {});
     api.get<{ id: string; name: string }[]>(`/api/workspaces/${workspaceId}/members`).then(setMembers).catch(() => {});
-    api.get<Decision[]>(`/api/workspaces/${workspaceId}/decisions?status=active`).then((d) => setOthers(d.filter((x) => x.id !== decision?.id))).catch(() => {});
-  }, [workspaceId, decision?.id]);
+    // Decisions this one can replace: other active or proposed ones (plus the one it already replaces).
+    api
+      .get<Decision[]>(`/api/workspaces/${workspaceId}/decisions`)
+      .then((d) => setOthers(d.filter((x) => x.id !== decision?.id && (x.status === "active" || x.status === "proposed" || x.id === decision?.supersedes?.id))))
+      .catch(() => {});
+  }, [workspaceId, decision?.id, decision?.supersedes?.id]);
 
   async function save() {
     if (!title.trim()) return;
@@ -174,14 +178,16 @@ export function DecisionDialog({
             </label>
             <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-300 sm:col-span-2">
               {t("brain.decision.supersedes")}
-              <select className={`${sel} mt-1`} value={supersedesId} onChange={(e) => setSupersedesId(e.target.value)} data-testid="decision-supersedes">
-                <option value="">—</option>
+              <select className={`${sel} mt-1 disabled:opacity-60`} value={supersedesId} onChange={(e) => setSupersedesId(e.target.value)} disabled={!others.length} data-testid="decision-supersedes">
+                <option value="">{others.length ? t("brain.decision.supersedesNone") : t("brain.decision.supersedesEmpty")}</option>
                 {others.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.decidedAt} {d.title}
+                    {d.status === "proposed" ? ` (${t("brain.decisionStatus.proposed")})` : ""}
                   </option>
                 ))}
               </select>
+              <span className="block mt-0.5 text-[11px] font-normal text-neutral-400">{t("brain.decision.supersedesHint")}</span>
             </label>
           </div>
           <div>

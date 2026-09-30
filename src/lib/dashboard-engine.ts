@@ -316,3 +316,80 @@ export function parseBlockConfig(raw: string | null | undefined): DashboardBlock
     return {};
   }
 }
+
+// ---- Drill-down: the tasks behind one chart segment ------------------------
+
+/** One clicked segment: the group key (and, on stacked charts / pivots, the stack key). */
+export interface Segment {
+  key: string;
+  label: string;
+  seriesKey?: string;
+  seriesLabel?: string;
+}
+
+function groupKeysOf(record: RecordRow, field: FieldRow, fields: FieldRow[], bucket: DateBucket): string[] {
+  const raw = getCellValue(record, field, fields);
+  const rawKeys = Array.isArray(raw) ? (raw.length ? raw : ["__empty__"]) : [raw ?? "__empty__"];
+  const isDate = DATE_TYPES.includes(field.type);
+  return rawKeys.map((k) => (isDate && k !== "__empty__" ? bucketDate(String(k), bucket) : String(k)));
+}
+
+/**
+ * The records a segment aggregates, grouped exactly like computeSeries /
+ * computeStackedSeries (same filters, date buckets and multi-value fan-out),
+ * so the preview always adds up to what the chart shows.
+ */
+export function recordsInSegment(records: RecordRow[], fields: FieldRow[], config: DashboardBlockConfig, segment: Segment, currentUserId?: string): RecordRow[] {
+  const byId = new Map(fields.map((f) => [f.id, f]));
+  const dim = config.dimensionFieldId ? byId.get(config.dimensionFieldId) : undefined;
+  const dim2 = config.dimension2FieldId ? byId.get(config.dimension2FieldId) : undefined;
+  const bucket = config.dateBucket ?? "day";
+  const filtered = applyFilters(records, fields, config.filters, currentUserId);
+  if (!dim) return filtered;
+  return filtered.filter((r) => {
+    if (!groupKeysOf(r, dim, fields, bucket).includes(segment.key)) return false;
+    if (segment.seriesKey !== undefined && dim2) return groupKeysOf(r, dim2, fields, bucket).includes(segment.seriesKey);
+    return true;
+  });
+}
+
+/** Compact task row for the segment preview (never the full record). */
+export interface SegmentTask {
+  id: string;
+  projectId: string;
+  title: string;
+  status: { label: string; color?: string; category?: string } | null;
+  priority: { label: string; color?: string } | null;
+  assignees: string[];
+  dueDate: string | null;
+  progress: number | null;
+}
+
+export function summarizeSegmentTasks(records: RecordRow[], fields: FieldRow[], members: MemberLite[]): SegmentTask[] {
+  const byId = new Map(fields.map((f) => [f.id, f]));
+  const title = fields.find((f) => f.isPrimary) ?? byId.get("sys_title");
+  const status = byId.get("sys_status");
+  const priority = byId.get("sys_priority");
+  const assignees = byId.get("sys_assignees");
+  const due = byId.get("sys_due_date");
+  const progress = byId.get("sys_progress");
+  const statusOptions = status ? ((parseFieldConfig(status.config).options ?? []) as { id: string; label: string; color?: string; category?: string }[]) : [];
+  return records.map((r) => {
+    const statusId = status ? getCellValue(r, status, fields) : null;
+    const opt = statusOptions.find((o) => o.id === statusId);
+    const pr = priority ? getCellValue(r, priority, fields) : null;
+    const people = assignees ? getCellValue(r, assignees, fields) : null;
+    const dueRaw = due ? getCellValue(r, due, fields) : null;
+    const prog = progress ? getCellValue(r, progress, fields) : null;
+    return {
+      id: r.id,
+      projectId: r.projectId,
+      title: title ? String(getCellValue(r, title, fields) ?? "") : "",
+      status: opt ? { label: opt.label, color: opt.color, category: opt.category } : null,
+      priority: priority && pr ? resolveValueLabel(priority, String(pr), members) : null,
+      assignees: Array.isArray(people) ? people.map((id) => members.find((m) => m.id === id)?.name).filter((n): n is string => !!n) : [],
+      dueDate: dueRaw ? String(dueRaw).slice(0, 10) : null,
+      progress: typeof prog === "number" ? prog : prog != null && prog !== "" && !Number.isNaN(Number(prog)) ? Number(prog) : null,
+    };
+  });
+}

@@ -13,6 +13,8 @@ import { AttachmentViewer } from "@/components/attachments/attachment-viewer";
 import { MentionInput, CommentBody } from "@/components/comments/mention-input";
 import { initials, formatDate, cn } from "@/lib/utils";
 import type { ActivityRow, AttachmentRow, FieldRow, RecordRow } from "@/types";
+import { AvatarImg } from "@/components/ui/avatar-img";
+import { Meta } from "@/components/ui/meta";
 
 interface CommentItem {
   id: string;
@@ -178,9 +180,10 @@ export function RecordDrawer({
                   </div>
                 </div>
               ))}
-              <div className="text-xs text-neutral-400 pt-2 border-t border-neutral-100 dark:border-neutral-900">
-                Created {formatDate(record.createdAt, true)} · Updated {formatDate(record.updatedAt, true)}
-              </div>
+              <Meta className="pt-2 border-t border-neutral-100 dark:border-neutral-900 w-full text-xs text-neutral-400">
+                <span>{t("record.created", { when: formatDate(record.createdAt, true) })}</span>
+                <span>{t("common.updated", { when: formatDate(record.updatedAt, true) })}</span>
+              </Meta>
             </div>
           )}
 
@@ -188,8 +191,9 @@ export function RecordDrawer({
             <div className="space-y-3">
               {comments.map((c) => (
                 <div key={c.id} className="flex gap-2">
-                  <span className="h-6 w-6 rounded-full flex items-center justify-center text-white text-[10px] shrink-0" style={{ backgroundColor: c.user?.avatarColor ?? "#94a3b8" }}>
+                  <span className="relative overflow-hidden h-6 w-6 rounded-full flex items-center justify-center text-white text-[10px] shrink-0" style={{ backgroundColor: c.user?.avatarColor ?? "#94a3b8" }}>
                     {initials(c.user?.name ?? "?")}
+                    <AvatarImg id={c.user?.id} />
                   </span>
                   <div className="text-sm min-w-0">
                     <div>
@@ -221,9 +225,11 @@ export function RecordDrawer({
                     <button onClick={() => setViewing(attachments.indexOf(a))} className="block max-w-full truncate text-left text-neutral-800 dark:text-neutral-100 hover:text-indigo-600 hover:underline" title={t("att.view")} data-testid="drawer-attachment-open">
                       {a.fileName}
                     </button>
-                    <div className="text-[11px] text-neutral-400">
-                      {formatBytes(a.sizeBytes)} · {a.uploadedBy?.name ?? "Unknown"} · {formatDate(a.createdAt, true)}
-                    </div>
+                    <Meta className="text-neutral-400">
+                      <span>{formatBytes(a.sizeBytes)}</span>
+                      <span>{a.uploadedBy?.name ?? "—"}</span>
+                      <span>{formatDate(a.createdAt, true)}</span>
+                    </Meta>
                   </div>
                   <a href={a.downloadUrl} className="text-neutral-400 hover:text-indigo-600" aria-label={`Download ${a.fileName}`}>
                     <Download size={14} />
@@ -244,7 +250,7 @@ export function RecordDrawer({
               {activity.map((a) => (
                 <div key={a.id} className="text-xs border-l-2 border-neutral-200 dark:border-neutral-800 pl-2">
                   <div className="text-neutral-700 dark:text-neutral-300">
-                    <span className="font-medium">{a.actor?.name ?? t("record.system")}</span> · {a.action.replace("_", " ")}{" "}
+                    <span className="font-medium">{a.actor?.name ?? t("record.system")}</span> <span className="ml-1">{a.action.replace("_", " ")}</span>{" "}
                     <span className="text-neutral-400">{formatDate(a.createdAt, true)}</span>
                   </div>
                   {a.summary && <div className="text-neutral-500">{a.summary}</div>}

@@ -30,7 +30,7 @@ import {
   RadialBar,
   ComposedChart,
 } from "recharts";
-import type { SeriesPoint, StackedSeries, ScatterPoint, ChartType } from "@/lib/dashboard-engine";
+import type { SeriesPoint, StackedSeries, ScatterPoint, ChartType, Segment } from "@/lib/dashboard-engine";
 
 export const CHART_COLORS = ["#6366f1", "#0ea5e9", "#22c55e", "#f97316", "#ec4899", "#8b5cf6", "#eab308", "#ef4444", "#14b8a6", "#a855f7"];
 
@@ -49,6 +49,7 @@ export function ChartRenderer({
   measureLabel,
   measure2Label,
   onPointClick,
+  onSegmentClick,
 }: {
   type: ChartType;
   series?: SeriesPoint[];
@@ -57,7 +58,19 @@ export function ChartRenderer({
   measureLabel?: string;
   measure2Label?: string;
   onPointClick?: (point: SeriesPoint) => void;
+  /** Drill-down: called with the clicked group (and stack, on stacked charts). */
+  onSegmentClick?: (segment: Segment) => void;
 }) {
+  const clickable = !!(onPointClick || onSegmentClick);
+  // Recharts hands back its own item shapes; resolve clicks by index into our series instead.
+  const pickSeries = (data: SeriesPoint[], index: unknown) => {
+    const p = data[Number(index)];
+    if (!p) return;
+    onPointClick?.(p);
+    onSegmentClick?.({ key: p.key, label: p.label });
+  };
+  const chartClick = (data: SeriesPoint[]) =>
+    onSegmentClick ? (state: unknown) => pickSeries(data, (state as { activeTooltipIndex?: unknown } | null)?.activeTooltipIndex) : undefined;
   if (type === "column" || type === "bar") {
     const data = series ?? [];
     const horizontal = type === "bar";
@@ -81,8 +94,8 @@ export function ChartRenderer({
             dataKey="value"
             name={measureLabel ?? "Value"}
             radius={[4, 4, 0, 0]}
-            cursor={onPointClick ? "pointer" : undefined}
-            onClick={(point: unknown) => onPointClick?.(point as SeriesPoint)}
+            cursor={clickable ? "pointer" : undefined}
+            onClick={(_: unknown, index: number) => pickSeries(data, index)}
           >
             {data.map((d, i) => (
               <Cell key={d.key} fill={colorFor(d, i)} />
@@ -115,7 +128,18 @@ export function ChartRenderer({
           <Tooltip contentStyle={tooltipStyle} />
           <Legend wrapperStyle={{ fontSize: 11 }} />
           {keys.map((k, i) => (
-            <Bar key={k.key} dataKey={k.key} name={k.label} stackId="stack" fill={k.color || CHART_COLORS[i % CHART_COLORS.length]} />
+            <Bar
+              key={k.key}
+              dataKey={k.key}
+              name={k.label}
+              stackId="stack"
+              fill={k.color || CHART_COLORS[i % CHART_COLORS.length]}
+              cursor={onSegmentClick ? "pointer" : undefined}
+              onClick={(_: unknown, index: number) => {
+                const row = rows[index];
+                if (row && onSegmentClick) onSegmentClick({ key: String(row.__rowKey), label: String(row.label), seriesKey: k.key, seriesLabel: k.label });
+              }}
+            />
           ))}
         </BarChart>
       </ResponsiveContainer>
@@ -127,7 +151,7 @@ export function ChartRenderer({
     const Chart = type === "line" ? LineChart : AreaChart;
     return (
       <ResponsiveContainer width="100%" height="100%">
-        <Chart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 4 }}>
+        <Chart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 4 }} onClick={chartClick(data)} style={onSegmentClick ? { cursor: "pointer" } : undefined}>
           <CartesianGrid strokeDasharray="3 3" stroke="#9ca3af55" />
           <XAxis dataKey="label" tick={axisTick} />
           <YAxis tick={axisTick} />
@@ -146,7 +170,7 @@ export function ChartRenderer({
     const data = series ?? [];
     return (
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 4 }}>
+        <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 4 }} onClick={chartClick(data)} style={onSegmentClick ? { cursor: "pointer" } : undefined}>
           <CartesianGrid strokeDasharray="3 3" stroke="#9ca3af55" />
           <XAxis dataKey="label" tick={axisTick} />
           <YAxis tick={axisTick} />
@@ -173,8 +197,8 @@ export function ChartRenderer({
             innerRadius={type === "donut" ? "55%" : 0}
             outerRadius="80%"
             paddingAngle={2}
-            cursor={onPointClick ? "pointer" : undefined}
-            onClick={(point: unknown) => onPointClick?.(point as SeriesPoint)}
+            cursor={clickable ? "pointer" : undefined}
+            onClick={(_: unknown, index: number) => pickSeries(data, index)}
           >
             {data.map((d, i) => (
               <Cell key={d.key} fill={colorFor(d, i)} />
@@ -189,7 +213,7 @@ export function ChartRenderer({
     const data = series ?? [];
     return (
       <ResponsiveContainer width="100%" height="100%">
-        <RadarChart data={data}>
+        <RadarChart data={data} onClick={chartClick(data)}>
           <PolarGrid stroke="#9ca3af55" />
           <PolarAngleAxis dataKey="label" tick={axisTick} />
           <PolarRadiusAxis tick={axisTick} />
@@ -219,7 +243,14 @@ export function ChartRenderer({
     const data = (series ?? []).map((d, i) => ({ name: d.label, size: Math.max(d.value, 0.01), fill: colorFor(d, i) }));
     return (
       <ResponsiveContainer width="100%" height="100%">
-        <Treemap data={data} dataKey="size" nameKey="name" stroke="#fff" fill={CHART_COLORS[0]}>
+        <Treemap
+          data={data}
+          dataKey="size"
+          nameKey="name"
+          stroke="#fff"
+          fill={CHART_COLORS[0]}
+          onClick={(node: unknown) => pickSeries(series ?? [], (series ?? []).findIndex((d) => d.label === (node as { name?: string })?.name))}
+        >
           <Tooltip contentStyle={tooltipStyle} />
         </Treemap>
       </ResponsiveContainer>
@@ -232,7 +263,7 @@ export function ChartRenderer({
       <ResponsiveContainer width="100%" height="100%">
         <FunnelChart>
           <Tooltip contentStyle={tooltipStyle} />
-          <Funnel dataKey="value" data={data} isAnimationActive={false}>
+          <Funnel dataKey="value" data={data} isAnimationActive={false} cursor={clickable ? "pointer" : undefined} onClick={(_: unknown, index: number) => pickSeries(series ?? [], index)}>
             <LabelList dataKey="name" position="right" fill="#6b7280" fontSize={11} />
           </Funnel>
         </FunnelChart>

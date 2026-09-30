@@ -273,3 +273,204 @@ body {
   .hero-glow-a, .hero-glow-b, .marquee-track { animation: none; }
   .marquee { overflow-x: auto; }
 }
+
+/* ---------------------------------------------------------------------------
+   Landing mascots. Motion lives on wrappers only (the art is static):
+   .mascot-hover  - reacts to hovering the host card (transition)
+   .mascot-enter  - one-time entrance when the section first scrolls in
+   .mascot-idle   - calm loop, paused while the section is off screen
+--------------------------------------------------------------------------- */
+.mascot .mascot-enter { opacity: 0; }
+.mascot[data-entered="true"] .mascot-rise { animation: mascot-rise 0.9s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.mascot[data-entered="true"] .mascot-enter-left { animation: mascot-in-left 1s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.mascot[data-entered="true"] .mascot-enter-right { animation: mascot-in-right 1s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+.mascot-idle { transform-origin: 50% 92%; will-change: transform; }
+.mascot-idle-hero { animation: mascot-hero-idle 7s ease-in-out 0.9s infinite; }
+.mascot-idle-float { animation: mascot-float 6s ease-in-out 1s infinite; }
+.mascot-idle-tilt { animation: mascot-tilt 8s ease-in-out 1s infinite; }
+.mascot-glow { animation: mascot-glow 7s ease-in-out infinite; }
+.mascot-check-pulse { opacity: 0; animation: mascot-check-pulse 5s ease-out 1.6s infinite; }
+.mascot-panel-glow { opacity: 0; animation: mascot-panel-glow 7s ease-in-out 1.2s infinite; }
+.mascot-particle { opacity: 0; animation: mascot-particle 7s ease-in-out infinite; }
+
+.mascot-hover { transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1); }
+.mascot-host:hover .mascot-task .mascot-hover { transform: translateY(-6px) scale(1.03); }
+.mascot-host:hover .mascot-knowledge .mascot-hover { transform: translateX(-8px) scale(1.02); }
+
+/* Idle loops only run while their section is visible. */
+.mascot:not([data-inview="true"]) .mascot-idle,
+.mascot:not([data-inview="true"]) .mascot-glow,
+.mascot:not([data-inview="true"]) .mascot-check-pulse,
+.mascot:not([data-inview="true"]) .mascot-panel-glow,
+.mascot:not([data-inview="true"]) .mascot-particle { animation-play-state: paused; }
+
+@keyframes mascot-rise { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+@keyframes mascot-in-left {
+  0% { opacity: 0; transform: translate(-36px, 18px); }
+  70% { opacity: 1; transform: translate(0, -6px); }
+  100% { opacity: 1; transform: none; }
+}
+@keyframes mascot-in-right { from { opacity: 0; transform: translate(36px, 8px); } to { opacity: 1; transform: none; } }
+/* 7s loop: float ±6px, sway ±1.5deg, breathing scale, and a small greeting tilt near 60%. */
+@keyframes mascot-hero-idle {
+  0%, 100% { transform: translateY(0) rotate(0deg) scale(1); }
+  22% { transform: translateY(-6px) rotate(1.2deg) scale(1.015); }
+  45% { transform: translateY(0) rotate(0deg) scale(1); }
+  58% { transform: translateY(-3px) rotate(-1.5deg) scale(1.008); }
+  64% { transform: translateY(-4px) rotate(1.5deg) scale(1.012); }
+  70% { transform: translateY(-2px) rotate(-0.8deg) scale(1.006); }
+  84% { transform: translateY(4px) rotate(0.4deg) scale(1); }
+}
+@keyframes mascot-float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes mascot-tilt {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  30% { transform: translateY(-6px) rotate(-1.2deg); }
+  65% { transform: translateY(-2px) rotate(1deg); }
+}
+@keyframes mascot-glow { 0%, 100% { opacity: 0.7; transform: scale(0.96); } 50% { opacity: 1; transform: scale(1.04); } }
+@keyframes mascot-check-pulse {
+  0%, 70% { opacity: 0; transform: scale(0.9); }
+  80% { opacity: 0.55; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.25); }
+}
+@keyframes mascot-panel-glow { 0%, 60%, 100% { opacity: 0; } 75% { opacity: 0.6; } }
+@keyframes mascot-particle {
+  0% { opacity: 0; transform: translateY(6px); }
+  25%, 60% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-16px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mascot .mascot-enter { opacity: 1; animation: none !important; }
+  .mascot-idle, .mascot-glow, .mascot-check-pulse, .mascot-panel-glow, .mascot-particle { animation: none !important; }
+  .mascot-check-pulse, .mascot-panel-glow, .mascot-particle { display: none; }
+  .mascot-hover { transition: none; }
+}
+
+/* Resizable dashboard / report cards: accent grips on hover (react-grid-layout). Selectors
+   out-rank the library's own `.react-grid-item > .react-resizable-handle.react-resizable-handle-*`. */
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle { opacity: 0; transition: opacity 0.15s; z-index: 5; background: none; transform: none; margin: 0; padding: 0; }
+.woli-grid .react-grid-item:hover > .react-resizable-handle.react-resizable-handle,
+.woli-grid .react-grid-item.resizing > .react-resizable-handle.react-resizable-handle { opacity: 1; }
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle::after { content: ""; position: absolute; transform: none; border: 0; border-radius: 9999px; background: var(--color-indigo-400); }
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-se { width: 18px; height: 18px; right: 2px; bottom: 2px; top: auto; left: auto; cursor: se-resize; }
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-se::after {
+  right: 4px; bottom: 4px; width: 9px; height: 9px; top: auto; left: auto; background: none; border-radius: 0 0 3px 0;
+  border-right: 2.5px solid var(--color-indigo-500); border-bottom: 2.5px solid var(--color-indigo-500);
+}
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-e { top: 20%; bottom: auto; right: 0; left: auto; width: 8px; height: 60%; cursor: ew-resize; }
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-e::after { right: 2px; top: calc(50% - 12px); left: auto; bottom: auto; width: 3px; height: 24px; }
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-s { left: 20%; right: auto; bottom: 0; top: auto; height: 8px; width: 60%; cursor: ns-resize; }
+.woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle-s::after { bottom: 2px; left: calc(50% - 12px); right: auto; top: auto; height: 3px; width: 24px; }
+.woli-grid .react-grid-item.react-grid-placeholder { background: var(--color-indigo-400); opacity: 0.18; border-radius: 12px; }
+@media (hover: none) { .woli-grid .react-grid-item > .react-resizable-handle.react-resizable-handle { opacity: 1; } }
+/* Clicking a chart focuses its SVG; keep the focus ring for keyboard users only. */
+.recharts-wrapper:focus, .recharts-surface:focus, .recharts-sector:focus, .recharts-rectangle:focus { outline: none; }
+.recharts-surface:focus-visible { outline: 2px solid var(--color-indigo-400); outline-offset: 2px; }
+
+/* ---- Text & display size (per-user, set on <html> by the root layout) ----
+   Display size scales the whole UI: Tailwind spacing and text are rem-based, so
+   changing the root font-size works like browser zoom without breaking 100dvh
+   layouts. Text size multiplies text only: the --text-* theme tokens, body text,
+   and the few fixed-pixel sizes used across the app. Keep in sync with
+   FONT_SIZES / DISPLAY_SIZES in src/lib/theme-colors.ts. */
+:root { --font-scale: 1; --ui-scale: 1; }
+:root[data-font-size="sm"] { --font-scale: 0.92; }
+:root[data-font-size="lg"] { --font-scale: 1.12; }
+:root[data-font-size="xl"] { --font-scale: 1.25; }
+:root[data-display="compact"] { --ui-scale: 0.9; }
+:root[data-display="comfortable"] { --ui-scale: 1.08; }
+:root[data-display="large"] { --ui-scale: 1.2; }
+html { font-size: calc(100% * var(--ui-scale)); }
+:root {
+  --text-xs: calc(0.75rem * var(--font-scale));
+  --text-sm: calc(0.875rem * var(--font-scale));
+  --text-base: calc(1rem * var(--font-scale));
+  --text-lg: calc(1.125rem * var(--font-scale));
+  --text-xl: calc(1.25rem * var(--font-scale));
+  --text-2xl: calc(1.5rem * var(--font-scale));
+  --text-3xl: calc(1.875rem * var(--font-scale));
+  --text-4xl: calc(2.25rem * var(--font-scale));
+  --text-5xl: calc(3rem * var(--font-scale));
+  --text-6xl: calc(3.75rem * var(--font-scale));
+}
+body { font-size: calc(1rem * var(--font-scale)); }
+.text-\[8px\] { font-size: calc(8px * var(--ui-scale) * var(--font-scale)); }
+.text-\[9px\] { font-size: calc(9px * var(--ui-scale) * var(--font-scale)); }
+.text-\[10px\] { font-size: calc(10px * var(--ui-scale) * var(--font-scale)); }
+.text-\[11px\] { font-size: calc(11px * var(--ui-scale) * var(--font-scale)); }
+.text-\[12px\] { font-size: calc(12px * var(--ui-scale) * var(--font-scale)); }
+.text-\[13px\] { font-size: calc(13px * var(--ui-scale) * var(--font-scale)); }
+.text-\[15px\] { font-size: calc(15px * var(--ui-scale) * var(--font-scale)); }
+.text-\[22px\] { font-size: calc(22px * var(--ui-scale) * var(--font-scale)); }
+
+/* Block links (#b-<id>): the target block flashes when opened. */
+.block-flash {
+  border-radius: 6px;
+  animation: block-flash 2.2s ease-out;
+}
+@keyframes block-flash {
+  0%,
+  40% {
+    background-color: color-mix(in oklab, var(--color-indigo-400, #818cf8) 28%, transparent);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-indigo-400, #818cf8) 28%, transparent);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: none;
+  }
+}
+
+/* Recognition: thank-you letter stationery (kudos pop-up, letter view). */
+.kudos-envelope {
+  background: linear-gradient(135deg, #fff8e7 0%, #fdecc8 100%);
+  border: 1px solid #f1d9a6;
+  box-shadow: 0 20px 45px -15px rgba(120, 72, 10, 0.45);
+}
+.kudos-paper {
+  background:
+    radial-gradient(circle at 12% 8%, rgba(255, 255, 255, 0.7), transparent 40%),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(160, 110, 40, 0.09) 31px 32px),
+    #fffaf0;
+  color: #3b2a14;
+  border: 1px solid #efdcb4;
+}
+.kudos-seal {
+  background: radial-gradient(circle at 35% 30%, #f87171, #b91c1c 70%);
+  box-shadow: inset 0 -3px 6px rgba(0, 0, 0, 0.25), 0 4px 10px rgba(185, 28, 28, 0.35);
+}
+@keyframes kudos-open {
+  0% { transform: translateY(24px) scale(0.96); opacity: 0; }
+  100% { transform: none; opacity: 1; }
+}
+.kudos-open {
+  animation: kudos-open 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+@keyframes flap-open {
+  0% { transform: rotateX(0deg); }
+  100% { transform: rotateX(180deg); }
+}
+.kudos-flap {
+  transform-origin: top;
+  animation: flap-open 0.6s ease-in forwards;
+}
+
+/* Thank-you card templates. Every template uses fonts with Vietnamese glyphs. */
+.kudos-card-face { font-family: var(--font-letter), "Noto Serif", Georgia, serif; font-feature-settings: "kern"; }
+.kudos-card-face .kudos-script { font-family: var(--font-script), "Segoe Script", cursive; }
+.tpl-classic { background: repeating-linear-gradient(0deg, transparent 0 31px, rgba(160, 110, 40, 0.09) 31px 32px), #fffaf0; color: #3b2a14; border: 1px solid #efdcb4; }
+.tpl-sunrise { background: linear-gradient(160deg, #fff1e6 0%, #ffd9c2 55%, #ffc4a3 100%); color: #5a2410; border: 1px solid #ffc9a8; }
+.tpl-botanical { background: radial-gradient(circle at 100% 0%, rgba(34, 197, 94, 0.18), transparent 45%), radial-gradient(circle at 0% 100%, rgba(20, 184, 166, 0.18), transparent 45%), #f4fbf6; color: #14391f; border: 1px solid #c7ead2; }
+.tpl-ocean { background: linear-gradient(180deg, #eef7ff 0%, #d9ecff 100%); color: #0c2a4a; border: 1px solid #c3dcf5; }
+.tpl-confetti { background: radial-gradient(circle, rgba(236, 72, 153, 0.25) 2px, transparent 2.5px) 0 0 / 28px 28px, radial-gradient(circle, rgba(59, 130, 246, 0.22) 2px, transparent 2.5px) 14px 14px / 28px 28px, #fffdf7; color: #312218; border: 1px solid #f1e3c8; }
+.tpl-night { background: radial-gradient(circle at 20% 15%, rgba(255, 255, 255, 0.12) 1px, transparent 1.5px) 0 0 / 22px 22px, linear-gradient(160deg, #1e1b4b 0%, #312e81 100%); color: #eef2ff; border: 1px solid #3730a3; }
+.tpl-minimal { background: #ffffff; color: #1f2937; border: 1px solid #e5e7eb; font-family: var(--font-letter-sans), system-ui, sans-serif; }
+.tpl-elegant { background: linear-gradient(180deg, #fbf7ef, #f3ead8); color: #2d2416; border: 1px solid #d9c49a; box-shadow: inset 0 0 0 6px #fbf7ef, inset 0 0 0 7px #d9c49a; font-family: var(--font-letter-display), var(--font-letter), serif; }
+.tpl-night .kudos-muted, .tpl-night input::placeholder, .tpl-night textarea::placeholder { color: rgba(238, 242, 255, 0.55); }
+
+/* Sidebar: no browser focus outline after a click (keyboard focus keeps a soft ring). */
+[data-testid="sidebar"] a:focus:not(:focus-visible),
+[data-testid="sidebar"] button:focus:not(:focus-visible) { outline: none; }
+[data-testid="sidebar"] a:focus-visible,
+[data-testid="sidebar"] button:focus-visible { outline: 2px solid color-mix(in oklab, var(--color-indigo-500) 45%, transparent); outline-offset: 1px; }

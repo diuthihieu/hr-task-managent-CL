@@ -61,6 +61,9 @@ export interface WikiPageSummary {
   order: number;
   updatedAt: string;
   updatedBy: string | null;
+  kind: WikiPage["kind"];
+  status: WikiPage["status"];
+  tags: string[];
 }
 
 export function serializeWikiSummary(p: WikiPage & { updatedBy?: { name: string } | null }): WikiPageSummary {
@@ -73,7 +76,66 @@ export function serializeWikiSummary(p: WikiPage & { updatedBy?: { name: string 
     order: p.sortOrder,
     updatedAt: p.updatedAt.toISOString(),
     updatedBy: p.updatedBy?.name ?? null,
+    kind: p.kind,
+    status: p.status,
+    tags: p.tags,
   };
+}
+
+/** Knowledge metadata of a page: temporal validity and source provenance. */
+export interface KnowledgeMeta {
+  kind: WikiPage["kind"];
+  status: WikiPage["status"];
+  tags: string[];
+  validFrom: string | null;
+  validTo: string | null;
+  version: number;
+  eventDate: string | null;
+  sourceType: WikiPage["sourceType"];
+  sourceLabel: string | null;
+  sourceUrl: string | null;
+  sourceRef: string | null;
+  confidence: WikiPage["confidence"];
+  lastCheckedAt: string | null;
+  lastCheckedBy: string | null;
+  viewCount: number;
+  supersedes: { id: string; title: string; version: number } | null;
+  supersededBy: { id: string; title: string; version: number } | null;
+}
+
+const dateOnly = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+
+export function serializeKnowledgeMeta(
+  p: WikiPage & { supersedes?: { id: string; title: string; version: number } | null; supersededBy?: { id: string; title: string; version: number } | null; lastCheckedByName?: string | null }
+): KnowledgeMeta {
+  return {
+    kind: p.kind,
+    status: p.status,
+    tags: p.tags,
+    validFrom: dateOnly(p.validFrom),
+    validTo: dateOnly(p.validTo),
+    version: p.version,
+    eventDate: dateOnly(p.eventDate),
+    sourceType: p.sourceType,
+    sourceLabel: p.sourceLabel,
+    sourceUrl: p.sourceUrl,
+    sourceRef: p.sourceRef,
+    confidence: p.confidence,
+    lastCheckedAt: p.lastCheckedAt?.toISOString() ?? null,
+    lastCheckedBy: p.lastCheckedByName ?? null,
+    viewCount: p.viewCount,
+    supersedes: p.supersedes ?? null,
+    supersededBy: p.supersededBy ?? null,
+  };
+}
+
+/** Knowledge that is still in force today (not archived / superseded / expired). */
+export function isCurrentKnowledge(p: { status: string; validTo: Date | null; validFrom?: Date | null }, now = new Date()): boolean {
+  if (p.status === "archived" || p.status === "superseded" || p.status === "outdated") return false;
+  const today = new Date(now.toISOString().slice(0, 10));
+  if (p.validTo && p.validTo < today) return false;
+  if (p.validFrom && p.validFrom > today) return false;
+  return true;
 }
 
 /** A page cannot be moved under itself or one of its descendants. */

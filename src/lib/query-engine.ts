@@ -102,6 +102,8 @@ export interface ReportWidget {
   sortDesc?: boolean;
   topN?: number;
   wide?: boolean;
+  /** Position/size on the report's 12-column grid (set by dragging / resizing). */
+  layout?: { x: number; y: number; w: number; h: number };
 }
 
 export interface ReportConfig {

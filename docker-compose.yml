@@ -1,13 +1,18 @@
+# Self-hosting. Secrets come from the environment / a .env file next to this
+# file (never committed); nothing has a usable default:
+#   AUTH_SECRET=$(openssl rand -base64 32)  POSTGRES_PASSWORD=$(openssl rand -hex 16)
+# Upgrade:  docker compose run --rm migrate   (after a backup), then  docker compose up -d app
 services:
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: basework
-      POSTGRES_PASSWORD: basework
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
       POSTGRES_DB: basework
+    # Reachable only from this machine (local development) and the app network.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -16,6 +21,18 @@ services:
       timeout: 5s
       retries: 10
 
+  # Schema changes are a separate, explicit release step - the app never migrates on start.
+  migrate:
+    build: .
+    profiles: ["release"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://basework:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/basework
+      DIRECT_URL: postgresql://basework:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/basework
+    command: sh -c "node prisma/check-legacy-data.mjs && npx prisma migrate deploy"
+
   app:
     build: .
     restart: unless-stopped
@@ -23,12 +40,18 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://basework:basework@postgres:5432/basework
-      DIRECT_URL: postgresql://basework:basework@postgres:5432/basework
-      AUTH_SECRET: ${AUTH_SECRET:-change-me-to-a-random-32-byte-base64-string}
+      DATABASE_URL: postgresql://basework:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/basework
+      DIRECT_URL: postgresql://basework:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/basework
+      AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET (openssl rand -base64 32)}
+      AUTH_URL: ${AUTH_URL:-}
     ports:
       - "3000:3000"
-    command: sh -c "npx prisma migrate deploy && node server.js"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    command: ["node", "server.js"]
 
 volumes:
   postgres_data:

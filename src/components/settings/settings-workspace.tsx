@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Settings as SettingsIcon, Building2, Users, ShieldCheck, Flag, LayoutList, Palette, ArrowDownUp, History, Lock, UserCircle } from "lucide-react";
+import { Settings as SettingsIcon, Building2, Users, ShieldCheck, Flag, LayoutList, Palette, ArrowDownUp, History, Lock, UserCircle, BellRing } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
@@ -14,6 +14,7 @@ import { SettingsDataIO } from "./settings-data-io";
 import { SettingsAuditLog } from "./settings-audit-log";
 import { SettingsSecurity } from "./settings-security";
 import { SettingsProfile } from "./settings-profile";
+import { SettingsNotifications } from "./settings-notifications";
 
 // Categories are configured per project (Project → Settings), not here.
 const SECTIONS: { key: string; label: MessageKey; icon: React.ComponentType<{ size?: number; className?: string }>; group: MessageKey }[] = [
@@ -24,6 +25,7 @@ const SECTIONS: { key: string; label: MessageKey; icon: React.ComponentType<{ si
   { key: "views", label: "set.views", icon: LayoutList, group: "set.group.tasks" },
   { key: "profile", label: "set.profile", icon: UserCircle, group: "set.group.personal" },
   { key: "appearance", label: "set.appearance", icon: Palette, group: "set.group.personal" },
+  { key: "notifications", label: "set.notifications", icon: BellRing, group: "set.group.personal" },
   { key: "data-io", label: "set.dataIo", icon: ArrowDownUp, group: "set.group.data" },
   { key: "audit", label: "set.audit", icon: History, group: "set.group.data" },
   { key: "security", label: "set.security", icon: Lock, group: "set.group.data" },
@@ -96,9 +98,10 @@ export function SettingsWorkspace({
         {section === "members" && <SettingsMembers workspaceId={workspaceId} currentUserId={currentUserId} currentUserRole={currentUserRole} isSystemAdmin={isSystemAdmin} />}
         {section === "permissions" && <SettingsPermissions />}
         {section === "statuses" && <SettingsTaskConfig workspaceId={workspaceId} mode="statuses" canEdit={currentUserRole === "owner" || currentUserRole === "admin"} />}
-        {section === "views" && <SettingsViews workspaceId={workspaceId} workspaceSlug={workspaceSlug} />}
+        {section === "views" && <SettingsViews workspaceId={workspaceId} workspaceSlug={workspaceSlug} canManage={["owner", "admin", "editor"].includes(currentUserRole)} />}
         {section === "profile" && <SettingsProfile />}
         {section === "appearance" && <SettingsAppearance />}
+        {section === "notifications" && <SettingsNotifications />}
         {section === "data-io" && <SettingsDataIO workspaceId={workspaceId} />}
         {section === "audit" && <SettingsAuditLog workspaceId={workspaceId} />}
         {section === "security" && <SettingsSecurity />}

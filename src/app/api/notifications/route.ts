@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, route } from "@/lib/authz";
+import { hiddenProjectIds, requireUser, route } from "@/lib/authz";
 import { generateReminders } from "@/lib/notifications";
+import { syncInvitations } from "@/lib/invitations";
+import { syncPointsIfStale } from "@/lib/recognition/points";
+
+/** Keeps points (and "you can redeem a reward" notices) fresh; at most every 10 minutes per workspace. */
+async function syncMyWorkspacesPoints(userId: string) {
+  const ws = await prisma.workspaceMember.findMany({ where: { userId, workspace: { deletedAt: null } }, select: { workspaceId: true }, take: 20 });
+  await Promise.all(ws.map((w) => syncPointsIfStale(w.workspaceId, 10 * 60_000).catch((e) => console.error("[recognition] sync failed", e))));
+}
 
 /**
  * The caller's notifications (reminders are generated on the fly).
@@ -10,11 +18,20 @@ import { generateReminders } from "@/lib/notifications";
  */
 export const GET = route(async (req) => {
   const user = await requireUser();
-  await generateReminders(user.id);
+  await Promise.all([generateReminders(user.id), syncInvitations(user), syncMyWorkspacesPoints(user.id)]);
   const url = new URL(req.url);
   const now = new Date();
   const view = url.searchParams.get("view") ?? "all";
-  const live = { OR: [{ workspaceId: null }, { workspace: { deletedAt: null } }] };
+  // Only what the user may still see: workspaces they belong to (invitations excepted,
+  // they come before membership) and projects not hidden from them. Access removed
+  // later hides older notifications too, instead of leaking titles, names and links.
+  const hidden = [...(await hiddenProjectIds(user))];
+  const live = {
+    AND: [
+      { OR: [{ workspaceId: null }, { type: { in: ["workspace_invite", "workspace_invite_result"] }, workspace: { deletedAt: null } }, { workspace: { deletedAt: null, members: { some: { userId: user.id } } } }] },
+      ...(hidden.length ? [{ OR: [{ projectId: null }, { projectId: { notIn: hidden } }] }] : []),
+    ],
+  };
   const notSnoozed = { OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }] };
   const where = {
     userId: user.id,
@@ -53,6 +70,7 @@ export const GET = route(async (req) => {
       snoozedUntil: n.snoozedUntil && n.snoozedUntil > now ? n.snoozedUntil.toISOString() : null,
       createdAt: n.createdAt.toISOString(),
       actor: n.actor,
+      workspaceId: n.workspaceId,
       workspaceName: n.workspace?.name ?? null,
       projectName: n.project?.name ?? null,
       taskId: n.task && !n.task.deletedAt ? n.task.id : null,

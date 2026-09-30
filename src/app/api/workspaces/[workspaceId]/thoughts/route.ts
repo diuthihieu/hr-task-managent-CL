@@ -27,6 +27,7 @@ export const GET = route<P>(async (_req, { params }) => {
     categoryColor: t.category?.color ?? null,
     estimatedDurationMinutes: t.estimatedDurationMinutes,
     plannedAt: t.plannedAt ? t.plannedAt.toISOString() : null,
+    orbitAngle: t.orbitAngle,
     status: t.status,
     createdAt: t.createdAt.toISOString(),
   }));

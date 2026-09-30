@@ -182,6 +182,8 @@ model User {
   /// Stored lowercased; uniqueness is case-insensitive by construction.
   email              String     @unique @db.VarChar(254)
   name               String     @db.VarChar(120)
+  /// Earlier display names (most recent last), kept by a trigger so people - and the AI - still recognise someone after a rename.
+  formerNames        String[]   @default([]) @map("former_names")
   /// Null for accounts that only sign in with Google.
   passwordHash       String?    @map("password_hash")
   /// Google account id ("sub") once the user has signed in with Google.
@@ -200,6 +202,10 @@ model User {
   themeMode          String     @default("system") @map("theme_mode") @db.VarChar(10)
   /// Surface tone: "neutral" | cool ("slate", "ocean", "mint") | warm ("sand", "rose", "amber").
   surfaceTone        String     @default("neutral") @map("surface_tone") @db.VarChar(20)
+  /// Text size: "sm" | "md" | "lg" | "xl" (text only; layout stays put).
+  fontSize           String     @default("md") @map("font_size") @db.VarChar(10)
+  /// Display size (whole-UI scale): "compact" | "default" | "comfortable" | "large".
+  displaySize        String     @default("default") @map("display_size") @db.VarChar(12)
   /// Uploaded profile picture (PNG/JPEG/WebP, <= 512 KB); omitted from queries by default.
   avatarData         Bytes?     @map("avatar_data")
   avatarType         String?    @map("avatar_type") @db.VarChar(40)
@@ -212,6 +218,18 @@ model User {
   aiTone             String     @default("professional") @map("ai_tone") @db.VarChar(20)
   /// "short" | "balanced" | "detailed"
   aiLength           String     @default("balanced") @map("ai_length") @db.VarChar(10)
+  /// Notification groups (see NOTIFY_GROUPS) that should not pop up inside the app.
+  notifyPopupOff     String[]   @default([]) @map("notify_popup_off")
+  /// Notification groups that should not raise a desktop / mobile system notification.
+  notifyNativeOff    String[]   @default([]) @map("notify_native_off")
+  /// Ringtone played for a new notification ("none" = silent).
+  notifySound        String     @default("chime") @map("notify_sound") @db.VarChar(20)
+  /// Ringtone volume, 0-100.
+  notifyVolume       Int        @default(70) @map("notify_volume") @db.SmallInt
+  /// Bumped when credentials change or access is revoked; older session cookies stop working.
+  sessionVersion     Int        @default(0) @map("session_version")
+  /// When the user proved they own the email (Google sign-in, verification link, or an admin).
+  emailVerifiedAt    DateTime?  @map("email_verified_at") @db.Timestamptz(6)
   lastLoginAt        DateTime?  @map("last_login_at") @db.Timestamptz(6)
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -250,8 +268,24 @@ model User {
   wikiMemberships       WikiMember[]
   commentMentions       CommentMention[]
   wikiComments          WikiComment[]          @relation("WikiCommentAuthor")
+  approvalsRequested    TaskApproval[]         @relation("ApprovalRequester")
+  approvalsToDecide     TaskApproval[]         @relation("ApprovalApprover")
+  invitationsSent       WorkspaceInvitation[]  @relation("InvitationSender")
+  invitationsReceived   WorkspaceInvitation[]  @relation("InvitationInvitee")
+  inviteLinksCreated    WorkspaceInviteLink[]
   wikiCommentMentions   WikiCommentMention[]   @relation("WikiCommentMentionUser")
   focusSessions         FocusSession[]
+  decisionsCreated      Decision[]             @relation("DecisionCreatedBy")
+  decisionsOwned        Decision[]             @relation("DecisionOwner")
+  decisionsInvolved     DecisionPerson[]       @relation("DecisionPeople")
+  journalEntries        JournalEntry[]         @relation("JournalUser")
+  knowledgeReviews      KnowledgeReview[]      @relation("ReviewUser")
+  pointEvents           PointEvent[]           @relation("PointEventUser")
+  recognitionManagerOf  RecognitionManager[]   @relation("RecognitionManagerUser")
+  recognitionMemberOf   RecognitionMember[]    @relation("RecognitionMemberUser")
+  kudosSent             Kudos[]                @relation("KudosFrom")
+  kudosReceived         Kudos[]                @relation("KudosTo")
+  redemptions           RewardRedemption[]     @relation("RedemptionUser")
 
   @@index([isActive, deletedAt])
   @@map("users")
@@ -270,25 +304,40 @@ model Workspace {
   /// Workspace logo (PNG/JPEG/WebP, max 256 KB), served by /api/workspaces/[id]/logo and used as the favicon.
   logoData      Bytes?    @map("logo_data")
   logoMimeType  String?   @map("logo_mime_type") @db.VarChar(40)
+  /// Workspace admins must switch AI on: it sends workspace content to the AI provider.
+  aiEnabled     Boolean   @default(false) @map("ai_enabled")
   logoUpdatedAt DateTime? @map("logo_updated_at") @db.Timestamptz(6)
 
-  members          WorkspaceMember[]
-  teams            Team[]
-  projects         Project[]
-  statuses         Status[]
-  categories       Category[]
-  tasks            Task[]
-  objectives       Objective[]
-  dashboards       Dashboard[]
-  attachments      Attachment[]
-  wikiComments     WikiComment[]
-  activityLogs     ActivityLog[]
-  capturedThoughts CapturedThought[]
-  wikiPages        WikiPage[]
-  notifications    Notification[]
-  knowledgeDocs    KnowledgeDoc[]
-  aiConversations  AiConversation[]
-  wikis            Wiki[]
+  members             WorkspaceMember[]
+  teams               Team[]
+  projects            Project[]
+  statuses            Status[]
+  categories          Category[]
+  tasks               Task[]
+  objectives          Objective[]
+  dashboards          Dashboard[]
+  attachments         Attachment[]
+  wikiComments        WikiComment[]
+  taskApprovals       TaskApproval[]
+  invitations         WorkspaceInvitation[]
+  inviteLinks         WorkspaceInviteLink[]
+  activityLogs        ActivityLog[]
+  capturedThoughts    CapturedThought[]
+  wikiPages           WikiPage[]
+  notifications       Notification[]
+  knowledgeDocs       KnowledgeDoc[]
+  aiConversations     AiConversation[]
+  wikis               Wiki[]
+  decisions           Decision[]
+  journalEntries      JournalEntry[]
+  recognitionSettings RecognitionSettings?
+  pointRules          PointRule[]
+  pointEvents         PointEvent[]
+  recognitionManagers RecognitionManager[]
+  recognitionMembers  RecognitionMember[]
+  kudos               Kudos[]
+  rewards             Reward[]
+  redemptions         RewardRedemption[]
 
   @@map("workspaces")
 }
@@ -337,6 +386,8 @@ model Project {
   name        String        @db.VarChar(160)
   description String?
   color       String        @default("#6366f1") @db.VarChar(9)
+  /// Optional icon key (see src/lib/project-icons.ts); null = no icon.
+  icon        String?       @db.VarChar(40)
   status      ProjectStatus @default(active)
   ownerId     String?       @map("owner_id") @db.Uuid
   startDate   DateTime?     @map("start_date") @db.Date
@@ -359,6 +410,8 @@ model Project {
   hiddenMembers    ProjectHiddenMember[]
   notifications    Notification[]
   objectives       Objective[]
+  decisions        Decision[]
+  kudos            Kudos[]
 
   @@index([workspaceId, deletedAt, sortOrder])
   @@map("projects")
@@ -415,63 +468,74 @@ model Category {
 }
 
 model Task {
-  id              String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// Denormalized from project for tenant-scoped indexes and authorization;
   /// kept consistent by the API (a task never moves across workspaces).
-  workspaceId     String       @map("workspace_id") @db.Uuid
-  projectId       String       @map("project_id") @db.Uuid
+  workspaceId        String          @map("workspace_id") @db.Uuid
+  projectId          String          @map("project_id") @db.Uuid
   /// Self-reference: subtasks.
-  parentTaskId    String?      @map("parent_task_id") @db.Uuid
-  statusId        String       @map("status_id") @db.Uuid
-  categoryId      String?      @map("category_id") @db.Uuid
-  keyResultId     String?      @map("key_result_id") @db.Uuid
+  parentTaskId       String?         @map("parent_task_id") @db.Uuid
+  statusId           String          @map("status_id") @db.Uuid
+  categoryId         String?         @map("category_id") @db.Uuid
+  keyResultId        String?         @map("key_result_id") @db.Uuid
   /// Objective the task contributes to. When a key result is chosen this is
   /// that key result's objective; it can also be set alone (objective only).
-  objectiveId     String?      @map("objective_id") @db.Uuid
-  title           String       @db.VarChar(500)
-  description     String?
+  objectiveId        String?         @map("objective_id") @db.Uuid
+  title              String          @db.VarChar(500)
+  description        String?
   /// Rich page body (sanitized HTML from the record page editor).
-  content         String?
-  priority        TaskPriority @default(medium)
-  importance      Importance?
-  urgency         Urgency?
-  startDate       DateTime?    @map("start_date") @db.Date
-  dueDate         DateTime?    @map("due_date") @db.Date
-  estimateMinutes Int?         @map("estimate_minutes")
+  content            String?
+  priority           TaskPriority    @default(medium)
+  importance         Importance?
+  urgency            Urgency?
+  startDate          DateTime?       @map("start_date") @db.Date
+  dueDate            DateTime?       @map("due_date") @db.Date
+  estimateMinutes    Int?            @map("estimate_minutes")
   /// Time actually spent (minutes): focus sessions add to it; can be edited by hand.
-  actualMinutes   Int?         @map("actual_minutes")
-  progress        Int          @default(0)
+  actualMinutes      Int?            @map("actual_minutes")
+  progress           Int             @default(0)
   /// Weight of this task inside its key result's task-based progress.
-  okrWeight       Decimal      @default(1) @map("okr_weight") @db.Decimal(8, 2)
-  sortOrder       Float        @default(0) @map("sort_order")
-  completedAt     DateTime?    @map("completed_at") @db.Timestamptz(6)
-  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdById     String?      @map("created_by") @db.Uuid
-  updatedById     String?      @map("updated_by") @db.Uuid
-  deletedAt       DateTime?    @map("deleted_at") @db.Timestamptz(6)
-  deletedById     String?      @map("deleted_by") @db.Uuid
+  okrWeight          Decimal         @default(1) @map("okr_weight") @db.Decimal(8, 2)
+  sortOrder          Float           @default(0) @map("sort_order")
+  completedAt        DateTime?       @map("completed_at") @db.Timestamptz(6)
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdById        String?         @map("created_by") @db.Uuid
+  updatedById        String?         @map("updated_by") @db.Uuid
+  deletedAt          DateTime?       @map("deleted_at") @db.Timestamptz(6)
+  deletedById        String?         @map("deleted_by") @db.Uuid
+  /// Recurring task: when it is completed the next occurrence is created
+  /// (same details, dates moved by the interval).
+  recurrenceFreq     RecurrenceFreq? @map("recurrence_freq")
+  recurrenceInterval Int?            @map("recurrence_interval")
+  /// The occurrence this one was generated from (one next occurrence per task).
+  recurrenceParentId String?         @unique @map("recurrence_parent_id") @db.Uuid
 
-  workspace     Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  project       Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  parentTask    Task?                  @relation("Subtasks", fields: [parentTaskId], references: [id], onDelete: SetNull)
-  subtasks      Task[]                 @relation("Subtasks")
-  status        Status                 @relation(fields: [statusId], references: [id], onDelete: Restrict)
-  category      Category?              @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  keyResult     KeyResult?             @relation(fields: [keyResultId], references: [id], onDelete: SetNull)
-  objective     Objective?             @relation(fields: [objectiveId], references: [id], onDelete: SetNull)
-  createdBy     User?                  @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedBy     User?                  @relation("TaskUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
-  assignees     TaskAssignee[]
-  reportTo      TaskReportRecipient[]
-  notifications Notification[]
-  dependencies  TaskDependency[]       @relation("DependencySuccessor")
-  dependents    TaskDependency[]       @relation("DependencyPredecessor")
-  comments      Comment[]
-  attachments   Attachment[]
-  customValues  TaskCustomFieldValue[]
-  thoughts      CapturedThought[]
-  focusSessions FocusSession[]
+  workspace        Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project          Project                @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  recurrenceParent Task?                  @relation("Recurrence", fields: [recurrenceParentId], references: [id], onDelete: SetNull)
+  recurrenceNext   Task?                  @relation("Recurrence")
+  decisions        Decision[]
+  kudos            Kudos[]
+  parentTask       Task?                  @relation("Subtasks", fields: [parentTaskId], references: [id], onDelete: SetNull)
+  subtasks         Task[]                 @relation("Subtasks")
+  status           Status                 @relation(fields: [statusId], references: [id], onDelete: Restrict)
+  category         Category?              @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  keyResult        KeyResult?             @relation(fields: [keyResultId], references: [id], onDelete: SetNull)
+  objective        Objective?             @relation(fields: [objectiveId], references: [id], onDelete: SetNull)
+  createdBy        User?                  @relation("TaskCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy        User?                  @relation("TaskUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  assignees        TaskAssignee[]
+  reportTo         TaskReportRecipient[]
+  notifications    Notification[]
+  dependencies     TaskDependency[]       @relation("DependencySuccessor")
+  dependents       TaskDependency[]       @relation("DependencyPredecessor")
+  comments         Comment[]
+  attachments      Attachment[]
+  customValues     TaskCustomFieldValue[]
+  thoughts         CapturedThought[]
+  focusSessions    FocusSession[]
+  approvals        TaskApproval[]
 
   @@index([projectId, deletedAt, sortOrder])
   @@index([workspaceId, deletedAt, dueDate])
@@ -636,10 +700,10 @@ model Attachment {
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
 
   wikiComment WikiComment? @relation(fields: [wikiCommentId], references: [id], onDelete: SetNull)
-  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  task       Task?     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  wikiPage   WikiPage? @relation(fields: [wikiPageId], references: [id], onDelete: Cascade)
-  uploadedBy User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  task        Task?        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  wikiPage    WikiPage?    @relation(fields: [wikiPageId], references: [id], onDelete: Cascade)
+  uploadedBy  User?        @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
 
   @@index([taskId, deletedAt])
   @@index([wikiPageId])
@@ -659,6 +723,9 @@ model ActivityLog {
   summary     String?
   /// { field: { from, to } } for updates.
   changes     Json?
+  /// Request metadata for security-relevant events (sign-in, credential changes...).
+  ip          String?  @db.VarChar(64)
+  userAgent   String?  @map("user_agent") @db.VarChar(300)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -771,6 +838,7 @@ model Objective {
   owner           User?                  @relation("ObjectiveOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   contributors    ObjectiveContributor[]
   keyResults      KeyResult[]
+  decisions       Decision[]
   project         Project?               @relation(fields: [projectId], references: [id], onDelete: Cascade)
   parentKeyResult KeyResult?             @relation("KeyResultChildObjectives", fields: [parentKeyResultId], references: [id], onDelete: SetNull)
   tasks           Task[]
@@ -842,6 +910,8 @@ model CapturedThought {
   taskName                 String        @map("task_name") @db.VarChar(500)
   estimatedDurationMinutes Int?          @map("estimated_duration_minutes")
   plannedAt                DateTime?     @map("planned_at") @db.Timestamptz(6)
+  /// Where the dot sits on its time ring (degrees, 0-360), when the user dragged it; null = automatic.
+  orbitAngle               Float?        @map("orbit_angle")
   status                   ThoughtStatus @default(captured)
   convertedTaskId          String?       @map("converted_task_id") @db.Uuid
   convertedAt              DateTime?     @map("converted_at") @db.Timestamptz(6)
@@ -908,32 +978,67 @@ model DesktopRelease {
 /// A team wiki page inside a project. Pages nest (parent_page_id) so a
 /// project can hold a small knowledge base next to its tasks.
 model WikiPage {
-  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  workspaceId  String    @map("workspace_id") @db.Uuid
-  wikiId       String    @map("wiki_id") @db.Uuid
-  parentPageId String?   @map("parent_page_id") @db.Uuid
-  title        String    @db.VarChar(300)
-  icon         String?   @db.VarChar(16)
+  id               String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId      String               @map("workspace_id") @db.Uuid
+  wikiId           String               @map("wiki_id") @db.Uuid
+  parentPageId     String?              @map("parent_page_id") @db.Uuid
+  title            String               @db.VarChar(300)
+  icon             String?              @db.VarChar(16)
   /// Sanitized HTML produced by the rich-text editor.
-  content      String?
-  sortOrder    Int       @default(0) @map("sort_order")
-  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdById  String?   @map("created_by") @db.Uuid
-  updatedById  String?   @map("updated_by") @db.Uuid
-  deletedAt    DateTime? @map("deleted_at") @db.Timestamptz(6)
-  deletedById  String?   @map("deleted_by") @db.Uuid
+  content          String?
+  /// Projects whose data the page (or its comments) quotes - detected on every
+  /// save. Anyone hidden from one of these projects can't see the page, in the
+  /// UI, search or AI answers.
+  sourceProjectIds String[]             @default([]) @map("source_project_ids") @db.Uuid
+  /// What the page is (a meeting note, a retrospective, a reusable process...).
+  kind             KnowledgeKind        @default(page)
+  /// Free tags (lower-case, without "#").
+  tags             String[]             @default([])
+  // Temporal knowledge: which version is current, and for which period it holds.
+  status           KnowledgeStatus      @default(current)
+  validFrom        DateTime?            @map("valid_from") @db.Date
+  validTo          DateTime?            @map("valid_to") @db.Date
+  version          Int                  @default(1)
+  /// The older page this one replaces (its "superseded by" is the inverse).
+  supersedesId     String?              @unique @map("supersedes_id") @db.Uuid
+  /// Meetings: when it took place.
+  eventDate        DateTime?            @map("event_date") @db.Date
+  // Source provenance.
+  sourceType       KnowledgeSource      @default(manual) @map("source_type")
+  sourceLabel      String?              @map("source_label") @db.VarChar(300)
+  sourceUrl        String?              @map("source_url") @db.VarChar(1000)
+  /// Entity the page was generated from ("task:<id>", "project:<id>").
+  sourceRef        String?              @map("source_ref") @db.VarChar(120)
+  confidence       KnowledgeConfidence?
+  lastCheckedAt    DateTime?            @map("last_checked_at") @db.Timestamptz(6)
+  lastCheckedById  String?              @map("last_checked_by") @db.Uuid
+  /// Reading activity (Knowledge health: "never revisited").
+  viewCount        Int                  @default(0) @map("view_count")
+  lastViewedAt     DateTime?            @map("last_viewed_at") @db.Timestamptz(6)
+  sortOrder        Int                  @default(0) @map("sort_order")
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdById      String?              @map("created_by") @db.Uuid
+  updatedById      String?              @map("updated_by") @db.Uuid
+  deletedAt        DateTime?            @map("deleted_at") @db.Timestamptz(6)
+  deletedById      String?              @map("deleted_by") @db.Uuid
 
-  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  wiki        Wiki         @relation(fields: [wikiId], references: [id], onDelete: Cascade)
-  parentPage  WikiPage?    @relation("WikiTree", fields: [parentPageId], references: [id], onDelete: Cascade)
-  children    WikiPage[]   @relation("WikiTree")
-  attachments Attachment[]
-  comments    WikiComment[]
-  createdBy   User?        @relation("WikiCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
-  updatedBy   User?        @relation("WikiUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  workspace    Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  wiki         Wiki              @relation(fields: [wikiId], references: [id], onDelete: Cascade)
+  parentPage   WikiPage?         @relation("WikiTree", fields: [parentPageId], references: [id], onDelete: Cascade)
+  children     WikiPage[]        @relation("WikiTree")
+  attachments  Attachment[]
+  comments     WikiComment[]
+  createdBy    User?             @relation("WikiCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedBy    User?             @relation("WikiUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+  supersedes   WikiPage?         @relation("Supersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy WikiPage?         @relation("Supersedes")
+  layers       KnowledgeLayer?
+  reviews      KnowledgeReview[]
+  decisions    Decision[]
 
   @@index([wikiId, deletedAt, sortOrder])
+  @@index([workspaceId, deletedAt, kind])
   @@index([parentPageId])
   @@map("wiki_pages")
 }
@@ -1052,6 +1157,7 @@ model KnowledgeDoc {
 enum AiConversationKind {
   wiki
   assistant
+  brain
 }
 
 /// A user's private chat: with a project's wiki assistant, or with the workspace AI assistant.
@@ -1086,6 +1192,8 @@ model AiMessage {
   content        String
   tokensIn       Int?          @map("tokens_in")
   tokensOut      Int?          @map("tokens_out")
+  /// Ask My Brain: the sources the answer was grounded on ([{ n, id, type, title, href }]).
+  sources        Json?
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
 
   conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -1176,22 +1284,24 @@ enum FocusStatus {
 /// One focus block on a task. Time is accumulated across pauses; on completion
 /// the minutes are added to the task's actual time. Kept for productivity analytics.
 model FocusSession {
-  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  workspaceId    String      @map("workspace_id") @db.Uuid
-  taskId         String      @map("task_id") @db.Uuid
-  userId         String      @map("user_id") @db.Uuid
-  status         FocusStatus @default(running)
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId     String      @map("workspace_id") @db.Uuid
+  taskId          String      @map("task_id") @db.Uuid
+  userId          String      @map("user_id") @db.Uuid
+  status          FocusStatus @default(running)
   /// Planned length of this block (minutes).
-  plannedMinutes Int?        @map("planned_minutes")
+  plannedMinutes  Int?        @map("planned_minutes")
   /// Seconds counted before the current run (sum of previous runs).
-  elapsedSeconds Int         @default(0) @map("elapsed_seconds")
+  elapsedSeconds  Int         @default(0) @map("elapsed_seconds")
   /// Start of the current run while status = running.
-  resumedAt      DateTime?   @map("resumed_at") @db.Timestamptz(6)
-  notes          String?
+  resumedAt       DateTime?   @map("resumed_at") @db.Timestamptz(6)
+  /// Seconds already added to the task's actual time (each run is recorded when it stops).
+  recordedSeconds Int         @default(0) @map("recorded_seconds")
+  notes           String?
   /// [{ text, done }]
-  checklist      Json?
-  startedAt      DateTime    @default(now()) @map("started_at") @db.Timestamptz(6)
-  endedAt        DateTime?   @map("ended_at") @db.Timestamptz(6)
+  checklist       Json?
+  startedAt       DateTime    @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt         DateTime?   @map("ended_at") @db.Timestamptz(6)
 
   task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1236,4 +1346,472 @@ model WikiCommentMention {
   @@id([commentId, userId])
   @@index([userId])
   @@map("wiki_comment_mentions")
+}
+
+enum ApprovalStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+/// A request for someone to sign off a task (e.g. payroll checked, offer letter OK).
+model TaskApproval {
+  id                String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId       String         @map("workspace_id") @db.Uuid
+  taskId            String         @map("task_id") @db.Uuid
+  requestedById     String?        @map("requested_by") @db.Uuid
+  approverId        String         @map("approver_id") @db.Uuid
+  status            ApprovalStatus @default(pending)
+  note              String?        @db.VarChar(2000)
+  decisionNote      String?        @map("decision_note") @db.VarChar(2000)
+  /// Approving also moves the task to its first "done" status.
+  completeOnApprove Boolean        @default(false) @map("complete_on_approve")
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  decidedAt         DateTime?      @map("decided_at") @db.Timestamptz(6)
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  task        Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  requestedBy User?     @relation("ApprovalRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  approver    User      @relation("ApprovalApprover", fields: [approverId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+  @@index([approverId, status])
+  @@map("task_approvals")
+}
+
+enum InvitationStatus {
+  pending
+  accepted
+  declined
+  revoked
+
+  @@map("invitation_status")
+}
+
+/// A personal invitation to join a workspace, by email. The person must accept
+/// before they become a member. Works before they have an account: it is
+/// matched by email when they sign up.
+model WorkspaceInvitation {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId   String           @map("workspace_id") @db.Uuid
+  email         String           @db.VarChar(254)
+  /// Set when the email belongs to an account (at invite time or when they sign up).
+  invitedUserId String?          @map("invited_user_id") @db.Uuid
+  role          WorkspaceRole    @default(editor)
+  /// Secret for the personal link /invite/<token>.
+  token         String           @unique @db.VarChar(64)
+  status        InvitationStatus @default(pending)
+  message       String?          @db.VarChar(500)
+  invitedById   String?          @map("invited_by") @db.Uuid
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt     DateTime         @map("expires_at") @db.Timestamptz(6)
+  respondedAt   DateTime?        @map("responded_at") @db.Timestamptz(6)
+
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  invitedUser User?     @relation("InvitationInvitee", fields: [invitedUserId], references: [id], onDelete: SetNull)
+  invitedBy   User?     @relation("InvitationSender", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, status])
+  @@index([email, status])
+  @@index([invitedUserId, status])
+  @@map("workspace_invitations")
+}
+
+/// Shareable join link for a workspace. Anyone signed in who opens it sees the
+/// workspace and must accept to join, with the link's role. Admins can turn it
+/// off or replace it (the old link stops working).
+model WorkspaceInviteLink {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String        @map("workspace_id") @db.Uuid
+  token       String        @unique @db.VarChar(64)
+  role        WorkspaceRole @default(contributor)
+  createdById String?       @map("created_by") @db.Uuid
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  expiresAt   DateTime?     @map("expires_at") @db.Timestamptz(6)
+  revokedAt   DateTime?     @map("revoked_at") @db.Timestamptz(6)
+  useCount    Int           @default(0) @map("use_count")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User?     @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, revokedAt])
+  @@map("workspace_invite_links")
+}
+
+// ---------------------------------------------------------------------------
+// Work Second Brain: knowledge metadata, decisions, journal, layers, reviews
+// ---------------------------------------------------------------------------
+
+enum RecurrenceFreq {
+  daily
+  weekly
+  monthly
+}
+
+enum KnowledgeKind {
+  page
+  meeting
+  retrospective
+  process
+  note
+}
+
+enum KnowledgeStatus {
+  draft
+  current
+  outdated
+  superseded
+  archived
+}
+
+enum KnowledgeSource {
+  manual
+  imported
+  ai_generated
+  converted
+}
+
+enum KnowledgeConfidence {
+  low
+  medium
+  high
+}
+
+enum DecisionStatus {
+  proposed
+  active
+  superseded
+  revoked
+}
+
+/// Decision memory: what was decided, why, what else was considered, on what evidence.
+model Decision {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId   String          @map("workspace_id") @db.Uuid
+  projectId     String?         @map("project_id") @db.Uuid
+  /// Page the decision was recorded from (and block, for a precise link back).
+  wikiPageId    String?         @map("wiki_page_id") @db.Uuid
+  sourceBlockId String?         @map("source_block_id") @db.VarChar(40)
+  taskId        String?         @map("task_id") @db.Uuid
+  objectiveId   String?         @map("objective_id") @db.Uuid
+  title         String          @db.VarChar(500)
+  reason        String?
+  /// [{ "option": "...", "whyNot": "..." }]
+  alternatives  Json            @default("[]")
+  evidence      String?
+  sourceUrl     String?         @map("source_url") @db.VarChar(1000)
+  decidedAt     DateTime        @default(dbgenerated("CURRENT_DATE")) @map("decided_at") @db.Date
+  /// Who owns the decision (accountable for it and its review).
+  ownerId       String?         @map("owner_id") @db.Uuid
+  /// When the decision should be looked at again.
+  reviewDate    DateTime?       @map("review_date") @db.Date
+  status        DecisionStatus  @default(active)
+  validFrom     DateTime?       @map("valid_from") @db.Date
+  validTo       DateTime?       @map("valid_to") @db.Date
+  supersedesId  String?         @unique @map("supersedes_id") @db.Uuid
+  sourceType    KnowledgeSource @default(manual) @map("source_type")
+  createdById   String?         @map("created_by") @db.Uuid
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt     DateTime?       @map("deleted_at") @db.Timestamptz(6)
+
+  workspace    Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  project      Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  wikiPage     WikiPage?        @relation(fields: [wikiPageId], references: [id], onDelete: SetNull)
+  task         Task?            @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  objective    Objective?       @relation(fields: [objectiveId], references: [id], onDelete: SetNull)
+  createdBy    User?            @relation("DecisionCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  owner        User?            @relation("DecisionOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  supersedes   Decision?        @relation("DecisionSupersedes", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy Decision?        @relation("DecisionSupersedes")
+  people       DecisionPerson[]
+
+  @@index([workspaceId, deletedAt, decidedAt(sort: Desc)])
+  @@index([workspaceId, reviewDate])
+  @@index([projectId])
+  @@index([wikiPageId])
+  @@map("decisions")
+}
+
+model DecisionPerson {
+  decisionId String   @map("decision_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  decision   Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  user       User     @relation("DecisionPeople", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([decisionId, userId])
+  @@index([userId])
+  @@map("decision_people")
+}
+
+/// Daily note / work journal: the user's own notes for a day (the rest of the
+/// journal - work done, meetings, decisions - is assembled from existing data).
+model JournalEntry {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  date        DateTime @db.Date
+  notes       String?
+  /// Latest AI summary of the day (never replaces the notes).
+  aiSummary   String?  @map("ai_summary")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("JournalUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, workspaceId, date])
+  @@map("journal_entries")
+}
+
+/// Progressive summarization of a page. The page content stays the source;
+/// highlights, key points, summary and insights are separate layers.
+model KnowledgeLayer {
+  pageId        String    @id @map("page_id") @db.Uuid
+  /// [{ "id", "text", "blockId", "by", "at" }]
+  highlights    Json      @default("[]")
+  keyPoints     String?   @map("key_points")
+  summary       String?
+  insights      String?
+  /// Page version (updatedAt) the AI layers were generated from - older means stale.
+  generatedFrom DateTime? @map("generated_from") @db.Timestamptz(6)
+  generatedAt   DateTime? @map("generated_at") @db.Timestamptz(6)
+  updatedById   String?   @map("updated_by") @db.Uuid
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  page WikiPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@map("knowledge_layers")
+}
+
+/// Spaced review of a page for one user (1, 3, 7, 14, 30, 60, 120 days).
+model KnowledgeReview {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  pageId         String    @map("page_id") @db.Uuid
+  stage          Int       @default(0)
+  nextReviewAt   DateTime  @map("next_review_at") @db.Timestamptz(6)
+  lastReviewedAt DateTime? @map("last_reviewed_at") @db.Timestamptz(6)
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User     @relation("ReviewUser", fields: [userId], references: [id], onDelete: Cascade)
+  page WikiPage @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, pageId])
+  @@index([userId, nextReviewAt])
+  @@map("knowledge_reviews")
+}
+
+// ---------------------------------------------------------------------------
+// Recognition: points, kudos letters, rewards
+// ---------------------------------------------------------------------------
+
+enum PointAction {
+  task_completed
+  task_on_time
+  task_created
+  comment_posted
+  helped_colleague
+  kudos_received
+  kudos_sent
+  wiki_page_created
+  decision_recorded
+  focus_hour
+  approval_given
+}
+
+enum KudosStyle {
+  gratitude
+  appreciation
+  teamwork
+  above_beyond
+  mentor
+}
+
+enum RedemptionStatus {
+  pending
+  approved
+  rejected
+  cancelled
+}
+
+/// Recognition settings of a workspace (created with defaults on first use).
+model RecognitionSettings {
+  workspaceId      String    @id @map("workspace_id") @db.Uuid
+  enabled          Boolean   @default(true)
+  /// Default for members: may they see other people's points?
+  membersSeePoints Boolean   @default(true) @map("members_see_points")
+  /// Activity before this date earns no points (null = all history).
+  pointsSince      DateTime? @map("points_since") @db.Timestamptz(6)
+  /// Points are materialized from activity incrementally; this is the high-water mark.
+  lastSyncedAt     DateTime? @map("last_synced_at") @db.Timestamptz(6)
+  updatedById      String?   @map("updated_by") @db.Uuid
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@map("recognition_settings")
+}
+
+/// Points per action, set by admins / recognition managers.
+model PointRule {
+  workspaceId String      @map("workspace_id") @db.Uuid
+  action      PointAction
+  points      Int
+  enabled     Boolean     @default(true)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, action])
+  @@map("point_rules")
+}
+
+/// Points ledger: one row per rewarded action (idempotent per source).
+model PointEvent {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String      @map("workspace_id") @db.Uuid
+  userId      String      @map("user_id") @db.Uuid
+  action      PointAction
+  points      Int
+  /// What earned it (task, comment, kudos… id, or a composite key).
+  sourceId    String      @map("source_id") @db.VarChar(120)
+  occurredAt  DateTime    @map("occurred_at") @db.Timestamptz(6)
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("PointEventUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId, action, sourceId])
+  @@index([workspaceId, occurredAt])
+  @@index([workspaceId, userId])
+  @@map("point_events")
+}
+
+/// People an admin delegated recognition management to.
+model RecognitionManager {
+  workspaceId String   @map("workspace_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  grantedById String?  @map("granted_by") @db.Uuid
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("RecognitionManagerUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId])
+  @@map("recognition_managers")
+}
+
+/// Per-member override: may this member see other people's points?
+model RecognitionMember {
+  workspaceId         String  @map("workspace_id") @db.Uuid
+  userId              String  @map("user_id") @db.Uuid
+  canViewOthersPoints Boolean @map("can_view_others_points")
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("RecognitionMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([workspaceId, userId])
+  @@map("recognition_members")
+}
+
+/// A thank-you letter from one member to another.
+model Kudos {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String     @map("workspace_id") @db.Uuid
+  fromId      String     @map("from_id") @db.Uuid
+  toId        String     @map("to_id") @db.Uuid
+  style       KudosStyle @default(gratitude)
+  title       String     @db.VarChar(200)
+  /// Card design the letter is shown on (classic, sunrise, botanical…).
+  template    String     @default("classic") @db.VarChar(30)
+  /// Editable opening and closing lines (default: "Dear <name>," / style closing).
+  greeting    String?    @db.VarChar(200)
+  closing     String?    @db.VarChar(200)
+  /// Letter body (plain text).
+  message     String
+  /// What it is for ("for staying late to finish payroll").
+  reason      String?    @db.VarChar(500)
+  taskId      String?    @map("task_id") @db.Uuid
+  projectId   String?    @map("project_id") @db.Uuid
+  /// Values shown on the card (teamwork, ownership…).
+  values      String[]   @default([])
+  /// Shown on the recognition wall (otherwise only sender and receiver see it).
+  isPublic    Boolean    @default(true) @map("is_public")
+  readAt      DateTime?  @map("read_at") @db.Timestamptz(6)
+  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt   DateTime?  @map("deleted_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  from      User      @relation("KudosFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to        User      @relation("KudosTo", fields: [toId], references: [id], onDelete: Cascade)
+  task      Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([toId, createdAt(sort: Desc)])
+  @@index([fromId])
+  @@map("kudos")
+}
+
+/// Reward catalog item: costs points, has a money value and a limited stock.
+model Reward {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId   String    @map("workspace_id") @db.Uuid
+  name          String    @db.VarChar(200)
+  description   String?
+  imageData     Bytes?    @map("image_data")
+  imageMimeType String?   @map("image_mime_type") @db.VarChar(40)
+  pointsCost    Int       @map("points_cost")
+  price         Decimal?  @db.Decimal(14, 2)
+  currency      String    @default("VND") @db.VarChar(8)
+  /// Stock: how many can be approved in total.
+  quantity      Int
+  /// Approved redemptions so far (never more than quantity).
+  approvedCount Int       @default(0) @map("approved_count")
+  active        Boolean   @default(true)
+  sortOrder     Int       @default(0) @map("sort_order")
+  createdById   String?   @map("created_by") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
+
+  workspace   Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  redemptions RewardRedemption[]
+
+  @@index([workspaceId, deletedAt, sortOrder])
+  @@map("rewards")
+}
+
+model RewardRedemption {
+  id           String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId  String           @map("workspace_id") @db.Uuid
+  rewardId     String           @map("reward_id") @db.Uuid
+  userId       String           @map("user_id") @db.Uuid
+  /// Points reserved (pending) or spent (approved).
+  points       Int
+  status       RedemptionStatus @default(pending)
+  note         String?          @db.VarChar(1000)
+  decisionNote String?          @map("decision_note") @db.VarChar(1000)
+  decidedById  String?          @map("decided_by") @db.Uuid
+  decidedAt    DateTime?        @map("decided_at") @db.Timestamptz(6)
+  createdAt    DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  reward    Reward    @relation(fields: [rewardId], references: [id], onDelete: Cascade)
+  user      User      @relation("RedemptionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, status, createdAt(sort: Desc)])
+  @@index([userId, status])
+  @@map("reward_redemptions")
+}
+
+/// Fixed-window counters shared by every server instance (login, sign-up, public forms, uploads...).
+model RateLimit {
+  key     String   @id @db.VarChar(200)
+  count   Int
+  resetAt DateTime @map("reset_at") @db.Timestamptz(6)
+
+  @@index([resetAt])
+  @@map("rate_limits")
 }

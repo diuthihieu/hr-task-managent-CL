@@ -21,8 +21,8 @@
     "publisher": "woli",
     "copyright": "© woli",
     "category": "Productivity",
-    "shortDescription": "woli. - HR projects, tasks and goals",
-    "longDescription": "Desktop client for woli. Signs in to the same account and server as the web app; no business data is stored on this PC.",
+    "shortDescription": "woli - HR projects, tasks and goals",
+    "longDescription": "Desktop client for woli: signs in to the same account and server as the web app; no business data is stored on this PC.",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico"],
     "windows": {
       "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },

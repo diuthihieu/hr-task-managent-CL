@@ -8,6 +8,7 @@ import { parseFieldConfig } from "@/lib/field-types";
 import { cn, initials } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
 import { useT } from "@/components/i18n-provider";
+import { AvatarImg } from "@/components/ui/avatar-img";
 
 const ZOOM_PX_PER_DAY: Record<string, number> = { day: 36, week: 14, month: 5 };
 const ZOOM_PADDING_DAYS: Record<string, number> = { day: 3, week: 7, month: 30 };
@@ -435,10 +436,11 @@ function GanttRow({
             </span>
             {ownerMembers.length > 0 && (
               <span
-                className="absolute -right-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full flex items-center justify-center text-white text-[8px] border border-white dark:border-neutral-950"
+                className="relative overflow-hidden absolute -right-2 top-1/2 -translate-y-1/2 h-4 w-4 rounded-full flex items-center justify-center text-white text-[8px] border border-white dark:border-neutral-950"
                 style={{ backgroundColor: ownerMembers[0].avatarColor }}
               >
                 {initials(ownerMembers[0].name)}
+                <AvatarImg id={ownerMembers[0].id} />
               </span>
             )}
             <div className="absolute left-0 top-0 h-full w-1.5 cursor-ew-resize" onMouseDown={(e) => onStartDrag(record.id, "resize-start", e)} />

@@ -27,6 +27,9 @@ import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
 import type { OkrOptions } from "@/components/grid/cell";
 import type { FieldRow, RecordRow, ViewRow } from "@/types";
+import { ProjectAiChat } from "@/components/ai/project-ai-chat";
+import { cn } from "@/lib/utils";
+import { MetaStatus } from "@/components/ui/meta";
 
 interface ProjectDetail {
   id: string;
@@ -56,6 +59,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
   const [exportOpen, setExportOpen] = useState(false);
   const [okrOptions, setOkrOptions] = useState<OkrOptions>({ objectives: [], keyResults: [] });
   const [loading, setLoading] = useState(true);
+  const [aiSidebar, setAiSidebar] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
@@ -128,6 +132,8 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
   function persistViewConfig(next: ViewConfig) {
     if (!activeView) return;
     setTable((t) => (t ? { ...t, views: t.views.map((v) => (v.id === activeView.id ? { ...v, config: JSON.stringify(next) } : v)) } : t));
+    // Below editor, filters / sorts apply for this visit only: shared views are changed by editors.
+    if (!canEdit) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       api.patch(`/api/views/${activeView.id}`, { config: next }).catch(() => toast.error(t("common.failed")));
@@ -450,7 +456,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
   if (!table) return null;
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className={cn("flex-1 flex flex-col overflow-hidden", aiSidebar && "sm:pr-[420px]")}>
       <ProjectHeader
         workspaceSlug={table.workspace.slug}
         workspaceName={breadcrumb.workspace}
@@ -458,7 +464,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         projectName={breadcrumb.project}
         right={
           <>
-            {t("project.tasksCount", { count: records.length })} · {t(`role.${table.myRole}` as MessageKey)}
+            <span>{t("project.tasksCount", { count: records.length })}</span><MetaStatus className="ml-2">{t(`role.${table.myRole}` as MessageKey)}</MetaStatus>
           </>
         }
       />
@@ -472,9 +478,26 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         onDelete={handleDeleteView}
         onDuplicate={handleDuplicateView}
         onReorder={handleReorderViews}
+        canManage={canEdit}
+        trailing={activeView?.type === "gallery" ? <ViewToolbar
+          inline
+          fields={fields}
+          config={config}
+          members={members}
+          search={search}
+          onSearchChange={setSearch}
+          onConfigChange={updateConfig}
+          selectedCount={selectedIds.size}
+          onBulkDelete={handleBulkDelete}
+          onClearSelection={() => setSelectedIds(new Set())}
+          onExportClick={() => setExportOpen(true)}
+          onSaveAsView={handleSaveAsView}
+          viewType={activeView?.type ?? "grid"}
+          extra={activeView?.type === "gallery" ? <GallerySettings fields={fields} config={config.gallery ?? {}} onChange={(patch) => updateConfig({ gallery: { ...(config.gallery ?? {}), ...patch } })} /> : undefined}
+        /> : undefined}
       />
 
-      {activeView?.type !== "form" && (
+      {activeView?.type !== "form" && activeView?.type !== "gallery" && (
         <ViewToolbar
           fields={fields}
           config={config}
@@ -550,7 +573,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onOpenRecord={setOpenRecordId}
         />
       ) : activeView?.type === "report" ? (
-        <ReportView projectId={projectId} fields={fields} records={sorted} members={members} config={config.report ?? {}} canEdit={canEdit} onConfigChange={(next) => updateConfig({ report: next })} />
+        <ReportView projectId={projectId} fields={fields} records={sorted} members={members} config={config.report ?? {}} canEdit={canEdit} onConfigChange={(next) => updateConfig({ report: next })} onOpenRecord={setOpenRecordId} />
       ) : activeView?.type === "eisenhower" ? (
         <EisenhowerView
           fields={fields}
@@ -614,6 +637,16 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         onOpenChange={(v) => setFieldDialog((d) => ({ ...d, open: v }))}
         field={fieldDialog.field ? { name: fieldDialog.field.name, type: fieldDialog.field.type, description: fieldDialog.field.description, config: parseFieldConfig(fieldDialog.field.config) } : null}
         onSave={handleFieldSave}
+      />
+
+      <ProjectAiChat
+        projectId={projectId}
+        projectName={breadcrumb.project}
+        onTaskCreated={(record, pid) => {
+          if (pid === projectId) setRecords((prev) => (prev.some((r) => r.id === record.id) ? prev : [...prev, record]));
+        }}
+        onOpenTask={setOpenRecordId}
+        onSidebarChange={setAiSidebar}
       />
 
       <ExportDialog

@@ -2,14 +2,16 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlarmClock, CalendarClock, CheckCircle2, ClipboardList, Hourglass, Loader, Lock, Play, CalendarPlus, Check, Sun, Sparkles, ShieldAlert, ListTodo, CircleDashed, Target } from "lucide-react";
+import { AlarmClock, CalendarClock, CheckCircle2, ClipboardList, Hourglass, Loader, Lock, Play, CalendarPlus, Check, Sun, Sparkles, ShieldAlert, ListTodo, CircleDashed, Target, CircleCheck, UsersRound } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { StartFocusButton } from "@/components/focus/focus-mode";
 import { AiActionMenu } from "@/components/ai/ai-actions";
+import { ProjectIcon } from "@/components/projects/project-icon";
 import { cn } from "@/lib/utils";
 import type { MessageKey } from "@/lib/i18n/core";
+import { Meta, MetaChip, MetaDate, MetaItem, MetaStatus, MetaTime } from "@/components/ui/meta";
 
 export interface HomeTask {
   id: string;
@@ -17,6 +19,7 @@ export interface HomeTask {
   projectId: string;
   projectName: string;
   projectColor: string;
+  projectIcon: string | null;
   statusName: string;
   statusColor: string;
   category: "todo" | "in_progress" | "done" | "cancelled";
@@ -32,6 +35,28 @@ export interface HomeTask {
   okr: boolean;
   /** Other people doing it (for "Waiting for others"). */
   assigneeNames: string[];
+}
+
+/** Tick before a task, in the accent colour: outline while open, filled when done. */
+function TaskTick({ done, title }: { done: boolean; title?: string }) {
+  return (
+    <span className="shrink-0 inline-flex" title={title}>
+      <CircleCheck size={15} className={done ? "fill-indigo-600 text-white dark:fill-indigo-500 dark:text-neutral-900" : "text-indigo-500 dark:text-indigo-400"} aria-hidden />
+    </span>
+  );
+}
+
+/** Card header band that stands out from the card body in light and dark themes. */
+function SectionHeader({ icon: Icon, title, count }: { icon: typeof ClipboardList; title: string; count: number }) {
+  return (
+    <div className="flex items-center gap-2 px-4 py-2.5 mb-1 bg-indigo-600 dark:bg-indigo-500/90 text-white">
+      <span className="h-6 w-6 rounded-md bg-white/20 flex items-center justify-center shrink-0">
+        <Icon size={14} className="text-white" />
+      </span>
+      <h2 className="font-semibold text-sm flex-1">{title}</h2>
+      <span className="text-xs tabular-nums font-medium rounded-full bg-white/20 px-2 py-0.5">{count}</span>
+    </div>
+  );
 }
 
 export type TaskFilter = "open" | "today" | "in_progress" | "overdue" | "due_soon" | "blocked" | "unplanned" | "done";
@@ -164,9 +189,9 @@ export function CommandCenter({
 
   const card = "rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-[0_1px_2px_rgba(0,0,0,0.03)]";
   const kpis: { f: TaskFilter; label: string; value: number; icon: typeof ClipboardList; tone: string; alert?: boolean }[] = [
-    { f: "open", label: t("home.kpi.open"), value: counts.open, icon: ClipboardList, tone: "bg-sky-50 text-sky-600 dark:bg-sky-950 dark:text-sky-300" },
+    { f: "open", label: t("home.kpi.open"), value: counts.open, icon: ClipboardList, tone: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300" },
     { f: "in_progress", label: t("home.kpi.inProgress"), value: counts.in_progress, icon: Loader, tone: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300" },
-    { f: "done", label: t("home.kpi.done"), value: doneLast30, icon: CheckCircle2, tone: "bg-emerald-50 text-emerald-600 dark:bg-emerald-950 dark:text-emerald-300" },
+    { f: "done", label: t("home.kpi.done"), value: doneLast30, icon: CheckCircle2, tone: "bg-indigo-50 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300" },
     { f: "overdue", label: t("home.kpi.overdue"), value: counts.overdue, icon: AlarmClock, tone: "bg-red-50 text-red-600 dark:bg-red-950 dark:text-red-300", alert: counts.overdue > 0 },
   ];
 
@@ -174,20 +199,24 @@ export function CommandCenter({
     const c = classify(task, today, soon);
     return (
       <div key={task.id} className="group flex items-center gap-2 px-3 py-2 hover:bg-neutral-50 dark:hover:bg-neutral-800/40" data-testid="cc-task">
-        <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: task.statusColor }} title={task.statusName} />
+        <TaskTick done={task.category === "done"} title={task.statusName} />
         <Link href={`${base}/p/${task.projectId}/t/${task.id}`} className="min-w-0 flex-1">
           <span className={cn("block truncate text-sm font-medium hover:text-indigo-600", task.category === "done" ? "text-neutral-400 line-through" : "text-neutral-800 dark:text-neutral-100")}>{task.title || t("common.untitled")}</span>
-          <span className="flex items-center gap-1.5 text-[11px] text-neutral-400 truncate">
-            <span className="h-1.5 w-1.5 rounded-sm shrink-0" style={{ backgroundColor: task.projectColor }} />
-            {task.projectName}
-            {c.blocked && (
-              <span className="inline-flex items-center gap-0.5 text-amber-600" title={task.blockedBy.join(", ")}>
-                · <Lock size={10} /> {t("cc.blockedBy", { name: task.blockedBy[0] })}
+          <Meta className="mt-0.5 flex-nowrap overflow-hidden">
+            <MetaChip>
+              <span className="inline-flex items-center gap-1">
+                <ProjectIcon icon={task.projectIcon} size={10} />
+                {task.projectName}
               </span>
+            </MetaChip>
+            {c.blocked && (
+              <MetaItem icon={Lock} className="text-amber-600" title={task.blockedBy.join(", ")}>
+                {t("cc.blockedBy", { name: task.blockedBy[0] })}
+              </MetaItem>
             )}
-            {c.unplanned && <span className="text-neutral-400">· {t("cc.tag.unplanned")}</span>}
-            {!compact && task.assigneeNames.length > 0 && <span>· {task.assigneeNames.join(", ")}</span>}
-          </span>
+            {c.unplanned && <MetaStatus>{t("cc.tag.unplanned")}</MetaStatus>}
+            {!compact && task.assigneeNames.length > 0 && <MetaItem icon={UsersRound} className="truncate">{task.assigneeNames.join(", ")}</MetaItem>}
+          </Meta>
         </Link>
         {task.okr && <Target size={12} className="text-indigo-500 shrink-0" aria-label="OKR" />}
         {task.dueDate && <span className={cn("text-[11px] whitespace-nowrap shrink-0", c.overdue ? "text-red-600 font-medium" : c.dueToday ? "text-amber-600 font-medium" : "text-neutral-500")}>{dateFmt(task.dueDate)}</span>}
@@ -212,13 +241,9 @@ export function CommandCenter({
     );
   };
 
-  const section = ({ title, icon: Icon, tone, items, empty, testId, more }: { title: string; icon: typeof ClipboardList; tone: string; items: HomeTask[]; empty: string; testId: string; more?: TaskFilter }) => (
+  const section = ({ title, icon: Icon, items, empty, testId, more }: { title: string; icon: typeof ClipboardList; items: HomeTask[]; empty: string; testId: string; more?: TaskFilter }) => (
     <section className={cn(card, "flex flex-col overflow-hidden")} data-testid={testId}>
-      <div className="flex items-center gap-2 px-4 pt-3.5 pb-2">
-        <Icon size={15} className={tone} />
-        <h2 className="font-semibold text-sm text-neutral-900 dark:text-neutral-50 flex-1">{title}</h2>
-        <span className="text-xs tabular-nums text-neutral-400">{items.length}</span>
-      </div>
+      <SectionHeader icon={Icon} title={title} count={items.length} />
       <div className="max-h-72 overflow-y-auto thin-scroll divide-y divide-neutral-100 dark:divide-neutral-800 flex-1">
         {items.length === 0 ? <p className="px-4 pb-4 pt-1 text-xs text-neutral-400">{empty}</p> : items.slice(0, 30).map((x) => row(x, true))}
       </div>
@@ -232,8 +257,8 @@ export function CommandCenter({
 
   const attentionCounts = [
     { f: "overdue" as const, n: counts.overdue, tone: "text-red-600 bg-red-50 dark:bg-red-950" },
-    { f: "due_soon" as const, n: counts.due_soon, tone: "text-amber-700 bg-amber-50 dark:bg-amber-950" },
-    { f: "blocked" as const, n: counts.blocked, tone: "text-orange-700 bg-orange-50 dark:bg-orange-950" },
+    { f: "due_soon" as const, n: counts.due_soon, tone: "text-indigo-700 bg-indigo-50 dark:bg-indigo-950" },
+    { f: "blocked" as const, n: counts.blocked, tone: "text-indigo-700 bg-indigo-50 dark:bg-indigo-950" },
     { f: "unplanned" as const, n: counts.unplanned, tone: "text-neutral-600 bg-neutral-100 dark:bg-neutral-800 dark:text-neutral-300" },
   ];
 
@@ -264,11 +289,12 @@ export function CommandCenter({
               <Link href={`${base}/p/${focus.projectId}/t/${focus.id}`} className="block truncate text-base font-semibold text-neutral-900 dark:text-neutral-50 hover:text-indigo-600">
                 {focus.title}
               </Link>
-              <div className="text-xs text-neutral-500 truncate">
-                {focus.projectName}
-                {focus.dueDate && ` · ${t("home.col.due")} ${dateFmt(focus.dueDate)}`}
-                {` · ${t("cc.estimate")} ${hours(focus.estimateMinutes)} · ${t("cc.actual")} ${hours(focus.actualMinutes)}`}
-              </div>
+              <Meta className="mt-1 text-xs">
+                <MetaChip>{focus.projectName}</MetaChip>
+                {focus.dueDate && <MetaDate value={dateFmt(focus.dueDate)} title={t("home.col.due")} />}
+                <MetaTime actual={focus.actualMinutes ? focus.actualMinutes / 60 : null} planned={focus.estimateMinutes ? focus.estimateMinutes / 60 : null} title={`${t("cc.actual")} / ${t("cc.estimate")}`} />
+                <MetaStatus color={focus.statusColor}>{focus.statusName}</MetaStatus>
+              </Meta>
             </>
           ) : (
             <div className="text-sm text-neutral-500">{t("cc.focusEmpty")}</div>
@@ -290,13 +316,9 @@ export function CommandCenter({
       </section>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {section({ title: t("cc.myDay"), icon: Sun, tone: "text-indigo-600", items: myDay, empty: t("cc.myDayEmpty"), testId: "cc-myday", more: "today" })}
+        {section({ title: t("cc.myDay"), icon: Sun, items: myDay, empty: t("cc.myDayEmpty"), testId: "cc-myday", more: "today" })}
         <section className={cn(card, "flex flex-col overflow-hidden")} data-testid="cc-attention">
-          <div className="flex items-center gap-2 px-4 pt-3.5 pb-2">
-            <AlarmClock size={15} className="text-red-500" />
-            <h2 className="font-semibold text-sm text-neutral-900 dark:text-neutral-50 flex-1">{t("cc.attention")}</h2>
-            <span className="text-xs tabular-nums text-neutral-400">{attention.length}</span>
-          </div>
+          <SectionHeader icon={AlarmClock} title={t("cc.attention")} count={attention.length} />
           <div className="flex flex-wrap gap-1 px-4 pb-2">
             {attentionCounts.map((a) => (
               <button key={a.f} onClick={() => pick(a.f)} className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", a.tone)} data-testid={`cc-chip-${a.f}`}>
@@ -308,8 +330,8 @@ export function CommandCenter({
             {attention.length === 0 ? <p className="px-4 pb-4 text-xs text-neutral-400">{t("cc.attentionEmpty")}</p> : attention.slice(0, 30).map((x) => row(x, true))}
           </div>
         </section>
-        {section({ title: t("cc.waiting"), icon: Hourglass, tone: "text-amber-500", items: waiting, empty: t("cc.waitingEmpty"), testId: "cc-waiting" })}
-        {section({ title: t("cc.completed"), icon: CheckCircle2, tone: "text-emerald-500", items: completed, empty: t("cc.completedEmpty"), testId: "cc-completed", more: "done" })}
+        {section({ title: t("cc.waiting"), icon: Hourglass, items: waiting, empty: t("cc.waitingEmpty"), testId: "cc-waiting" })}
+        {section({ title: t("cc.completed"), icon: CheckCircle2, items: completed, empty: t("cc.completedEmpty"), testId: "cc-completed", more: "done" })}
       </div>
 
       <section id="my-tasks" className={cn(card, "overflow-hidden scroll-mt-4")} data-testid="home-my-tasks">
@@ -358,14 +380,14 @@ export function CommandCenter({
                     <tr key={task.id} className="group border-b last:border-0 border-neutral-100 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800/40" data-testid="cc-row">
                       <td className="px-5 py-2.5 max-w-0 w-[40%]">
                         <Link href={`${base}/p/${task.projectId}/t/${task.id}`} className="flex items-center gap-2 min-w-0">
-                          <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: task.statusColor }} title={task.statusName} />
+                          <TaskTick done={task.category === "done"} title={task.statusName} />
                           <span className={cn("truncate font-medium hover:text-indigo-600", task.category === "done" ? "text-neutral-400 line-through" : "text-neutral-800 dark:text-neutral-100")}>{task.title || t("common.untitled")}</span>
-                          {c.blocked && <Lock size={11} className="text-amber-600 shrink-0" aria-label={t("cc.filter.blocked")} />}
+                          {c.blocked && <Lock size={11} className="text-indigo-600 shrink-0" aria-label={t("cc.filter.blocked")} />}
                         </Link>
                       </td>
                       <td className="px-2 py-2.5 hidden md:table-cell">
                         <span className="inline-flex items-center gap-1.5 rounded-md border border-neutral-200 dark:border-neutral-700 px-2 py-0.5 text-xs text-neutral-600 dark:text-neutral-300 max-w-40">
-                          <span className="h-2 w-2 rounded-sm shrink-0" style={{ backgroundColor: task.projectColor }} />
+                          <ProjectIcon icon={task.projectIcon} size={12} />
                           <span className="truncate">{task.projectName}</span>
                         </span>
                       </td>

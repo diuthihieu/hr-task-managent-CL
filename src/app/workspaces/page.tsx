@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { workspaceLogoUrl } from "@/lib/workspace-logo";
 import { requirePageUser } from "@/lib/page-context";
 import { WorkspaceChooser, type WorkspaceCard } from "@/components/workspaces/workspace-chooser";
+import { pendingInvitationsFor, syncInvitations } from "@/lib/invitations";
 
 export const dynamic = "force-dynamic";
 
@@ -27,5 +28,7 @@ export default async function WorkspacesPage() {
     projects: m.workspace._count.projects,
     members: m.workspace._count.members,
   }));
-  return <WorkspaceChooser user={{ id: user.id, name: user.name, email: user.email, avatarColor: user.avatarColor, isAdmin: user.systemRole === "ADMIN" }} workspaces={cards} />;
+  await syncInvitations(user);
+  const invites = await pendingInvitationsFor(user);
+  return <WorkspaceChooser invites={invites} user={{ id: user.id, name: user.name, email: user.email, avatarColor: user.avatarColor, isAdmin: user.systemRole === "ADMIN", emailVerified: !!user.emailVerifiedAt }} workspaces={cards} />;
 }

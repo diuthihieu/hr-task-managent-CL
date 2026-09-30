@@ -12,7 +12,7 @@ export async function generateMetadata({ params }: { params: Promise<{ workspace
   if (!w) return {};
   const logo = workspaceLogoUrl(w);
   return {
-    title: { default: `${w.name} · woli.`, template: `%s · ${w.name}` },
+    title: { default: `${w.name} · woli`, template: `%s · ${w.name}` },
     ...(logo ? { icons: { icon: logo, apple: logo } } : {}),
   };
 }
@@ -30,7 +30,7 @@ export default async function WorkspaceLayout({ children, params }: { children: 
   const projects = await prisma.project.findMany({
     where: { workspaceId: workspace.id, deletedAt: null, ...visibleProjectWhere(user) },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-    select: { id: true, name: true, color: true, views: { orderBy: { sortOrder: "asc" }, select: { id: true, name: true, type: true } } },
+    select: { id: true, name: true, color: true, icon: true, views: { orderBy: { sortOrder: "asc" }, select: { id: true, name: true, type: true } } },
   });
 
   const me = await prisma.user.findUnique({ where: { id: user.id }, select: { avatarUpdatedAt: true } });

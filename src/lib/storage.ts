@@ -26,6 +26,12 @@ export function assertUploadAllowed(file: File) {
   if (BLOCKED_EXT.test(file.name) || BLOCKED_TYPES.some((re) => re.test(file.type))) throw new HttpError(400, "This file type is not allowed");
 }
 
+/** Per-user upload quota across all instances (abuse / storage-cost protection). */
+export async function assertUploadQuota(userId: string) {
+  const { rateLimit } = await import("./rate-limit");
+  if (!(await rateLimit(`upload:${userId}`, 60, 3600_000))) throw new HttpError(429, "Too many uploads - try again in an hour");
+}
+
 export function safeFileName(name: string) {
   const cleaned = name.normalize("NFKC").replace(/[\\/:*?"<>|\u0000-\u001f]+/g, "_").trim();
   return (cleaned || "file").slice(0, 200);
@@ -37,32 +43,42 @@ const providerOf = (a: "public" | "private"): StorageProvider => (a === "public"
 const accessOf = (p: string | null | undefined): "public" | "private" => (p === "vercel_blob_public" ? "public" : "private");
 
 /**
- * Upload with the configured access mode. A Blob store is created either
- * public or private, and writing with the wrong mode is rejected, so when the
- * store rejects the configured mode we retry once with the other one instead
- * of failing every upload on a misconfigured BLOB_ACCESS.
+ * Upload with the configured access mode - never silently another one. A
+ * store created public rejects private writes (and vice versa); that is a
+ * configuration error to fix, not a reason to publish HR files at a public URL.
  */
 export async function uploadAttachment(opts: { workspaceId: string; taskId?: string; wikiPageId?: string; file: File }) {
   const owner = opts.taskId ? `tasks/${opts.taskId}` : `wiki/${opts.wikiPageId}`;
   const pathname = `workspaces/${opts.workspaceId}/${owner}/${safeFileName(opts.file.name)}`;
-  const write = (mode: "public" | "private") =>
-    put(pathname, opts.file, { access: mode, addRandomSuffix: true, contentType: opts.file.type || "application/octet-stream" });
-  const preferred = access();
-  let mode = preferred;
-  let result;
+  const mode = access();
   try {
-    result = await write(preferred);
+    const result = await put(pathname, opts.file, { access: mode, addRandomSuffix: true, contentType: safeContentType(opts.file) });
+    return { url: result.url, pathname: result.pathname, provider: providerOf(mode) };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    if (!/access|public|private/i.test(msg)) throw storageError(e);
-    mode = preferred === "private" ? "public" : "private";
-    try {
-      result = await write(mode);
-    } catch (e2) {
-      throw storageError(e2);
+    if (/access|public|private/i.test(msg)) {
+      console.error("[storage] access mode rejected by the Blob store:", msg);
+      throw new HttpError(503, `File storage is misconfigured: the Blob store does not accept ${mode} files (check BLOB_ACCESS and the store type)`);
     }
+    throw storageError(e);
   }
-  return { url: result.url, pathname: result.pathname, provider: providerOf(mode) };
+}
+
+/**
+ * The type recorded for the blob. The browser's claim is only kept when it
+ * matches the extension family; anything else is stored as a download
+ * (application/octet-stream), so a renamed file can't be served as something active.
+ */
+const EXT_TYPES: Record<string, RegExp> = {
+  pdf: /^application\/pdf$/, png: /^image\/png$/, jpg: /^image\/jpeg$/, jpeg: /^image\/jpeg$/, gif: /^image\/gif$/, webp: /^image\/webp$/,
+  txt: /^text\/plain/, csv: /^text\/(csv|plain)/, md: /^text\/(markdown|plain)/, json: /^application\/json/,
+  docx: /officedocument\.wordprocessingml/, xlsx: /officedocument\.spreadsheetml/, pptx: /officedocument\.presentationml/,
+  doc: /msword/, xls: /ms-excel/, ppt: /ms-powerpoint/, zip: /zip/, mp4: /^video\/mp4$/, mp3: /^audio\/mpeg$/,
+};
+export function safeContentType(file: { name: string; type: string }) {
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  const claimed = (file.type || "").toLowerCase();
+  return EXT_TYPES[ext]?.test(claimed) ? claimed : "application/octet-stream";
 }
 
 function storageError(e: unknown) {

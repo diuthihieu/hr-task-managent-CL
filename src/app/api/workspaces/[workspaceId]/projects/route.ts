@@ -33,6 +33,7 @@ export const POST = route<P>(async (req, { params }) => {
         name: body.name,
         description: body.description ?? null,
         color: body.color,
+        icon: body.icon,
         status: body.status,
         ownerId: body.ownerId ?? user.id,
         startDate: dateOnlyToDate(body.startDate),

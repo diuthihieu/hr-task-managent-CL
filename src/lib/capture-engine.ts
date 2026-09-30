@@ -4,33 +4,42 @@
 // bucket boundaries are computed from the real gap-to-now, not a manually
 // chosen enum, so the rings stay accurate as time passes.
 
-export const TIME_BUCKETS = ["today", "this_week", "next", "later", "unscheduled"] as const;
+export const TIME_BUCKETS = ["today", "this_week", "this_month", "this_quarter", "later", "unscheduled"] as const;
 export type TimeBucket = (typeof TIME_BUCKETS)[number];
 
 export const TIME_BUCKET_LABELS: Record<TimeBucket, string> = {
   today: "Today",
   this_week: "This Week",
-  next: "Next",
+  this_month: "This Month",
+  this_quarter: "This Quarter",
   later: "Later",
   unscheduled: "Unplanned",
 };
 
-/** Normalized radial distance (0-1) of each ring's boundary from the "Now" center; unscheduled dots sit outside the outermost ring. */
+/** Normalized radial distance (0-1) of each ring (orbit) from the "Now" center; unscheduled dots sit outside the outermost ring. */
 export const TIME_BUCKET_DISTANCE: Record<TimeBucket, number> = {
-  today: 0.22,
-  this_week: 0.48,
-  next: 0.72,
+  today: 0.2,
+  this_week: 0.38,
+  this_month: 0.56,
+  this_quarter: 0.74,
   later: 0.92,
-  unscheduled: 1.18,
+  unscheduled: 1.1,
 };
 
-export function bucketForPlannedAt(plannedAt: string | null | undefined): TimeBucket {
+/** Ring by the real gap to now: within a day, a week, a month (30 d), a quarter (90 d), or later. */
+export function bucketForPlannedAt(plannedAt: string | null | undefined, now = Date.now()): TimeBucket {
   if (!plannedAt) return "unscheduled";
-  const diffDays = (new Date(plannedAt).getTime() - Date.now()) / 86400000;
+  const diffDays = (new Date(plannedAt).getTime() - now) / 86400000;
   if (diffDays <= 1) return "today";
   if (diffDays <= 7) return "this_week";
-  if (diffDays <= 14) return "next";
+  if (diffDays <= 30) return "this_month";
+  if (diffDays <= 90) return "this_quarter";
   return "later";
+}
+
+/** Angle from the center to a point, in degrees 0-360 (0 = right, clockwise in screen coordinates). */
+export function angleOf(dx: number, dy: number): number {
+  return ((Math.atan2(dy, dx) * 180) / Math.PI + 360) % 360;
 }
 
 /** Dot radius in px from an estimated duration in minutes - sqrt-scaled so a 4h task isn't absurdly larger than a 15m one. */

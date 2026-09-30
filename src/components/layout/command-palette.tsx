@@ -4,13 +4,14 @@ import { useRouter } from "next/navigation";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/misc";
-import { FolderKanban, Search, BookOpen, Target, Paperclip, Plus, Briefcase, Sparkles, CalendarClock, CornerDownLeft, Loader2, ArrowLeft } from "lucide-react";
+import { FolderKanban, Search, BookOpen, Target, Paperclip, Plus, Briefcase, Sparkles, CalendarClock, CornerDownLeft, Loader2, ArrowLeft, Gavel } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { useT } from "@/components/i18n-provider";
 import { AttachmentViewer } from "@/components/attachments/attachment-viewer";
 import { cn, initials } from "@/lib/utils";
 import type { MessageKey } from "@/lib/i18n/core";
+import { AvatarImg } from "@/components/ui/avatar-img";
 
 interface SearchResult {
   projects: { id: string; name: string; color: string }[];
@@ -19,8 +20,9 @@ interface SearchResult {
   objectives: { id: string; label: string; projectName: string | null }[];
   people: { id: string; name: string; email: string; avatarColor: string; role: string }[];
   files: { id: string; fileName: string; contentType: string; sizeBytes: number; parent: { kind: "task" | "wiki"; id: string; label: string; projectId?: string; wikiId?: string } | null }[];
+  decisions?: { id: string; label: string; status: string; decidedAt: string; projectName: string | null }[];
 }
-const EMPTY: SearchResult = { projects: [], tasks: [], pages: [], objectives: [], people: [], files: [] };
+const EMPTY: SearchResult = { projects: [], tasks: [], pages: [], objectives: [], people: [], files: [], decisions: [] };
 
 interface Item {
   key: string;
@@ -138,20 +140,22 @@ export function CommandPalette({
     if (!query) return filteredCommands;
     const r = results;
     return [
-      ...r.tasks.map((x) => ({ key: `t-${x.id}`, group: t("cp.tasks"), icon: <span className="block h-2 w-2 rounded-full" style={{ backgroundColor: x.statusColor }} />, label: x.label || t("common.untitled"), sub: `${x.projectName} · ${x.status}`, run: () => go(`${base}/p/${x.projectId}/t/${x.id}`) })),
+      ...r.tasks.map((x) => ({ key: `t-${x.id}`, group: t("cp.tasks"), icon: <span className="block h-2 w-2 rounded-full" style={{ backgroundColor: x.statusColor }} />, label: x.label || t("common.untitled"), sub: `${x.projectName} ${x.status}`, run: () => go(`${base}/p/${x.projectId}/t/${x.id}`) })),
       ...r.projects.map((x) => ({ key: `p-${x.id}`, group: t("nav.projects"), icon: <FolderKanban size={14} style={{ color: x.color }} />, label: x.name, run: () => go(`${base}/p/${x.id}`) })),
       ...r.objectives.map((x) => ({ key: `o-${x.id}`, group: t("cp.objectives"), icon: <Target size={14} className="text-indigo-500" />, label: x.label, sub: x.projectName ?? undefined, run: () => go(`${base}/okrs/${x.id}`) })),
       ...r.pages.map((x) => ({ key: `w-${x.id}`, group: t("nav.wiki"), icon: <BookOpen size={14} />, label: x.label || t("common.untitled"), sub: x.wikiName, run: () => go(`${base}/wiki/${x.wikiId}/${x.id}`) })),
+      ...(r.decisions ?? []).map((x) => ({ key: `d-${x.id}`, group: t("brain.decisions"), icon: <Gavel size={14} className="text-indigo-500" />, label: x.label, sub: [x.decidedAt, x.projectName].filter(Boolean).join(" "), run: () => go(`${base}/brain/decisions/${x.id}`) })),
       ...r.people.map((x) => ({
         key: `u-${x.id}`,
         group: t("cp.people"),
         icon: (
-          <span className="h-4 w-4 rounded-full text-[8px] text-white flex items-center justify-center" style={{ backgroundColor: x.avatarColor }}>
+          <span className="relative overflow-hidden h-4 w-4 rounded-full text-[8px] text-white flex items-center justify-center" style={{ backgroundColor: x.avatarColor }}>
             {initials(x.name)}
+            <AvatarImg id={x.id} />
           </span>
         ),
         label: x.name,
-        sub: `${x.email} · ${t(`role.${x.role}` as MessageKey)}`,
+        sub: `${x.email} ${t(`role.${x.role}` as MessageKey)}`,
         run: () => go(`${base}/settings?section=members`),
       })),
       ...r.files.map((x) => ({ key: `f-${x.id}`, group: t("cp.files"), icon: <Paperclip size={14} />, label: x.fileName, sub: x.parent?.label, run: () => setViewFile(x) })),

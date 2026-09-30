@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, assertCanEditTask, route, workspaceOfAttachment, roleAtLeast, forbidden } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, assertCanEditTask, route, workspaceOfAttachment, roleAtLeast, forbidden, wikiRoleAtLeast } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { deleteAttachmentBlob } from "@/lib/storage";
 
@@ -10,10 +10,14 @@ type P = { attachmentId: string };
 export const DELETE = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { attachmentId } = await params;
-  const ctx = await requireWorkspaceRole(user, await workspaceOfAttachment(attachmentId), "contributor");
+  // Resolve access first (membership, hidden projects, wiki membership), then apply the right role:
+  // task files follow task edit rights; wiki files follow the WIKI role, not the workspace role.
+  const ctx = await requireWorkspaceRole(user, await workspaceOfAttachment(attachmentId), "viewer");
   const a = await prisma.attachment.findUniqueOrThrow({ where: { id: attachmentId } });
-  if (a.taskId) await assertCanEditTask(ctx, a.taskId);
-  else if (!roleAtLeast(ctx.role, "editor")) throw forbidden();
+  if (a.taskId) {
+    if (!roleAtLeast(ctx.role, "contributor")) throw forbidden();
+    await assertCanEditTask(ctx, a.taskId);
+  } else if (!wikiRoleAtLeast(ctx.wikiRole, "editor")) throw forbidden("Only wiki editors can remove files");
   await prisma.$transaction(async (tx) => {
     await tx.attachment.update({ where: { id: attachmentId }, data: { deletedAt: new Date() } });
     await logActivity(tx, {

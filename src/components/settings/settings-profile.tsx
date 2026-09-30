@@ -232,7 +232,7 @@ export function SettingsProfile() {
             </div>
           </div>
           <div className="flex gap-2 rounded-lg bg-neutral-50 dark:bg-neutral-800/50 p-3 text-xs text-neutral-600 dark:text-neutral-300">
-            <ShieldCheck size={15} className="text-emerald-600 shrink-0 mt-0.5" />
+            <ShieldCheck size={15} className="text-indigo-600 shrink-0 mt-0.5" />
             <span>{t("profile.ai.scope")}</span>
           </div>
         </section>

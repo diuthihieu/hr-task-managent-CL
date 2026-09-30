@@ -8,6 +8,8 @@ import { toast } from "@/components/ui/toast";
 import type { ActivityRow } from "@/types";
 import { SettingsSection } from "./settings-shell";
 import { useT } from "@/components/i18n-provider";
+import { AvatarImg } from "@/components/ui/avatar-img";
+import { Meta, MetaChip } from "@/components/ui/meta";
 
 const ACTION_ICON: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
   created: Plus,
@@ -64,25 +66,26 @@ export function SettingsAuditLog({ workspaceId }: { workspaceId: string }) {
               const Icon = ACTION_ICON[r.action] ?? Pencil;
               return (
                 <div key={r.id} className="flex items-start gap-3 px-3 py-2">
-                  <Icon size={13} className={`shrink-0 mt-1 ${ACTION_COLOR[r.action] ?? "text-amber-600 dark:text-amber-500"}`} />
+                  <Icon size={13} className={`shrink-0 mt-1 ${ACTION_COLOR[r.action] ?? "text-indigo-600 dark:text-indigo-500"}`} />
                   <div className="flex-1 min-w-0 text-sm text-neutral-700 dark:text-neutral-300">
                     <div className="truncate">
-                      <span className="text-neutral-400">{r.entityType.replace("_", " ")} · {r.action.replace("_", " ")}</span>
+                      <Meta className="text-neutral-400"><MetaChip>{r.entityType.replace("_", " ")}</MetaChip><span>{r.action.replace("_", " ")}</span></Meta>
                       {r.summary && <> — <span className="text-neutral-900 dark:text-neutral-100">{r.summary}</span></>}
                     </div>
                     {r.changes && (
                       <div className="text-xs text-neutral-500 truncate">
                         {Object.entries(r.changes)
                           .map(([k, v]) => `${k.replace(/^custom:/, "")}: ${JSON.stringify(v.from)} → ${JSON.stringify(v.to)}`)
-                          .join(" · ")}
+                          .join(" ")}
                       </div>
                     )}
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     {r.actor ? (
                       <>
-                        <div className="h-5 w-5 rounded-full flex items-center justify-center text-white text-[9px] font-medium" style={{ backgroundColor: r.actor.avatarColor }}>
+                        <div className="relative overflow-hidden h-5 w-5 rounded-full flex items-center justify-center text-white text-[9px] font-medium" style={{ backgroundColor: r.actor.avatarColor }}>
                           {initials(r.actor.name)}
+                          <AvatarImg id={r.actor.id} />
                         </div>
                         <span className="text-xs text-neutral-400">{r.actor.name}</span>
                       </>

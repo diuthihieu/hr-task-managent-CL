@@ -77,9 +77,16 @@ test("admin creates a workspace with default statuses and no categories", async 
   assert.equal((await admin.get(`/api/workspaces/${s.ws}/categories`)).status, 404);
   const owner = await prisma.workspaceMember.findFirstOrThrow({ where: { workspaceId: s.ws } });
   assert.equal(owner.role, "owner", "creator becomes the owner");
+  // AI is opt-in per workspace: nothing is sent to the AI provider until an admin switches it on.
+  const ws0 = await admin.get<{ aiEnabled: boolean }>(`/api/workspaces/${s.ws}`);
+  assert.equal(ws0.body.aiEnabled, false);
+  const off = await admin.post<{ code: string }>(`/api/workspaces/${s.ws}/brain/insights`, {});
+  assert.equal(off.status, 403);
+  assert.equal(off.body.code, "ai_disabled");
+  assert.equal((await admin.patch<{ aiEnabled: boolean }>(`/api/workspaces/${s.ws}`, { aiEnabled: true })).body.aiEnabled, true);
 });
 
-test("owners add signed-up users by email; any user can create their own workspaces", async () => {
+test("owners invite people by email - they join only after accepting; any user can create their own workspaces", async () => {
   const v = await new Client().post<{ id: string }>("/api/register", { email: "viewer@integration.test", password: "Viewer1234", name: "Vic Viewer" });
   assert.equal(v.status, 201);
   s.viewerId = v.body.id;
@@ -92,14 +99,54 @@ test("owners add signed-up users by email; any user can create their own workspa
   assert.ok(await contributor.login("contributor@integration.test", "Contrib123"));
   assert.ok(await viewer.login("viewer@integration.test", "Viewer1234"));
   assert.ok(await outsider.login("outsider@integration.test", s.outsiderPw));
+  // A temporary password only opens the "choose a new password" endpoint - every other API refuses.
+  const blocked = await outsider.get<{ code: string }>("/api/workspaces");
+  assert.equal(blocked.status, 403);
+  assert.equal(blocked.body.code, "password_change_required");
+  assert.equal((await outsider.post("/api/account/password", { currentPassword: s.outsiderPw, newPassword: "Outsider123" })).status, 200);
+  assert.equal((await outsider.get("/api/workspaces")).status, 200, "the same device keeps working after its own password change");
 
-  // Only people who signed up can be added.
-  const missing = await admin.post<{ error: string }>(`/api/workspaces/${s.ws}/members`, { email: "nobody@integration.test", role: "editor" });
-  assert.equal(missing.status, 400);
-  assert.match(missing.body.error, /sign up/i);
-  assert.equal((await admin.post(`/api/workspaces/${s.ws}/members`, { email: "contributor@integration.test", role: "contributor" })).status, 201);
-  assert.equal((await admin.post(`/api/workspaces/${s.ws}/members`, { email: "VIEWER@integration.test", role: "viewer" })).status, 201);
-  assert.equal((await admin.post(`/api/workspaces/${s.ws}/members`, { email: "viewer@integration.test", role: "viewer" })).status, 400, "already a member");
+  // Nobody is added directly: they get an invitation and join only after accepting.
+  const inv = await admin.post<{ invitations: { email: string; status: string; url: string; hasAccount: boolean }[] }>(`/api/workspaces/${s.ws}/members`, {
+    emails: ["contributor@integration.test", "VIEWER@integration.test"],
+    role: "contributor",
+    message: "Welcome to the HR team",
+  });
+  assert.equal(inv.status, 201, JSON.stringify(inv.body));
+  assert.deepEqual(inv.body.invitations.map((i) => [i.email, i.status, i.hasAccount]), [["contributor@integration.test", "invited", true], ["viewer@integration.test", "invited", true]]);
+  // Password sign-ups haven't proven they own the address: no email invitation until it is verified.
+  assert.equal((v.body as { verification?: string }).verification, "unavailable", "no mail provider in tests");
+  assert.equal((await viewer.get<{ items: { type: string }[] }>("/api/notifications")).body.items.filter((n) => n.type === "workspace_invite").length, 0, "unverified accounts don't see email invitations");
+  const pendingTok = (await prisma.workspaceInvitation.findFirstOrThrow({ where: { workspaceId: s.ws, email: "viewer@integration.test" } })).token;
+  const unverified = await viewer.post<{ code: string }>(`/api/invite/${pendingTok}`, { decision: "accept" });
+  assert.equal(unverified.status, 403);
+  assert.equal(unverified.body.code, "email_unverified");
+  assert.equal((await contributor.patch(`/api/admin/users/${s.viewerId}`, { verifyEmail: true })).status, 403, "only system admins confirm addresses");
+  for (const id of [s.contributorId, s.viewerId]) assert.equal((await admin.patch(`/api/admin/users/${id}`, { verifyEmail: true })).status, 200);
+  assert.ok((await prisma.user.findUniqueOrThrow({ where: { id: s.viewerId } })).emailVerifiedAt);
+  assert.equal(await prisma.workspaceMember.count({ where: { workspaceId: s.ws, userId: s.viewerId } }), 0, "not a member before accepting");
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}`)).status, 404);
+  const vNotif = (await viewer.get<{ items: { type: string; link: string }[] }>("/api/notifications")).body.items.find((n) => n.type === "workspace_invite");
+  assert.ok(vNotif, "invitee sees it in the Action Center");
+  // A personal link only works for its own email.
+  assert.equal((await contributor.post(`/api/invite/${vNotif!.link.split("/invite/")[1]}`, { decision: "accept" })).status, 403);
+  // Re-inviting with another role updates the pending invitation instead of duplicating it.
+  const again = await admin.post<{ invitations: { status: string }[] }>(`/api/workspaces/${s.ws}/members`, { email: "viewer@integration.test", role: "viewer" });
+  assert.equal(again.body.invitations[0].status, "reinvited");
+  assert.equal(await prisma.workspaceInvitation.count({ where: { workspaceId: s.ws, email: "viewer@integration.test", status: "pending" } }), 1);
+  for (const [client, email] of [[contributor, "contributor@integration.test"], [viewer, "viewer@integration.test"]] as const) {
+    const token = inv.body.invitations.find((i) => i.email === email)!.url.split("/invite/")[1];
+    const info = await client.get<{ state: string; role: string; workspace: { name: string } }>(`/api/invite/${token}`);
+    assert.equal(info.body.state, "pending");
+    const ok = await client.post<{ joined: boolean; slug: string }>(`/api/invite/${token}`, { decision: "accept" });
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    assert.ok(ok.body.joined && ok.body.slug);
+  }
+  assert.equal((await prisma.workspaceMember.findUniqueOrThrow({ where: { workspaceId_userId: { workspaceId: s.ws, userId: s.viewerId } } })).role, "viewer", "joins with the latest invited role");
+  const accepted = await prisma.notification.findFirst({ where: { type: "workspace_invite_result", actorId: s.viewerId } });
+  assert.equal((accepted!.data as { decision: string }).decision, "accepted", "the inviter hears back");
+  assert.equal((await admin.post<{ invitations: { status: string }[] }>(`/api/workspaces/${s.ws}/members`, { email: "viewer@integration.test", role: "viewer" })).body.invitations[0].status, "already_member");
+  assert.equal((await admin.post(`/api/workspaces/${s.ws}/members`, { email: "x@y.zz", role: "owner" })).status, 400, "owners are made after joining");
   // Members can't add people; non-admins can't manage accounts.
   assert.equal((await contributor.post(`/api/workspaces/${s.ws}/members`, { email: "outsider@integration.test" })).status, 403);
   assert.equal((await contributor.get("/api/admin/users")).status, 403);
@@ -111,7 +158,7 @@ test("owners add signed-up users by email; any user can create their own workspa
   s.contributorWs = mine.body.id;
   const list = await contributor.get<{ id: string; role: string }[]>("/api/workspaces");
   assert.deepEqual(list.body.map((w) => w.role).sort(), ["contributor", "owner"]);
-  assert.equal((await admin.get(`/api/workspaces/${s.contributorWs}`)).status, 200, "system admin can still open any workspace for support");
+  assert.equal((await admin.get(`/api/workspaces/${s.contributorWs}`)).status, 404, "system admins see tenant content only as members (support access is break-glass: ADMIN_SUPPORT_ACCESS=1)");
   assert.equal((await viewer.get(`/api/workspaces/${s.contributorWs}`)).status, 404, "others can't see it");
 });
 
@@ -535,12 +582,20 @@ test("project visibility: owners hide a project from chosen members", async () =
   assert.ok(!JSON.stringify(search.body).includes(hiddenTask.id), "not in search");
   const mywork = await viewer.get<{ tasks: { taskId: string }[] }>(`/api/workspaces/${s.ws}/my-work`);
   assert.ok(!JSON.stringify(mywork.body).includes(hiddenTask.id), "not in My Work even when assigned");
+  const notifs = async () => (await viewer.get<{ items: { title: string; projectName: string | null }[] }>("/api/notifications")).body.items;
+  assert.ok(!(await notifs()).some((n) => n.title === "Call the insurer"), "older notifications about the hidden project disappear too");
+  // OKRs of a hidden project don't leak through the pickers either.
+  const hiddenObj = await admin.post<{ id: string; keyResults: { id: string }[] }>(`/api/workspaces/${s.ws}/objectives`, { title: "Secret insurer objective", projectId: s.otherProject });
+  const hiddenKr = await admin.post<{ keyResults: { id: string; title: string }[] }>(`/api/objectives/${hiddenObj.body.id}/key-results`, { title: "Secret KR" });
+  const opts = await viewer.get<{ objectives: { id: string }[]; keyResults: { id: string }[] }>(`/api/workspaces/${s.ws}/okr-options`);
+  assert.ok(!JSON.stringify(opts.body).includes(hiddenObj.body.id) && !opts.body.keyResults.some((k) => hiddenKr.body.keyResults.some((h) => h.id === k.id)), "no hidden objective or key result in the pickers");
   // Everyone else still sees it.
   assert.equal((await contributor.get(`/api/projects/${s.otherProject}`)).status, 200);
 
   // Promoting the member to admin clears the rule; so does un-hiding.
   assert.equal((await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] })).status, 200);
   assert.equal((await viewer.get(`/api/projects/${s.otherProject}`)).status, 200);
+  assert.ok((await notifs()).some((n) => n.title === "Call the insurer"), "and come back when access is restored");
 });
 
 const BASE = process.env.TEST_BASE_URL ?? "http://localhost:3100";
@@ -587,7 +642,7 @@ test("workspace logo: admins upload or generate one; it becomes the favicon and 
   assert.equal(loc.searchParams.get("callbackUrl"), `/w/${ws.slug}/my-work`);
   const landing = await (await fetch(`${BASE}/?ws=${ws.slug}`)).text();
   assert.match(landing, /<meta property="og:image" content="[^"]*workspace-logo/);
-  assert.ok(landing.includes(`<title>${ws.name} · woli.</title>`), "workspace name in the preview title");
+  assert.ok(landing.includes(`<title>${ws.name} · woli</title>`), "workspace name in the preview title");
   assert.equal((await admin.del(`/api/workspaces/${s.ws}/logo`)).status, 204);
   assert.equal((await fetch(`${BASE}${logoUrl}`)).status, 404);
 });
@@ -717,6 +772,7 @@ test("AI assistant: answers from what the user may see, declines the rest, and e
   assert.match(system, /Probation lasts 60 days/, "wiki documents of visible projects");
   assert.doesNotMatch(system, /Call the insurer|Other project/, "hidden project stays out");
   assert.match(system, /decline in one or two sentences/, "out-of-scope rule");
+  assert.match(system, /## Workspace members \(\d+\)[\s\S]*Casey Contributor \| [^|\n]* \| contributor/, "every member is listed, not only people with tasks");
   await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
   // Wikis the user can't open stay out too.
   const secret = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/wikis`, { name: "Board notes", access: "restricted" });
@@ -739,6 +795,89 @@ test("AI assistant: answers from what the user may see, declines the rest, and e
   assert.equal(status, 429);
   const saved = await prisma.aiMessage.findFirst({ where: { role: "model", conversation: { userId: s.viewerId } }, orderBy: { createdAt: "desc" } });
   assert.equal(saved?.tokensIn, 111, "token usage recorded");
+});
+
+async function intake(client: Client, body: Record<string, unknown>) {
+  const res = await fetch(`${BASE}/api/ai/task-intake`, { method: "POST", headers: { cookie: client.cookieHeader(), "content-type": "application/json" }, body: JSON.stringify({ timeZone: "Asia/Ho_Chi_Minh", ...body }) });
+  return {
+    status: res.status,
+    body: (await res.json().catch(() => null)) as {
+      type: string;
+      message: string;
+      canCreate: boolean;
+      draft: { projectId: string | null; title: string; dueDate: string | null; dueTime: string | null; priority: string; assignees: { id: string }[]; missing: string[] } | null;
+    },
+  };
+}
+const say = (...texts: string[]) => texts.map((content, i) => ({ role: i % 2 ? "model" : "user", content }));
+
+test("AI task intake: asks, summarizes, creates only on confirm - within the user's access", async () => {
+  const secret = await admin.post<Rec>(`/api/projects/${s.otherProject}/tasks`, { data: { sys_title: "Secret merger checklist" } });
+  assert.equal(secret.status, 201);
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.contributorId] });
+  try {
+    // 1) The AI asks for what's missing; the draft defaults to the project the chat is opened in.
+    const q = await intake(contributor, { projectId: s.project, messages: say("Làm báo cáo tháng lúc 2h sáng nay") });
+    assert.equal(q.status, 200, JSON.stringify(q.body));
+    assert.equal(q.body.type, "question");
+    assert.equal(q.body.draft?.projectId, s.project);
+    assert.equal(q.body.draft?.dueTime, "02:00");
+    const system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+    assert.match(system, /RESPONSE_SCHEMA: task_intake/);
+    assert.match(system, /user's local time now: \d{4}-\d{2}-\d{2} \d{2}:\d{2} \(\w+, time zone Asia\/Ho_Chi_Minh\)/);
+    assert.match(system, /Payroll reconciliation/, "project data for questions");
+    assert.doesNotMatch(system, /Secret merger checklist/, "hidden project's tasks stay out");
+    assert.doesNotMatch(system, new RegExp(s.otherProject), "hidden project isn't offered either");
+
+    // 2) Summary: only ids the server handed out survive.
+    const sum = await intake(contributor, { projectId: s.project, messages: say("Làm báo cáo tháng lúc 2h sáng nay", q.body.message, "ok"), draft: { ...q.body.draft, assigneeIds: [] } });
+    assert.equal(sum.body.type, "summary");
+    assert.equal(sum.body.draft?.priority, "high");
+    assert.equal(sum.body.draft?.assignees.length, 1);
+    assert.deepEqual(sum.body.draft?.missing, []);
+    const ghost = await intake(contributor, { projectId: s.project, messages: say("#hallucinate") });
+    assert.equal(ghost.body.draft?.projectId, s.project, "an unknown project id falls back to the chat's project");
+    assert.deepEqual(ghost.body.draft?.assignees, [], "unknown people are dropped");
+    assert.equal(ghost.body.draft?.priority, "medium", "invalid priority is replaced");
+    const ws = await intake(contributor, { workspaceId: s.ws, messages: say("#hallucinate") });
+    assert.deepEqual(ws.body.draft?.missing, ["project"], "workspace mode: the project must be chosen");
+    assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /PROJECT DATA:\n\(not loaded - workspace mode\)/);
+
+    // 3) Nothing exists until the user confirms.
+    assert.equal(await prisma.task.count({ where: { title: "Monthly report" } }), 0);
+    const d = sum.body.draft!;
+    const confirm = (client: Client, draft: Record<string, unknown>) => client.post<{ record: Rec; href: string }>("/api/ai/task-intake/confirm", { draft });
+    const draftBody = { projectId: d.projectId, title: d.title, dueDate: d.dueDate, dueTime: d.dueTime, priority: d.priority, assigneeIds: d.assignees.map((a) => a.id), description: "PDF for the board", estimateHours: 2 };
+    assert.equal((await confirm(contributor, { ...draftBody, assigneeIds: ["00000000-0000-4000-8000-000000000001"] })).status, 400, "people are re-checked on confirm");
+    assert.equal((await confirm(contributor, { ...draftBody, projectId: s.otherProject })).status, 404, "a hidden project can't be targeted");
+    assert.equal((await confirm(viewer, draftBody)).status, 403, "viewers can't create tasks");
+    assert.equal((await confirm(outsider, draftBody)).status, 404);
+    const created = await confirm(contributor, draftBody);
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.match(created.body.href, new RegExp(`/p/${s.project}/t/${created.body.record.id}$`));
+    const task = await prisma.task.findUniqueOrThrow({ where: { id: created.body.record.id }, include: { assignees: true } });
+    assert.equal(task.title, "Monthly report");
+    assert.equal(task.priority, "high");
+    assert.equal(task.dueDate?.toISOString().slice(0, 10), "2026-09-30");
+    assert.equal(task.estimateMinutes, 120);
+    assert.match(task.description ?? "", /^(Deadline: 02:00 on 2026-09-30|Hạn chót: 02:00 ngày 30\/09\/2026)\n\nPDF for the board$/, "the due time leads the description");
+    assert.deepEqual(task.assignees.map((a) => a.userId), d.assignees.map((a) => a.id));
+    assert.ok(await prisma.activityLog.findFirst({ where: { entityId: task.id, action: "created", summary: { contains: "woli AI" } } }), "audited");
+
+    // 4) Project chat for a hidden project, viewers and outsiders.
+    assert.equal((await intake(contributor, { projectId: s.otherProject, messages: say("status?") })).status, 404);
+    const v = await intake(viewer, { projectId: s.project, messages: say("How many tasks are overdue?") });
+    assert.equal(v.status, 200);
+    assert.equal(v.body.type, "answer");
+    assert.equal(v.body.canCreate, false);
+    assert.equal((await intake(viewer, { projectId: s.project, messages: say("#summary") })).body.draft, null, "viewers never get a draft");
+    assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /CANNOT create tasks/);
+    assert.equal((await intake(outsider, { workspaceId: s.ws, messages: say("hi") })).status, 404);
+    assert.equal((await intake(contributor, { projectId: s.project, messages: say("hi", "hello") })).status, 400, "the last turn must be the user's");
+  } finally {
+    await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
+    await admin.del(`/api/tasks/${secret.body.id}`);
+  }
 });
 
 async function action(client: Client, body: Record<string, unknown>) {
@@ -810,6 +949,110 @@ test("focus sessions: one running session at a time; completing adds the minutes
   const grid = await contributor.get<Rec[]>(`/api/projects/${s.project}/tasks`);
   const rec = grid.body.find((r) => r.id === s.r6task)!;
   assert.ok(Number(rec.data.sys_actual) >= 0.4, "shown as hours in the grid");
+});
+
+test("focus: switching tasks pauses and records the running one; all open sessions are listed; stop keeps the time", async () => {
+  const mk = async (title: string) => (await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: title, sys_assignees: [s.contributorId] } })).body.id;
+  const [t1, t2] = [await mk("Focus flow A"), await mk("Focus flow B")];
+  const cat = async (id: string) => (await prisma.task.findUniqueOrThrow({ where: { id }, include: { status: true } })).status.category;
+  const actual = async (id: string) => (await prisma.task.findUniqueOrThrow({ where: { id } })).actualMinutes ?? 0;
+  assert.equal(await cat(t1), "todo");
+  const a = await contributor.post<{ id: string }>(`/api/tasks/${t1}/focus`, {});
+  assert.equal(await cat(t1), "in_progress", "focusing starts the task");
+  await prisma.focusSession.update({ where: { id: a.body.id }, data: { elapsedSeconds: 0, resumedAt: new Date(Date.now() - 10 * 60_000) } });
+  const b = await contributor.post<{ id: string }>(`/api/tasks/${t2}/focus`, {});
+  assert.equal((await prisma.focusSession.findUniqueOrThrow({ where: { id: a.body.id } })).status, "paused");
+  assert.equal(await actual(t1), 10, "the paused task's time is recorded right away");
+  const open = await contributor.get<{ id: string; status: string; running: boolean }[]>("/api/focus/active?all=1");
+  assert.deepEqual(open.body.map((x) => [x.id, x.status]), [[b.body.id, "running"], [a.body.id, "paused"]], "running first, then paused");
+  // Focusing on a task that already has a paused session resumes it (no duplicate).
+  const again = await contributor.post<{ id: string; status: string }>(`/api/tasks/${t1}/focus`, {});
+  assert.equal(again.body.id, a.body.id);
+  assert.equal(again.body.status, "running");
+  assert.equal((await prisma.focusSession.findUniqueOrThrow({ where: { id: b.body.id } })).status, "paused");
+  // Stop (not complete): time counted, task stays in progress, nothing double-counted.
+  await prisma.focusSession.update({ where: { id: a.body.id }, data: { resumedAt: new Date(Date.now() - 5 * 60_000) } });
+  assert.equal((await contributor.patch(`/api/focus/${a.body.id}`, { action: "cancel" })).status, 200);
+  assert.equal(await actual(t1), 15);
+  assert.equal(await cat(t1), "in_progress");
+  assert.equal((await contributor.patch(`/api/focus/${b.body.id}`, { action: "complete" })).status, 200);
+  assert.equal(await actual(t1), 15, "completing another session doesn't touch this task");
+  assert.deepEqual((await contributor.get<unknown[]>("/api/focus/active?all=1")).body, []);
+});
+
+test("role changes: the member is notified, may decline a promotion (never a demotion), and the admin hears back", async () => {
+  const latest = async () => prisma.notification.findFirstOrThrow({ where: { userId: s.viewerId, type: "role_changed" }, orderBy: { createdAt: "desc" } });
+  assert.equal((await admin.patch(`/api/workspaces/${s.ws}/members/${s.viewerId}`, { role: "editor" })).status, 200);
+  const up = await latest();
+  assert.deepEqual(up.data, { from: "viewer", to: "editor" });
+  assert.equal((await contributor.post(`/api/notifications/${up.id}/role-response`, { decision: "decline" })).status, 404, "only the person concerned");
+  const declined = await viewer.post<{ role: string }>(`/api/notifications/${up.id}/role-response`, { decision: "decline" });
+  assert.equal(declined.status, 200, JSON.stringify(declined.body));
+  assert.equal(declined.body.role, "viewer");
+  assert.equal((await prisma.workspaceMember.findFirstOrThrow({ where: { workspaceId: s.ws, userId: s.viewerId } })).role, "viewer");
+  assert.equal((await viewer.post(`/api/notifications/${up.id}/role-response`, { decision: "decline" })).status, 409, "answered once");
+  const back = await prisma.notification.findFirstOrThrow({ where: { type: "role_change_result", actorId: s.viewerId }, orderBy: { createdAt: "desc" } });
+  assert.equal((back.data as { decision: string }).decision, "declined");
+
+  // A stale promotion (role changed again since) or a demotion can't be declined.
+  await admin.patch(`/api/workspaces/${s.ws}/members/${s.viewerId}`, { role: "contributor" });
+  const promo = await latest();
+  await admin.patch(`/api/workspaces/${s.ws}/members/${s.viewerId}`, { role: "viewer" });
+  const demo = await latest();
+  assert.equal((await viewer.post(`/api/notifications/${promo.id}/role-response`, { decision: "decline" })).status, 409);
+  assert.equal((await viewer.post(`/api/notifications/${demo.id}/role-response`, { decision: "decline" })).status, 400);
+  assert.equal((await viewer.post(`/api/notifications/${demo.id}/role-response`, { decision: "accept" })).status, 200, "a demotion can be acknowledged");
+  assert.equal((await prisma.workspaceMember.findFirstOrThrow({ where: { workspaceId: s.ws, userId: s.viewerId } })).role, "viewer");
+  // Changing your own role (or no change) sends nothing.
+  const before = await prisma.notification.count({ where: { type: "role_changed" } });
+  await admin.patch(`/api/workspaces/${s.ws}/members/${s.viewerId}`, { role: "viewer" });
+  assert.equal(await prisma.notification.count({ where: { type: "role_changed" } }), before);
+});
+
+test("email setup is visible to system admins only; a missing provider is reported, not faked", async () => {
+  assert.equal((await contributor.get("/api/admin/mail")).status, 403);
+  const st = await admin.get<{ configured: boolean; missing: string[] }>("/api/admin/mail");
+  assert.equal(st.status, 200);
+  assert.equal(st.body.configured, false);
+  assert.deepEqual(st.body.missing, ["RESEND_API_KEY", "MAIL_FROM"]);
+  const test = await admin.post<{ ok: boolean; error: string }>("/api/admin/mail", {});
+  assert.equal(test.body.ok, false);
+  assert.match(test.body.error, /missing RESEND_API_KEY/);
+});
+
+test("renames: mentions show the current name, the AI knows former names; replies to replies join the thread", async () => {
+  const old = (await prisma.user.findUniqueOrThrow({ where: { id: s.viewerId } })).name;
+  assert.equal((await viewer.patch("/api/account/profile", { name: "Vivi Renamed" })).status, 200);
+  assert.deepEqual((await prisma.user.findUniqueOrThrow({ where: { id: s.viewerId } })).formerNames, [old], "the old name is kept by the database");
+  try {
+    const root = await contributor.post<{ id: string }>(`/api/tasks/${s.r6task}/comments`, { body: `@[${old}](${s.viewerId}) please check` });
+    assert.equal(root.status, 201, JSON.stringify(root.body));
+    const r1 = await admin.post<{ id: string }>(`/api/tasks/${s.r6task}/comments`, { body: "on it", parentCommentId: root.body.id });
+    const r2 = await contributor.post<{ id: string; parentCommentId: string }>(`/api/tasks/${s.r6task}/comments`, { body: "thanks", parentCommentId: r1.body.id });
+    assert.equal(r2.status, 201);
+    assert.equal(r2.body.parentCommentId, root.body.id, "a reply to a reply joins the root thread");
+    const list = await contributor.get<{ id: string; body: string }[]>(`/api/tasks/${s.r6task}/comments`);
+    assert.equal(list.body.find((c) => c.id === root.body.id)?.body, `@[Vivi Renamed](${s.viewerId}) please check`, "mentions show the current name");
+    const a = await ask(admin, { kind: "assistant", workspaceId: s.ws, message: `What is ${old} working on?` });
+    assert.equal(a.status, 200, a.text);
+    const system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+    assert.ok(system.includes(`Vivi Renamed | ${old} |`), "current name with the former one");
+    assert.match(system, /refers to the same person/);
+  } finally {
+    await viewer.patch("/api/account/profile", { name: old });
+  }
+});
+
+test("quick capture dots move along their ring and can be deleted by their owner only", async () => {
+  const th = await contributor.post<{ id: string }>(`/api/workspaces/${s.ws}/thoughts`, { taskName: "Orbit me", projectId: s.project, plannedAt: new Date(Date.now() + 10 * 86400000).toISOString() });
+  assert.equal(th.status, 201, JSON.stringify(th.body));
+  assert.equal((await contributor.patch<{ orbitAngle: number }>(`/api/thoughts/${th.body.id}`, { orbitAngle: 400 })).body.orbitAngle, 40, "angles wrap to 0-360");
+  assert.equal((await admin.patch(`/api/thoughts/${th.body.id}`, { orbitAngle: 10 })).status, 404, "captures are personal");
+  const rows = await contributor.get<{ id: string; orbitAngle: number | null; plannedAt: string }[]>(`/api/workspaces/${s.ws}/thoughts`);
+  assert.equal(rows.body.find((r) => r.id === th.body.id)?.orbitAngle, 40);
+  assert.equal((await admin.del(`/api/thoughts/${th.body.id}`)).status, 404);
+  assert.equal((await contributor.del(`/api/thoughts/${th.body.id}`)).status, 204);
+  assert.ok(!(await contributor.get<{ id: string }[]>(`/api/workspaces/${s.ws}/thoughts`)).body.some((r) => r.id === th.body.id));
 });
 
 test("universal search covers tasks, projects, wikis, objectives and people - within what the user can see", async () => {
@@ -896,14 +1139,763 @@ test("profile & appearance: avatars are visible to co-members only; theme mode a
   assert.equal((await fetch(`${BASE}/api/users/${s.viewerId}/avatar`, { headers: { cookie: outsider.cookieHeader() } })).status, 404);
   assert.equal((await admin.patch("/api/account/preferences", { themeMode: "system", surfaceTone: "ocean" })).status, 200);
   assert.equal((await admin.patch("/api/account/preferences", { surfaceTone: "neon" })).status, 400);
+  const sized = await admin.patch<{ fontSize: string; displaySize: string }>("/api/account/preferences", { fontSize: "lg", displaySize: "compact" });
+  assert.equal(sized.status, 200);
+  assert.deepEqual([sized.body.fontSize, sized.body.displaySize], ["lg", "compact"], "text and display size are saved");
+  assert.equal((await admin.patch("/api/account/preferences", { fontSize: "huge" })).status, 400);
+  assert.equal((await admin.patch("/api/account/preferences", { displaySize: "200%" })).status, 400);
+  const home = await fetch(`${BASE}/workspaces`, { headers: { cookie: admin.cookieHeader() } });
+  assert.match(await home.text(), /data-font-size="lg"[^>]*data-display="compact"/, "rendered on <html> by the server");
+  await admin.patch("/api/account/preferences", { fontSize: "md", displaySize: "default" });
   const u = await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } });
   assert.equal(u.surfaceTone, "ocean");
   assert.equal((await admin.patch("/api/account/profile", { aiTone: "sarcastic" })).status, 400);
 });
 
+test("approvals: request, approve from the Action Center, and optionally complete the task", async () => {
+  // An earlier test removes "Done"; completing on approval needs a done-category status.
+  const statuses = (await admin.get<{ category: string }[]>(`/api/workspaces/${s.ws}/statuses`)).body;
+  if (!statuses.some((x) => x.category === "done")) assert.equal((await admin.post(`/api/workspaces/${s.ws}/statuses`, { name: "Done", category: "done" })).status, 201);
+  const people = await contributor.get<{ id: string }[]>(`/api/tasks/${s.r6task}/mentionable`);
+  assert.ok(people.body.some((p) => p.id === s.viewerId));
+  assert.equal((await viewer.post(`/api/tasks/${s.r6task}/approvals`, { approverId: s.contributorId })).status, 403, "viewers can't request approvals");
+  assert.equal((await contributor.post(`/api/tasks/${s.r6task}/approvals`, { approverId: s.contributorId })).status, 400, "not yourself");
+  assert.equal((await contributor.post(`/api/tasks/${s.r6task}/approvals`, { approverId: s.outsiderId })).status, 400, "approver must be a member");
+  const req = await contributor.post<{ id: string; status: string }>(`/api/tasks/${s.r6task}/approvals`, { approverId: s.viewerId, note: "Please check the offer amounts", completeOnApprove: true });
+  assert.equal(req.status, 201, JSON.stringify(req.body));
+  assert.equal((await contributor.post(`/api/tasks/${s.r6task}/approvals`, { approverId: s.viewerId })).status, 409, "one pending request per approver");
+  const inbox = await viewer.get<NotifList>("/api/notifications?view=todo");
+  const n = inbox.body.items.find((x) => x.type === "approval_request" && x.taskId === s.r6task);
+  assert.ok(n, "approver sees it in To do");
+  assert.equal((await contributor.patch(`/api/approvals/${req.body.id}`, { decision: "approve" })).status, 403, "only the approver decides");
+  const ok = await viewer.patch<{ status: string }>(`/api/approvals/${req.body.id}`, { decision: "approve", note: "Looks good" });
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  assert.equal(ok.body.status, "approved");
+  const task = await prisma.task.findUniqueOrThrow({ where: { id: s.r6task }, include: { status: true } });
+  assert.equal(task.status.category, "done", "completed on approval, even though the approver is a viewer");
+  assert.ok(!(await viewer.get<NotifList>("/api/notifications?view=todo")).body.items.some((x) => x.id === n!.id), "request leaves the approver's To do");
+  const result = await prisma.notification.findFirst({ where: { userId: s.contributorId, type: "approval_result", taskId: s.r6task } });
+  assert.equal((result!.data as { decision: string }).decision, "approved", "requester told the result");
+  assert.equal((await viewer.patch(`/api/approvals/${req.body.id}`, { decision: "reject" })).status, 400, "already decided");
+  const list = await contributor.get<{ status: string }[]>(`/api/tasks/${s.r6task}/approvals`);
+  assert.equal(list.body[0].status, "approved");
+});
+
+test("AI suggestions: rule-based nudges that open the matching AI action, created once", async () => {
+  const big = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Redesign the onboarding programme", sys_assignees: [s.contributorId], sys_estimate: 12 } });
+  assert.equal(big.status, 201, JSON.stringify(big.body));
+  await contributor.get("/api/notifications");
+  await contributor.get("/api/notifications");
+  const rows = await prisma.notification.findMany({ where: { userId: s.contributorId, type: "ai_suggestion", taskId: big.body.id } });
+  assert.equal(rows.length, 1, "deduplicated");
+  assert.equal((rows[0].data as { kind: string }).kind, "task_breakdown");
+  assert.match(rows[0].link!, /\?ai=task_breakdown$/);
+});
+
+test("project icons: optional, chosen from the basic set", async () => {
+  const none = await admin.post<{ id: string; icon: string | null }>(`/api/workspaces/${s.ws}/projects`, { name: "No icon project" });
+  assert.equal(none.status, 201, JSON.stringify(none.body));
+  assert.equal(none.body.icon, null, "no icon unless the user picks one");
+  assert.equal((await admin.patch(`/api/projects/${none.body.id}`, { icon: "not-an-icon" })).status, 400);
+  const set = await admin.patch<{ icon: string | null }>(`/api/projects/${none.body.id}`, { icon: "rocket" });
+  assert.equal(set.body.icon, "rocket");
+  assert.equal((await admin.patch<{ icon: string | null }>(`/api/projects/${none.body.id}`, { icon: null })).body.icon, null, "can be cleared");
+});
+
+test("dashboard drill-down: a clicked segment lists exactly the tasks it counts", async () => {
+  const d = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/dashboards`, { name: "Drill-down" });
+  const block = await admin.post<{ id: string }>(`/api/dashboards/${d.body.id}/blocks`, { type: "column", title: "By status", config: { dataSource: { projectId: s.project }, dimensionFieldId: "sys_status", aggregation: "count" } });
+  assert.equal(block.status, 201, JSON.stringify(block.body));
+  const data = await viewer.post<{ series: { key: string; label: string; value: number }[] }>(`/api/dashboard-blocks/${block.body.id}/data`, {});
+  const point = data.body.series[0];
+  assert.ok(point && point.value > 0, JSON.stringify(data.body));
+  const res = await viewer.post<{ tasks: { id: string; title: string; status: { label: string } | null }[]; total: number }>(`/api/dashboard-blocks/${block.body.id}/records`, { segment: { key: point.key, label: point.label } });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(res.body.total, point.value, "adds up to the bar");
+  assert.ok(res.body.tasks.every((x) => x.status?.label === point.label));
+  const kpi = await viewer.post<{ total: number }>(`/api/dashboard-blocks/${block.body.id}/records`, { segment: { key: "nope", label: "nope" } });
+  assert.equal(kpi.body.total, 0);
+  assert.equal((await outsider.post(`/api/dashboard-blocks/${block.body.id}/records`, { segment: { key: point.key, label: point.label } })).status, 404, "outsiders see nothing");
+  assert.equal((await viewer.post(`/api/dashboard-blocks/${block.body.id}/records`, {})).status, 400, "segment required");
+});
+
+test("My OKRs show only the viewer's own branch: objective -> their key result -> their tasks", async () => {
+  type Obj = { id: string; keyResults: { id: string; title: string; tasks: { taskId: string }[] }[]; tasks: { taskId: string }[] };
+  const o = await admin.post<Obj>(`/api/workspaces/${s.ws}/objectives`, {
+    title: "Branch visibility",
+    projectId: s.project,
+    keyResults: [{ title: "KR owned by contributor", ownerId: s.contributorId }, { title: "KR with tasks" }],
+  });
+  assert.equal(o.status, 201, JSON.stringify(o.body));
+  const [krC, krT] = o.body.keyResults;
+  const adminId = (await prisma.user.findUniqueOrThrow({ where: { email: "admin@integration.test" } })).id;
+  const mk = async (title: string, assignee: string, target: string) => {
+    const r = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: title, sys_assignees: [assignee], sys_objective: target } });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    return r.body.id;
+  };
+  const vTask = await mk("Viewer's branch task", s.viewerId, `kr:${krT.id}`);
+  const otherTask = await mk("Someone else's task", s.contributorId, `kr:${krT.id}`);
+  const cOnKrC = await mk("Admin task under contributor KR", adminId, `kr:${krC.id}`);
+  const find = async (c: Client) => (await c.get<Obj[]>(`/api/workspaces/${s.ws}/objectives?mine=1`)).body.find((x) => x.id === o.body.id);
+
+  const v = await find(viewer);
+  assert.ok(v, "assignee sees the objective of their task");
+  assert.deepEqual(v!.keyResults.map((k) => k.id), [krT.id], "only the key result holding their task");
+  assert.deepEqual(v!.keyResults[0].tasks.map((x) => x.taskId), [vTask], "only their own task");
+
+  const c = await find(contributor);
+  assert.deepEqual(c!.keyResults.map((k) => k.id).sort(), [krC.id, krT.id].sort(), "own KR + KR holding their task");
+  assert.deepEqual(c!.keyResults.find((k) => k.id === krC.id)!.tasks.map((x) => x.taskId), [cOnKrC], "a KR owner sees every task of that KR");
+  assert.deepEqual(c!.keyResults.find((k) => k.id === krT.id)!.tasks.map((x) => x.taskId), [otherTask]);
+
+  const detail = await viewer.get<Obj>(`/api/objectives/${o.body.id}?mine=1`);
+  assert.deepEqual(detail.body.keyResults.map((k) => k.id), [krT.id], "detail opened from My OKRs is pruned too");
+  assert.equal((await viewer.get<Obj>(`/api/objectives/${o.body.id}`)).body.keyResults.length, 2, "Team view unchanged");
+});
+
+test("wiki pages that quote a hidden project are hidden too - in the UI, search and AI answers", async () => {
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId] });
+  const wiki = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/wikis`, { name: "Team reports", access: "workspace" });
+  // What happened in production: a workspace-wide report (built by someone who sees every project) saved as a wiki page.
+  const report = await admin.post<{ id: string }>(`/api/wikis/${wiki.body.id}/pages`, {
+    title: "Weekly report - whole workspace",
+    content: "<h2>Other project</h2><table><tr><td>Call the insurer</td><td>In Progress</td></tr></table><p>Budget review: pending</p>",
+  });
+  assert.equal(report.status, 201, JSON.stringify(report.body));
+  const clean = await admin.post<{ id: string }>(`/api/wikis/${wiki.body.id}/pages`, { title: "Leave policy", content: "<p>Twelve days a year.</p>" });
+
+  assert.equal((await viewer.get(`/api/wiki/${report.body.id}`)).status, 404, "hidden from the viewer");
+  assert.equal((await viewer.get(`/api/wiki/${clean.body.id}`)).status, 200);
+  const tree = (await viewer.get<{ id: string }[]>(`/api/wikis/${wiki.body.id}/pages`)).body.map((p) => p.id);
+  assert.ok(!tree.includes(report.body.id) && tree.includes(clean.body.id), "left out of the page tree");
+  assert.equal((await viewer.get<{ pages: unknown[] }>(`/api/search?workspaceId=${s.ws}&q=Weekly%20report`)).body.pages.length, 0, "and out of search");
+  assert.equal((await viewer.get(`/api/wiki/${report.body.id}/comments`)).status, 404);
+  const own = await admin.get<{ restrictedTo: { name: string }[] }>(`/api/wiki/${report.body.id}`);
+  assert.deepEqual(own.body.restrictedTo.map((p) => p.name), ["Other project"], "people who can see it get a notice");
+
+  await prisma.aiMessage.deleteMany({ where: { conversation: { userId: s.viewerId } } }); // reset the daily quota used up earlier
+  assert.equal((await ask(viewer, { kind: "assistant", workspaceId: s.ws, message: "report on Other project" })).status, 200);
+  let system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+  assert.match(system, /Leave policy/, "other wiki pages still reach the AI");
+  assert.doesNotMatch(system, /Call the insurer|Weekly report - whole workspace/, "the quoting page doesn't");
+  assert.equal((await ask(viewer, { kind: "wiki", wikiId: wiki.body.id, message: "what's in the weekly report?" })).status, 200);
+  system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+  assert.doesNotMatch(system, /Call the insurer/, "nor through the wiki's own assistant");
+
+  // A comment quoting the hidden project restricts a page that was fine before; mentioning the viewer doesn't notify them.
+  const c = await admin.post(`/api/wiki/${clean.body.id}/comments`, { body: `@[Vic](${s.viewerId}) see Call the insurer` });
+  assert.equal(c.status, 201, JSON.stringify(c.body));
+  assert.equal((await viewer.get(`/api/wiki/${clean.body.id}`)).status, 404);
+  assert.equal(await prisma.notification.count({ where: { userId: s.viewerId, type: "mention", data: { path: ["where"], equals: "wiki" }, title: "Leave policy" } }), 0);
+
+  // Unhiding the project gives the pages back.
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
+  assert.equal((await viewer.get(`/api/wiki/${report.body.id}`)).status, 200);
+  assert.deepEqual((await admin.get<{ restrictedTo: unknown[] }>(`/api/wiki/${report.body.id}`)).body.restrictedTo, [], "no notice when nobody is hidden");
+});
+
+test("knowledge graph: built from existing relations, filtered by access, with a local view around one node", async () => {
+  type G = { nodes: { id: string; type: string; depth?: number; href?: string; degree: number }[]; links: { source: string; target: string; kind: string }[]; focus?: string };
+  const slug = (await admin.get<{ slug: string }>(`/api/workspaces/${s.ws}`)).body.slug;
+  const task = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Graph: collect IDs", sys_category: s.category, sys_assignees: [s.contributorId] } });
+  const hiddenTask = await admin.post<Rec>(`/api/projects/${s.otherProject}/tasks`, { data: { sys_title: "Graph: secret task" } });
+  // A wiki page linking to the task and to the hidden task through ordinary links in its content.
+  const page = await admin.post<{ id: string }>(`/api/wikis/${s.wiki}/pages`, {
+    title: "Graph: onboarding guide",
+    content: `<p>See <a href="/w/${slug}/p/${s.project}/t/${task.body.id}">the task</a> and <a href="/w/${slug}/p/${s.otherProject}/t/${hiddenTask.body.id}">that one</a>.</p>`,
+  });
+  assert.equal(page.status, 201, JSON.stringify(page.body));
+  const secretWiki = await contributor.post<{ id: string }>(`/api/workspaces/${s.ws}/wikis`, { name: "Graph secrets", access: "restricted" });
+  const secretPage = await contributor.post<{ id: string }>(`/api/wikis/${secretWiki.body.id}/pages`, { title: "Graph: salary bands" });
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId] });
+
+  const has = (g: G, a: string, b: string, kind: string) => g.links.some((l) => l.kind === kind && ((l.source === a && l.target === b) || (l.source === b && l.target === a)));
+  const full = (await admin.get<G>(`/api/workspaces/${s.ws}/graph`)).body;
+  const [T, H, W] = [`task:${task.body.id}`, `task:${hiddenTask.body.id}`, `wiki:${page.body.id}`];
+  assert.ok(has(full, W, T, "link") && has(full, W, H, "link"), "links written in content become edges");
+  assert.ok(has(full, T, `project:${s.project}`, "project") && has(full, T, `tag:${s.category}`, "tag") && has(full, T, `person:${s.contributorId}`, "assignee"));
+  assert.ok(has(full, `kr:${s.krLaptop}`, full.nodes.find((n) => n.type === "objective" && has(full, `kr:${s.krLaptop}`, n.id, "okr"))!.id, "okr"), "OKR tree");
+  assert.equal(full.nodes.find((n) => n.id === T)!.href, `/w/${slug}/p/${s.project}/t/${task.body.id}`);
+  assert.ok(full.nodes.every((n) => n.degree === full.links.filter((l) => l.source === n.id || l.target === n.id).length), "size = number of links");
+  assert.ok(full.links.every((l) => full.nodes.some((n) => n.id === l.source) && full.nodes.some((n) => n.id === l.target)));
+  assert.ok(full.nodes.some((n) => n.id === `wiki:${secretPage.body.id}`), "workspace admins see every wiki");
+
+  const v = (await viewer.get<G>(`/api/workspaces/${s.ws}/graph`)).body;
+  const ids = new Set(v.nodes.map((n) => n.id));
+  assert.ok(ids.has(W) && ids.has(T));
+  assert.ok(!ids.has(H) && !ids.has(`project:${s.otherProject}`) && !ids.has(`tag:${s.otherCategory}`), "hidden project, its tasks and tags are absent");
+  assert.ok(!has(v, W, H, "link"), "a link never reveals a hidden item");
+  assert.ok(!ids.has(`wiki:${secretPage.body.id}`), "restricted wiki pages are absent");
+
+  const local = await viewer.get<G>(`/api/workspaces/${s.ws}/graph?focus=${W}&depth=1`);
+  assert.equal(local.status, 200);
+  assert.equal(local.body.focus, W);
+  assert.equal(local.body.nodes.find((n) => n.id === W)!.depth, 0);
+  assert.ok(local.body.nodes.some((n) => n.id === T && n.depth === 1));
+  assert.ok(local.body.nodes.every((n) => n.depth! <= 1) && !local.body.nodes.some((n) => n.id === `tag:${s.category}`), "depth 1 = direct neighbours only");
+  const two = (await viewer.get<G>(`/api/workspaces/${s.ws}/graph?focus=${W}&depth=2`)).body;
+  assert.ok(two.nodes.some((n) => n.id === `tag:${s.category}` && n.depth === 2), "the task's tag is two hops away");
+
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/graph?focus=wiki:nope`)).status, 400);
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/graph?depth=5`)).status, 400);
+  assert.equal((await outsider.get(`/api/workspaces/${s.ws}/graph`)).status, 404);
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
+});
+
+test("second brain: [[links]], backlinks, block links, tags, related, versions and knowledge metadata", async () => {
+  type Conn = { backlinks: { type: string; id: string; context: string; blockId?: string }[]; unlinked: { id: string }[]; outgoing: { target: string; broken: boolean; blockMissing?: boolean }[]; related: { id: string; reasons: string[] }[] };
+  const slug = (await admin.get<{ slug: string }>(`/api/workspaces/${s.ws}`)).body.slug;
+  const W = s.wiki;
+  const a = await admin.post<{ id: string }>(`/api/wikis/${W}/pages`, { title: "Probation policy", content: `<p>Intro.</p><p data-block-id="blk00001">Probation lasts 60 days for new hires.</p><p data-block-id="BAD id">x</p>` });
+  assert.equal(a.status, 201);
+  const gone = await admin.post<{ id: string }>(`/api/wikis/${W}/pages`, { title: "Temp page" });
+  await admin.del(`/api/wiki/${gone.body.id}`);
+  const b = await admin.post<{ id: string }>(`/api/wikis/${W}/pages`, {
+    title: "Onboarding checklist",
+    content: `<p>See <a href="/w/${slug}/wiki/${W}/${a.body.id}#b-blk00001" target="_blank">the probation rule</a> and <a href="/w/${slug}/wiki/${W}/${gone.body.id}">old page</a> and <a href="/w/${slug}/wiki/${W}/${a.body.id}#b-zzzzzz99">a removed block</a>.</p>`,
+  });
+  const c = await admin.post<{ id: string }>(`/api/wikis/${W}/pages`, { title: "HR FAQ", content: "<p>Read the Probation policy before day one.</p>" });
+  s.brainPageA = a.body.id;
+  s.brainPageB = b.body.id;
+
+  // Content stays the source of truth: block ids survive sanitizing (invalid ones don't); internal links open in-app.
+  const pa = await admin.get<{ content: string; meta: { tags: string[]; version: number; status: string } }>(`/api/wiki/${a.body.id}`);
+  assert.match(pa.body.content, /data-block-id="blk00001"/);
+  assert.doesNotMatch(pa.body.content, /BAD id/);
+  const pb = await admin.get<{ content: string }>(`/api/wiki/${b.body.id}`);
+  assert.doesNotMatch(pb.body.content, /target="_blank"[^>]*>the probation/, "internal links carry no target=_blank");
+  assert.equal(pa.body.meta.version, 1);
+  assert.equal(pa.body.meta.status, "current");
+
+  const conn = (await admin.get<Conn>(`/api/wiki/${a.body.id}/connections`)).body;
+  const back = conn.backlinks.find((x) => x.id === b.body.id)!;
+  assert.ok(back, "backlink from the page that links here");
+  assert.equal(back.blockId, "blk00001", "block-level backlink");
+  assert.match(back.context, /the probation rule/, "with the linking sentence");
+  assert.ok(conn.unlinked.some((x) => x.id === c.body.id), "unlinked mention of the title");
+  const outB = (await admin.get<Conn>(`/api/wiki/${b.body.id}/connections`)).body.outgoing;
+  assert.ok(outB.some((o) => o.target === `wiki:${a.body.id}` && !o.broken && !o.blockMissing));
+  assert.ok(outB.some((o) => o.target === `wiki:${gone.body.id}` && o.broken), "link to a deleted page is broken");
+  assert.ok(outB.some((o) => o.target === `wiki:${a.body.id}` && o.blockMissing), "link to a missing block is flagged");
+
+  // Metadata: tags normalized, validity checked, "still correct" stamps last checked.
+  const meta = await admin.patch<{ meta: { tags: string[]; lastCheckedAt: string | null; kind: string } }>(`/api/wiki/${a.body.id}`, { tags: ["#Onboarding", "HR Policy", "onboarding"], kind: "process", markChecked: true, sourceLabel: "Labour Code art. 25", confidence: "high" });
+  assert.deepEqual(meta.body.meta.tags, ["onboarding", "hr-policy"]);
+  assert.ok(meta.body.meta.lastCheckedAt);
+  assert.equal(meta.body.meta.kind, "process");
+  assert.equal((await admin.patch(`/api/wiki/${a.body.id}`, { validFrom: "2026-05-01", validTo: "2026-01-01" })).status, 400);
+  assert.equal((await viewer.patch(`/api/wiki/${a.body.id}`, { tags: ["x"] })).status, 403, "readers can't change metadata");
+
+  // Related: shares a tag.
+  const d = await admin.post<{ id: string }>(`/api/wikis/${W}/pages`, { title: "Buddy program" });
+  await admin.patch(`/api/wiki/${d.body.id}`, { tags: ["onboarding"] });
+  const rel = (await admin.get<Conn>(`/api/wiki/${a.body.id}/connections`)).body.related;
+  assert.ok(rel.find((r) => r.id === d.body.id)?.reasons.includes("#onboarding"));
+
+  // Link picker covers every entity type the viewer can see.
+  const picker = await viewer.get<{ items: { type: string; href: string }[] }>(`/api/workspaces/${s.ws}/brain/link-targets?q=Probation`);
+  assert.ok(picker.body.items.some((i) => i.type === "wiki" && i.href.endsWith(a.body.id)));
+
+  // A page quoting a project hidden from the viewer never shows up as their backlink.
+  const secret = await admin.post<{ id: string }>(`/api/wikis/${W}/pages`, { title: "Other project notes", content: `<p>Other project: see <a href="/w/${slug}/wiki/${W}/${a.body.id}">policy</a></p>` });
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId] });
+  const vb = (await viewer.get<Conn>(`/api/wiki/${a.body.id}/connections`)).body.backlinks;
+  assert.ok(vb.some((x) => x.id === b.body.id) && !vb.some((x) => x.id === secret.body.id));
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
+
+  // Temporal knowledge: a new version supersedes the old one, which stays as history.
+  const v2 = await admin.post<{ id: string }>(`/api/wiki/${c.body.id}/new-version`, {});
+  assert.equal(v2.status, 201);
+  const old = await admin.get<{ meta: { status: string; supersededBy: { id: string } | null; validTo: string | null } }>(`/api/wiki/${c.body.id}`);
+  assert.equal(old.body.meta.status, "superseded");
+  assert.equal(old.body.meta.supersededBy?.id, v2.body.id);
+  const fresh = await admin.get<{ meta: { version: number; supersedes: { id: string } | null } }>(`/api/wiki/${v2.body.id}`);
+  assert.equal(fresh.body.meta.version, 2);
+  assert.equal(fresh.body.meta.supersedes?.id, c.body.id);
+  assert.equal((await admin.post(`/api/wiki/${c.body.id}/new-version`, {})).status, 400, "only one newer version");
+  s.brainOldPage = c.body.id;
+});
+
+test("second brain: highlight -> task (recurring, OKR), reminder, decisions, graph and search", async () => {
+  const A = s.brainPageA;
+  // Viewers can't create tasks in the project; contributors can.
+  assert.equal((await viewer.post(`/api/wiki/${A}/to-task`, { projectId: s.project, title: "x" })).status, 403);
+  const tk = await contributor.post<{ id: string; href: string }>(`/api/wiki/${A}/to-task`, {
+    projectId: s.project,
+    title: "Run probation review",
+    text: "Probation lasts 60 days for new hires.",
+    blockId: "blk00001",
+    dueDate: "2026-11-02",
+    recurrence: { freq: "weekly", interval: 1 },
+    okr: `kr:${s.krLaptop}`,
+  });
+  assert.equal(tk.status, 201, JSON.stringify(tk.body));
+  const task = await prisma.task.findUniqueOrThrow({ where: { id: tk.body.id }, include: { assignees: true } });
+  assert.equal(task.recurrenceFreq, "weekly");
+  assert.equal(task.keyResultId, s.krLaptop);
+  assert.deepEqual(task.assignees.map((x) => x.userId), [s.contributorId]);
+  assert.match(task.content ?? "", new RegExp(`${A}#b-blk00001`), "task quotes and links back to the block");
+  const conn = (await admin.get<{ backlinks: { type: string; id: string; blockId?: string }[] }>(`/api/wiki/${A}/connections`)).body;
+  assert.ok(conn.backlinks.some((b) => b.type === "task" && b.id === tk.body.id && b.blockId === "blk00001"), "the task appears in the page's backlinks");
+
+  // Completing a recurring task creates the next occurrence once (a week later).
+  let done = await prisma.status.findFirst({ where: { workspaceId: s.ws, category: "done" } });
+  done ??= await prisma.status.create({ data: { workspaceId: s.ws, name: "Done", category: "done", color: "#22c55e", sortOrder: 99 } });
+  assert.equal((await contributor.patch(`/api/tasks/${tk.body.id}`, { data: { sys_status: done.id } })).status, 200);
+  const next = await prisma.task.findFirst({ where: { recurrenceParentId: tk.body.id }, include: { assignees: true } });
+  assert.ok(next, "next occurrence created");
+  assert.equal(next!.dueDate!.toISOString().slice(0, 10), "2026-11-09");
+  assert.equal(next!.keyResultId, s.krLaptop);
+  assert.deepEqual(next!.assignees.map((x) => x.userId), [s.contributorId]);
+  const todo = await prisma.status.findFirst({ where: { workspaceId: s.ws, category: "todo" } });
+  await contributor.patch(`/api/tasks/${tk.body.id}`, { data: { sys_status: todo!.id } });
+  await contributor.patch(`/api/tasks/${tk.body.id}`, { data: { sys_status: done.id } });
+  assert.equal(await prisma.task.count({ where: { recurrenceParentId: tk.body.id } }), 1, "re-completing doesn't duplicate");
+  s.brainTask = tk.body.id;
+
+  // Reminder: hidden until its time, then it is an ordinary notification linking to the block.
+  const at = new Date(Date.now() + 3600_000).toISOString();
+  const rem = await viewer.post<{ id: string }>(`/api/wiki/${A}/reminder`, { at, text: "Probation lasts 60 days", blockId: "blk00001" });
+  assert.equal(rem.status, 201);
+  const n = await prisma.notification.findUniqueOrThrow({ where: { id: rem.body.id } });
+  assert.equal(n.type, "reminder");
+  assert.ok(n.snoozedUntil && n.link?.endsWith(`${A}#b-blk00001`));
+  assert.equal((await viewer.post(`/api/wiki/${A}/reminder`, { at: "2020-01-01T00:00:00Z" })).status, 400);
+
+  // Decision memory, with a supersede chain and people involved.
+  const d1 = await contributor.post<{ id: string; status: string }>(`/api/workspaces/${s.ws}/decisions`, {
+    title: "Probation is 60 days",
+    reason: "Aligned with the labour code",
+    alternatives: [{ option: "90 days", whyNot: "Too long for junior roles" }],
+    evidence: "Legal review",
+    projectId: s.project,
+    wikiPageId: A,
+    sourceBlockId: "blk00001",
+    people: [s.contributorId, s.viewerId],
+    decidedAt: "2026-09-01",
+  });
+  assert.equal(d1.status, 201, JSON.stringify(d1.body));
+  const d2 = await contributor.post<{ id: string; supersedes: { id: string } | null }>(`/api/workspaces/${s.ws}/decisions`, { title: "Probation is 45 days for interns", supersedesId: d1.body.id, decidedAt: "2026-09-20", projectId: s.project });
+  assert.equal(d2.body.supersedes?.id, d1.body.id);
+  const d1After = await admin.get<{ status: string; validTo: string; supersededBy: { id: string } | null; alternatives: unknown[]; people: unknown[] }>(`/api/decisions/${d1.body.id}`);
+  assert.equal(d1After.body.status, "superseded");
+  assert.equal(d1After.body.validTo, "2026-09-19");
+  assert.equal(d1After.body.alternatives.length, 1);
+  assert.equal(d1After.body.people.length, 2);
+  assert.equal((await viewer.post(`/api/workspaces/${s.ws}/decisions`, { title: "x" })).status, 403, "viewers can't record decisions");
+  assert.equal((await contributor.post(`/api/workspaces/${s.ws}/decisions`, { title: "x", people: [s.outsiderId] })).status, 400);
+  assert.equal((await outsider.get(`/api/decisions/${d1.body.id}`)).status, 404);
+  const other = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/decisions`, { title: "Other project budget", projectId: s.otherProject });
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId] });
+  assert.equal((await viewer.get(`/api/decisions/${other.body.id}`)).status, 404, "decisions of hidden projects are hidden");
+  assert.ok(!(await viewer.get<{ id: string }[]>(`/api/workspaces/${s.ws}/decisions`)).body.some((x) => x.id === other.body.id));
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
+  const pageDecisions = (await admin.get<{ backlinks: { type: string; id: string }[] }>(`/api/wiki/${A}/connections`)).body.backlinks.filter((x) => x.type === "decision");
+  assert.ok(pageDecisions.some((x) => x.id === d1.body.id), "decisions recorded from a page are its backlinks");
+  s.brainDecision = d1.body.id;
+
+  // Graph: decisions and wiki tags are nodes; tags join categories of the same name.
+  const g = (await admin.get<{ nodes: { id: string }[]; links: { source: string; target: string; kind: string }[] }>(`/api/workspaces/${s.ws}/graph`)).body;
+  assert.ok(g.nodes.some((x) => x.id === `decision:${d1.body.id}`) && g.nodes.some((x) => x.id === "tag:#onboarding"));
+  assert.ok(g.links.some((l) => l.kind === "supersedes" && [l.source, l.target].includes(`decision:${d2.body.id}`)));
+  assert.ok(g.links.some((l) => [l.source, l.target].includes("tag:#onboarding") && [l.source, l.target].includes(`tag:${s.category}`)), "#onboarding meets the Onboarding category");
+  assert.ok(g.links.some((l) => l.kind === "involved" && [l.source, l.target].includes(`person:${s.viewerId}`)));
+
+  // Search: decisions and #tags.
+  const found = await admin.get<{ decisions: { id: string }[]; pages: { id: string }[] }>(`/api/search?workspaceId=${s.ws}&q=${encodeURIComponent("Probation is")}`);
+  assert.ok(found.body.decisions.some((x) => x.id === d1.body.id));
+  const byTag = await admin.get<{ pages: { id: string }[] }>(`/api/search?workspaceId=${s.ws}&q=${encodeURIComponent("#hr-policy")}`);
+  assert.deepEqual(byTag.body.pages.map((p) => p.id), [A]);
+});
+
+test("second brain: journal, for-you resurfacing, spaced review, weekly review and knowledge health", async () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const j = await contributor.get<{ completed: { id: string }[]; created: { id: string }[]; decisions: { id: string }[]; notes: string | null }>(`/api/workspaces/${s.ws}/journal?date=${today}&tz=0`);
+  assert.ok(j.body.completed.some((x) => x.id === s.brainTask), "work completed today");
+  assert.ok(j.body.created.some((x) => x.id === s.brainTask));
+  assert.equal((await contributor.put(`/api/workspaces/${s.ws}/journal`, { date: today, notes: "<p>Learned: <script>x</script>check the probation rule</p>" })).status, 200);
+  const j2 = await contributor.get<{ notes: string }>(`/api/workspaces/${s.ws}/journal?date=${today}`);
+  assert.doesNotMatch(j2.body.notes, /script/);
+  assert.equal((await viewer.get<{ notes: string | null }>(`/api/workspaces/${s.ws}/journal?date=${today}`)).body.notes, null, "journals are private");
+  await prisma.aiMessage.deleteMany({ where: { conversation: { userId: s.contributorId } } });
+  const sum = await contributor.post<{ aiSummary: string }>(`/api/workspaces/${s.ws}/journal/summary`, { date: today, tz: 0 });
+  assert.equal(sum.status, 200, JSON.stringify(sum.body));
+  const system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+  assert.match(system, /Run probation review/, "the day's work reaches the summary");
+
+  // For you: the page linked from my open recurring task comes back to me.
+  const fy = await contributor.get<{ relatedToWork: { id: string; because: string[] }[]; dueForReview: { id: string }[] }>(`/api/workspaces/${s.ws}/brain/for-you`);
+  assert.ok(fy.body.relatedToWork.some((x) => x.id === s.brainPageA && x.because.includes("Run probation review")), JSON.stringify(fy.body.relatedToWork));
+  // Spaced review: add -> not due yet; when due it is listed; "done" moves to the next interval.
+  const r = await contributor.post<{ stage: number; nextReviewAt: string }>(`/api/wiki/${s.brainPageA}/review`, { action: "add" });
+  assert.equal(r.body.stage, 0);
+  await prisma.knowledgeReview.updateMany({ where: { userId: s.contributorId, pageId: s.brainPageA }, data: { nextReviewAt: new Date(Date.now() - 1000) } });
+  assert.ok((await contributor.get<{ dueForReview: { id: string }[] }>(`/api/workspaces/${s.ws}/brain/for-you`)).body.dueForReview.some((x) => x.id === s.brainPageA));
+  const r2 = await contributor.post<{ stage: number; nextReviewAt: string }>(`/api/wiki/${s.brainPageA}/review`, { action: "done" });
+  assert.equal(r2.body.stage, 1);
+  assert.ok(new Date(r2.body.nextReviewAt).getTime() > Date.now() + 2.9 * 86400000, "next review in 3 days");
+
+  const wk = await contributor.get<{ newKnowledge: { id: string }[]; decisions: { id: string }[]; completed: { id: string }[] }>(`/api/workspaces/${s.ws}/brain/weekly`);
+  assert.ok(wk.body.newKnowledge.some((x) => x.id === s.brainPageA) && wk.body.completed.some((x) => x.id === s.brainTask));
+
+  // Knowledge health: broken links, expired validity, duplicates, missing source - suggestions only.
+  await admin.patch(`/api/wiki/${s.brainPageB}`, { validFrom: "2025-01-01", validTo: "2025-12-31" });
+  const dup = await admin.post<{ id: string }>(`/api/wikis/${s.wiki}/pages`, { title: "Onboarding  checklist" });
+  const ai = await admin.post<{ id: string }>(`/api/wikis/${s.wiki}/pages`, { title: "Imported policy" });
+  await admin.patch(`/api/wiki/${ai.body.id}`, { sourceType: "imported" });
+  const before = await prisma.wikiPage.findUniqueOrThrow({ where: { id: s.brainPageB }, select: { updatedAt: true, status: true } });
+  const h = await admin.get<{ issues: { type: string; pageId: string; suggestion: string }[]; counts: Record<string, number> }>(`/api/workspaces/${s.ws}/brain/health`);
+  const has = (type: string, pageId: string) => h.body.issues.some((i) => i.type === type && i.pageId === pageId);
+  assert.ok(has("broken_link", s.brainPageB), "broken link");
+  assert.ok(has("outdated", s.brainPageB), "expired validity");
+  assert.ok(has("duplicate", s.brainPageB) || has("duplicate", dup.body.id), "duplicate titles");
+  assert.ok(has("missing_source", ai.body.id), "imported without a source");
+  const after = await prisma.wikiPage.findUniqueOrThrow({ where: { id: s.brainPageB }, select: { updatedAt: true, status: true } });
+  assert.deepEqual(after, before, "health checks never change knowledge");
+  const conflicts = await admin.post<{ conflicts: unknown[]; checkedPairs: number }>(`/api/workspaces/${s.ws}/brain/health/conflicts`, {});
+  assert.equal(conflicts.status, 200);
+  assert.ok(conflicts.body.checkedPairs >= 1);
+
+  // Daily Intelligence: prioritized attention items + a chronological timeline of the day.
+  const di = await contributor.get<{ hero: unknown; needsAttention: { kind: string }[]; insights: { kind: string }[]; activity: unknown[]; myTasks: unknown[] }>(`/api/workspaces/${s.ws}/brain/for-you`);
+  assert.ok(Array.isArray(di.body.needsAttention) && Array.isArray(di.body.insights) && Array.isArray(di.body.activity));
+  const tl = await contributor.get<{ timeline: { type: string; title: string; at: string }[] }>(`/api/workspaces/${s.ws}/journal?date=${today}&tz=0`);
+  assert.ok(tl.body.timeline.some((e) => e.type === "completed" && e.title === "Run probation review"), JSON.stringify(tl.body.timeline));
+  assert.deepEqual([...tl.body.timeline].map((e) => e.at), [...tl.body.timeline].map((e) => e.at).sort(), "the timeline is chronological");
+  const insights = await contributor.post<{ insights: { title: string; action: string }[] }>(`/api/workspaces/${s.ws}/brain/insights`, {});
+  assert.equal(insights.status, 200, JSON.stringify(insights.body));
+  assert.ok(insights.body.insights.length >= 1);
+
+  // Structured decisions: owner (must be a member) and review date; due reviews resurface.
+  const dec = await contributor.post<{ id: string; owner: { id: string } | null; reviewDue: boolean }>(`/api/workspaces/${s.ws}/decisions`, { title: "Review the intern stipend", reviewDate: "2026-01-01", ownerId: s.contributorId });
+  assert.equal(dec.status, 201, JSON.stringify(dec.body));
+  assert.equal(dec.body.owner?.id, s.contributorId);
+  assert.equal(dec.body.reviewDue, true);
+  assert.equal((await contributor.post(`/api/workspaces/${s.ws}/decisions`, { title: "x", ownerId: s.outsiderId })).status, 400, "owners are members");
+  const due = await contributor.get<{ id: string }[]>(`/api/workspaces/${s.ws}/decisions?review=due`);
+  assert.ok(due.body.some((d) => d.id === dec.body.id));
+  const defOwner = await contributor.post<{ owner: { id: string } | null }>(`/api/workspaces/${s.ws}/decisions`, { title: "Default owner is the author" });
+  assert.equal(defOwner.body.owner?.id, s.contributorId);
+  const fy2 = await contributor.get<{ needsAttention: { kind: string; id: string }[] }>(`/api/workspaces/${s.ws}/brain/for-you`);
+  assert.ok(fy2.body.needsAttention.some((a) => a.kind === "decision_review" && a.id === dec.body.id), JSON.stringify(fy2.body.needsAttention));
+
+  // Weekly reflection: structured sections, not a wall of text.
+  const refl = await contributor.post<{ reflection: { headline: string; wins: string[]; nextWeek: string[] }; markdown: string }>(`/api/workspaces/${s.ws}/brain/weekly/summary`, {});
+  assert.equal(refl.status, 200, JSON.stringify(refl.body));
+  assert.ok(refl.body.reflection.headline && Array.isArray(refl.body.reflection.wins));
+  assert.match(refl.body.markdown, /Open loops|Việc còn dang dở/);
+});
+
+test("second brain: Ask My Brain is scoped, grounded and traceable; layers and retrospectives stay drafts", async () => {
+  type Ask = { answer: string; sources: { n: number; type: string; id: string; used: boolean; historical?: boolean }[]; conversationId: string; grounded: boolean };
+  await prisma.aiMessage.deleteMany({ where: { conversation: { userId: { in: [s.viewerId, s.contributorId] } } } });
+  const r = await contributor.post<Ask>(`/api/workspaces/${s.ws}/brain/ask`, { question: "How long is probation?", scope: { type: "everything" } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.ok(r.body.grounded && r.body.sources[0].used, "the cited source is marked");
+  assert.ok(r.body.sources.some((x) => x.id === s.brainPageA), "the probation page is a source");
+  assert.ok(r.body.sources.some((x) => x.type === "decision" && x.id === s.brainDecision && x.historical), "superseded decisions are flagged as history");
+  const system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+  assert.match(system, /\[S1\] [A-Z]+:/);
+  assert.match(system, /Cite every factual statement/);
+  const saved = await prisma.aiMessage.findFirst({ where: { conversationId: r.body.conversationId, role: "model" } });
+  assert.ok(Array.isArray(saved?.sources) && (saved!.sources as { used: boolean }[]).some((x) => x.used), "sources are stored with the answer");
+  const hist = await contributor.get<{ messages: { sources: unknown }[] }>(`/api/workspaces/${s.ws}/brain/ask?conversationId=${r.body.conversationId}`);
+  assert.ok(hist.body.messages[1].sources);
+
+  // Selected sources: exactly those; other people's conversations are private.
+  const sel = await contributor.post<Ask>(`/api/workspaces/${s.ws}/brain/ask`, { question: "summarize", scope: { type: "sources", sources: [`task:${s.brainTask}`] } });
+  assert.deepEqual(sel.body.sources.map((x) => x.id), [s.brainTask]);
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/brain/ask?conversationId=${r.body.conversationId}`)).status, 404);
+  // A hidden project's pages never become sources, even when asked for directly.
+  const secret = await admin.post<{ id: string }>(`/api/wikis/${s.wiki}/pages`, { title: "Other project probation exception", content: "<p>Other project: probation 30 days.</p>" });
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId] });
+  const v = await viewer.post<Ask>(`/api/workspaces/${s.ws}/brain/ask`, { question: "probation exception", scope: { type: "sources", sources: [`wiki:${secret.body.id}`, `wiki:${s.brainPageA}`] } });
+  assert.deepEqual(v.body.sources.map((x) => x.id), [s.brainPageA]);
+  const v2 = await viewer.post<Ask>(`/api/workspaces/${s.ws}/brain/ask`, { question: "probation exception", scope: { type: "everything" } });
+  assert.ok(!v2.body.sources.some((x) => x.id === secret.body.id));
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
+  assert.equal((await viewer.post(`/api/workspaces/${s.ws}/brain/ask`, { question: "x", scope: { type: "project", projectId: s.otherProject } })).status, 200);
+  const mine = await viewer.post<Ask>(`/api/workspaces/${s.ws}/brain/ask`, { question: "probation", scope: { type: "mine" } });
+  assert.ok(!mine.body.sources.some((x) => x.id === s.brainPageA), "My notes only = pages I wrote and my journal");
+
+  // Wiki assistant labels superseded knowledge as history.
+  assert.equal((await ask(contributor, { kind: "wiki", wikiId: s.wiki, message: "faq?" })).status, 200);
+  assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /HR FAQ[^\n]*HISTORICAL - not current/);
+
+  // Progressive summarization: highlights + AI draft; the page content never changes.
+  const contentBefore = (await prisma.wikiPage.findUniqueOrThrow({ where: { id: s.brainPageA } })).content;
+  const hl = await admin.put<{ highlights: { text: string; blockId?: string }[] }>(`/api/wiki/${s.brainPageA}/layers`, { addHighlight: { text: "Probation lasts 60 days", blockId: "blk00001" } });
+  assert.equal(hl.body.highlights[0].blockId, "blk00001");
+  const draft = await admin.post<{ keyPoints: string; summary: string; generatedFrom: string }>(`/api/wiki/${s.brainPageA}/layers/generate`, {});
+  assert.equal(draft.status, 200, JSON.stringify(draft.body));
+  assert.match(draft.body.keyPoints, /Probation is 60 days/);
+  assert.equal((await prisma.knowledgeLayer.findUnique({ where: { pageId: s.brainPageA } }))?.summary ?? null, null, "the draft is not saved by itself");
+  const savedLayers = await admin.put<{ summary: string; stale: boolean }>(`/api/wiki/${s.brainPageA}/layers`, { summary: draft.body.summary, keyPoints: draft.body.keyPoints, generatedFrom: draft.body.generatedFrom });
+  assert.equal(savedLayers.body.summary, "Onboarding summary.");
+  assert.equal(savedLayers.body.stale, false);
+  assert.equal((await prisma.wikiPage.findUniqueOrThrow({ where: { id: s.brainPageA } })).content, contentBefore, "source untouched");
+  assert.equal((await viewer.put(`/api/wiki/${s.brainPageA}/layers`, { summary: "x" })).status, 403);
+
+  // Retrospective of a finished task: a draft, saved as an AI-generated draft page + proposed decisions.
+  const retro = await contributor.post<{ draft: { title: string; decisions: unknown[] }; source: string }>(`/api/brain/retro`, { taskId: s.brainTask });
+  assert.equal(retro.status, 200, JSON.stringify(retro.body));
+  assert.equal(retro.body.draft.decisions.length, 1);
+  const retroSystem = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+  assert.match(retroSystem, /HISTORY \(status, dates and field changes\)/);
+  const next = await prisma.task.findFirstOrThrow({ where: { recurrenceParentId: s.brainTask } });
+  assert.equal((await contributor.post(`/api/brain/retro`, { taskId: next.id })).status, 400, "only finished tasks");
+  const savedRetro = await contributor.post<{ pageId: string; decisionIds: string[] }>(`/api/brain/retro/save`, { wikiId: s.wiki, source: retro.body.source, draft: retro.body.draft, saveDecisions: [0] });
+  assert.equal(savedRetro.status, 201, JSON.stringify(savedRetro.body));
+  const rp = await prisma.wikiPage.findUniqueOrThrow({ where: { id: savedRetro.body.pageId } });
+  assert.equal(rp.kind, "retrospective");
+  assert.equal(rp.status, "draft");
+  assert.equal(rp.sourceType, "ai_generated");
+  assert.equal(rp.sourceRef, `task:${s.brainTask}`);
+  const rd = await prisma.decision.findUniqueOrThrow({ where: { id: savedRetro.body.decisionIds[0] } });
+  assert.equal(rd.status, "proposed");
+  assert.equal(rd.wikiPageId, rp.id);
+});
+
+test("recognition: points from real activity, leaderboards, supporters, visibility and delegation", async () => {
+  type Board = { rows: { rank: number; user: { id: string }; value: number; detail?: Record<string, number> }[]; me: { rank: number } | null; total: number };
+  // Settings exist with defaults; points are materialized from what already happened.
+  const o = await contributor.get<{ points: { earned: number; balance: number }; canManage: boolean; canSeeOthersPoints: boolean }>(`/api/workspaces/${s.ws}/recognition`);
+  assert.equal(o.status, 200, JSON.stringify(o.body));
+  assert.ok(o.body.points.earned > 0, "earlier completed tasks / comments earned points");
+  assert.equal(o.body.canManage, false);
+  const ev = await prisma.pointEvent.findMany({ where: { workspaceId: s.ws, userId: s.contributorId, action: "task_completed" } });
+  assert.ok(ev.some((e) => e.sourceId === s.brainTask && e.points === 10), "task completed = 10 pts (default rule)");
+  const before = await prisma.pointEvent.count({ where: { workspaceId: s.ws } });
+  await contributor.get(`/api/workspaces/${s.ws}/recognition`);
+  assert.equal(await prisma.pointEvent.count({ where: { workspaceId: s.ws } }), before, "syncing again adds nothing (idempotent)");
+
+  // Leaderboards: metric x period x top N.
+  const year = await contributor.get<Board>(`/api/workspaces/${s.ws}/recognition/leaderboard?metric=tasks&period=year&top=1`);
+  assert.equal(year.status, 200);
+  assert.ok(year.body.rows.length <= 1);
+  const today = new Date().toISOString().slice(0, 10);
+  const custom = await contributor.get<Board>(`/api/workspaces/${s.ws}/recognition/leaderboard?metric=points&period=custom&from=2020-01-01&to=${today}&top=50`);
+  assert.ok(custom.body.rows.some((r) => r.user.id === s.contributorId && r.value > 0));
+  assert.ok(custom.body.me);
+  assert.equal((await contributor.get(`/api/workspaces/${s.ws}/recognition/leaderboard?metric=bogus`)).status, 400);
+  assert.equal((await contributor.get(`/api/workspaces/${s.ws}/recognition/leaderboard?period=custom&from=2026-05-01&to=2026-01-01`)).status, 400);
+  assert.equal((await outsider.get(`/api/workspaces/${s.ws}/recognition/leaderboard`)).status, 404);
+
+  // Supporters: someone commenting on my task shows up as supporting me.
+  assert.equal((await viewer.post(`/api/tasks/${s.task1}/comments`, { body: "Here's the vendor contact for the laptop" })).status, 201);
+  const sup = await contributor.get<Board>(`/api/workspaces/${s.ws}/recognition/supporters?period=month&top=5`);
+  const v = sup.body.rows.find((r) => r.user.id === s.viewerId);
+  assert.ok(v && (v.detail?.comments ?? 0) >= 1, JSON.stringify(sup.body));
+
+  // Only admins / delegated managers change the rules; only admins delegate.
+  assert.equal((await contributor.get(`/api/workspaces/${s.ws}/recognition/settings`)).status, 403);
+  assert.equal((await contributor.put(`/api/workspaces/${s.ws}/recognition/managers`, { userIds: [s.contributorId] })).status, 403);
+  assert.equal((await admin.put(`/api/workspaces/${s.ws}/recognition/managers`, { userIds: [s.contributorId] })).status, 200);
+  const st = await contributor.get<{ rules: { action: string; points: number }[]; canDelegate: boolean }>(`/api/workspaces/${s.ws}/recognition/settings`);
+  assert.equal(st.status, 200);
+  assert.equal(st.body.canDelegate, false, "delegated managers can't delegate further");
+  assert.equal((await contributor.put(`/api/workspaces/${s.ws}/recognition/settings`, { rules: [{ action: "comment_posted", points: 2, enabled: true }], membersSeePoints: false })).status, 200);
+
+  // Visibility: points boards hidden from members by default now; per-person override.
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/recognition/leaderboard?metric=points`)).status, 403);
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/recognition/leaderboard?metric=tasks`)).status, 200, "task boards stay visible");
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/recognition/history?userId=${s.contributorId}`)).status, 403);
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/recognition/history`)).status, 200, "own points always visible");
+  assert.equal((await contributor.put(`/api/workspaces/${s.ws}/recognition/members/${s.viewerId}`, { canViewOthersPoints: true })).status, 200);
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/recognition/leaderboard?metric=points`)).status, 200);
+});
+
+test("recognition: thank-you letters notify, open, stay private when asked, and can't be farmed", async () => {
+  type K = { id: string; href: string; read: boolean; isPublic: boolean };
+  assert.equal((await viewer.post(`/api/workspaces/${s.ws}/kudos`, { toId: s.viewerId, title: "Me", message: "Thanks to myself for everything" })).status, 400, "not to yourself");
+  assert.equal((await viewer.post(`/api/workspaces/${s.ws}/kudos`, { toId: s.outsiderId, title: "Hi", message: "Thanks for all your help!" })).status, 400, "only members");
+  const k = await viewer.post<K>(`/api/workspaces/${s.ws}/kudos`, { toId: s.contributorId, style: "gratitude", title: "Thank you for the laptop", message: "You set everything up before day one. It made the new hire feel welcome.", reason: "preparing the laptop", taskId: s.task1, values: ["teamwork"] });
+  assert.equal(k.status, 201, JSON.stringify(k.body));
+  const n = await prisma.notification.findFirst({ where: { userId: s.contributorId, type: "kudos" }, orderBy: { createdAt: "desc" } });
+  assert.ok(n && n.link?.endsWith(`/recognition/kudos/${k.body.id}`) && n.actorId === s.viewerId, "the receiver is notified (pop-up)");
+  const opened = await contributor.get<K>(`/api/kudos/${k.body.id}`);
+  assert.equal(opened.status, 200);
+  assert.ok((await prisma.kudos.findUniqueOrThrow({ where: { id: k.body.id } })).readAt, "opening marks it read");
+  assert.ok((await prisma.notification.findUniqueOrThrow({ where: { id: n!.id } })).readAt);
+  // Points: the receiver earns once per sender per day.
+  const pts = () => prisma.pointEvent.count({ where: { workspaceId: s.ws, userId: s.contributorId, action: "kudos_received" } });
+  const once = await pts();
+  assert.ok(once >= 1);
+  await viewer.post(`/api/workspaces/${s.ws}/kudos`, { toId: s.contributorId, title: "Again", message: "And thanks again for the follow-up!" });
+  await contributor.get(`/api/workspaces/${s.ws}/recognition`);
+  assert.equal(await pts(), once, "a second letter the same day earns no extra points");
+
+  // Private letters: only sender and receiver; lists per scope.
+  const priv = await admin.post<K>(`/api/workspaces/${s.ws}/kudos`, { toId: s.contributorId, title: "Just between us", message: "Thank you for covering for me this week.", isPublic: false });
+  assert.equal((await viewer.get(`/api/kudos/${priv.body.id}`)).status, 404);
+  const wall = await viewer.get<{ items: { id: string }[] }>(`/api/workspaces/${s.ws}/kudos?scope=wall`);
+  assert.ok(wall.body.items.some((x) => x.id === k.body.id) && !wall.body.items.some((x) => x.id === priv.body.id));
+  const mine = await contributor.get<{ items: { id: string }[] }>(`/api/workspaces/${s.ws}/kudos?scope=received`);
+  assert.ok(mine.body.items.some((x) => x.id === priv.body.id), "the receiver keeps every letter");
+  assert.equal((await contributor.del(`/api/kudos/${k.body.id}`)).status, 403, "only the sender can withdraw");
+
+  // AI helps write the letter (draft only).
+  const draft = await viewer.post<{ title: string; message: string }>(`/api/workspaces/${s.ws}/kudos/draft`, { toId: s.contributorId, reason: "fixed the payroll export", style: "appreciation" });
+  assert.equal(draft.status, 200, JSON.stringify(draft.body));
+  assert.ok(draft.body.title && draft.body.message.length > 20, "a draft letter comes back");
+  assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /fixed the payroll export/);
+
+  // Card designs, an editable greeting/closing, and Vietnamese typed with decomposed accents is stored as NFC.
+  const nfd = "Cảm ơn bạn rất nhiều vì đã hỗ trợ".normalize("NFD");
+  const card = await viewer.post<{ id: string; template: string; greeting: string; closing: string; message: string }>(`/api/workspaces/${s.ws}/kudos`, { toId: s.contributorId, template: "botanical", greeting: "Chào Linh thân mến,", closing: "Thương mến,\n— Team HR", title: "Cảm ơn", message: nfd });
+  assert.equal(card.status, 201, JSON.stringify(card.body));
+  assert.equal(card.body.template, "botanical");
+  assert.equal(card.body.greeting, "Chào Linh thân mến,");
+  assert.equal(card.body.message, nfd.normalize("NFC"), "accents are composed (NFC) so fonts render them");
+  assert.equal((await viewer.post(`/api/workspaces/${s.ws}/kudos`, { toId: s.contributorId, template: "nope", title: "x", message: "Thanks for everything!" })).status, 400);
+  // AI suggestions grounded in shared history; the reason is optional.
+  const ctx = await viewer.get<{ facts: { kind: string; n: number }[] }>(`/api/workspaces/${s.ws}/kudos/context?toId=${s.contributorId}`);
+  assert.equal(ctx.status, 200);
+  assert.ok(Array.isArray(ctx.body.facts));
+  const noReason = await viewer.post<{ message: string; reasons: string[] }>(`/api/workspaces/${s.ws}/kudos/draft`, { toId: s.contributorId, style: "teamwork" });
+  assert.equal(noReason.status, 200, JSON.stringify(noReason.body));
+  assert.ok(noReason.body.reasons.length >= 1, "AI proposes reasons to thank them");
+  assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /OUR WORK TOGETHER/);
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/kudos/context?toId=${s.outsiderId}`)).status, 400, "only members");
+});
+
+test("recognition: reward catalog, redemption with reserved points, approval and stock limits, reachable-reward alerts", async () => {
+  type R = { id: string; remaining: number; soldOut: boolean };
+  assert.equal((await viewer.post(`/api/workspaces/${s.ws}/rewards`, { name: "Nope", pointsCost: 1, quantity: 1 })).status, 403);
+  const bal = async (c: Client) => (await c.get<{ points: { balance: number } }>(`/api/workspaces/${s.ws}/recognition`)).body.points.balance;
+  const cBal = await bal(contributor);
+  const aBal = await bal(admin);
+  const cheapCost = Math.max(1, Math.min(cBal, aBal));
+  // Delegated manager adds several rewards at once.
+  const created = await contributor.post<R[]>(`/api/workspaces/${s.ws}/rewards`, { items: [{ name: "Coffee voucher", pointsCost: cheapCost, price: 50000, currency: "VND", quantity: 1 }, { name: "Extra day off", pointsCost: 1_000_000, quantity: 5 }] });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const [coffee, dayOff] = created.body;
+  // Anyone whose balance covers it gets a reachable-reward notice (once).
+  const alert = await prisma.notification.findFirst({ where: { userId: s.contributorId, dedupeKey: `reward-reachable:${coffee.id}` } });
+  assert.ok(alert && (alert.data as { kind: string }).kind === "reward_reachable");
+  assert.ok(!(await prisma.notification.findFirst({ where: { dedupeKey: `reward-reachable:${dayOff.id}` } })), "not for rewards nobody can afford");
+  // Picture upload (PNG magic bytes).
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+  const form = new FormData();
+  form.append("file", new Blob([png], { type: "image/png" }), "c.png");
+  const up = await fetch(`${BASE}/api/rewards/${coffee.id}/image`, { method: "PUT", headers: { cookie: contributor.cookieHeader() }, body: form });
+  assert.equal(up.status, 200);
+  assert.ok((await viewer.get<R[]>(`/api/workspaces/${s.ws}/rewards`)).body.find((x) => x.id === dayOff.id), "members see the catalog");
+  const form2 = new FormData();
+  form2.append("file", new Blob([png], { type: "image/png" }), "d.png");
+  await fetch(`${BASE}/api/rewards/${dayOff.id}/image`, { method: "PUT", headers: { cookie: contributor.cookieHeader() }, body: form2 });
+  assert.equal((await viewer.del(`/api/rewards/${dayOff.id}/image`)).status, 403, "members can't remove pictures");
+  assert.equal((await contributor.del(`/api/rewards/${dayOff.id}/image`)).status, 204);
+  assert.equal((await viewer.get<{ id: string; imageUrl: string | null }[]>(`/api/workspaces/${s.ws}/rewards`)).body.find((x) => x.id === dayOff.id)?.imageUrl, null);
+  // Edit in place.
+  const edited = await contributor.patch<{ name: string; description: string; price: number }>(`/api/rewards/${dayOff.id}`, { name: "Extra day off (1 day)", description: "Book it with your manager", price: 1500000 });
+  assert.equal(edited.status, 200);
+  assert.equal(edited.body.price, 1500000);
+
+  assert.equal((await contributor.post(`/api/rewards/${dayOff.id}/redeem`, {})).status, 400, "not enough points");
+  const r1 = await contributor.post<{ id: string; status: string }>(`/api/rewards/${coffee.id}/redeem`, { note: "Thanks!" });
+  assert.equal(r1.status, 201, JSON.stringify(r1.body));
+  assert.ok((await contributor.get<{ pendingRequests: number }>(`/api/workspaces/${s.ws}/recognition`)).body.pendingRequests >= 1, "managers see how many requests wait");
+  assert.equal((await viewer.get<{ pendingRequests: number }>(`/api/workspaces/${s.ws}/recognition`)).body.pendingRequests, 0);
+  assert.equal(await bal(contributor), cBal - cheapCost, "points are reserved while pending");
+  const adminUser = await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } });
+  assert.ok(await prisma.notification.findFirst({ where: { userId: adminUser.id, type: "reward_request", actorId: s.contributorId } }), "approvers are told about the request");
+  const r2 = await admin.post<{ id: string }>(`/api/rewards/${coffee.id}/redeem`, {});
+  assert.equal(r2.status, 201);
+  assert.equal((await viewer.patch(`/api/redemptions/${r1.body.id}`, { action: "approve" })).status, 403, "members can't approve");
+  assert.equal((await contributor.patch(`/api/redemptions/${r1.body.id}`, { action: "approve" })).status, 200);
+  const out = await contributor.patch<{ error: string }>(`/api/redemptions/${r2.body.id}`, { action: "approve" });
+  assert.equal(out.status, 400);
+  assert.match(out.body.error, /out of stock/i, "stock is never exceeded");
+  assert.equal((await contributor.patch(`/api/redemptions/${r2.body.id}`, { action: "reject", note: "Sold out" })).status, 200);
+  assert.equal(await bal(admin), aBal, "rejected points are released");
+  const list = await viewer.get<R[]>(`/api/workspaces/${s.ws}/rewards`);
+  assert.ok(list.body.find((x) => x.id === coffee.id)?.soldOut);
+  assert.equal((await admin.post(`/api/rewards/${coffee.id}/redeem`, {})).status, 400, "sold out");
+  const res = await prisma.notification.findFirst({ where: { userId: s.contributorId, type: "reward_result" } });
+  assert.equal((res?.data as { decision: string }).decision, "approved");
+  assert.equal((await contributor.patch(`/api/rewards/${coffee.id}`, { quantity: 0 })).status, 400, "stock can't drop below what was given");
+  assert.equal(await prisma.$queryRaw<{ n: number }[]>`SELECT approved_count AS n FROM rewards WHERE id = ${coffee.id}::uuid`.then((x) => Number(x[0].n)), 1);
+
+  // Recalculate with the current rules keeps reservations intact.
+  assert.equal((await contributor.post(`/api/workspaces/${s.ws}/recognition/recalculate`, {})).status, 200);
+  assert.equal(await bal(contributor) <= cBal, true);
+  await admin.put(`/api/workspaces/${s.ws}/recognition/managers`, { userIds: [] });
+  assert.equal((await contributor.get(`/api/workspaces/${s.ws}/recognition/settings`)).status, 403, "delegation revoked");
+});
+
+test("notification settings: per-group pop-up / device switches and a ringtone, validated", async () => {
+  const def = await viewer.get<{ popupOff: string[]; nativeOff: string[]; sound: string; volume: number }>("/api/account/notification-settings");
+  assert.equal(def.status, 200);
+  assert.deepEqual(def.body, { popupOff: [], nativeOff: [], sound: "chime", volume: 70 });
+  const put = await viewer.put<{ popupOff: string[]; nativeOff: string[]; sound: string; volume: number }>("/api/account/notification-settings", { popupOff: ["updates", "updates", "ai"], nativeOff: ["comment"], sound: "marimba", volume: 40 });
+  assert.equal(put.status, 200, JSON.stringify(put.body));
+  assert.deepEqual(put.body.popupOff.sort(), ["ai", "updates"], "de-duplicated");
+  assert.equal(put.body.sound, "marimba");
+  assert.equal((await viewer.put("/api/account/notification-settings", { popupOff: ["nope"] })).status, 400);
+  assert.equal((await viewer.put("/api/account/notification-settings", { sound: "siren" })).status, 400);
+  assert.equal((await viewer.put("/api/account/notification-settings", { volume: 101 })).status, 400);
+  assert.equal((await contributor.get<{ sound: string }>("/api/account/notification-settings")).body.sound, "chime", "settings are personal");
+  // Notifications carry the actor, so the Action center can show their profile picture.
+  const n = await contributor.get<{ items: { actor: { id: string } | null; workspaceId: string | null }[] }>("/api/notifications");
+  assert.ok(n.body.items.some((x) => x.actor?.id && x.workspaceId));
+});
+
+test("invite links and invitations for people without an account: accept, decline, revoke, replace", async () => {
+  const ws = await admin.post<{ id: string }>("/api/workspaces", { name: "Invite Co" });
+  // Join link: off by default; admins turn it on and pick the role.
+  assert.equal((await admin.get<{ enabled: boolean }>(`/api/workspaces/${ws.body.id}/invite-link`)).body.enabled, false);
+  assert.equal((await admin.post(`/api/workspaces/${ws.body.id}/invite-link`, { role: "admin" })).status, 400, "links never grant admin");
+  const on = await admin.post<{ enabled: boolean; url: string; role: string }>(`/api/workspaces/${ws.body.id}/invite-link`, { role: "viewer" });
+  assert.equal(on.body.enabled, true);
+  const token = on.body.url.split("/invite/")[1];
+  assert.equal((await outsider.get<{ kind: string; state: string }>(`/api/invite/${token}`)).body.kind, "link");
+  assert.equal(await prisma.workspaceMember.count({ where: { workspaceId: ws.body.id, userId: s.outsiderId } }), 0, "opening the link joins nobody");
+  assert.equal((await outsider.post(`/api/invite/${token}`, { decision: "accept" })).status, 200);
+  assert.equal((await prisma.workspaceMember.findUniqueOrThrow({ where: { workspaceId_userId: { workspaceId: ws.body.id, userId: s.outsiderId } } })).role, "viewer");
+  assert.equal((await admin.get<{ uses: number }>(`/api/workspaces/${ws.body.id}/invite-link`)).body.uses, 1);
+  // Replacing the link kills the old one; turning it off kills it too.
+  const fresh = await admin.post<{ url: string }>(`/api/workspaces/${ws.body.id}/invite-link`, { regenerate: true });
+  assert.notEqual(fresh.body.url, on.body.url);
+  assert.equal((await contributor.get<{ state: string }>(`/api/invite/${token}`)).body.state, "revoked");
+  assert.equal((await contributor.post(`/api/invite/${token}`, { decision: "accept" })).status, 400);
+  await admin.del(`/api/workspaces/${ws.body.id}/invite-link`);
+  assert.equal((await contributor.post(`/api/invite/${fresh.body.url.split("/invite/")[1]}`, { decision: "accept" })).status, 400);
+  assert.equal((await contributor.get(`/api/workspaces/${ws.body.id}/invite-link`)).status, 404, "non-members can't manage it");
+
+  // Invite someone with no account: they see it right after signing up with that email.
+  const r = await admin.post<{ invitations: { hasAccount: boolean; url: string }[] }>(`/api/workspaces/${ws.body.id}/members`, { email: "newbie@integration.test", role: "editor" });
+  assert.equal(r.body.invitations[0].hasAccount, false);
+  const newbie = new Client();
+  assert.equal((await newbie.post("/api/register", { email: "newbie@integration.test", password: "Newbie1234", name: "Nina New" })).status, 201);
+  assert.ok(await newbie.login("newbie@integration.test", "Newbie1234"));
+  assert.deepEqual((await newbie.get<unknown[]>("/api/invitations")).body, [], "nothing until the address is verified");
+  const nb = await prisma.user.findUniqueOrThrow({ where: { email: "newbie@integration.test" } });
+  assert.equal((await admin.patch(`/api/admin/users/${nb.id}`, { verifyEmail: true })).status, 200);
+  const mine = await newbie.get<{ workspaceName: string; token: string }[]>("/api/invitations");
+  assert.deepEqual(mine.body.map((x) => x.workspaceName), ["Invite Co"]);
+  assert.ok((await newbie.get<{ items: { type: string }[] }>("/api/notifications")).body.items.some((n) => n.type === "workspace_invite"), "and in the Action Center");
+  // Declining: no membership, the inviter is told, the link is spent.
+  assert.equal((await newbie.post<{ joined: boolean }>(`/api/invite/${mine.body[0].token}`, { decision: "decline" })).body.joined, false);
+  assert.equal(await prisma.workspaceMember.count({ where: { workspaceId: ws.body.id, user: { email: "newbie@integration.test" } } }), 0);
+  assert.equal((await newbie.post(`/api/invite/${mine.body[0].token}`, { decision: "accept" })).status, 400);
+  assert.equal((await newbie.get<unknown[]>("/api/invitations")).body.length, 0);
+
+  // Revoking a pending invitation.
+  const rv = await admin.post<{ invitations: { invitationId?: string; url: string }[] }>(`/api/workspaces/${ws.body.id}/members`, { email: "viewer@integration.test", role: "viewer" });
+  const pending = await admin.get<{ id: string }[]>(`/api/workspaces/${ws.body.id}/invitations`);
+  assert.equal(pending.body.length, 1);
+  assert.equal((await viewer.del(`/api/invitations/${pending.body[0].id}`)).status, 404, "only the workspace's admins");
+  assert.equal((await admin.del(`/api/invitations/${pending.body[0].id}`)).status, 204);
+  assert.equal((await viewer.post(`/api/invite/${rv.body.invitations[0].url.split("/invite/")[1]}`, { decision: "accept" })).status, 400);
+  assert.ok(!(await viewer.get<{ items: { type: string; actioned: boolean; title: string }[] }>("/api/notifications?view=todo")).body.items.some((n) => n.type === "workspace_invite" && n.title === "Invite Co"), "leaves their To do");
+});
+
 test("members can leave; only owners delete a workspace", async () => {
-  const joined = await admin.post(`/api/workspaces/${s.contributorWs}/members`, { email: "viewer@integration.test", role: "admin" });
-  assert.equal(joined.status, 201);
+  const invited = await contributor.post<{ invitations: { url: string }[] }>(`/api/workspaces/${s.contributorWs}/members`, { email: "viewer@integration.test", role: "admin" });
+  assert.equal(invited.status, 201);
+  assert.equal((await viewer.post(`/api/invite/${invited.body.invitations[0].url.split("/invite/")[1]}`, { decision: "accept" })).status, 200);
   assert.equal((await viewer.del(`/api/workspaces/${s.contributorWs}`)).status, 403, "workspace admins can't delete it");
   assert.equal((await viewer.del(`/api/workspaces/${s.contributorWs}/members/${s.viewerId}`)).status, 204, "leave");
   assert.equal((await viewer.get(`/api/workspaces/${s.contributorWs}`)).status, 404);
@@ -941,4 +1933,62 @@ test("deactivating an account revokes access immediately, even with a live sessi
   // The last admin can't lock themselves out.
   const me = await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } });
   assert.equal((await admin.patch(`/api/admin/users/${me.id}`, { isActive: false })).status, 400);
+});
+
+test("security: stolen sessions die on reset, sign-in is throttled, public forms don't expose people, viewers can't log time", async () => {
+  // Session revocation: an admin password reset kills every existing cookie of that account.
+  const before = await outsider.get("/api/workspaces");
+  assert.equal(before.status, 200);
+  const reset = await admin.patch<{ temporaryPassword: string }>(`/api/admin/users/${s.outsiderId}`, { resetPassword: true });
+  assert.equal(reset.status, 200);
+  assert.equal((await outsider.get("/api/workspaces")).status, 401, "the old cookie no longer works");
+  assert.ok(await outsider.login("outsider@integration.test", reset.body.temporaryPassword));
+  assert.equal((await outsider.post("/api/account/password", { currentPassword: reset.body.temporaryPassword, newPassword: "Outsider456" })).status, 200);
+
+  // Sign-in throttling is per account and shared by all instances (database counters).
+  const victim = new Client();
+  assert.equal((await victim.post("/api/register", { email: "throttle@integration.test", password: "Throttle123", name: "Throttle" })).status, 201);
+  for (let i = 0; i < 10; i++) assert.equal(await victim.login("throttle@integration.test", `wrong-${i}`), false);
+  assert.equal(await victim.login("throttle@integration.test", "Throttle123"), false, "even the right password waits once the account is throttled");
+  assert.ok(await prisma.activityLog.findFirst({ where: { action: "sign_in_throttled" } }), "throttling is audit-logged");
+  assert.ok(await prisma.activityLog.findFirst({ where: { action: "sign_in_failed", ip: { not: null } } }), "failed sign-ins carry the client address");
+  await prisma.rateLimit.deleteMany({ where: { key: { startsWith: "login-" } } });
+  assert.ok(await victim.login("throttle@integration.test", "Throttle123"));
+
+  // Public forms: no people fields, no staff list, anonymous submissions rate limited.
+  const view = await prisma.view.create({ data: { projectId: s.project, name: "Public intake", type: "form", isPublic: true, config: {} } });
+  const anon = new Client();
+  const form = await anon.get<{ fields: { id: string; type: string }[]; members: unknown[] }>(`/api/public/forms/${view.id}`);
+  assert.equal(form.status, 200);
+  assert.deepEqual(form.body.members, [], "the member list is never published");
+  assert.ok(form.body.fields.length > 0 && !form.body.fields.some((f) => f.type === "person" || f.type === "people"), "people fields are not offered anonymously");
+  const sub = await anon.post(`/api/public/forms/${view.id}`, { data: { sys_title: "From the internet", sys_assignees: [s.contributorId] } });
+  assert.equal(sub.status, 201);
+  const created = await prisma.task.findFirstOrThrow({ where: { title: "From the internet" }, include: { assignees: true } });
+  assert.equal(created.assignees.length, 0, "strangers can't assign (and notify) staff");
+  let limited = 0;
+  for (let i = 0; i < 12; i++) if ((await anon.post(`/api/public/forms/${view.id}`, { data: { sys_title: `Spam ${i}` } })).status === 429) limited++;
+  assert.ok(limited >= 2, "anonymous submissions are rate limited");
+
+  // Focus: a viewer may keep a personal focus record but can't add time to someone's task.
+  const t = await prisma.task.findFirstOrThrow({ where: { projectId: s.project, deletedAt: null }, select: { id: true, actualMinutes: true } });
+  const f = await viewer.post<{ id: string }>(`/api/tasks/${t.id}/focus`, {});
+  assert.equal(f.status, 201);
+  await prisma.focusSession.update({ where: { id: f.body.id }, data: { elapsedSeconds: 600, resumedAt: null, status: "paused" } });
+  assert.equal((await viewer.patch(`/api/focus/${f.body.id}`, { action: "complete" })).status, 200);
+  assert.equal((await prisma.task.findUniqueOrThrow({ where: { id: t.id } })).actualMinutes, t.actualMinutes, "actual time unchanged");
+  assert.equal((await viewer.patch(`/api/focus/${f.body.id}`, { action: "complete", completeTask: true })).status, 400, "ended sessions can't be reused");
+
+  // Security headers on every page.
+  const page = await fetch(`${BASE}/`);
+  assert.equal(page.headers.get("x-content-type-options"), "nosniff");
+  assert.match(page.headers.get("content-security-policy") ?? "", /frame-ancestors 'self'/);
+  assert.equal(page.headers.get("x-powered-by"), null);
+  const health = await fetch(`${BASE}/api/health`);
+  assert.equal(health.status, 200);
+  assert.deepEqual(Object.keys(await health.json()).sort(), ["db", "ms", "status"]);
+
+  // The audit log can't be edited or deleted, even with the app's database credentials.
+  const row = await prisma.activityLog.findFirstOrThrow();
+  await assert.rejects(prisma.activityLog.delete({ where: { id: row.id } }), /append-only/);
 });

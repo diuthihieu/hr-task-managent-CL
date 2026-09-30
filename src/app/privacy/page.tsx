@@ -14,7 +14,7 @@ export default async function PrivacyPage() {
         title="Chính sách quyền riêng tư"
         updated="Cập nhật: 28/09/2026"
         backLabel="Về trang chủ"
-        intro="woli. là ứng dụng quản lý công việc cho nhóm (task, OKR, wiki, báo cáo). Trang này giải thích dữ liệu nào được thu thập, dùng vào việc gì và bạn có quyền gì."
+        intro="woli là ứng dụng quản lý công việc cho nhóm (task, OKR, wiki, báo cáo). Trang này giải thích dữ liệu nào được thu thập, dùng vào việc gì và bạn có quyền gì."
         sections={[
           { title: "Dữ liệu chúng tôi thu thập", body: ["Thông tin tài khoản: họ tên, email, mật khẩu (chỉ lưu dạng mã hoá một chiều), ảnh đại diện và các tuỳ chọn giao diện.", "Khi đăng nhập bằng Google: chúng tôi chỉ nhận tên, email và mã định danh tài khoản Google (phạm vi openid, email, profile). Chúng tôi không truy cập Gmail, Drive, lịch hay dữ liệu Google nào khác.", "Nội dung bạn và đồng nghiệp tạo trong workspace: task, bình luận, file đính kèm, OKR, trang wiki, tài liệu tri thức, lịch sử hoạt động và thông báo."] },
           { title: "Mục đích sử dụng", body: ["Cung cấp và vận hành ứng dụng: đăng nhập, phân quyền, hiển thị và đồng bộ dữ liệu giữa web và ứng dụng máy tính.", "Gửi thông báo trong ứng dụng (được giao việc, được tag, sắp đến hạn...).", "Bảo mật: nhật ký hoạt động, phát hiện và ngăn chặn truy cập trái phép.", "Chúng tôi không bán dữ liệu và không dùng dữ liệu của bạn cho quảng cáo."] },
@@ -31,7 +31,7 @@ export default async function PrivacyPage() {
       title="Privacy Policy"
       updated="Last updated: 28 September 2026"
       backLabel="Back to home"
-      intro="woli. is a work management app for teams (tasks, OKRs, wiki, reports). This page explains what data is collected, how it is used and your choices."
+      intro="woli is a work management app for teams (tasks, OKRs, wiki, reports). This page explains what data is collected, how it is used and your choices."
       sections={[
         { title: "Data we collect", body: ["Account data: name, email, password (stored only as a one-way hash), profile picture and interface preferences.", "With Google sign-in we receive only your name, email address and Google account identifier (scopes openid, email, profile). We do not access Gmail, Drive, Calendar or any other Google data.", "Content you and your teammates create in a workspace: tasks, comments, attachments, OKRs, wiki pages, knowledge documents, activity history and notifications."] },
         { title: "How we use it", body: ["To provide and operate the app: sign-in, permissions, showing and syncing your data across the web and desktop apps.", "To send in-app notifications (assignments, mentions, due dates...).", "For security: audit logs, detecting and preventing unauthorized access.", "We do not sell your data and do not use it for advertising."] },

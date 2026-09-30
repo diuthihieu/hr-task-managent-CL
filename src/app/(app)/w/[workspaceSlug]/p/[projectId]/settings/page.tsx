@@ -12,7 +12,7 @@ export default async function ProjectSettingsPage({ params }: { params: Promise<
     <div className="flex-1 flex flex-col overflow-hidden">
       <ProjectHeader workspaceSlug={workspaceSlug} workspaceName={workspace.name} projectId={project.id} projectName={project.name} />
       <ProjectSettings
-        project={{ id: project.id, name: project.name, description: project.description, color: project.color, status: project.status, ownerId: project.ownerId, startDate: fromDateOnly(project.startDate), endDate: fromDateOnly(project.endDate) }}
+        project={{ id: project.id, name: project.name, description: project.description, color: project.color, icon: project.icon, status: project.status, ownerId: project.ownerId, startDate: fromDateOnly(project.startDate), endDate: fromDateOnly(project.endDate) }}
         workspaceId={workspace.id}
         workspaceSlug={workspaceSlug}
         canManage={canManage}

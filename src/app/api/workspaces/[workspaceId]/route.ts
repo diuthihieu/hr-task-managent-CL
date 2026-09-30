@@ -13,10 +13,10 @@ export const GET = route<P>(async (_req, { params }) => {
   const { workspaceId } = await params;
   const ctx = await requireWorkspaceRole(user, workspaceId, "viewer");
   const w = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
-  return NextResponse.json({ id: w.id, name: w.name, slug: w.slug, description: w.description, logoUrl: workspaceLogoUrl(w), createdAt: w.createdAt.toISOString(), role: ctx.role });
+  return NextResponse.json({ id: w.id, name: w.name, slug: w.slug, description: w.description, logoUrl: workspaceLogoUrl(w), createdAt: w.createdAt.toISOString(), role: ctx.role, aiEnabled: w.aiEnabled });
 });
 
-const patchSchema = z.object({ name: nameSchema.optional(), description: z.string().max(2000).nullable().optional() });
+const patchSchema = z.object({ name: nameSchema.optional(), description: z.string().max(2000).nullable().optional(), aiEnabled: z.boolean().optional() });
 
 export const PATCH = route<P>(async (req, { params }) => {
   const user = await requireUser();
@@ -26,11 +26,11 @@ export const PATCH = route<P>(async (req, { params }) => {
   const w = await prisma.$transaction(async (tx) => {
     const before = await tx.workspace.findUniqueOrThrow({ where: { id: workspaceId } });
     const after = await tx.workspace.update({ where: { id: workspaceId }, data: { ...body, updatedById: user.id } });
-    const changes = diff(before, after, ["name", "description"]);
+    const changes = diff(before, after, ["name", "description", "aiEnabled"]);
     if (changes) await logActivity(tx, { workspaceId, actorId: user.id, entityType: "workspace", entityId: workspaceId, action: "updated", changes });
     return after;
   });
-  return NextResponse.json({ id: w.id, name: w.name, slug: w.slug, description: w.description, logoUrl: workspaceLogoUrl(w) });
+  return NextResponse.json({ id: w.id, name: w.name, slug: w.slug, description: w.description, logoUrl: workspaceLogoUrl(w), aiEnabled: w.aiEnabled });
 });
 
 /** Soft delete; workspace owners (or system admins). */

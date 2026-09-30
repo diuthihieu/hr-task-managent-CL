@@ -13,7 +13,8 @@ import { WidgetCard, type DashboardBlockLite, type DataResponse } from "./widget
 import { AiDashboardActions, AiBuildWidgetsButton } from "@/components/ai/ai-actions";
 import { WidgetEditorDialog, type BlockDraft } from "./widget-editor-dialog";
 import { DashboardFilterBar } from "./filter-bar";
-import type { CrossFilter, SeriesPoint } from "@/lib/dashboard-engine";
+import type { CrossFilter, SeriesPoint, Segment, SegmentTask } from "@/lib/dashboard-engine";
+import { SegmentPreview, type SegmentPreviewState } from "./segment-preview";
 import { parseBlockConfig } from "@/lib/dashboard-engine";
 import type { FieldRow } from "@/types";
 import { useT } from "@/components/i18n-provider";
@@ -53,6 +54,17 @@ export function DashboardWorkspace({
   const [nameDraft, setNameDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const widgetData = useRef(new Map<string, DataResponse>());
+  const [preview, setPreview] = useState<(SegmentPreviewState & { block: DashboardBlockLite }) | null>(null);
+
+  async function openSegment(block: DashboardBlockLite, segment: Segment) {
+    setPreview({ block, widgetTitle: block.title || t("common.untitled"), segment, tasks: null, total: 0 });
+    try {
+      const res = await api.post<{ tasks: SegmentTask[]; total: number; error?: string }>(`/api/dashboard-blocks/${block.id}/records`, { segment, slicers, crossFilter: crossFilter?.filter ?? null });
+      setPreview((p) => (p && p.block.id === block.id && p.segment === segment ? { ...p, tasks: res.error ? null : res.tasks, total: res.total, error: res.error } : p));
+    } catch (e) {
+      setPreview((p) => (p && p.segment === segment ? { ...p, error: e instanceof Error ? e.message : t("common.failed") } : p));
+    }
+  }
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -69,7 +81,6 @@ export function DashboardWorkspace({
   }, [dashboardId, t]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching dashboard data on mount is exactly what this effect is for
     load();
   }, [load]);
 
@@ -287,13 +298,16 @@ export function DashboardWorkspace({
             </Button>
           </div>
         ) : (
+          <>
+          <p className="px-1 pb-1 text-[11px] text-neutral-400">{t("seg.hint")}</p>
           <GridLayout
-            className="layout"
+            className="layout woli-grid"
             layout={layout}
             cols={12}
             rowHeight={32}
             margin={[10, 10]}
             draggableHandle=".drag-handle"
+            resizeHandles={["se", "e", "s"]}
             onLayoutChange={handleLayoutChange}
             onDragStop={(l) => persistLayout(l)}
             onResizeStop={(l) => persistLayout(l)}
@@ -310,12 +324,28 @@ export function DashboardWorkspace({
                   onCrossFilter={(point) => handleCrossFilterClick(block, point)}
                   crossFilterActive={crossFilter?.sourceBlockId === block.id ? crossFilter.filter.label : null}
                   onData={(d) => widgetData.current.set(block.id, d)}
+                  onSegmentClick={(segment) => openSegment(block, segment)}
                 />
               </div>
             ))}
           </GridLayout>
+          </>
         )}
       </div>
+
+      <SegmentPreview
+        state={preview}
+        onClose={() => setPreview(null)}
+        hrefFor={(task) => `/w/${workspaceSlug}/p/${task.projectId}/t/${task.id}`}
+        onFilter={
+          preview && preview.segment.key !== "value" && parseBlockConfig(preview.block.config).dimensionFieldId
+            ? () => {
+                handleCrossFilterClick(preview.block, { key: preview.segment.key, label: preview.segment.label, value: 0 });
+                setPreview(null);
+              }
+            : undefined
+        }
+      />
 
       <WidgetEditorDialog
         open={widgetDialog.open}

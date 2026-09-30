@@ -43,6 +43,32 @@ export function normalizeThemeMode(v: string | null | undefined): ThemeMode {
   return THEME_MODES.includes(v as ThemeMode) ? (v as ThemeMode) : "system";
 }
 
+/** Text size - scales text only (see "Text & display size" in globals.css). */
+export const FONT_SIZES = [
+  { name: "sm", scale: 0.92, vi: "Nhỏ", en: "Small" },
+  { name: "md", scale: 1, vi: "Vừa", en: "Default" },
+  { name: "lg", scale: 1.12, vi: "Lớn", en: "Large" },
+  { name: "xl", scale: 1.25, vi: "Rất lớn", en: "Extra large" },
+] as const;
+export type FontSize = (typeof FONT_SIZES)[number]["name"];
+export const FONT_SIZE_NAMES: string[] = FONT_SIZES.map((f) => f.name);
+export function normalizeFontSize(v: string | null | undefined): FontSize {
+  return (FONT_SIZE_NAMES.includes(v ?? "") ? v : "md") as FontSize;
+}
+
+/** Display size - scales the whole interface (spacing, controls and text) like browser zoom. */
+export const DISPLAY_SIZES = [
+  { name: "compact", scale: 0.9, vi: "Gọn", en: "Compact", hintVi: "Thấy nhiều nội dung hơn - hợp màn hình nhỏ/laptop", hintEn: "More on screen - good for laptops" },
+  { name: "default", scale: 1, vi: "Mặc định", en: "Default", hintVi: "Cân bằng cho hầu hết màn hình", hintEn: "Balanced for most screens" },
+  { name: "comfortable", scale: 1.08, vi: "Thoáng", en: "Comfortable", hintVi: "Rộng rãi, dễ bấm hơn", hintEn: "Roomier, easier to click" },
+  { name: "large", scale: 1.2, vi: "Lớn", en: "Large", hintVi: "Cho màn hình lớn/độ phân giải cao hoặc khi cần nhìn rõ hơn", hintEn: "For big / high-resolution screens or easier reading" },
+] as const;
+export type DisplaySize = (typeof DISPLAY_SIZES)[number]["name"];
+export const DISPLAY_SIZE_NAMES: string[] = DISPLAY_SIZES.map((d) => d.name);
+export function normalizeDisplaySize(v: string | null | undefined): DisplaySize {
+  return (DISPLAY_SIZE_NAMES.includes(v ?? "") ? v : "default") as DisplaySize;
+}
+
 /** Surface tones (tinted grays). Keep in sync with src/app/tone-palettes.css. */
 export const SURFACE_TONES = [
   { name: "neutral", group: "neutral", swatch: ["#fafafa", "#e5e5e5", "#525252"], vi: "Trung tính", en: "Neutral" },

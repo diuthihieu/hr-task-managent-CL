@@ -1,12 +1,12 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Moon, Sun, Monitor } from "lucide-react";
+import { Check, Moon, Sun, Monitor, RotateCcw } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { useTheme } from "@/components/theme-provider";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api-client";
-import { ACCENT_COLORS, SURFACE_TONES, type ThemeMode } from "@/lib/theme-colors";
+import { ACCENT_COLORS, SURFACE_TONES, FONT_SIZES, DISPLAY_SIZES, type ThemeMode } from "@/lib/theme-colors";
 import { cn } from "@/lib/utils";
 import { applyAccent } from "@/lib/client-dom";
 import type { Locale } from "@/lib/i18n/core";
@@ -14,11 +14,11 @@ import type { Locale } from "@/lib/i18n/core";
 /** Personal appearance settings: accent color (24 palettes), light/dark, language. Saved to the user's profile. */
 export function PreferencesPanel() {
   const { t, locale, accent: savedAccent } = useT();
-  const { mode, tone, setMode, setTone } = useTheme();
+  const { mode, tone, setMode, setTone, fontSize, displaySize, setFontSize, setDisplaySize } = useTheme();
   const router = useRouter();
   const [accent, setAccent] = useState<string>(savedAccent);
 
-  async function save(patch: { accentColor?: string; locale?: Locale; themeMode?: ThemeMode; surfaceTone?: string }) {
+  async function save(patch: { accentColor?: string; locale?: Locale; themeMode?: ThemeMode; surfaceTone?: string; fontSize?: string; displaySize?: string }) {
     try {
       await api.patch("/api/account/preferences", patch);
       router.refresh();
@@ -121,6 +121,77 @@ export function PreferencesPanel() {
             </div>
           </div>
         ))}
+      </section>
+
+      <section data-testid="prefs-sizes">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">{t("prefs.textSize")}</h3>
+          {(fontSize !== "md" || displaySize !== "default") && (
+            <button
+              onClick={() => {
+                setFontSize("md");
+                setDisplaySize("default");
+                save({ fontSize: "md", displaySize: "default" });
+              }}
+              className="ml-auto inline-flex items-center gap-1 text-xs text-indigo-600 hover:underline"
+              data-testid="sizes-reset"
+            >
+              <RotateCcw size={11} /> {t("prefs.sizeReset")}
+            </button>
+          )}
+        </div>
+        <p className="text-xs text-neutral-500 mb-2">{t("prefs.textSizeHint")}</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="radiogroup" aria-label={t("prefs.textSize")}>
+          {FONT_SIZES.map((f) => (
+            <button
+              key={f.name}
+              role="radio"
+              aria-checked={fontSize === f.name}
+              onClick={() => {
+                if (fontSize === f.name) return;
+                setFontSize(f.name);
+                save({ fontSize: f.name });
+              }}
+              className={cn("rounded-lg border px-3 py-2 text-left", fontSize === f.name ? "border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/40" : "border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+              data-testid={`font-${f.name}`}
+            >
+              {/* Fixed-size sample so each option previews its own size, not the current one. */}
+              <span className="block font-semibold text-neutral-800 dark:text-neutral-100 leading-none" style={{ fontSize: `${16 * f.scale}px` }}>Aa</span>
+              <span className="mt-1 flex items-center gap-1 text-xs text-neutral-600 dark:text-neutral-300">
+                {fontSize === f.name && <Check size={11} className="text-indigo-600" />} {locale === "vi" ? f.vi : f.en}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100 mt-5">{t("prefs.displaySize")}</h3>
+        <p className="text-xs text-neutral-500 mb-2">{t("prefs.displaySizeHint")}</p>
+        <div className="grid sm:grid-cols-2 gap-2" role="radiogroup" aria-label={t("prefs.displaySize")}>
+          {DISPLAY_SIZES.map((d) => (
+            <button
+              key={d.name}
+              role="radio"
+              aria-checked={displaySize === d.name}
+              onClick={() => {
+                if (displaySize === d.name) return;
+                setDisplaySize(d.name);
+                save({ displaySize: d.name });
+              }}
+              className={cn("rounded-lg border px-3 py-2 text-left flex items-center gap-3", displaySize === d.name ? "border-indigo-500 bg-indigo-50/60 dark:bg-indigo-950/40" : "border-neutral-200 dark:border-neutral-800 hover:bg-neutral-50 dark:hover:bg-neutral-800")}
+              data-testid={`display-${d.name}`}
+            >
+              <span className="shrink-0 rounded-md border border-neutral-300 dark:border-neutral-600 flex items-center justify-center tabular-nums text-[10px] font-semibold text-neutral-500" style={{ width: 40, height: 28 }}>
+                {Math.round(d.scale * 100)}%
+              </span>
+              <span className="min-w-0">
+                <span className="flex items-center gap-1 text-sm font-medium text-neutral-800 dark:text-neutral-100">
+                  {displaySize === d.name && <Check size={12} className="text-indigo-600" />} {locale === "vi" ? d.vi : d.en}
+                </span>
+                <span className="block text-xs text-neutral-500">{locale === "vi" ? d.hintVi : d.hintEn}</span>
+              </span>
+            </button>
+          ))}
+        </div>
       </section>
 
       <section>

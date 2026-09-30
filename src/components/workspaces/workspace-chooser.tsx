@@ -18,7 +18,10 @@ import { api } from "@/lib/api-client";
 import { initials } from "@/lib/utils";
 import { Brand } from "@/components/brand/brand";
 import { WorkspaceAvatar } from "./workspace-avatar";
+import { InviteDialog } from "@/components/invitations/invite-dialog";
+import { Mail, Check, X } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/core";
+import { AvatarImg } from "@/components/ui/avatar-img";
 
 export interface WorkspaceCard {
   id: string;
@@ -31,7 +34,17 @@ export interface WorkspaceCard {
   members: number;
 }
 
-export function WorkspaceChooser({ user, workspaces }: { user: { id: string; name: string; email: string; avatarColor: string; isAdmin: boolean }; workspaces: WorkspaceCard[] }) {
+export interface PendingInviteCard {
+  id: string;
+  token: string;
+  role: string;
+  message: string | null;
+  workspaceName: string;
+  memberCount: number;
+  invitedBy: string | null;
+}
+
+export function WorkspaceChooser({ user, workspaces, invites = [] }: { user: { id: string; name: string; email: string; avatarColor: string; isAdmin: boolean; emailVerified?: boolean }; workspaces: WorkspaceCard[]; invites?: PendingInviteCard[] }) {
   const { t } = useT();
   const router = useRouter();
   const desktopVersion = useDesktopVersion();
@@ -40,14 +53,35 @@ export function WorkspaceChooser({ user, workspaces }: { user: { id: string; nam
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
+  // After creating a workspace, offer to invite people before going in.
+  const [created, setCreated] = useState<{ id: string; slug: string; name: string } | null>(null);
+  const [answering, setAnswering] = useState<string | null>(null);
+
+  async function answer(inv: PendingInviteCard, decision: "accept" | "decline") {
+    setAnswering(inv.id);
+    try {
+      const r = await api.post<{ joined: boolean; slug: string | null }>(`/api/invite/${inv.token}`, { decision });
+      if (r.joined && r.slug) {
+        toast.success(t("inv.joined", { name: inv.workspaceName }));
+        router.push(`/w/${r.slug}`);
+        return;
+      }
+      router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+    }
+    setAnswering(null);
+  }
 
   async function create() {
     if (!name.trim()) return;
     setBusy(true);
     try {
-      const ws = await api.post<{ slug: string }>("/api/workspaces", { name: name.trim(), description: description.trim() || null });
+      const ws = await api.post<{ id: string; slug: string; name: string }>("/api/workspaces", { name: name.trim(), description: description.trim() || null });
       toast.success(t("ws.created"));
-      router.push(`/w/${ws.slug}`);
+      setCreateOpen(false);
+      setBusy(false);
+      setCreated(ws);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
       setBusy(false);
@@ -75,8 +109,9 @@ export function WorkspaceChooser({ user, workspaces }: { user: { id: string; nam
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800" data-testid="user-menu">
-                  <span className="h-7 w-7 rounded-full text-white text-xs flex items-center justify-center" style={{ backgroundColor: user.avatarColor }}>
+                  <span className="relative overflow-hidden h-7 w-7 rounded-full text-white text-xs flex items-center justify-center" style={{ backgroundColor: user.avatarColor }}>
                     {initials(user.name)}
+                    <AvatarImg id={user.id} />
                   </span>
                   <span className="hidden sm:inline text-sm text-neutral-700 dark:text-neutral-200">{user.name}</span>
                 </button>
@@ -103,6 +138,7 @@ export function WorkspaceChooser({ user, workspaces }: { user: { id: string; nam
           </div>
         </div>
       </header>
+      {user.emailVerified === false && <VerifyEmailBanner email={user.email} />}
 
       <main className="max-w-5xl mx-auto px-4 py-10">
         <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
@@ -114,6 +150,33 @@ export function WorkspaceChooser({ user, workspaces }: { user: { id: string; nam
             <Plus size={15} /> {t("ws.new")}
           </Button>
         </div>
+
+        {invites.length > 0 && (
+          <section className="mb-6" data-testid="chooser-invites">
+            <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100 mb-2 flex items-center gap-1.5">
+              <Mail size={14} className="text-indigo-600" /> {t("inv.forYou")}
+            </h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {invites.map((inv) => (
+                <div key={inv.id} className="rounded-xl border border-indigo-200 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/30 p-4" data-testid="chooser-invite">
+                  <div className="font-semibold text-neutral-900 dark:text-neutral-50 truncate">{inv.workspaceName}</div>
+                  <div className="text-xs text-neutral-500 mt-0.5">
+                    {inv.invitedBy ? t("inv.invitedBy", { name: inv.invitedBy }) : t("inv.invitedToJoin")} {t("inv.youJoinAs", { role: t(`role.${inv.role}` as MessageKey) })} {t("inv.members", { count: inv.memberCount })}
+                  </div>
+                  {inv.message && <p className="text-sm text-neutral-700 dark:text-neutral-200 mt-2 line-clamp-2">“{inv.message}”</p>}
+                  <div className="flex gap-2 mt-3">
+                    <Button size="sm" onClick={() => answer(inv, "accept")} disabled={answering === inv.id} data-testid="chooser-invite-accept">
+                      <Check size={13} /> {t("inv.accept")}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => answer(inv, "decline")} disabled={answering === inv.id} data-testid="chooser-invite-decline">
+                      <X size={13} /> {t("inv.decline")}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {workspaces.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-10 text-center">
@@ -186,6 +249,48 @@ export function WorkspaceChooser({ user, workspaces }: { user: { id: string; nam
         </DialogContent>
       </Dialog>
       <PreferencesDialog open={prefsOpen} onOpenChange={setPrefsOpen} />
+      {created && (
+        <InviteDialog
+          open
+          workspaceId={created.id}
+          workspaceName={created.name}
+          onOpenChange={(v) => {
+            if (!v) router.push(`/w/${created.slug}`);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/** Shown until the address is verified: email invitations need a proven owner. */
+function VerifyEmailBanner({ email }: { email: string }) {
+  const { t } = useT();
+  const [state, setState] = useState<"idle" | "busy" | "sent">("idle");
+  return (
+    <div className="border-b border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/40" data-testid="verify-banner">
+      <div className="max-w-5xl mx-auto px-4 py-2.5 flex flex-wrap items-center gap-3 text-sm text-amber-900 dark:text-amber-100">
+        <span className="flex-1 min-w-[14rem]">{state === "sent" ? t("verify.sent") : t("verify.banner", { email })}</span>
+        {state !== "sent" && (
+          <button
+            disabled={state === "busy"}
+            onClick={async () => {
+              setState("busy");
+              try {
+                await api.post("/api/account/verify-email", {});
+                setState("sent");
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : t("common.failed"));
+                setState("idle");
+              }
+            }}
+            className="rounded-md bg-amber-600 text-white px-3 py-1 text-xs font-semibold hover:bg-amber-500"
+            data-testid="verify-send"
+          >
+            {t("verify.send")}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

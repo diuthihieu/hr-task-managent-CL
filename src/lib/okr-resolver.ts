@@ -146,7 +146,13 @@ export function resolveObjectives(objectives: ObjectiveWithIncludes[], hidden: S
   });
 }
 
-/** Objectives where the user is owner, contributor, KR owner, or assignee of a task contributing to the objective or one of its key results. */
+/**
+ * "My OKRs": only the user's own branch of each objective.
+ * - Owner or contributor of the objective: the whole objective.
+ * - Owner of a key result: the objective (header) plus that key result and all its tasks.
+ * - Assignee only: the objective, the key results holding their tasks, and just those tasks.
+ * Progress figures stay computed from everything, so the numbers remain truthful.
+ */
 export async function getMyObjectiveRows(workspaceId: string, userId: string, hidden: Set<string> = new Set()): Promise<ObjectiveRow[]> {
   const objectives = await prisma.objective.findMany({
     where: {
@@ -164,5 +170,29 @@ export async function getMyObjectiveRows(workspaceId: string, userId: string, hi
     include: OBJECTIVE_INCLUDE,
     orderBy: { createdAt: "desc" },
   });
-  return resolveObjectives(objectives, hidden);
+  return pruneToMyBranch(resolveObjectives(objectives, hidden), userId, await myTaskIdsIn(userId, objectives.map((o) => o.id)));
+}
+
+/** Tasks assigned to the user that feed these objectives (directly or via a key result). */
+export async function myTaskIdsIn(userId: string, objectiveIds: string[]): Promise<Set<string>> {
+  const rows = await prisma.taskAssignee.findMany({
+    where: { userId, task: { deletedAt: null, OR: [{ objectiveId: { in: objectiveIds } }, { keyResult: { objectiveId: { in: objectiveIds } } }] } },
+    select: { taskId: true },
+  });
+  return new Set(rows.map((r) => r.taskId));
+}
+
+export function pruneToMyBranch(rows: ObjectiveRow[], userId: string, myTaskIds: Set<string>): ObjectiveRow[] {
+  return rows.flatMap((o) => {
+    if (o.owner?.id === userId || o.contributors.some((c) => c.id === userId)) return [o];
+    const keyResults = o.keyResults.flatMap((kr) => {
+      if (kr.owner?.id === userId) return [kr];
+      const tasks = kr.tasks.filter((t) => myTaskIds.has(t.taskId));
+      return tasks.length ? [{ ...kr, tasks }] : [];
+    });
+    const tasks = o.tasks.filter((t) => myTaskIds.has(t.taskId));
+    if (!keyResults.length && !tasks.length) return [];
+    const krIds = new Set(keyResults.map((k) => k.id));
+    return [{ ...o, keyResults, tasks, childObjectives: o.childObjectives.filter((c) => krIds.has(c.parentKeyResultId)) }];
+  });
 }

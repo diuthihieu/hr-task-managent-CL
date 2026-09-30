@@ -121,7 +121,7 @@ export function SettingsTaskConfig({ workspaceId, mode, canEdit }: { workspaceId
                 />
                 {mode === "statuses" && (
                   <>
-                    <Select className="w-44 h-7 text-xs" value={row.category ?? "todo"} onValueChange={(v) => canEdit && patch(row, { category: v })} options={STATUS_CATEGORIES} />
+                    <Select className="w-44 h-7 text-xs" value={row.category ?? "todo"} disabled={!canEdit} onValueChange={(v) => v !== row.category && patch(row, { category: v })} options={STATUS_CATEGORIES} data-testid="status-category" />
                     <button
                       disabled={!canEdit || row.isDefault}
                       onClick={() => patch(row, { isDefault: true })}

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
-import { ShieldCheck, UserPlus, Plus, Copy, ArrowLeft, MoreHorizontal, KeyRound, UserX, UserCheck, Trash2, Crown } from "lucide-react";
+import { ShieldCheck, UserPlus, Plus, Copy, ArrowLeft, MoreHorizontal, KeyRound, MailCheck, UserX, UserCheck, Trash2, Crown } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { formatDate, cn } from "@/lib/utils";
 import type { AdminUserRow } from "@/types";
 import { DesktopReleasesPanel } from "./desktop-releases-panel";
+import { MailCheckPanel } from "./mail-check-panel";
 import { useT } from "@/components/i18n-provider";
 
 interface WorkspaceItem {
@@ -136,6 +137,8 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
         ) : tab === "desktop" ? (
           <DesktopReleasesPanel />
         ) : tab === "users" ? (
+          <>
+          <MailCheckPanel />
           <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-x-auto">
             <table className="w-full">
               <thead className="text-xs text-neutral-500 border-b border-neutral-200 dark:border-neutral-800">
@@ -166,6 +169,7 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
                       ) : (
                         <Badge className="bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300">{tr("adm.active")}</Badge>
                       )}
+                      {!u.emailVerifiedAt && <Badge className="ml-1 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" data-testid="adm-unverified">{tr("adm.unverified")}</Badge>}
                     </td>
                     <td className="px-4 py-2 text-xs text-neutral-600 dark:text-neutral-400">
                       {u.workspaces.length ? u.workspaces.map((w) => `${w.name} (${w.role})`).join(", ") : <span className="text-neutral-400">—</span>}
@@ -179,6 +183,11 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
                           </button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent>
+                          {!u.emailVerifiedAt && (
+                            <DropdownMenuItem onSelect={() => confirm(tr("adm.verifyConfirm", { email: u.email })) && patchUser(u, { verifyEmail: true }, tr("adm.verifiedToast"))} data-testid="adm-verify">
+                              <MailCheck size={13} /> {tr("adm.verify")}
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuItem onSelect={() => confirm(tr("adm.resetConfirm", { email: u.email })) && patchUser(u, { resetPassword: true }, tr("adm.resetDone"))}>
                             <KeyRound size={13} /> {tr("adm.reset")}
                           </DropdownMenuItem>
@@ -200,6 +209,7 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
               </tbody>
             </table>
           </div>
+          </>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {workspaces.length === 0 && <div className="text-neutral-400 py-10">{tr("adm.noWorkspaces")}</div>}

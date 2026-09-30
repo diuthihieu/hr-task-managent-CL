@@ -8,16 +8,20 @@ import type { Member, LinkTarget } from "@/components/grid/cell";
 import { RichEditor, type SaveState } from "@/components/editor/rich-editor";
 import { Button } from "@/components/ui/button";
 import { AttachmentViewer } from "@/components/attachments/attachment-viewer";
+import { TaskApprovals } from "@/components/approvals/task-approvals";
 import { MentionInput, CommentBody } from "@/components/comments/mention-input";
 import { StartFocusButton } from "@/components/focus/focus-mode";
+import { RetroButton } from "@/components/brain/retro-dialog";
 import { AiTaskActions } from "@/components/ai/ai-actions";
-import { stripMentions } from "@/lib/mentions";
+import { stripMentions, mentionToken } from "@/lib/mentions";
 import { toast } from "@/components/ui/toast";
 import { useT } from "@/components/i18n-provider";
 import { getCellValue } from "@/lib/query-engine";
 import { api } from "@/lib/api-client";
 import { initials, formatDate, cn } from "@/lib/utils";
 import type { ActivityRow, AttachmentRow, FieldRow, RecordRow } from "@/types";
+import { AvatarImg } from "@/components/ui/avatar-img";
+import { Meta } from "@/components/ui/meta";
 
 interface ProjectDetail {
   id: string;
@@ -207,6 +211,12 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
   const primary = PRIMARY_FIELDS.map((id) => pageFields.find((f) => f.id === id)).filter((f): f is FieldRow => Boolean(f));
   const rest = pageFields.filter((f) => !PRIMARY_FIELDS.includes(f.id));
   const shown = showAll ? [...primary, ...rest] : primary;
+  /** Reply to a comment or to a reply: replies join the thread and tag the person you answer. */
+  function startReply(c: CommentItem) {
+    setReplyTo(c);
+    const u = c.user;
+    if (c.parentCommentId && u && u.id !== currentUserId && !draft.includes(`](${u.id})`)) setDraft(`${mentionToken(u.name, u.id)} ${draft}`);
+  }
   const rootComments = comments.filter((c) => !c.parentCommentId);
   const repliesOf = (id: string) => comments.filter((c) => c.parentCommentId === id);
   const idx = siblings.findIndex((s) => s.id === taskId);
@@ -214,8 +224,9 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
 
   const commentView = (c: CommentItem, nested = false): React.ReactNode => (
     <div key={c.id} className={cn("flex gap-2", nested && "ml-8 mt-2")}>
-      <span className="h-7 w-7 rounded-full flex items-center justify-center text-white text-[10px] shrink-0" style={{ backgroundColor: c.user?.avatarColor ?? "#94a3b8" }}>
+      <span className="relative overflow-hidden h-7 w-7 rounded-full flex items-center justify-center text-white text-[10px] shrink-0" style={{ backgroundColor: c.user?.avatarColor ?? "#94a3b8" }}>
         {initials(c.user?.name ?? "?")}
+        <AvatarImg id={c.user?.id} />
       </span>
       <div className="min-w-0 flex-1">
         <div className="text-xs">
@@ -223,11 +234,9 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
         </div>
         <CommentBody body={c.body} className="text-sm text-neutral-700 dark:text-neutral-300" />
         <div className="flex gap-3 text-[11px] text-neutral-400 mt-0.5">
-          {!nested && (
-            <button onClick={() => setReplyTo(c)} className="hover:text-indigo-600 flex items-center gap-0.5">
-              <Reply size={11} /> {t("record.reply")}
-            </button>
-          )}
+          <button onClick={() => startReply(c)} className="hover:text-indigo-600 flex items-center gap-0.5" data-testid="comment-reply">
+            <Reply size={11} /> {t("record.reply")}
+          </button>
           {(c.user?.id === currentUserId || canModerate) && (
             <button onClick={() => deleteComment(c)} className="hover:text-red-600">
               {t("common.delete")}
@@ -269,11 +278,14 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
           <div className="flex flex-wrap items-center gap-2 mt-3" data-testid="record-actions">
             <StartFocusButton taskId={taskId} />
             <AiTaskActions taskId={taskId} projectId={projectId} canEdit={canEdit} onChanged={() => router.refresh()} />
+            <TaskApprovals taskId={taskId} canEdit={canEdit} onChanged={() => router.refresh()} />
+            <RetroButton taskId={taskId} />
           </div>
           {!canEdit && <p className="text-xs text-amber-600 mt-1">{t("record.readOnly")}</p>}
-          <p className="text-xs text-neutral-400 mt-1">
-            {t("record.created", { when: formatDate(record.createdAt, true) })} · {t("common.updated", { when: formatDate(record.updatedAt, true) })}
-          </p>
+          <Meta className="mt-1 text-xs text-neutral-400">
+            <span>{t("record.created", { when: formatDate(record.createdAt, true) })}</span>
+            <span>{t("common.updated", { when: formatDate(record.updatedAt, true) })}</span>
+          </Meta>
 
           <section className="mt-5">
             <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm">
@@ -369,9 +381,10 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
                         <div className="text-xs truncate text-neutral-800 dark:text-neutral-100" title={a.fileName}>
                           {a.fileName}
                         </div>
-                        <div className="text-[10px] text-neutral-400 truncate">
-                          {formatBytes(a.sizeBytes)} · {a.uploadedBy?.name ?? "—"}
-                        </div>
+                        <Meta className="text-[10px] text-neutral-400 gap-x-2">
+                          <span>{formatBytes(a.sizeBytes)}</span>
+                          <span className="truncate">{a.uploadedBy?.name ?? "—"}</span>
+                        </Meta>
                       </div>
                       <a href={a.downloadUrl} className="text-neutral-400 hover:text-indigo-600" aria-label={`${t("common.download")} ${a.fileName}`}>
                         <Download size={13} />

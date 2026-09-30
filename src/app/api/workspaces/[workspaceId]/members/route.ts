@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, badRequest, forbidden } from "@/lib/authz";
-import { logActivity } from "@/lib/activity";
-import { emailSchema, uuid, workspaceRoleSchema } from "@/lib/validation";
+import { requireUser, requireWorkspaceRole, route, readJson, badRequest } from "@/lib/authz";
+import { createInvitations, inviteUrl } from "@/lib/invitations";
+import { emailSchema, workspaceRoleSchema } from "@/lib/validation";
 
 type P = { workspaceId: string };
 
@@ -22,28 +22,28 @@ export const GET = route<P>(async (req, { params }) => {
   return NextResponse.json(members.map((m) => ({ id: m.user.id, name: m.user.name, email: m.user.email, avatarColor: m.user.avatarColor })));
 });
 
-const addSchema = z.object({ email: emailSchema.optional(), userId: uuid.optional(), role: workspaceRoleSchema.default("editor") });
+const inviteSchema = z
+  .object({
+    email: emailSchema.optional(),
+    emails: z.array(emailSchema).max(50).optional(),
+    role: workspaceRoleSchema.default("editor"),
+    message: z.string().trim().max(500).nullable().optional(),
+  })
+  .refine((b) => b.email || b.emails?.length, "Enter at least one email");
 
-/** Add an *existing* (signed-up) account to the workspace. */
+/**
+ * Invite people by email. Nobody is added directly: each person gets an
+ * invitation (Action Center, or on sign-up for new addresses) and joins only
+ * after accepting. Returns a personal link per invitation that can also be sent by hand.
+ */
 export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { workspaceId } = await params;
-  const ctx = await requireWorkspaceRole(user, workspaceId, "admin");
-  const body = addSchema.parse(await readJson(req));
-  if (body.role === "owner" && ctx.role !== "owner") throw forbidden("Only owners can add owners");
-  const target = await prisma.user.findFirst({
-    where: { deletedAt: null, ...(body.userId ? { id: body.userId } : { email: body.email ?? "" }) },
-  });
-  if (!target || !target.isActive) throw badRequest("No account with that email. The person needs to sign up first.");
-  if (await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId: target.id } } })) throw badRequest("Already a member");
-  const member = await prisma.$transaction(async (tx) => {
-    const m = await tx.workspaceMember.create({
-      data: { workspaceId, userId: target.id, role: body.role, createdById: user.id },
-      include: { user: { select: { id: true, name: true, email: true, avatarColor: true, isActive: true } } },
-    });
-    await logActivity(tx, { workspaceId, actorId: user.id, entityType: "member", entityId: target.id, action: "created", summary: `Added ${target.name} as ${body.role}` });
-    return m;
-  });
-  return NextResponse.json({ ...member.user, role: member.role }, { status: 201 });
+  await requireWorkspaceRole(user, workspaceId, "admin");
+  const body = inviteSchema.parse(await readJson(req));
+  if (body.role === "owner") throw badRequest("Invite them first; an owner can make them an owner after they join");
+  const emails = [...(body.emails ?? []), ...(body.email ? [body.email] : [])];
+  const results = await prisma.$transaction((tx) => createInvitations(tx, { workspaceId, emails, role: body.role, invitedById: user.id, message: body.message ?? null }));
+  const origin = new URL(req.url).origin;
+  return NextResponse.json({ invitations: results.map((r) => ({ ...r, token: undefined, url: r.token ? inviteUrl(origin, r.token) : null })) }, { status: 201 });
 });
-

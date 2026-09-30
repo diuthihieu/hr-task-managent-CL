@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfWidget } from "@/lib/authz";
 import { serializeWidget } from "@/lib/dashboard-serialize";
+import { assertWidgetSource } from "@/lib/dashboard-data";
 
 type P = { blockId: string };
 
@@ -20,8 +21,9 @@ const patchSchema = z.object({
 export const PATCH = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { blockId } = await params;
-  await requireWorkspaceRole(user, await workspaceOfWidget(blockId), "editor");
+  const ctx = await requireWorkspaceRole(user, await workspaceOfWidget(blockId), "editor");
   const body = patchSchema.parse(await readJson(req));
+  if (body.config) await assertWidgetSource(user, ctx.workspaceId, body.config);
   const w = await prisma.dashboardWidget.update({ where: { id: blockId }, data: { ...body, config: body.config as Prisma.InputJsonValue | undefined } });
   return NextResponse.json(serializeWidget(w));
 });

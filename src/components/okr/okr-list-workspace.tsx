@@ -13,6 +13,8 @@ import { ObjectiveDialog, objectivePayload, type ObjectiveDraft } from "./object
 import { KeyResultDialog, type KeyResultDraft } from "./key-result-dialog";
 import { ProgressBar, StatusBadge, PriorityBadge, ConfidenceDot, PctLabel, UserChip, UserStack, DeadlineLabel, CycleLabel } from "./okr-ui";
 import type { KeyResultTaskRow, ObjectiveRow, TeamRow } from "@/types";
+import { MetaChip, MetaItem } from "@/components/ui/meta";
+import { UserRound } from "lucide-react";
 
 interface MemberLite {
   id: string;
@@ -210,7 +212,7 @@ export function OkrListWorkspace({
             {scope === "team" && (
               <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2 px-1">
                 {groupBy === "project" && <FolderKanban size={12} style={{ color: group.color ?? undefined }} />}
-                {group.name} <span className="text-neutral-300 dark:text-neutral-700">· {group.objectives.length}</span>
+                {group.name} <span className="ml-1 rounded-full bg-neutral-100 dark:bg-neutral-800 px-1.5 text-[10px] text-neutral-500 tabular-nums">{group.objectives.length}</span>
               </div>
             )}
             <div className="space-y-2">
@@ -221,7 +223,7 @@ export function OkrListWorkspace({
                       {expanded.has(o.id) ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                     </button>
                     <div className="min-w-0 max-w-[340px]">
-                      <Link href={`/w/${workspaceSlug}/okrs/${o.id}`} className="flex items-center gap-1.5 font-medium text-sm text-neutral-900 dark:text-neutral-100 hover:text-indigo-600 dark:hover:text-indigo-400">
+                      <Link href={`/w/${workspaceSlug}/okrs/${o.id}${scope === "mine" ? "?mine=1" : ""}`} className="flex items-center gap-1.5 font-medium text-sm text-neutral-900 dark:text-neutral-100 hover:text-indigo-600 dark:hover:text-indigo-400">
                         <Target size={13} className="text-indigo-500 shrink-0" />
                         <span className="truncate">{o.title}</span>
                       </Link>
@@ -280,7 +282,7 @@ export function OkrListWorkspace({
                         return (
                           <div key={kr.id} className="group/kr">
                             <div className="flex items-center gap-2 py-1 text-xs rounded-md px-1.5 -mx-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-900">
-                              <KeySquare size={12} className="text-teal-500 shrink-0" />
+                              <KeySquare size={12} className="text-indigo-500 shrink-0" />
                               <span className="text-neutral-700 dark:text-neutral-300 truncate flex-1">{kr.title}</span>
                               <span className="w-24 shrink-0 hidden sm:block">
                                 <UserChip user={kr.owner} size={16} />
@@ -300,15 +302,15 @@ export function OkrListWorkspace({
                               <div className="pl-6 space-y-0.5">
                                 {kr.tasks.map((task) => (
                                   <Link key={task.id} href={taskHref(task)} className="flex items-center gap-1.5 text-[11px] text-neutral-500 hover:text-indigo-600 truncate">
-                                    <CheckSquare size={10} className="shrink-0" /> <span className="truncate">{task.title}</span> <span className="text-neutral-400">· {t("okr.taskProgress")} {Math.round(task.progress)}%</span>
+                                    <CheckSquare size={10} className="shrink-0" /> <span className="truncate">{task.title}</span> <span className="ml-1 text-neutral-400 tabular-nums" title={t("okr.taskProgress")}>{Math.round(task.progress)}%</span>
                                   </Link>
                                 ))}
                               </div>
                             )}
                             {children.map((c) => (
-                              <Link key={c.id} href={`/w/${workspaceSlug}/okrs/${c.id}`} className="flex items-center gap-1.5 pl-6 py-0.5 text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline truncate">
+                              <Link key={c.id} href={`/w/${workspaceSlug}/okrs/${c.id}${scope === "mine" ? "?mine=1" : ""}`} className="flex items-center gap-1.5 pl-6 py-0.5 text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline truncate">
                                 <CornerDownRight size={11} className="shrink-0" /> <Target size={11} className="shrink-0" /> <span className="truncate">{c.title}</span>
-                                {c.owner && <span className="text-neutral-400">· {c.owner.name}</span>}
+                                {c.owner && <MetaItem icon={UserRound} className="ml-1.5 text-neutral-400">{c.owner.name}</MetaItem>}
                               </Link>
                             ))}
                           </div>
@@ -320,9 +322,8 @@ export function OkrListWorkspace({
                           {o.tasks.map((task) => (
                             <Link key={task.id} href={taskHref(task)} className="flex items-center gap-1.5 pl-1 text-[11px] text-neutral-500 hover:text-indigo-600 truncate">
                               <CheckSquare size={10} className="shrink-0" /> <span className="truncate">{task.title}</span>
-                              <span className="text-neutral-400">
-                                · {task.projectName} · {t("okr.taskProgress")} {Math.round(task.progress)}%
-                              </span>
+                              <MetaChip className="ml-1">{task.projectName}</MetaChip>
+                              <span className="ml-1 text-neutral-400 tabular-nums" title={t("okr.taskProgress")}>{Math.round(task.progress)}%</span>
                             </Link>
                           ))}
                         </div>

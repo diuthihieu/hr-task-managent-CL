@@ -1,7 +1,10 @@
 "use client";
 import { useMemo, useState } from "react";
 import { nanoid } from "nanoid";
-import { BarChart3, Plus, MoreHorizontal, Pencil, Trash2, ArrowUp, ArrowDown } from "lucide-react";
+import { Responsive, WidthProvider, type Layout } from "react-grid-layout";
+import "react-grid-layout/css/styles.css";
+import "react-resizable/css/styles.css";
+import { BarChart3, Plus, MoreHorizontal, Pencil, Trash2, GripVertical } from "lucide-react";
 import { ChartRenderer } from "@/components/dashboard/chart-renderer";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
@@ -9,7 +12,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/misc";
 import { useT } from "@/components/i18n-provider";
-import { computeSeries, computeStackedSeries, computeKpi, type DashboardBlockConfig } from "@/lib/dashboard-engine";
+import { computeSeries, computeStackedSeries, computeKpi, recordsInSegment, summarizeSegmentTasks, type DashboardBlockConfig, type Segment } from "@/lib/dashboard-engine";
+import { SegmentPreview, type SegmentPreviewState } from "@/components/dashboard/segment-preview";
 import type { MemberLite, ReportChartType, ReportConfig, ReportWidget } from "@/lib/query-engine";
 import type { TFunction } from "@/lib/i18n/core";
 import { cn } from "@/lib/utils";
@@ -21,6 +25,34 @@ const DIMENSION_TYPES = ["status", "single_select", "multi_select", "people", "p
 const DATE_TYPES = ["date", "datetime", "created_time", "modified_time"];
 const STACKED: ReportChartType[] = ["stacked_column", "stacked_bar", "pivot"];
 const CHART_TYPES: ReportChartType[] = ["column", "bar", "stacked_column", "stacked_bar", "line", "area", "pie", "donut", "pivot", "kpi"];
+
+const Grid = WidthProvider(Responsive);
+const ROW_HEIGHT = 32;
+const COLS = { md: 12, xs: 1 };
+
+/** Saved grid positions, falling back to the old two-column flow for widgets never placed. */
+function layoutFor(widgets: ReportWidget[]): Layout[] {
+  let x = 0;
+  let y = 0;
+  let rowH = 0;
+  const placedBottom = widgets.reduce((m, w) => (w.layout ? Math.max(m, w.layout.y + w.layout.h) : m), 0);
+  y = placedBottom;
+  return widgets.map((w) => {
+    const minH = w.type === "kpi" ? 3 : 5;
+    if (w.layout) return { i: w.id, ...w.layout, minW: 2, minH };
+    const width = w.wide || w.type === "pivot" ? 12 : 6;
+    const h = w.type === "kpi" ? 5 : 10;
+    if (x + width > 12) {
+      x = 0;
+      y += rowH;
+      rowH = 0;
+    }
+    const l = { i: w.id, x, y, w: width, h, minW: 2, minH };
+    x += width;
+    rowH = Math.max(rowH, h);
+    return l;
+  });
+}
 
 function toBlock(w: ReportWidget): DashboardBlockConfig {
   return {
@@ -81,7 +113,10 @@ export function ReportView({
   config,
   canEdit,
   onConfigChange,
+  onOpenRecord,
 }: {
+  /** Opens a task from the drill-down preview. */
+  onOpenRecord?: (recordId: string) => void;
   projectId: string;
   fields: FieldRow[];
   records: RecordRow[];
@@ -91,10 +126,13 @@ export function ReportView({
   onConfigChange: (next: ReportConfig) => void;
 }) {
   const { t } = useT();
-  const widgets = config.widgets ?? [];
+  const widgets = useMemo(() => config.widgets ?? [], [config.widgets]);
   const [editing, setEditing] = useState<ReportWidget | null>(null);
 
-  function saveWidget(w: ReportWidget) {
+  function saveWidget(input: ReportWidget) {
+    const old = widgets.find((x) => x.id === input.id);
+    // Toggling "full width" in the editor re-sizes a card that was already placed on the grid.
+    const w = old?.layout && !!old.wide !== !!input.wide ? { ...input, layout: { ...old.layout, x: input.wide ? 0 : old.layout.x, w: input.wide ? 12 : 6 } } : input;
     const next = w.id && widgets.some((x) => x.id === w.id) ? widgets.map((x) => (x.id === w.id ? w : x)) : [...widgets, { ...w, id: w.id || nanoid(8) }];
     onConfigChange({ ...config, widgets: next });
     setEditing(null);
@@ -102,13 +140,21 @@ export function ReportView({
   function remove(id: string) {
     onConfigChange({ ...config, widgets: widgets.filter((w) => w.id !== id) });
   }
-  function move(id: string, dir: -1 | 1) {
-    const i = widgets.findIndex((w) => w.id === id);
-    const j = i + dir;
-    if (i < 0 || j < 0 || j >= widgets.length) return;
-    const next = [...widgets];
-    [next[i], next[j]] = [next[j], next[i]];
-    onConfigChange({ ...config, widgets: next });
+  const layout = useMemo(() => layoutFor(widgets), [widgets]);
+  const [preview, setPreview] = useState<SegmentPreviewState | null>(null);
+
+  function saveLayout(next: Layout[]) {
+    const pos = new Map(next.map((l) => [l.i, { x: l.x, y: l.y, w: l.w, h: l.h }]));
+    const changed = widgets.some((w) => {
+      const p = pos.get(w.id);
+      return p && (!w.layout || p.x !== w.layout.x || p.y !== w.layout.y || p.w !== w.layout.w || p.h !== w.layout.h);
+    });
+    if (changed) onConfigChange({ ...config, widgets: widgets.map((w) => (pos.has(w.id) ? { ...w, layout: pos.get(w.id) } : w)) });
+  }
+
+  function openSegment(w: ReportWidget, segment: Segment) {
+    const matched = recordsInSegment(records, fields, toBlock(w), segment);
+    setPreview({ widgetTitle: w.title || t(`report.type.${w.type}`), segment, tasks: summarizeSegmentTasks(matched, fields, members), total: matched.length });
   }
 
   const presetList = useMemo(() => presets(fields, t), [fields, t]);
@@ -153,15 +199,30 @@ export function ReportView({
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {widgets.map((w, i) => (
-          <div key={w.id} className={cn("rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4 flex flex-col", (w.wide || w.type === "pivot") && "md:col-span-2")} data-testid="report-widget">
-            <div className="flex items-center gap-2 mb-2">
-              <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100 truncate">{w.title || t(`report.type.${w.type}`)}</h3>
+      {widgets.length > 0 && <p className="text-[11px] text-neutral-400 mb-1">{canEdit ? t("seg.hint") : t("seg.hintView")}</p>}
+      <Grid
+        className="layout woli-grid -mx-2.5"
+        layouts={{ md: layout, xs: [...layout].sort((a, b) => a.y - b.y || a.x - b.x).map((l, i) => ({ ...l, x: 0, y: i * 10, w: 1 })) }}
+        breakpoints={{ md: 768, xs: 0 }}
+        cols={COLS}
+        rowHeight={ROW_HEIGHT}
+        margin={[12, 12]}
+        draggableHandle=".report-drag"
+        isDraggable={canEdit}
+        isResizable={canEdit}
+        resizeHandles={["se", "e", "s"]}
+        onDragStop={(l) => saveLayout(l)}
+        onResizeStop={(l) => saveLayout(l)}
+      >
+        {widgets.map((w) => (
+          <div key={w.id} className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col overflow-hidden" data-testid="report-widget">
+            <div className={cn("flex items-center gap-1.5 px-4 pt-3 pb-2 shrink-0", canEdit && "report-drag cursor-grab active:cursor-grabbing")}>
+              {canEdit && <GripVertical size={13} className="text-neutral-300 shrink-0 -ml-1.5" />}
+              <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100 truncate flex-1">{w.title || t(`report.type.${w.type}`)}</h3>
               {canEdit && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <button className="ml-auto text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200" aria-label={t("common.more")}>
+                    <button className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200" aria-label={t("common.more")} onMouseDown={(e) => e.stopPropagation()}>
                       <MoreHorizontal size={15} />
                     </button>
                   </DropdownMenuTrigger>
@@ -169,16 +230,6 @@ export function ReportView({
                     <DropdownMenuItem onSelect={() => setEditing(w)}>
                       <Pencil size={13} /> {t("common.edit")}
                     </DropdownMenuItem>
-                    {i > 0 && (
-                      <DropdownMenuItem onSelect={() => move(w.id, -1)}>
-                        <ArrowUp size={13} /> {t("report.moveUp")}
-                      </DropdownMenuItem>
-                    )}
-                    {i < widgets.length - 1 && (
-                      <DropdownMenuItem onSelect={() => move(w.id, 1)}>
-                        <ArrowDown size={13} /> {t("report.moveDown")}
-                      </DropdownMenuItem>
-                    )}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onSelect={() => remove(w.id)} className="text-red-600 dark:text-red-400">
                       <Trash2 size={13} /> {t("common.delete")}
@@ -187,32 +238,40 @@ export function ReportView({
                 </DropdownMenu>
               )}
             </div>
-            <WidgetBody widget={w} fields={fields} records={records} members={members} />
+            <div className="flex-1 min-h-0 px-4 pb-3 flex flex-col">
+              <WidgetBody widget={w} fields={fields} records={records} members={members} onSegment={(seg) => openSegment(w, seg)} />
+            </div>
           </div>
         ))}
-      </div>
+      </Grid>
+
+      <SegmentPreview state={preview} onClose={() => setPreview(null)} onOpenTask={onOpenRecord ? (task) => { setPreview(null); onOpenRecord(task.id); } : undefined} />
 
       <WidgetEditor widget={editing} fields={fields} onClose={() => setEditing(null)} onSave={saveWidget} />
     </div>
   );
 }
 
-function WidgetBody({ widget, fields, records, members }: { widget: ReportWidget; fields: FieldRow[]; records: RecordRow[]; members: MemberLite[] }) {
+function WidgetBody({ widget, fields, records, members, onSegment }: { widget: ReportWidget; fields: FieldRow[]; records: RecordRow[]; members: MemberLite[]; onSegment: (segment: Segment) => void }) {
   const { t } = useT();
   const block = toBlock(widget);
 
   if (widget.type === "kpi") {
     const v = computeKpi(records, fields, block);
-    return <div className="text-4xl font-bold text-indigo-600 dark:text-indigo-400 py-6 tabular-nums">{formatNumber(v)}</div>;
+    return (
+      <button type="button" onClick={() => onSegment({ key: "value", label: widget.title || t("report.type.kpi") })} className="flex-1 flex items-center text-left text-4xl font-bold text-indigo-600 dark:text-indigo-400 tabular-nums hover:opacity-80" data-testid="report-kpi">
+        {formatNumber(v)}
+      </button>
+    );
   }
   if (STACKED.includes(widget.type)) {
     if (!widget.dimension2FieldId || !widget.dimensionFieldId) return <p className="text-xs text-neutral-400 py-6">{t("report.needSplit")}</p>;
     const stacked = computeStackedSeries(records, fields, block, members);
     if (!stacked.rows.length) return <p className="text-xs text-neutral-400 py-6">{t("report.noData")}</p>;
-    if (widget.type === "pivot") return <PivotTable rows={stacked.rows} seriesKeys={stacked.seriesKeys} />;
+    if (widget.type === "pivot") return <PivotTable rows={stacked.rows} seriesKeys={stacked.seriesKeys} onCell={onSegment} />;
     return (
-      <div className="h-72">
-        <ChartRenderer type={widget.type} stacked={stacked} />
+      <div className="flex-1 min-h-0">
+        <ChartRenderer type={widget.type} stacked={stacked} onSegmentClick={onSegment} />
       </div>
     );
   }
@@ -222,18 +281,18 @@ function WidgetBody({ widget, fields, records, members }: { widget: ReportWidget
     return <div className="text-4xl font-bold text-indigo-600 py-6 tabular-nums">{formatNumber(series[0]?.value ?? 0)}</div>;
   }
   return (
-    <div className="h-72">
-      <ChartRenderer type={widget.type} series={series} />
+    <div className="flex-1 min-h-0">
+      <ChartRenderer type={widget.type} series={series} onSegmentClick={onSegment} />
     </div>
   );
 }
 
-function PivotTable({ rows, seriesKeys }: { rows: Array<Record<string, string | number>>; seriesKeys: { key: string; label: string; color?: string }[] }) {
+function PivotTable({ rows, seriesKeys, onCell }: { rows: Array<Record<string, string | number>>; seriesKeys: { key: string; label: string; color?: string }[]; onCell: (segment: Segment) => void }) {
   const { t } = useT();
   const colTotals = seriesKeys.map((s) => rows.reduce((sum, r) => sum + (Number(r[s.key]) || 0), 0));
   const grand = colTotals.reduce((a, b) => a + b, 0);
   return (
-    <div className="overflow-x-auto thin-scroll">
+    <div className="flex-1 min-h-0 overflow-auto thin-scroll">
       <table className="w-full text-xs border-collapse">
         <thead>
           <tr className="bg-neutral-50 dark:bg-neutral-800/60">
@@ -251,10 +310,20 @@ function PivotTable({ rows, seriesKeys }: { rows: Array<Record<string, string | 
             const total = seriesKeys.reduce((sum, s) => sum + (Number(r[s.key]) || 0), 0);
             return (
               <tr key={String(r.__rowKey)} className="hover:bg-neutral-50 dark:hover:bg-neutral-800/40">
-                <td className="px-2 py-1.5 border border-neutral-200 dark:border-neutral-800 font-medium text-neutral-700 dark:text-neutral-200 whitespace-nowrap">{String(r.label)}</td>
+                <td className="px-2 py-1.5 border border-neutral-200 dark:border-neutral-800 font-medium text-neutral-700 dark:text-neutral-200 whitespace-nowrap">
+                  <button type="button" className="hover:text-indigo-600 hover:underline" onClick={() => onCell({ key: String(r.__rowKey), label: String(r.label) })}>
+                    {String(r.label)}
+                  </button>
+                </td>
                 {seriesKeys.map((s) => (
                   <td key={s.key} className="text-right tabular-nums px-2 py-1.5 border border-neutral-200 dark:border-neutral-800">
-                    {Number(r[s.key]) ? formatNumber(Number(r[s.key])) : <span className="text-neutral-300">·</span>}
+                    {Number(r[s.key]) ? (
+                      <button type="button" className="hover:text-indigo-600 hover:underline tabular-nums" onClick={() => onCell({ key: String(r.__rowKey), label: String(r.label), seriesKey: s.key, seriesLabel: s.label })} data-testid="pivot-cell">
+                        {formatNumber(Number(r[s.key]))}
+                      </button>
+                    ) : (
+                      <span className="text-neutral-300">–</span>
+                    )}
                   </td>
                 ))}
                 <td className="text-right tabular-nums font-semibold px-2 py-1.5 border border-neutral-200 dark:border-neutral-800">{formatNumber(total)}</td>

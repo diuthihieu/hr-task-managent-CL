@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, assertCanEditTask, route, workspaceOfTask, badRequest } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { notifyTaskDetail } from "@/lib/notifications";
-import { assertUploadAllowed, uploadAttachment, deleteAttachmentBlob, safeFileName } from "@/lib/storage";
+import { assertUploadAllowed, assertUploadQuota, safeContentType, uploadAttachment, deleteAttachmentBlob, safeFileName } from "@/lib/storage";
 import type { AttachmentRow } from "@/types";
 
 type P = { taskId: string };
@@ -30,6 +30,7 @@ export const POST = route<P>(async (req, { params }) => {
   const file = form?.get("file");
   if (!(file instanceof File)) throw badRequest("Send the file as multipart form field `file`");
   assertUploadAllowed(file);
+  await assertUploadQuota(user.id);
 
   const blob = await uploadAttachment({ workspaceId: ctx.workspaceId, taskId, file });
   try {
@@ -39,7 +40,7 @@ export const POST = route<P>(async (req, { params }) => {
           workspaceId: ctx.workspaceId,
           taskId,
           fileName: safeFileName(file.name),
-          contentType: file.type || "application/octet-stream",
+          contentType: safeContentType(file),
           sizeBytes: file.size,
           storageProvider: blob.provider,
           storageKey: blob.pathname,

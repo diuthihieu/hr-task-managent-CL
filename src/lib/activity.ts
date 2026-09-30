@@ -23,6 +23,8 @@ export type EntityType =
   | "key_result"
   | "dashboard"
   | "desktop_release"
+  | "decision"
+  | "journal"
   | "wiki_page";
 
 export type ActivityAction =
@@ -34,6 +36,7 @@ export type ActivityAction =
   | "unassigned"
   | "status_changed"
   | "password_reset"
+  | "password_changed"
   | "deactivated"
   | "activated"
   | "role_changed"

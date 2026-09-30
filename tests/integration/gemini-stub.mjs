@@ -49,8 +49,30 @@ http
       if (body.generationConfig?.responseMimeType === "application/json") {
         const system = body.systemInstruction?.parts?.map((p) => p.text).join("\n") ?? "";
         const catalog = system.match(/CATALOG:\n(.+)$/s)?.[1];
+        const schema = system.match(/RESPONSE_SCHEMA: (\w+)/)?.[1];
+        const brain = {
+          layers: { keyPoints: ["Probation is 60 days", "Laptops ship on day one"], summary: "Onboarding summary.", insights: ["Start IT setup earlier"] },
+          conflicts: { conflicts: [{ pair: 1, issue: "Different probation length", quoteA: "60 days", quoteB: "90 days", suggestion: "Update the older page" }] },
+          insights: { insights: [{ title: "Read the probation policy first", detail: "Your review task relies on it.", action: "Open the page" }] },
+          weekly: { headline: "A solid week", wins: ["Closed payroll early"], knowledge: ["Documented the probation rule"], openLoops: ["Finish the review"], automation: ["Make the weekly report recurring"], nextWeek: ["Plan onboarding"] },
+          kudos: { title: "Thank you for the payroll", message: "Thank you for fixing the payroll export - it saved the whole team a late night.", reasons: ["Fixed the payroll export", "Finished the laptop setup on time", "Always keeps me updated"] },
+          retro: { title: "Retro: stub", retrospective: "It went fine.", lessons: ["Order laptops early"], decisions: [{ title: "Use vendor A", reason: "Faster delivery", alternatives: ["Vendor B"] }], process: ["Order", "Configure", "Hand over"], knowledgeNote: "Keep a checklist." },
+        }[schema];
+        // AI task intake: ask, then summarize with the first project/member it was given.
+        const intake = schema === "task_intake" ? (() => {
+          const project = system.match(/project id: ([0-9a-f-]{36})/)?.[1] ?? null;
+          const member = system.match(/member id: ([0-9a-f-]{36})/)?.[1] ?? null;
+          if (userText.includes("#hallucinate")) return { type: "summary", message: "Summary", draft: { projectId: "00000000-0000-4000-8000-000000000000", title: "Ghost", assigneeIds: ["00000000-0000-4000-8000-000000000001"], priority: "urgent!!" } };
+          if (userText.trim().endsWith("?")) return { type: "answer", message: `Stub project answer. You asked: ${userText}` };
+          if (/#summary|\bok\b|yes/i.test(userText)) return { type: "summary", message: "- Task: Monthly report\n- Due: 2026-09-30 02:00\n\nConfirm?", draft: { projectId: project, title: "Monthly report", description: "PDF for the board", dueDate: "2026-09-30", dueTime: "02:00", priority: "high", assigneeIds: member ? [member] : [], reportToIds: [], categoryId: null, estimateHours: 2 } };
+          return { type: "question", message: "Which project, and who should do it?", draft: { projectId: null, title: "Monthly report", dueDate: "2026-09-30", dueTime: "02:00" } };
+        })() : null;
         const projectId = catalog ? JSON.parse(catalog)[0]?.id : undefined;
-        const json = catalog
+        const json = intake
+          ? intake
+          : brain
+          ? brain
+          : catalog
           ? { widgets: [
               { title: "Tasks by status", type: "pie", projectId, dimensionFieldId: "sys_status", aggregation: "count" },
               { title: "Hours by assignee", type: "bar", projectId, dimensionFieldId: "sys_assignees", measureFieldId: "sys_estimate", aggregation: "sum" },
@@ -60,7 +82,10 @@ http
         res.writeHead(200, { "content-type": "application/json" });
         return res.end(JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: JSON.stringify(json) }] } }], usageMetadata: { promptTokenCount: 50, candidatesTokenCount: 10 } }));
       }
-      const answer = hasFile ? "Extracted text from the PDF: leave policy is 12 days per year." : ["# Stub report", "", `You asked: ${userText}`, "", "| a | b |", "|---|---|", "| 1 | 2 |"].join("\n");
+      const system = body.systemInstruction?.parts?.map((p) => p.text).join("\n") ?? "";
+      // Ask My Brain: cite the first source when there is one.
+      const brainAnswer = system.includes("SOURCES:") ? (/\n\[S1\] [A-Z]+:/.test(system) ? `Answer from the brain [S1]. You asked: ${userText}` : `No source covers this. You asked: ${userText}`) : null;
+      const answer = brainAnswer ?? (hasFile ? "Extracted text from the PDF: leave policy is 12 days per year." : ["# Stub report", "", `You asked: ${userText}`, "", "| a | b |", "|---|---|", "| 1 | 2 |"].join("\n"));
       if (req.url.includes(":streamGenerateContent")) {
         res.writeHead(200, { "content-type": "text/event-stream" });
         const pieces = answer.match(/.{1,12}/gs) ?? [""];

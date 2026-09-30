@@ -4,7 +4,7 @@ import { MoreHorizontal, Pencil, Trash2, GripVertical } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api-client";
 import { ChartRenderer, CHART_COLORS } from "./chart-renderer";
-import { AGGREGATION_LABELS, parseBlockConfig, type ChartType, type SeriesPoint, type StackedSeries, type ScatterPoint, type CrossFilter } from "@/lib/dashboard-engine";
+import { AGGREGATION_LABELS, parseBlockConfig, type ChartType, type SeriesPoint, type StackedSeries, type ScatterPoint, type CrossFilter, type Segment } from "@/lib/dashboard-engine";
 import { cn } from "@/lib/utils";
 import { useT } from "@/components/i18n-provider";
 
@@ -35,7 +35,10 @@ export function WidgetCard({
   onCrossFilter,
   crossFilterActive,
   onData,
+  onSegmentClick,
 }: {
+  /** Drill-down into the tasks behind a clicked segment (or the whole KPI). */
+  onSegmentClick?: (segment: Segment) => void;
   /** Reports loaded data upward (feeds the dashboard's "AI Insight"). */
   onData?: (data: DataResponse) => void;
   block: DashboardBlockLite;
@@ -80,7 +83,7 @@ export function WidgetCard({
   const measure2Label = fieldNameLookup(config.measure2FieldId);
 
   return (
-    <div className="h-full w-full flex flex-col rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden">
+    <div className="woli-widget h-full w-full flex flex-col rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden">
       <div className="drag-handle flex items-center gap-1.5 px-2.5 h-8 border-b border-neutral-100 dark:border-neutral-800 cursor-grab shrink-0">
         <GripVertical size={12} className="text-neutral-300 shrink-0" />
         <span className="text-xs font-medium text-neutral-700 dark:text-neutral-200 truncate flex-1">{block.title || "Untitled widget"}</span>
@@ -106,7 +109,7 @@ export function WidgetCard({
         ) : data?.error ? (
           <div className="h-full flex items-center justify-center text-xs text-red-500">{data.error}</div>
         ) : block.type === "kpi" ? (
-          <KpiDisplay value={data?.kpi ?? 0} label={measureLabel} />
+          <KpiDisplay value={data?.kpi ?? 0} label={measureLabel} onClick={onSegmentClick ? () => onSegmentClick({ key: "value", label: measureLabel ?? "" }) : undefined} />
         ) : block.type === "table" ? (
           <TableDisplay columns={data?.columns ?? []} rows={data?.rows ?? []} />
         ) : (
@@ -117,7 +120,8 @@ export function WidgetCard({
             scatterPoints={data?.points}
             measureLabel={measureLabel}
             measure2Label={measure2Label}
-            onPointClick={onCrossFilter && ["bar", "column", "pie", "donut"].includes(block.type) ? onCrossFilter : undefined}
+            onPointClick={!onSegmentClick && onCrossFilter && ["bar", "column", "pie", "donut"].includes(block.type) ? onCrossFilter : undefined}
+            onSegmentClick={onSegmentClick}
           />
         )}
         {crossFilterActive && (
@@ -130,13 +134,14 @@ export function WidgetCard({
   );
 }
 
-function KpiDisplay({ value, label }: { value: number; label?: string }) {
+function KpiDisplay({ value, label, onClick }: { value: number; label?: string; onClick?: () => void }) {
   const formatted = Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2);
+  const Tag = onClick ? "button" : "div";
   return (
-    <div className="h-full flex flex-col items-center justify-center">
+    <Tag type={onClick ? "button" : undefined} onClick={onClick} className={cn("h-full w-full flex flex-col items-center justify-center rounded-md", onClick && "hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40")} data-testid="kpi-value">
       <div className="text-3xl font-semibold text-neutral-900 dark:text-neutral-50 tabular-nums">{formatted}</div>
       {label && <div className="text-xs text-neutral-400 mt-1">{label}</div>}
-    </div>
+    </Tag>
   );
 }
 

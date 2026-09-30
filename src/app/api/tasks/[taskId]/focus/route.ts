@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfTask } from "@/lib/authz";
 import { focusElapsed, serializeFocus, FOCUS_TASK_SELECT } from "@/lib/focus";
+import { focusAccess, pauseOtherRuns, markInProgress } from "@/lib/focus-server";
 
 type P = { taskId: string };
 
@@ -21,16 +22,29 @@ export const GET = route<P>(async (_req, { params }) => {
 
 const schema = z.object({ plannedMinutes: z.number().int().min(1).max(12 * 60).nullable().optional() });
 
-/** Start focusing on this task. Any other active session of yours is paused first. */
+/**
+ * Start focusing on this task. Your running session (on another task) is
+ * paused and its time recorded; a paused session on this same task is resumed
+ * instead of starting a new one. A to-do task moves to "in progress".
+ */
 export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { taskId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfTask(taskId), "viewer");
   const body = schema.parse(await readJson(req).catch(() => ({})));
   const now = new Date();
+  const { canEdit } = await focusAccess(user, taskId);
   const session = await prisma.$transaction(async (tx) => {
-    const active = await tx.focusSession.findMany({ where: { userId: user.id, status: "running" } });
-    for (const a of active) await tx.focusSession.update({ where: { id: a.id }, data: { status: "paused", elapsedSeconds: focusElapsed(a, now), resumedAt: null } });
+    const existing = await tx.focusSession.findFirst({ where: { userId: user.id, taskId, status: { in: ["running", "paused"] } }, orderBy: { startedAt: "desc" } });
+    await pauseOtherRuns(tx, user, existing?.id ?? null, now);
+    await markInProgress(tx, taskId, user.id, canEdit);
+    if (existing) {
+      return tx.focusSession.update({
+        where: { id: existing.id },
+        data: existing.status === "running" ? {} : { status: "running", resumedAt: now },
+        include: { task: { select: FOCUS_TASK_SELECT } },
+      });
+    }
     const task = await tx.task.findUniqueOrThrow({ where: { id: taskId }, select: { estimateMinutes: true, actualMinutes: true } });
     // Default block: what's left of the estimate (25-minute block when there's no estimate).
     const left = task.estimateMinutes ? Math.max(5, task.estimateMinutes - (task.actualMinutes ?? 0)) : 25;

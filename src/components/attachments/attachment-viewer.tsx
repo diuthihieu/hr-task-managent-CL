@@ -11,7 +11,7 @@ export interface ViewableFile {
   sizeBytes?: number;
 }
 
-type Kind = "image" | "pdf" | "video" | "audio" | "text" | "sheet" | "none";
+type Kind = "image" | "pdf" | "video" | "audio" | "text" | "sheet" | "docx" | "pptx" | "none";
 
 const TEXT_EXT = /\.(txt|md|csv|tsv|json|log|xml|ya?ml)$/i;
 const SHEET_EXT = /\.(xlsx|xls|ods)$/i;
@@ -24,6 +24,8 @@ export function previewKind(f: { fileName: string; contentType: string }): Kind 
   if (ct === "application/pdf") return "pdf";
   if (/^video\/(mp4|webm|ogg|quicktime)$/.test(ct)) return "video";
   if (/^audio\//.test(ct)) return "audio";
+  if (/\.docx$/i.test(f.fileName) || ct === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") return "docx";
+  if (/\.pptx$/i.test(f.fileName) || ct === "application/vnd.openxmlformats-officedocument.presentationml.presentation") return "pptx";
   if (SHEET_EXT.test(f.fileName) || ct.includes("spreadsheet") || ct === "application/vnd.ms-excel") return "sheet";
   if (ct.startsWith("text/") || ct === "application/json" || TEXT_EXT.test(f.fileName)) return "text";
   return "none";
@@ -68,10 +70,10 @@ export function AttachmentViewer({ files, index, onIndexChange, onClose }: { fil
           <div className="text-sm font-medium truncate" data-testid="viewer-filename">{file.fileName}</div>
           <div className="text-[11px] text-white/60">
             {formatBytes(file.sizeBytes)}
-            {files.length > 1 && ` · ${index + 1}/${files.length}`}
+            {files.length > 1 && <span className="ml-2 tabular-nums opacity-70">{index + 1}/{files.length}</span>}
           </div>
         </div>
-        {kind !== "none" && (
+        {kind !== "none" && kind !== "docx" && kind !== "pptx" && (
           <a href={inlineUrl(file.id)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-md px-2 h-8 text-xs hover:bg-white/10" title={t("att.openNewTab")}>
             <ExternalLink size={14} /> <span className="hidden sm:inline">{t("att.openNewTab")}</span>
           </a>
@@ -109,6 +111,7 @@ function Preview({ file, kind }: { file: ViewableFile; kind: Kind }) {
   if (kind === "video") return <video src={inlineUrl(file.id)} controls autoPlay className="max-h-full max-w-full rounded" data-testid="viewer-video" />;
   if (kind === "audio") return <audio src={inlineUrl(file.id)} controls autoPlay className="w-full max-w-lg" data-testid="viewer-audio" />;
   if ((kind === "text" || kind === "sheet") && (file.sizeBytes ?? 0) <= MAX_PARSE_BYTES) return <ParsedPreview file={file} kind={kind} />;
+  if (kind === "docx" || kind === "pptx") return <OfficePreview file={file} kind={kind} />;
   return (
     <div className="rounded-xl bg-white dark:bg-neutral-900 p-8 text-center max-w-sm" data-testid="viewer-no-preview">
       <FileIcon size={40} className="mx-auto text-neutral-400 mb-3" />
@@ -139,12 +142,11 @@ function ParsedPreview({ file, kind }: { file: ViewableFile; kind: "text" | "she
         if (!res.ok) throw new Error(String(res.status));
         const isCsv = /\.(csv|tsv)$/i.test(file.fileName) || file.contentType === "text/csv";
         if (kind === "sheet" || isCsv) {
-          const XLSX = await import("xlsx");
-          const wb = isCsv ? XLSX.read(await res.text(), { type: "string" }) : XLSX.read(await res.arrayBuffer(), { type: "array" });
-          const parsed = wb.SheetNames.slice(0, 20).map((name) => ({
-            name,
-            rows: (XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], { header: 1, raw: false, defval: "" }) as unknown[][]).slice(0, 500).map((r) => r.slice(0, 50).map((c) => String(c ?? ""))),
-          }));
+          // Files come from other people: parsed with the bounded xlsx-lite reader, never SheetJS.
+          const { parseCsv, readXlsx } = await import("@/lib/xlsx-lite");
+          if (!isCsv && /\.xls$/i.test(file.fileName)) throw new Error("legacy xls");
+          const all = isCsv ? [{ name: file.fileName, rows: parseCsv(await res.text(), 500) }] : await readXlsx(new Uint8Array(await res.arrayBuffer()));
+          const parsed = all.slice(0, 20).map((sh) => ({ name: sh.name, rows: sh.rows.slice(0, 500).map((r) => r.slice(0, 50)) }));
           if (!cancelled) setSheets(parsed);
         } else {
           const body = await res.text();
@@ -195,6 +197,54 @@ function ParsedPreview({ file, kind }: { file: ViewableFile; kind: "text" | "she
           </tbody>
         </table>
       </div>
+    </div>
+  );
+}
+
+/** Word as a document page (server-converted, sanitized HTML); PowerPoint as one card per slide (text + notes). */
+function OfficePreview({ file, kind }: { file: ViewableFile; kind: "docx" | "pptx" }) {
+  const { t } = useT();
+  const [data, setData] = useState<{ html?: string; slides?: { n: number; text: string; notes: string }[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/attachments/${file.id}/preview`)
+      .then(async (r) => {
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(body.error || t("att.previewFailed"));
+        if (!cancelled) setData(body);
+      })
+      .catch((e) => !cancelled && setError(e.message));
+    return () => {
+      cancelled = true;
+    };
+  }, [file.id, t]);
+  if (error) return <p className="text-sm text-white/80 max-w-md text-center">{error}</p>;
+  if (!data) return <Loader2 size={24} className="animate-spin text-white/70" />;
+  if (kind === "docx")
+    return (
+      <div className="h-full w-full max-w-4xl overflow-auto thin-scroll rounded bg-white dark:bg-neutral-900 shadow-2xl" data-testid="viewer-docx">
+        <div className="rich-content mx-auto max-w-3xl px-6 sm:px-12 py-10 text-neutral-800 dark:text-neutral-100" dangerouslySetInnerHTML={{ __html: data.html || `<p>${t("att.emptyDoc")}</p>` }} />
+      </div>
+    );
+  const slides = data.slides ?? [];
+  return (
+    <div className="h-full w-full max-w-4xl overflow-auto thin-scroll space-y-4 pr-1" data-testid="viewer-pptx">
+      {slides.length === 0 && <p className="text-sm text-white/80 text-center">{t("att.emptyDoc")}</p>}
+      {slides.map((sl) => (
+        <div key={sl.n} className="rounded-lg bg-white dark:bg-neutral-900 shadow-xl overflow-hidden">
+          <div className="aspect-[16/9] p-6 sm:p-10 flex flex-col">
+            <div className="text-[10px] font-semibold uppercase tracking-wide text-indigo-600 mb-3">{t("att.slide", { n: sl.n })}</div>
+            {sl.text.split("\n").map((line, i) => (
+              <p key={i} className={i === 0 ? "text-lg sm:text-2xl font-bold text-neutral-900 dark:text-white mb-2" : "text-sm sm:text-base text-neutral-700 dark:text-neutral-300 leading-relaxed"}>
+                {line}
+              </p>
+            ))}
+          </div>
+          {sl.notes && <div className="border-t border-neutral-100 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950 px-6 py-3 text-xs text-neutral-500 whitespace-pre-wrap">{t("att.notes")}: {sl.notes}</div>}
+        </div>
+      ))}
+      <p className="text-center text-[11px] text-white/60 pb-2">{t("att.pptxHint")}</p>
     </div>
   );
 }

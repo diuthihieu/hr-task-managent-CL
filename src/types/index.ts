@@ -51,6 +51,7 @@ export interface ProjectRow {
   name: string;
   description: string | null;
   color: string;
+  icon: string | null;
   status: string;
   ownerId: string | null;
   startDate: string | null;
@@ -96,6 +97,7 @@ export interface AdminUserRow {
   systemRole: "ADMIN" | "MEMBER";
   isActive: boolean;
   mustChangePassword: boolean;
+  emailVerifiedAt?: string | null;
   lastLoginAt: string | null;
   createdAt: string;
   workspaces: { id: string; name: string; role: WorkspaceRoleName }[];
@@ -210,6 +212,8 @@ export interface CapturedThoughtRow {
   categoryColor: string | null;
   estimatedDurationMinutes: number | null;
   plannedAt: string | null;
+  /** Degrees on its time ring, set by dragging the dot; null = automatic. */
+  orbitAngle: number | null;
   status: string;
   createdAt: string;
 }

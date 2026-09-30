@@ -5,7 +5,7 @@ import { getServerT } from "@/lib/prefs";
 import { getPublishedReleases, pickLatest, compareSemver, desktopVersionFromUserAgent, DEFAULT_PLATFORM } from "@/lib/desktop-releases";
 
 export const dynamic = "force-dynamic";
-export const metadata = { title: "Download woli. for Windows" };
+export const metadata = { title: "Download woli for Windows" };
 
 function formatSize(bytes: bigint | null) {
   if (bytes === null) return null;

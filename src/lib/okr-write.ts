@@ -3,8 +3,20 @@ import { badRequest } from "./http-errors";
 
 type Tx = Prisma.TransactionClient;
 
-/** Owner, contributors and team must belong to the objective's workspace. */
-export async function assertObjectiveRefs(tx: Tx, workspaceId: string, refs: { ownerId?: string | null; contributorIds?: string[]; teamId?: string | null; parentObjectiveId?: string | null; parentKeyResultId?: string | null; projectId?: string | null }, selfId?: string) {
+/** Objectives the actor can see: workspace-level ones, and those of projects not hidden from them. */
+export async function objectiveVisibility(tx: Tx, actorId: string | null | undefined): Promise<Prisma.ObjectiveWhereInput> {
+  if (!actorId) return {};
+  const actor = await tx.user.findUnique({ where: { id: actorId }, select: { systemRole: true } });
+  if (actor?.systemRole === "ADMIN" && process.env.ADMIN_SUPPORT_ACCESS === "1") return {};
+  return { OR: [{ projectId: null }, { project: { hiddenMembers: { none: { userId: actorId } } } }] };
+}
+
+/**
+ * Owner, contributors and team must belong to the objective's workspace; the
+ * parent objective / key result and the project must be ones the actor can see.
+ */
+export async function assertObjectiveRefs(tx: Tx, workspaceId: string, refs: { ownerId?: string | null; contributorIds?: string[]; teamId?: string | null; parentObjectiveId?: string | null; parentKeyResultId?: string | null; projectId?: string | null }, selfId?: string, actorId?: string) {
+  const visible = await objectiveVisibility(tx, actorId);
   const userIds = [...new Set([...(refs.ownerId ? [refs.ownerId] : []), ...(refs.contributorIds ?? [])])];
   if (userIds.length) {
     const n = await tx.workspaceMember.count({ where: { workspaceId, userId: { in: userIds } } });
@@ -13,11 +25,11 @@ export async function assertObjectiveRefs(tx: Tx, workspaceId: string, refs: { o
   if (refs.teamId && !(await tx.team.findFirst({ where: { id: refs.teamId, workspaceId } }))) throw badRequest("Unknown team");
   if (refs.parentObjectiveId) {
     if (refs.parentObjectiveId === selfId) throw badRequest("An objective cannot be its own parent");
-    if (!(await tx.objective.findFirst({ where: { id: refs.parentObjectiveId, workspaceId, deletedAt: null } }))) throw badRequest("Unknown parent objective");
+    if (!(await tx.objective.findFirst({ where: { id: refs.parentObjectiveId, workspaceId, deletedAt: null, ...visible } }))) throw badRequest("Unknown parent objective");
   }
-  if (refs.projectId && !(await tx.project.findFirst({ where: { id: refs.projectId, workspaceId, deletedAt: null } }))) throw badRequest("Unknown project");
+  if (refs.projectId && !(await tx.project.findFirst({ where: { id: refs.projectId, workspaceId, deletedAt: null, ...(actorId && Object.keys(visible).length ? { hiddenMembers: { none: { userId: actorId } } } : {}) } }))) throw badRequest("Unknown project");
   if (refs.parentKeyResultId) {
-    const kr = await tx.keyResult.findFirst({ where: { id: refs.parentKeyResultId, deletedAt: null, objective: { workspaceId, deletedAt: null } }, select: { objectiveId: true } });
+    const kr = await tx.keyResult.findFirst({ where: { id: refs.parentKeyResultId, deletedAt: null, objective: { workspaceId, deletedAt: null, ...visible } }, select: { objectiveId: true } });
     if (!kr) throw badRequest("Unknown parent key result");
     if (kr.objectiveId === selfId) throw badRequest("An objective cannot align to its own key result");
     if (selfId) await assertNoCascadeCycle(tx, selfId, kr.objectiveId);

@@ -17,6 +17,7 @@ import type { FieldRow, RecordRow } from "@/types";
 import type { Member, OkrOptions } from "@/components/grid/cell";
 import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
+import { AvatarImg } from "@/components/ui/avatar-img";
 
 interface Quadrant {
   key: string;
@@ -295,8 +296,9 @@ function EisenhowerFieldChip({ field, value, members, okrOptions }: { field: Fie
     return (
       <div className="flex items-center gap-1">
         {matched.map((m) => (
-          <span key={m.id} className="h-4 w-4 rounded-full flex items-center justify-center text-white text-[8px]" style={{ backgroundColor: m.avatarColor }} title={m.name}>
+          <span key={m.id} className="relative overflow-hidden h-4 w-4 rounded-full flex items-center justify-center text-white text-[8px]" style={{ backgroundColor: m.avatarColor }} title={m.name}>
             {initials(m.name)}
+            <AvatarImg id={m.id} />
           </span>
         ))}
       </div>

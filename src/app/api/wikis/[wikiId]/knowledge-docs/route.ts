@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, requireWiki, route, badRequest } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { extractDocText } from "@/lib/ai/extract";
-import { safeFileName } from "@/lib/storage";
+import { assertUploadQuota, safeContentType, safeFileName } from "@/lib/storage";
 
 type P = { wikiId: string };
 
@@ -27,16 +27,17 @@ export const POST = route<P>(async (req, { params }) => {
   const { wikiId } = await params;
   const ctx = await requireWiki(user, wikiId, "editor");
   const form = await req.formData().catch(() => null);
+  await assertUploadQuota(user.id);
   const file = form?.get("file");
   if (!(file instanceof File)) throw badRequest("Send the document as multipart form field `file`");
-  const text = await extractDocText(file);
+  const text = await extractDocText(file, ctx.workspaceId);
   const doc = await prisma.$transaction(async (tx) => {
     const d = await tx.knowledgeDoc.create({
       data: {
         workspaceId: ctx.workspaceId,
         wikiId,
         fileName: safeFileName(file.name),
-        contentType: file.type || "application/octet-stream",
+        contentType: safeContentType(file),
         sizeBytes: file.size,
         text,
         charCount: text.length,

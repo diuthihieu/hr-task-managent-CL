@@ -3,8 +3,10 @@ import { stripMentions } from "@/lib/mentions";
 import { prisma } from "../prisma";
 import type { WorkspaceRole } from "@prisma/client";
 import { visibleProjectWhere, visibleWikiWhere, hiddenProjectIds, type SessionUser } from "../authz";
+import { visiblePageWhere } from "../wiki-sources";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "../okr-resolver";
 import { htmlToText } from "./extract";
+import { isCurrentKnowledge } from "../wiki";
 
 // Grounding context for the AI. Everything given to the model is read with
 // the same permission filters as the rest of the app, so the model can only
@@ -40,27 +42,36 @@ class Budget {
 const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "-");
 
 /** A wiki's pages and reference documents, for its assistant. */
-export async function wikiKnowledge(wikiId: string, budget = CONTEXT_CHARS) {
+export async function wikiKnowledge(wikiId: string, budget = CONTEXT_CHARS, hidden: Set<string> = new Set()) {
+  const pageWhere = visiblePageWhere(hidden);
   const [pages, docs, files] = await Promise.all([
     prisma.wikiPage.findMany({
-      where: { wikiId, deletedAt: null },
+      // Archived knowledge is left out; superseded / outdated pages are labelled as history.
+      where: { wikiId, deletedAt: null, status: { not: "archived" }, ...pageWhere },
       orderBy: [{ parentPageId: "asc" }, { sortOrder: "asc" }],
       select: {
         title: true,
         content: true,
         updatedAt: true,
+        status: true,
+        version: true,
+        validFrom: true,
+        validTo: true,
+        kind: true,
         comments: { where: { deletedAt: null }, orderBy: { createdAt: "asc" }, take: 100, select: { body: true, createdAt: true, author: { select: { name: true } } } },
       },
     }),
     prisma.knowledgeDoc.findMany({ where: { wikiId, deletedAt: null }, orderBy: { createdAt: "asc" }, select: { fileName: true, text: true } }),
     // Files attached to page comments, with the text extracted at upload.
-    prisma.attachment.findMany({ where: { wikiPage: { wikiId, deletedAt: null }, wikiCommentId: { not: null }, deletedAt: null, extractedText: { not: null } }, select: { fileName: true, extractedText: true, wikiPage: { select: { title: true } } } }),
+    prisma.attachment.findMany({ where: { wikiPage: { wikiId, deletedAt: null, ...pageWhere }, wikiCommentId: { not: null }, deletedAt: null, extractedText: { not: null } }, select: { fileName: true, extractedText: true, wikiPage: { select: { title: true } } } }),
   ]);
   const b = new Budget(budget);
   for (const d of docs) b.add(`### Reference document: ${d.fileName}\n${d.text}`);
   for (const p of pages) {
     const talk = p.comments.map((c) => `- ${c.author?.name ?? "?"} (${day(c.createdAt)}): ${stripMentions(c.body)}`).join("\n");
-    b.add(`### Wiki page: ${p.title} (updated ${day(p.updatedAt)})\n${htmlToText(p.content) || "(empty)"}${talk ? `\n#### Comments\n${talk}` : ""}`);
+    const historical = !isCurrentKnowledge(p);
+    const temporal = [p.kind !== "page" ? p.kind : "", `status ${p.status}`, p.version > 1 ? `v${p.version}` : "", p.validFrom || p.validTo ? `valid ${day(p.validFrom)} → ${day(p.validTo)}` : "", historical ? "HISTORICAL - not current" : ""].filter(Boolean).join(", ");
+    b.add(`### Wiki page: ${p.title} (updated ${day(p.updatedAt)}; ${temporal})\n${htmlToText(p.content) || "(empty)"}${talk ? `\n#### Comments\n${talk}` : ""}`);
   }
   for (const f of files) b.add(`### File "${f.fileName}" (attached in a comment on "${f.wikiPage?.title ?? ""}")\n${f.extractedText}`);
   return { text: b.toString(), pageCount: pages.length, docCount: docs.length };
@@ -69,7 +80,7 @@ export async function wikiKnowledge(wikiId: string, budget = CONTEXT_CHARS) {
 /** Everything this user may see in the workspace: projects, tasks, OKRs, wikis and docs. */
 export async function workspaceData(user: SessionUser, workspaceId: string, role: WorkspaceRole, budget = CONTEXT_CHARS) {
   const visible = visibleProjectWhere(user);
-  const [projects, tasks, objectives, hidden] = await Promise.all([
+  const [projects, tasks, objectives, hidden, members] = await Promise.all([
     prisma.project.findMany({ where: { workspaceId, deletedAt: null, ...visible }, orderBy: { sortOrder: "asc" }, include: { owner: { select: { name: true } } } }),
     prisma.task.findMany({
       where: { workspaceId, deletedAt: null, project: { deletedAt: null, ...visible } },
@@ -99,9 +110,20 @@ export async function workspaceData(user: SessionUser, workspaceId: string, role
       orderBy: { createdAt: "asc" },
     }),
     hiddenProjectIds(user),
+    prisma.workspaceMember.findMany({
+      where: { workspaceId, user: { isActive: true, deletedAt: null } },
+      orderBy: { user: { name: "asc" } },
+      select: { role: true, createdAt: true, user: { select: { name: true, email: true, jobTitle: true, formerNames: true } } },
+    }),
   ]);
 
   const b = new Budget(budget);
+  // Everyone in the workspace (the member list is visible to every member), not only people with tasks.
+  // Former display names let the model match a question that still uses someone's old name.
+  b.add(
+    `## Workspace members (${members.length})\nname (current display name) | also known as (former names) | workspace role | job title | email | member since\n` +
+      members.map((m) => [m.user.name, m.user.formerNames.join(", ") || "-", m.role, m.user.jobTitle || "-", m.user.email, day(m.createdAt)].join(" | ")).join("\n")
+  );
   b.add(
     "## Projects\n" +
       projects.map((p) => `- ${p.name} | status: ${p.status} | owner: ${p.owner?.name ?? "-"} | ${day(p.startDate)} → ${day(p.endDate)}${p.description ? ` | ${p.description.slice(0, 300)}` : ""}`).join("\n")
@@ -145,7 +167,7 @@ export async function workspaceData(user: SessionUser, workspaceId: string, role
 
   const wikis = await prisma.wiki.findMany({ where: { workspaceId, ...visibleWikiWhere(user, role) }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true } });
   for (const w of wikis) {
-    const k = await wikiKnowledge(w.id, Math.max(0, budget / 4));
+    const k = await wikiKnowledge(w.id, Math.max(0, budget / 4), hidden);
     if (k.pageCount || k.docCount) if (!b.add(`## Wiki "${w.name}" (pages & documents)\n${k.text}`)) break;
   }
   return { text: b.toString(), projectCount: projects.length, taskCount: tasks.length, objectiveCount: rows.length };

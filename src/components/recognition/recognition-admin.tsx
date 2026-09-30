@@ -15,6 +15,7 @@ import { RewardDialog } from "./reward-editor";
 import { Avatar, fmtNumber } from "./shared";
 import { NumberInput, formatThousands } from "@/components/ui/number-input";
 import type { MessageKey } from "@/lib/i18n/core";
+import { Meta } from "@/components/ui/meta";
 
 interface Settings {
   enabled: boolean;
@@ -117,7 +118,7 @@ export function RecognitionAdmin({ workspaceId }: { workspaceId: string }) {
                 <span className="text-neutral-400">→</span>
                 <span>{r.reward.name}</span>
                 <span className="text-xs text-neutral-500">
-                  {t("reco.unit.points", { n: fmtNumber(r.points) })} · {formatDate(r.createdAt)} · {t("reco.rewards.left", { n: fmtNumber(r.reward.remaining) })}
+                  <Meta><span className="font-medium text-indigo-600 tabular-nums">{t("reco.unit.points", { n: fmtNumber(r.points) })}</span><span>{formatDate(r.createdAt)}</span><span>{t("reco.rewards.left", { n: fmtNumber(r.reward.remaining) })}</span></Meta>
                 </span>
                 {r.note && <span className="text-xs text-neutral-500">“{r.note}”</span>}
                 <span className={cn("text-[11px] px-1.5 py-0.5 rounded-md", REDEMPTION_TONE[r.status])}>{t(`reco.redemption.${r.status}` as MessageKey)}</span>
@@ -210,7 +211,7 @@ export function RecognitionAdmin({ workspaceId }: { workspaceId: string }) {
       <section className={card} data-testid="reco-catalog">
         <div className="flex items-center justify-between gap-2 mb-3">
           <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
-            <Gift size={14} /> {t("reco.admin.catalog")} <span className="text-neutral-400 font-normal">· {rewards.length}</span>
+            <Gift size={14} /> {t("reco.admin.catalog")} <span className="ml-1 rounded-full bg-neutral-100 dark:bg-neutral-800 px-1.5 text-[10px] text-neutral-500 font-normal tabular-nums">{rewards.length}</span>
           </h3>
           <Button size="sm" onClick={() => setEditing("new")} data-testid="reward-new">
             <Plus size={12} /> {t("reco.admin.newReward")}
@@ -246,7 +247,7 @@ function RewardAdminCard({ r, onEdit, onToggle, onDelete }: { r: RewardDto; onEd
   const { t } = useT();
   return (
     <div className={cn("rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden flex flex-col bg-white dark:bg-neutral-900", !r.active && "opacity-60")} data-testid="reward-row">
-      <button onClick={onEdit} className="relative aspect-[16/10] bg-gradient-to-br from-indigo-50 to-rose-50 dark:from-indigo-950/40 dark:to-rose-950/30 flex items-center justify-center" title={t("common.edit")}>
+      <button onClick={onEdit} className="relative aspect-[16/10] bg-gradient-to-br from-indigo-50 to-indigo-100/60 dark:from-indigo-950/40 dark:to-indigo-900/30 flex items-center justify-center" title={t("common.edit")}>
         {r.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- authorized image route
           <img src={r.imageUrl} alt="" className="h-full w-full object-cover" />

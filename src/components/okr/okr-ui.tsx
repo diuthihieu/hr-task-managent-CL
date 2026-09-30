@@ -5,6 +5,7 @@ import { initials, cn } from "@/lib/utils";
 import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
 import type { ObjectiveStatus, OkrPriority, OkrUserLite } from "@/types";
+import { AvatarImg } from "@/components/ui/avatar-img";
 
 export const STATUS_META: Record<ObjectiveStatus, { label: string; color: string }> = {
   not_started: { label: "Not Started", color: "#94a3b8" },
@@ -80,10 +81,11 @@ export function UserChip({ user, size = 18 }: { user: OkrUserLite | null; size?:
   return (
     <span className="inline-flex items-center gap-1.5 text-xs text-neutral-600 dark:text-neutral-300 min-w-0">
       <span
-        className="rounded-full flex items-center justify-center text-white font-medium shrink-0"
+        className="relative overflow-hidden rounded-full flex items-center justify-center text-white font-medium shrink-0"
         style={{ backgroundColor: user.avatarColor, width: size, height: size, fontSize: size * 0.45 }}
       >
         {initials(user.name)}
+        <AvatarImg id={user.id} />
       </span>
       <span className="truncate">{user.name}</span>
     </span>
@@ -97,11 +99,12 @@ export function UserStack({ users, size = 18 }: { users: OkrUserLite[]; size?: n
       {users.slice(0, 4).map((u) => (
         <span
           key={u.id}
-          className="rounded-full flex items-center justify-center text-white font-medium shrink-0 ring-2 ring-white dark:ring-neutral-900"
+          className="relative overflow-hidden rounded-full flex items-center justify-center text-white font-medium shrink-0 ring-2 ring-white dark:ring-neutral-900"
           style={{ backgroundColor: u.avatarColor, width: size, height: size, fontSize: size * 0.45 }}
           title={u.name}
         >
           {initials(u.name)}
+          <AvatarImg id={u.id} />
         </span>
       ))}
       {users.length > 4 && <span className="text-[10px] text-neutral-400 pl-2">+{users.length - 4}</span>}

@@ -12,6 +12,7 @@ import { api } from "@/lib/api-client";
 import { cn, formatDate } from "@/lib/utils";
 import type { MessageKey } from "@/lib/i18n/core";
 import type { WikiRow } from "@/lib/wiki";
+import { Meta, MetaChip } from "@/components/ui/meta";
 
 /** Wiki landing: every wiki the user can open, and "New wiki". */
 export function WikiHome({ workspaceId, workspaceSlug, wikis, canCreate }: { workspaceId: string; workspaceSlug: string; wikis: WikiRow[]; canCreate: boolean }) {
@@ -54,7 +55,7 @@ export function WikiHome({ workspaceId, workspaceSlug, wikis, canCreate }: { wor
                     <span className="block font-semibold truncate text-neutral-900 dark:text-neutral-100">{w.name}</span>
                     <span className="flex items-center gap-1 text-[11px] text-neutral-500">
                       {w.access === "restricted" ? <Lock size={10} /> : <Globe2 size={10} />}
-                      {t(`wikis.access.${w.access}` as MessageKey)} · {t(`wikis.role.${w.myRole ?? "viewer"}` as MessageKey)}
+                      <Meta><MetaChip>{t(`wikis.access.${w.access}` as MessageKey)}</MetaChip><span>{t(`wikis.role.${w.myRole ?? "viewer"}` as MessageKey)}</span></Meta>
                     </span>
                   </span>
                 </div>

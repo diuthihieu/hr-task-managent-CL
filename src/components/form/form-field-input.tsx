@@ -7,6 +7,7 @@ import { parseFieldConfig } from "@/lib/field-types";
 import { initials, cn } from "@/lib/utils";
 import type { FieldRow } from "@/types";
 import { useT } from "@/components/i18n-provider";
+import { AvatarImg } from "@/components/ui/avatar-img";
 
 export interface FormMember {
   id: string;
@@ -136,8 +137,9 @@ export function FormFieldInput({
               {selected.length ? (
                 selected.map((m) => (
                   <span key={m.id} className="inline-flex items-center gap-1 rounded-full bg-neutral-100 dark:bg-neutral-800 pl-0.5 pr-2 py-0.5 text-xs">
-                    <span className="h-4 w-4 rounded-full flex items-center justify-center text-white text-[9px]" style={{ backgroundColor: m.avatarColor }}>
+                    <span className="relative overflow-hidden h-4 w-4 rounded-full flex items-center justify-center text-white text-[9px]" style={{ backgroundColor: m.avatarColor }}>
                       {initials(m.name)}
+                      <AvatarImg id={m.id} />
                     </span>
                     {m.name}
                   </span>
@@ -157,8 +159,9 @@ export function FormFieldInput({
                 onClick={() => (isMulti ? onChange(values.includes(m.id) ? values.filter((v) => v !== m.id) : [...values, m.id]) : onChange(value === m.id ? null : m.id))}
                 className="w-full flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm"
               >
-                <span className="h-5 w-5 rounded-full flex items-center justify-center text-white text-[10px]" style={{ backgroundColor: m.avatarColor }}>
+                <span className="relative overflow-hidden h-5 w-5 rounded-full flex items-center justify-center text-white text-[10px]" style={{ backgroundColor: m.avatarColor }}>
                   {initials(m.name)}
+                  <AvatarImg id={m.id} />
                 </span>
                 <span className="flex-1 text-left truncate">{m.name}</span>
                 {values.includes(m.id) && <Check size={13} className="text-indigo-600" />}

@@ -10,6 +10,7 @@ import type { ObjectiveRow, KeyResultRow } from "@/types";
 import type { MyTaskRow } from "@/types";
 import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
+import { MetaChip, MetaStatus } from "@/components/ui/meta";
 
 interface MyWorkData {
   tasks: MyTaskRow[];
@@ -87,8 +88,8 @@ export function MyWork({ workspaceId, workspaceSlug }: { workspaceId: string; wo
                 className="flex items-center gap-3 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 hover:border-neutral-300 dark:hover:border-neutral-700"
               >
                 <span className="flex-1 min-w-0 truncate text-sm text-neutral-800 dark:text-neutral-100">{task.title || t("common.untitled")}</span>
-                <span className="text-[10px] text-neutral-400 shrink-0">{task.projectName}</span>
-                {task.status && <span className="text-[11px] text-neutral-500 shrink-0">{task.status}</span>}
+                <MetaChip className="shrink-0">{task.projectName}</MetaChip>
+                {task.status && <MetaStatus className="shrink-0">{task.status}</MetaStatus>}
                 <div className="w-20 shrink-0"><ProgressBar value={task.progress} height={4} /></div>
                 {task.contributesToOkr && (
                   <span title={t("mw.contributes")} className="shrink-0">

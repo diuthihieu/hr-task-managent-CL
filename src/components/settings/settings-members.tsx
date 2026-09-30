@@ -10,6 +10,8 @@ import { initials } from "@/lib/utils";
 import { SettingsSection } from "./settings-shell";
 import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
+import { AvatarImg } from "@/components/ui/avatar-img";
+import { Meta, MetaChip } from "@/components/ui/meta";
 
 interface MemberRow {
   id: string;
@@ -109,8 +111,9 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
         <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg divide-y divide-neutral-100 dark:divide-neutral-900 max-w-2xl">
           {members.map((m) => (
             <div key={m.id} className="flex items-center gap-3 px-3 py-2.5">
-              <div className="h-8 w-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0" style={{ backgroundColor: m.avatarColor }}>
+              <div className="relative overflow-hidden h-8 w-8 rounded-full flex items-center justify-center text-white text-xs font-medium shrink-0" style={{ backgroundColor: m.avatarColor }}>
                 {initials(m.name)}
+                <AvatarImg id={m.id} />
               </div>
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate">
@@ -148,7 +151,7 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate">{p.email}</div>
                   <div className="text-xs text-neutral-400 truncate">
-                    {t(`role.${p.role}` as MessageKey)} · {p.expired ? t("inv.expired") : p.hasAccount ? t("inv.waiting") : t("inv.waitingSignup")}
+                    <Meta><MetaChip>{t(`role.${p.role}` as MessageKey)}</MetaChip><span>{p.expired ? t("inv.expired") : p.hasAccount ? t("inv.waiting") : t("inv.waitingSignup")}</span></Meta>
                   </div>
                 </div>
                 <button onClick={() => copyLink(p.url)} className="inline-flex items-center gap-1 text-xs text-indigo-600 hover:underline shrink-0">

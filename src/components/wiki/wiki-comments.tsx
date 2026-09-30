@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { MentionInput, CommentBody } from "@/components/comments/mention-input";
 import { AttachmentViewer } from "@/components/attachments/attachment-viewer";
 import { formatDate, initials, cn } from "@/lib/utils";
+import { AvatarImg } from "@/components/ui/avatar-img";
 
 interface FileRow {
   id: string;
@@ -104,8 +105,9 @@ export function WikiComments({ pageId, currentUserId, canManage }: { pageId: str
 
   const view = (c: WikiCommentRow, nested = false) => (
     <div key={c.id} className={cn("flex gap-2.5 group", nested && "mt-3")} data-testid="wiki-comment">
-      <span className="h-7 w-7 rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0" style={{ backgroundColor: c.author?.avatarColor ?? "#94a3b8" }}>
+      <span className="relative overflow-hidden h-7 w-7 rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0" style={{ backgroundColor: c.author?.avatarColor ?? "#94a3b8" }}>
         {initials(c.author?.name ?? "?")}
+        <AvatarImg id={c.author?.id} />
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2 text-xs">

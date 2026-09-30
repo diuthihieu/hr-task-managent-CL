@@ -12,6 +12,7 @@ import { cn, formatDate } from "@/lib/utils";
 import type { RewardDto } from "@/lib/recognition/rewards";
 import { fmtNumber } from "./shared";
 import type { MessageKey } from "@/lib/i18n/core";
+import { Meta } from "@/components/ui/meta";
 
 export interface Redemption {
   id: string;
@@ -78,7 +79,7 @@ export function Rewards({ workspaceId, balance, onChanged }: { workspaceId: stri
           const pct = Math.min(100, Math.round((balance / r.pointsCost) * 100));
           return (
             <div key={r.id} className={cn("rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden flex flex-col", r.soldOut && "opacity-70")} data-testid="reward-card">
-              <button type="button" onClick={() => setPreview(r)} className="group aspect-[4/3] bg-gradient-to-br from-indigo-50 to-rose-50 dark:from-indigo-950/40 dark:to-rose-950/30 flex items-center justify-center relative overflow-hidden" data-testid="reward-open">
+              <button type="button" onClick={() => setPreview(r)} className="group aspect-[4/3] bg-gradient-to-br from-indigo-50 to-indigo-100/60 dark:from-indigo-950/40 dark:to-indigo-900/30 flex items-center justify-center relative overflow-hidden" data-testid="reward-open">
                 {r.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element -- authorized image route
                   <img src={r.imageUrl} alt={r.name} className="h-full w-full object-cover group-hover:scale-105 transition-transform" />
@@ -121,7 +122,7 @@ export function Rewards({ workspaceId, balance, onChanged }: { workspaceId: stri
             {mine.map((m) => (
               <li key={m.id} className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{m.reward.name}</span>
-                <span className="text-xs text-neutral-500">{t("reco.unit.points", { n: fmtNumber(m.points) })} · {formatDate(m.createdAt)}</span>
+                <Meta className="text-xs"><span className="font-medium text-indigo-600 tabular-nums">{t("reco.unit.points", { n: fmtNumber(m.points) })}</span><span>{formatDate(m.createdAt)}</span></Meta>
                 <span className={cn("text-[11px] px-1.5 py-0.5 rounded-md", REDEMPTION_TONE[m.status])} data-testid="my-request-status">{t(`reco.redemption.${m.status}` as MessageKey)}</span>
                 {m.decisionNote && <span className="text-xs text-neutral-500">“{m.decisionNote}”</span>}
                 {m.status === "pending" && (
@@ -149,7 +150,7 @@ function RewardPreview({ r, balance, onClose, onRedeem }: { r: RewardDto; balanc
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-3xl p-0 overflow-hidden">
         <div className="grid md:grid-cols-2" data-testid="reward-preview">
-          <div className="relative aspect-square md:aspect-auto md:min-h-[22rem] bg-gradient-to-br from-indigo-50 to-rose-50 dark:from-indigo-950/40 dark:to-rose-950/30 flex items-center justify-center">
+          <div className="relative aspect-square md:aspect-auto md:min-h-[22rem] bg-gradient-to-br from-indigo-50 to-indigo-100/60 dark:from-indigo-950/40 dark:to-indigo-900/30 flex items-center justify-center">
             {r.imageUrl ? (
               // eslint-disable-next-line @next/next/no-img-element -- authorized image route
               <img src={r.imageUrl} alt={r.name} className="absolute inset-0 h-full w-full object-cover" />

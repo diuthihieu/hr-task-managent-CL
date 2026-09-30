@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
+import { AvatarImg } from "@/components/ui/avatar-img";
 
 interface Member {
   id: string;
@@ -90,8 +91,9 @@ export function ProjectVisibility({ projectId }: { projectId: string }) {
           return (
             <label key={m.id} className="flex items-center gap-3 px-3 py-2 text-sm cursor-pointer has-[:disabled]:cursor-default" data-testid="vis-member">
               <input type="checkbox" className="h-4 w-4 accent-indigo-600" checked={hidden.has(m.id)} disabled={!canManage || locked} onChange={() => toggle(m.id)} data-testid={`vis-toggle-${m.email}`} />
-              <span className="h-6 w-6 rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0" style={{ backgroundColor: m.avatarColor }}>
+              <span className="relative overflow-hidden h-6 w-6 rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0" style={{ backgroundColor: m.avatarColor }}>
                 {m.name.slice(0, 1).toUpperCase()}
+                <AvatarImg id={m.id} />
               </span>
               <span className="flex-1 min-w-0">
                 <span className="block truncate text-neutral-800 dark:text-neutral-200">{m.name}</span>

@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { markdownToHtml } from "@/components/ai/markdown";
 import { LinkPicker, type LinkTarget } from "./link-picker";
 import type { MessageKey } from "@/lib/i18n/core";
+import { Meta, MetaChip, MetaStatus } from "@/components/ui/meta";
 
 interface Source {
   n: number;
@@ -287,13 +288,12 @@ function Answer({ turn }: { turn: Turn }) {
                   ) : (
                     <span className="font-medium">{s.title}</span>
                   )}
-                  <span className="text-neutral-400">
-                    {" "}
-                    · {t(`brain.entity.${s.type}` as MessageKey)}
-                    {s.status ? ` · ${s.status}` : ""}
-                    {s.historical ? ` · ${t("brain.ask.historical")}` : ""}
-                    {s.updatedAt ? ` · ${s.updatedAt.slice(0, 10)}` : ""}
-                  </span>
+                  <Meta className="ml-2 align-middle">
+                    <MetaChip>{t(`brain.entity.${s.type}` as MessageKey)}</MetaChip>
+                    {s.status && <MetaStatus>{s.status}</MetaStatus>}
+                    {s.historical && <MetaStatus className="bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">{t("brain.ask.historical")}</MetaStatus>}
+                    {s.updatedAt && <span className="tabular-nums">{s.updatedAt.slice(0, 10)}</span>}
+                  </Meta>
                   {s.snippet && <span className="block text-neutral-500 line-clamp-2">{s.snippet}</span>}
                 </span>
                 {s.used && <span className="text-[10px] text-indigo-600 shrink-0">{t("brain.ask.cited")}</span>}

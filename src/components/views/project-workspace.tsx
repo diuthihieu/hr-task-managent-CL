@@ -27,6 +27,7 @@ import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
 import type { OkrOptions } from "@/components/grid/cell";
 import type { FieldRow, RecordRow, ViewRow } from "@/types";
+import { MetaStatus } from "@/components/ui/meta";
 
 interface ProjectDetail {
   id: string;
@@ -458,7 +459,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         projectName={breadcrumb.project}
         right={
           <>
-            {t("project.tasksCount", { count: records.length })} · {t(`role.${table.myRole}` as MessageKey)}
+            <span>{t("project.tasksCount", { count: records.length })}</span><MetaStatus className="ml-2">{t(`role.${table.myRole}` as MessageKey)}</MetaStatus>
           </>
         }
       />

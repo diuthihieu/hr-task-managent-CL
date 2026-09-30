@@ -6,6 +6,7 @@ import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
 import { cn, initials } from "@/lib/utils";
 import { mentionToken, MENTION_RE } from "@/lib/mentions";
+import { AvatarImg } from "@/components/ui/avatar-img";
 
 interface Person {
   id: string;
@@ -189,8 +190,9 @@ export const MentionInput = forwardRef<MentionInputHandle, {
               }}
               className={cn("w-full flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm", i === active ? "bg-indigo-50 dark:bg-indigo-950/60" : "hover:bg-neutral-100 dark:hover:bg-neutral-800")}
             >
-              <span className="h-6 w-6 rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0" style={{ backgroundColor: p.avatarColor }}>
+              <span className="relative overflow-hidden h-6 w-6 rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0" style={{ backgroundColor: p.avatarColor }}>
                 {initials(p.name)}
+                <AvatarImg id={p.id} />
               </span>
               <span className="min-w-0">
                 <span className="block truncate">{p.name}</span>

@@ -468,3 +468,9 @@ body { font-size: calc(1rem * var(--font-scale)); }
 .tpl-minimal { background: #ffffff; color: #1f2937; border: 1px solid #e5e7eb; font-family: var(--font-letter-sans), system-ui, sans-serif; }
 .tpl-elegant { background: linear-gradient(180deg, #fbf7ef, #f3ead8); color: #2d2416; border: 1px solid #d9c49a; box-shadow: inset 0 0 0 6px #fbf7ef, inset 0 0 0 7px #d9c49a; font-family: var(--font-letter-display), var(--font-letter), serif; }
 .tpl-night .kudos-muted, .tpl-night input::placeholder, .tpl-night textarea::placeholder { color: rgba(238, 242, 255, 0.55); }
+
+/* Sidebar: no browser focus outline after a click (keyboard focus keeps a soft ring). */
+[data-testid="sidebar"] a:focus:not(:focus-visible),
+[data-testid="sidebar"] button:focus:not(:focus-visible) { outline: none; }
+[data-testid="sidebar"] a:focus-visible,
+[data-testid="sidebar"] button:focus-visible { outline: 2px solid color-mix(in oklab, var(--color-indigo-500) 45%, transparent); outline-offset: 1px; }

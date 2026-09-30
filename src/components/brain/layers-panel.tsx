@@ -12,6 +12,7 @@ import { api } from "@/lib/api-client";
 import { cn, formatDate } from "@/lib/utils";
 import { Markdown } from "@/components/ai/markdown";
 import type { MessageKey } from "@/lib/i18n/core";
+import { Meta } from "@/components/ui/meta";
 
 export interface LayerState {
   highlights: { id: string; text: string; blockId?: string; by?: string; at: string }[];
@@ -100,7 +101,7 @@ export function LayersPanel({ pageId, canEdit, refreshKey, onJumpToBlock }: { pa
                   <button onClick={() => h.blockId && onJumpToBlock(h.blockId)} className={cn("text-left flex-1", h.blockId && "hover:underline")}>
                     {h.text}
                   </button>
-                  <span className="text-[10px] text-neutral-400 shrink-0">{h.by} · {formatDate(h.at)}</span>
+                  <Meta className="text-[10px] text-neutral-400 shrink-0 gap-x-2"><span>{h.by}</span><span>{formatDate(h.at)}</span></Meta>
                   {canEdit && (
                     <button onClick={() => put({ removeHighlight: h.id })} className="opacity-0 group-hover:opacity-100 text-neutral-400 hover:text-red-600" aria-label={t("common.delete")}>
                       <Trash2 size={12} />

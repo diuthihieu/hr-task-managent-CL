@@ -9,6 +9,7 @@ import { cn, formatDate } from "@/lib/utils";
 import { ChatThread } from "./chat-thread";
 import { useAiChat, type ChatMessage } from "./use-ai-chat";
 import { exportReportPdf } from "./print-report";
+import { MetaChip } from "@/components/ui/meta";
 
 /** Workspace AI Assistant: reports and Q&A over everything the user may see, with PDF export. */
 export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: { workspaceId: string; workspaceName: string; logoUrl: string | null; userName: string }) {
@@ -74,7 +75,7 @@ export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: {
           ))}
         </div>
         <div className="m-3 rounded-xl bg-neutral-50 dark:bg-neutral-800/50 p-3 text-[11px] text-neutral-500 flex gap-2">
-          <ShieldCheck size={14} className="text-emerald-600 shrink-0 mt-0.5" />
+          <ShieldCheck size={14} className="text-indigo-600 shrink-0 mt-0.5" />
           <span>{t("ai.scopeNote")}</span>
         </div>
       </aside>
@@ -82,7 +83,7 @@ export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: {
         <div className="h-12 shrink-0 px-6 flex items-center gap-2 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
           <Sparkles size={16} className="text-indigo-600" />
           <h1 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">{t("nav.ai")}</h1>
-          <span className="text-xs text-neutral-400 truncate">· {workspaceName}</span>
+          <MetaChip className="ml-1">{workspaceName}</MetaChip>
         </div>
         <ChatThread
           messages={chat.messages}

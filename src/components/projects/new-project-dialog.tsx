@@ -144,7 +144,7 @@ export function NewProjectDialog({ open, onOpenChange, workspaceId, workspaceSlu
                   </div>
                   {o.keyResults.map((k, ki) => (
                     <div key={ki} className="flex items-center gap-2 pl-5">
-                      <KeySquare size={13} className="text-teal-500 shrink-0" />
+                      <KeySquare size={13} className="text-indigo-500 shrink-0" />
                       <Input
                         value={k}
                         onChange={(e) => updateObjective(i, { keyResults: o.keyResults.map((x, xi) => (xi === ki ? e.target.value : x)) })}

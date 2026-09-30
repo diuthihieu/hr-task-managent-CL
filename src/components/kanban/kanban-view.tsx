@@ -12,6 +12,7 @@ import { cn, initials } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
 import type { Member } from "@/components/grid/cell";
 import { useT } from "@/components/i18n-provider";
+import { AvatarImg } from "@/components/ui/avatar-img";
 
 const GROUPABLE_TYPES = [...SELECT_SINGLE_TYPES, "multi_select", "person"];
 
@@ -273,8 +274,9 @@ function KanbanFieldChip({ field, value, members }: { field: FieldRow; value: un
     return (
       <div className="flex items-center gap-1">
         {matched.map((m) => (
-          <span key={m.id} className="h-4 w-4 rounded-full flex items-center justify-center text-white text-[8px]" style={{ backgroundColor: m.avatarColor }} title={m.name}>
+          <span key={m.id} className="relative overflow-hidden h-4 w-4 rounded-full flex items-center justify-center text-white text-[8px]" style={{ backgroundColor: m.avatarColor }} title={m.name}>
             {initials(m.name)}
+            <AvatarImg id={m.id} />
           </span>
         ))}
       </div>

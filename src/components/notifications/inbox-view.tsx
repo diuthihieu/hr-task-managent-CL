@@ -10,6 +10,9 @@ import { api } from "@/lib/api-client";
 import { cn, initials } from "@/lib/utils";
 import type { MessageKey } from "@/lib/i18n/core";
 import { describeNotification, fetchInbox, markAllRead, notificationTitle, timeAgo, type NotificationItem } from "./notification-bell";
+import { AvatarImg } from "@/components/ui/avatar-img";
+import { Meta, MetaChip, MetaItem } from "@/components/ui/meta";
+import { Clock3 } from "lucide-react";
 
 type View = "todo" | "all" | "snoozed";
 const GROUPS: { key: string; types: string[] }[] = [
@@ -161,8 +164,9 @@ export function InboxView() {
           {shown.map((n) => (
             <div key={n.id} className={cn("group flex gap-3 px-4 py-3", !n.read && "bg-indigo-50/30 dark:bg-indigo-950/10")} data-testid="ac-item">
               {n.actor ? (
-                <span className="h-9 w-9 rounded-full text-white text-[11px] font-semibold flex items-center justify-center shrink-0" style={{ backgroundColor: n.actor.avatarColor }}>
+                <span className="relative overflow-hidden h-9 w-9 rounded-full text-white text-[11px] font-semibold flex items-center justify-center shrink-0" style={{ backgroundColor: n.actor.avatarColor }}>
                   {initials(n.actor.name)}
+                  <AvatarImg id={n.actor.id} />
                 </span>
               ) : n.type === "ai_suggestion" ? (
                 <span className="h-9 w-9 rounded-full flex items-center justify-center shrink-0 bg-indigo-100 text-indigo-600 dark:bg-indigo-950 dark:text-indigo-300">
@@ -177,10 +181,12 @@ export function InboxView() {
                 <span className="block text-xs text-neutral-500">{describeNotification(n, t)}</span>
                 <span className="block text-sm font-semibold text-neutral-800 dark:text-neutral-100 truncate">{notificationTitle(n, t)}</span>
                 {n.body && <span className="block text-xs text-neutral-500 line-clamp-2">{n.body}</span>}
-                <span className="block text-[11px] text-neutral-400 mt-0.5 truncate">
-                  {[n.projectName, n.workspaceName].filter(Boolean).join(" · ")} · {timeAgo(n.createdAt, t)}
-                  {n.snoozedUntil && ` · ${t("ac.snoozedUntil", { when: new Date(n.snoozedUntil).toLocaleString() })}`}
-                </span>
+                <Meta className="mt-1">
+                  {n.projectName && <MetaChip>{n.projectName}</MetaChip>}
+                  {n.workspaceName && <span className="truncate">{n.workspaceName}</span>}
+                  <MetaItem icon={Clock3}>{timeAgo(n.createdAt, t)}</MetaItem>
+                  {n.snoozedUntil && <MetaItem icon={AlarmClockOff} className="text-amber-600">{t("ac.snoozedUntil", { when: new Date(n.snoozedUntil).toLocaleString() })}</MetaItem>}
+                </Meta>
               </button>
               <div className="flex items-start gap-1 shrink-0">
                 <ActionButton icon={ExternalLink} label={t("ac.open")} onClick={() => open(n)} />

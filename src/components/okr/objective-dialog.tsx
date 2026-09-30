@@ -148,7 +148,7 @@ export function ObjectiveDialog({
               <div className="space-y-1.5">
                 {draft.keyResults.map((k, i) => (
                   <div key={i} className="flex items-center gap-2">
-                    <KeySquare size={13} className="text-teal-500 shrink-0" />
+                    <KeySquare size={13} className="text-indigo-500 shrink-0" />
                     <Input value={k} onChange={(e) => patch({ keyResults: draft.keyResults.map((x, xi) => (xi === i ? e.target.value : x)) })} placeholder={t("okr.f.krPlaceholder")} data-testid={`objective-kr-${i}`} />
                     <button onClick={() => patch({ keyResults: draft.keyResults.filter((_, xi) => xi !== i) })} className="text-neutral-400 hover:text-red-600" aria-label={t("common.remove")}>
                       <X size={13} />

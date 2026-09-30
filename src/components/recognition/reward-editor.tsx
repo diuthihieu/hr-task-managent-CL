@@ -97,7 +97,7 @@ export function RewardDialog({ workspaceId, reward, onClose, onSaved }: { worksp
         <div className="mt-3 grid gap-5 md:grid-cols-[15rem_1fr]" data-testid="reward-dialog">
           <div>
             <span className="block text-xs font-medium text-neutral-700 dark:text-neutral-200 mb-1">{t("reco.admin.picture")}</span>
-            <button type="button" onClick={() => input.current?.click()} className="group relative w-full aspect-[4/3] rounded-xl overflow-hidden border border-dashed border-neutral-300 dark:border-neutral-700 bg-gradient-to-br from-indigo-50 to-rose-50 dark:from-indigo-950/40 dark:to-rose-950/30 flex items-center justify-center" data-testid="reward-image-pick">
+            <button type="button" onClick={() => input.current?.click()} className="group relative w-full aspect-[4/3] rounded-xl overflow-hidden border border-dashed border-neutral-300 dark:border-neutral-700 bg-gradient-to-br from-indigo-50 to-indigo-100/60 dark:from-indigo-950/40 dark:to-indigo-900/30 flex items-center justify-center" data-testid="reward-image-pick">
               {preview ? (
                 // eslint-disable-next-line @next/next/no-img-element -- local preview / authorized image route
                 <img src={preview} alt="" className="h-full w-full object-cover" data-testid="reward-image-preview" />

@@ -38,8 +38,8 @@ const TYPES = ["broken_link", "outdated", "stale_reference", "duplicate", "missi
 /** Findings grouped by what they cost the team: wrong answers, clutter, or knowledge nobody finds. */
 const GROUPS = [
   { key: "attention", types: ["broken_link", "outdated", "stale_reference"] as string[], icon: AlertTriangle, tone: "text-red-600 bg-red-50 dark:bg-red-950/40", bar: "bg-red-500" },
-  { key: "cleanup", types: ["duplicate", "missing_source"] as string[], icon: Eraser, tone: "text-amber-600 bg-amber-50 dark:bg-amber-950/40", bar: "bg-amber-500" },
-  { key: "discover", types: ["unlinked", "never_revisited"] as string[], icon: Compass, tone: "text-sky-600 bg-sky-50 dark:bg-sky-950/40", bar: "bg-sky-500" },
+  { key: "cleanup", types: ["duplicate", "missing_source"] as string[], icon: Eraser, tone: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40", bar: "bg-indigo-500" },
+  { key: "discover", types: ["unlinked", "never_revisited"] as string[], icon: Compass, tone: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40", bar: "bg-indigo-500" },
 ];
 
 export function HealthReport({ workspaceId }: { workspaceId: string }) {
@@ -89,7 +89,7 @@ export function HealthReport({ workspaceId }: { workspaceId: string }) {
     <div className="space-y-4" data-testid="health">
       <div className="grid gap-3 md:grid-cols-4">
         <div className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4 py-3 flex items-center gap-3">
-          <HeartPulse size={22} className={score >= 80 ? "text-emerald-600" : score >= 50 ? "text-amber-600" : "text-red-600"} />
+          <HeartPulse size={22} className={score >= 80 ? "text-indigo-600" : score >= 50 ? "text-indigo-600" : "text-red-600"} />
           <div>
             <p className="text-2xl font-bold tabular-nums leading-none" data-testid="health-score">{score}</p>
             <p className="text-[11px] text-neutral-500 mt-1">{t("brain.health.score", { pages: data.pageCount, issues: total })}</p>
@@ -149,7 +149,7 @@ export function HealthReport({ workspaceId }: { workspaceId: string }) {
 
       {!shown.length && (
         <div className="rounded-2xl border border-dashed border-neutral-300 dark:border-neutral-700 p-6 text-center">
-          <BadgeCheck size={22} className="mx-auto text-emerald-500" />
+          <BadgeCheck size={22} className="mx-auto text-indigo-500" />
           <p className="mt-1 text-sm font-medium">{t("brain.health.clean")}</p>
           <p className="text-xs text-neutral-500">{t("brain.health.cleanHint")}</p>
         </div>
@@ -177,7 +177,8 @@ export function HealthReport({ workspaceId }: { workspaceId: string }) {
                       <span className="text-[10px] uppercase tracking-wide text-neutral-400 shrink-0">{t(`brain.health.type.${i.type}` as MessageKey)}</span>
                     </p>
                     <p className="text-xs text-neutral-500 truncate">
-                      {describe(i, t)} · <span className="text-neutral-400">{t(`brain.health.suggest.${i.suggestion}` as MessageKey)}</span>
+                      {describe(i, t)}
+                      <span className="ml-3 text-neutral-400">{t(`brain.health.suggest.${i.suggestion}` as MessageKey)}</span>
                     </p>
                   </div>
                   <span className="flex items-center gap-1 text-[11px] shrink-0">

@@ -21,6 +21,7 @@ import { WorkspaceAvatar } from "./workspace-avatar";
 import { InviteDialog } from "@/components/invitations/invite-dialog";
 import { Mail, Check, X } from "lucide-react";
 import type { MessageKey } from "@/lib/i18n/core";
+import { AvatarImg } from "@/components/ui/avatar-img";
 
 export interface WorkspaceCard {
   id: string;
@@ -108,8 +109,9 @@ export function WorkspaceChooser({ user, workspaces, invites = [] }: { user: { i
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-neutral-100 dark:hover:bg-neutral-800" data-testid="user-menu">
-                  <span className="h-7 w-7 rounded-full text-white text-xs flex items-center justify-center" style={{ backgroundColor: user.avatarColor }}>
+                  <span className="relative overflow-hidden h-7 w-7 rounded-full text-white text-xs flex items-center justify-center" style={{ backgroundColor: user.avatarColor }}>
                     {initials(user.name)}
+                    <AvatarImg id={user.id} />
                   </span>
                   <span className="hidden sm:inline text-sm text-neutral-700 dark:text-neutral-200">{user.name}</span>
                 </button>
@@ -158,7 +160,7 @@ export function WorkspaceChooser({ user, workspaces, invites = [] }: { user: { i
                 <div key={inv.id} className="rounded-xl border border-indigo-200 dark:border-indigo-900 bg-indigo-50/50 dark:bg-indigo-950/30 p-4" data-testid="chooser-invite">
                   <div className="font-semibold text-neutral-900 dark:text-neutral-50 truncate">{inv.workspaceName}</div>
                   <div className="text-xs text-neutral-500 mt-0.5">
-                    {inv.invitedBy ? t("inv.invitedBy", { name: inv.invitedBy }) : t("inv.invitedToJoin")} · {t("inv.youJoinAs", { role: t(`role.${inv.role}` as MessageKey) })} · {t("inv.members", { count: inv.memberCount })}
+                    {inv.invitedBy ? t("inv.invitedBy", { name: inv.invitedBy }) : t("inv.invitedToJoin")} {t("inv.youJoinAs", { role: t(`role.${inv.role}` as MessageKey) })} {t("inv.members", { count: inv.memberCount })}
                   </div>
                   {inv.message && <p className="text-sm text-neutral-700 dark:text-neutral-200 mt-2 line-clamp-2">“{inv.message}”</p>}
                   <div className="flex gap-2 mt-3">

@@ -178,7 +178,7 @@ export function DecisionDialog({
                 <option value="">—</option>
                 {others.map((d) => (
                   <option key={d.id} value={d.id}>
-                    {d.decidedAt} · {d.title}
+                    {d.decidedAt} {d.title}
                   </option>
                 ))}
               </select>

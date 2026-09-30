@@ -70,7 +70,7 @@ export function AttachmentViewer({ files, index, onIndexChange, onClose }: { fil
           <div className="text-sm font-medium truncate" data-testid="viewer-filename">{file.fileName}</div>
           <div className="text-[11px] text-white/60">
             {formatBytes(file.sizeBytes)}
-            {files.length > 1 && ` · ${index + 1}/${files.length}`}
+            {files.length > 1 && <span className="ml-2 tabular-nums opacity-70">{index + 1}/{files.length}</span>}
           </div>
         </div>
         {kind !== "none" && kind !== "docx" && kind !== "pptx" && (

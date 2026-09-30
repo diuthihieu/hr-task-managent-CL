@@ -322,7 +322,7 @@ function PivotTable({ rows, seriesKeys, onCell }: { rows: Array<Record<string, s
                         {formatNumber(Number(r[s.key]))}
                       </button>
                     ) : (
-                      <span className="text-neutral-300">·</span>
+                      <span className="text-neutral-300">–</span>
                     )}
                   </td>
                 ))}

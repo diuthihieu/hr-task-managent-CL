@@ -274,7 +274,7 @@ export function PageProperties({
               <GitBranch size={12} /> v{meta.version}
               {meta.supersedes && (
                 <>
-                  {" · "}
+                  <span className="ml-2" />
                   {t("brain.version.replaces")}{" "}
                   <Link href={`${base}/${meta.supersedes.id}`} className="underline">
                     v{meta.supersedes.version}

@@ -20,6 +20,8 @@ import { getCellValue } from "@/lib/query-engine";
 import { api } from "@/lib/api-client";
 import { initials, formatDate, cn } from "@/lib/utils";
 import type { ActivityRow, AttachmentRow, FieldRow, RecordRow } from "@/types";
+import { AvatarImg } from "@/components/ui/avatar-img";
+import { Meta } from "@/components/ui/meta";
 
 interface ProjectDetail {
   id: string;
@@ -216,8 +218,9 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
 
   const commentView = (c: CommentItem, nested = false): React.ReactNode => (
     <div key={c.id} className={cn("flex gap-2", nested && "ml-8 mt-2")}>
-      <span className="h-7 w-7 rounded-full flex items-center justify-center text-white text-[10px] shrink-0" style={{ backgroundColor: c.user?.avatarColor ?? "#94a3b8" }}>
+      <span className="relative overflow-hidden h-7 w-7 rounded-full flex items-center justify-center text-white text-[10px] shrink-0" style={{ backgroundColor: c.user?.avatarColor ?? "#94a3b8" }}>
         {initials(c.user?.name ?? "?")}
+        <AvatarImg id={c.user?.id} />
       </span>
       <div className="min-w-0 flex-1">
         <div className="text-xs">
@@ -275,9 +278,10 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
             <RetroButton taskId={taskId} />
           </div>
           {!canEdit && <p className="text-xs text-amber-600 mt-1">{t("record.readOnly")}</p>}
-          <p className="text-xs text-neutral-400 mt-1">
-            {t("record.created", { when: formatDate(record.createdAt, true) })} · {t("common.updated", { when: formatDate(record.updatedAt, true) })}
-          </p>
+          <Meta className="mt-1 text-xs text-neutral-400">
+            <span>{t("record.created", { when: formatDate(record.createdAt, true) })}</span>
+            <span>{t("common.updated", { when: formatDate(record.updatedAt, true) })}</span>
+          </Meta>
 
           <section className="mt-5">
             <div className="grid grid-cols-1 sm:grid-cols-[160px_1fr] gap-x-3 gap-y-1.5 text-sm">
@@ -373,9 +377,10 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
                         <div className="text-xs truncate text-neutral-800 dark:text-neutral-100" title={a.fileName}>
                           {a.fileName}
                         </div>
-                        <div className="text-[10px] text-neutral-400 truncate">
-                          {formatBytes(a.sizeBytes)} · {a.uploadedBy?.name ?? "—"}
-                        </div>
+                        <Meta className="text-[10px] text-neutral-400 gap-x-2">
+                          <span>{formatBytes(a.sizeBytes)}</span>
+                          <span className="truncate">{a.uploadedBy?.name ?? "—"}</span>
+                        </Meta>
                       </div>
                       <a href={a.downloadUrl} className="text-neutral-400 hover:text-indigo-600" aria-label={`${t("common.download")} ${a.fileName}`}>
                         <Download size={13} />

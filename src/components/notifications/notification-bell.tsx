@@ -8,6 +8,9 @@ import { create } from "zustand";
 import { api } from "@/lib/api-client";
 import { cn, initials } from "@/lib/utils";
 import type { MessageKey, TFunction } from "@/lib/i18n/core";
+import { DEFAULT_NOTIFY_SETTINGS, notifyGroupOf, playRingtone, type NotifySettings } from "@/lib/notification-prefs";
+import { AvatarImg } from "@/components/ui/avatar-img";
+import { Meta, MetaChip } from "@/components/ui/meta";
 
 export interface NotificationItem {
   id: string;
@@ -35,6 +38,7 @@ const POPUP_MS = 9_000;
 interface InboxState {
   items: NotificationItem[];
   unread: number;
+  settings?: NotifySettings;
   loaded: boolean;
   set: (p: Partial<InboxState>) => void;
 }
@@ -166,12 +170,22 @@ export function NotificationBell({ className, align = "start" }: { className?: s
       // Pop-ups (in the app) and native notifications (when the tab is in the
       // background) only for items that arrived after the first load.
       const fresh = seen.current ? r.items.filter((n) => !n.read && !seen.current!.has(n.id)) : [];
-      if (fresh.length) {
-        setPopups((prev) => [...fresh.slice(0, 3), ...prev].slice(0, 4));
-        for (const n of fresh) setTimeout(() => setPopups((prev) => prev.filter((x) => x.id !== n.id)), POPUP_MS);
+      // The user's choices (Settings -> Notifications): which groups pop up, which reach the device, which sound.
+      const prefs = useInbox.getState().settings ?? DEFAULT_NOTIFY_SETTINGS;
+      const allowed = (off: string[]) => (n: NotificationItem) => {
+        const g = notifyGroupOf(n);
+        return !g || !off.includes(g);
+      };
+      const toPop = fresh.filter(allowed(prefs.popupOff));
+      const background = typeof document !== "undefined" && document.hidden;
+      const toNative = background && "Notification" in window && Notification.permission === "granted" ? fresh.filter(allowed(prefs.nativeOff)) : [];
+      if (toPop.length) {
+        setPopups((prev) => [...toPop.slice(0, 3), ...prev].slice(0, 4));
+        for (const n of toPop) setTimeout(() => setPopups((prev) => prev.filter((x) => x.id !== n.id)), POPUP_MS);
       }
-      if (fresh.length && typeof document !== "undefined" && document.hidden && "Notification" in window && Notification.permission === "granted") {
-        for (const n of fresh) {
+      if ((background ? toNative.length || toPop.length : toPop.length) && prefs.sound !== "none") playRingtone(prefs.sound, prefs.volume);
+      if (toNative.length) {
+        for (const n of toNative) {
           const native = new Notification(notificationTitle(n, t), { body: describeNotification(n, t), tag: n.id });
           native.onclick = () => {
             window.focus();
@@ -186,7 +200,11 @@ export function NotificationBell({ className, align = "start" }: { className?: s
   }, [router, t]);
 
   useEffect(() => {
-    load();
+    api
+      .get<NotifySettings>("/api/account/notification-settings")
+      .then((x) => useInbox.getState().set({ settings: x }))
+      .catch(() => {})
+      .finally(() => load());
     // eslint-disable-next-line react-hooks/set-state-in-effect -- browser-only value, unknown during SSR
     if (typeof window !== "undefined" && "Notification" in window) setPermission(Notification.permission);
     const id = setInterval(load, POLL_MS);
@@ -234,8 +252,9 @@ export function NotificationBell({ className, align = "start" }: { className?: s
           </button>
         ) : (
           <div key={n.id} className="flex items-start gap-2.5 rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-2xl p-3 animate-in" data-testid="notif-popup">
-            <span className="h-8 w-8 rounded-full flex items-center justify-center text-white text-[11px] font-semibold shrink-0" style={{ backgroundColor: n.actor?.avatarColor ?? "var(--color-indigo-500)" }}>
+            <span className="relative overflow-hidden h-8 w-8 rounded-full flex items-center justify-center text-white text-[11px] font-semibold shrink-0" style={{ backgroundColor: n.actor?.avatarColor ?? "var(--color-indigo-500)" }}>
               {n.actor ? initials(n.actor.name) : <Bell size={14} />}
+              {n.actor && <AvatarImg id={n.actor.id} />}
             </span>
             <button
               className="min-w-0 flex-1 text-left"
@@ -300,8 +319,9 @@ export function NotificationRow({ n, onOpen, large }: { n: NotificationItem; onO
   return (
     <button onClick={onOpen} className={cn("w-full text-left flex gap-2.5 px-3 py-2.5 hover:bg-neutral-50 dark:hover:bg-neutral-800/60", large && "px-4 py-3.5", !n.read && "bg-indigo-50/40 dark:bg-indigo-950/20")} data-testid="notif-item">
       {n.actor ? (
-        <span className={cn("rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0", large ? "h-9 w-9" : "h-7 w-7")} style={{ backgroundColor: n.actor.avatarColor }}>
+        <span className={cn("relative overflow-hidden rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0", large ? "h-9 w-9" : "h-7 w-7")} style={{ backgroundColor: n.actor.avatarColor }}>
           {initials(n.actor.name)}
+          <AvatarImg id={n.actor.id} />
         </span>
       ) : (
         <span className={cn("rounded-full flex items-center justify-center shrink-0", large ? "h-9 w-9" : "h-7 w-7", n.type === "task_overdue" ? "bg-red-100 text-red-600 dark:bg-red-950" : "bg-amber-100 text-amber-600 dark:bg-amber-950")}>
@@ -312,9 +332,11 @@ export function NotificationRow({ n, onOpen, large }: { n: NotificationItem; onO
         <span className="block text-xs text-neutral-500">{describeNotification(n, t)}</span>
         <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-100 truncate">{notificationTitle(n, t)}</span>
         {n.body && <span className="block text-xs text-neutral-500 line-clamp-2">{n.body}</span>}
-        <span className="block text-[11px] text-neutral-400 mt-0.5 truncate">
-          {[n.projectName, n.workspaceName].filter(Boolean).join(" · ")} · {timeAgo(n.createdAt, t)}
-        </span>
+        <Meta className="mt-1">
+          {n.projectName && <MetaChip>{n.projectName}</MetaChip>}
+          {n.workspaceName && <span className="truncate">{n.workspaceName}</span>}
+          <span className="whitespace-nowrap">{timeAgo(n.createdAt, t)}</span>
+        </Meta>
       </span>
       {!n.read && <span className="h-2 w-2 rounded-full bg-indigo-600 mt-1.5 shrink-0" />}
     </button>

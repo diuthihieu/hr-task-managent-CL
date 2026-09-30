@@ -12,6 +12,7 @@ import { api } from "@/lib/api-client";
 import { cn, formatDate } from "@/lib/utils";
 import { ChatThread } from "./chat-thread";
 import { useAiChat } from "./use-ai-chat";
+import { Meta } from "@/components/ui/meta";
 
 interface AiSettings {
   configured: boolean;
@@ -223,7 +224,7 @@ function WikiAiSettings({ wikiId, settings, onSaved }: { wikiId: string; setting
               <span className="flex-1 min-w-0">
                 <span className="block truncate font-medium text-neutral-800 dark:text-neutral-100">{d.fileName}</span>
                 <span className="block text-[10px] text-neutral-400">
-                  {t("wikiAi.chars", { count: d.charCount.toLocaleString() })} · {formatDate(d.createdAt)}
+                  <Meta><span>{t("wikiAi.chars", { count: d.charCount.toLocaleString() })}</span><span>{formatDate(d.createdAt)}</span></Meta>
                 </span>
               </span>
               <button onClick={async () => setPreview(await api.get(`/api/knowledge-docs/${d.id}`))} className="text-neutral-400 hover:text-indigo-600" title={t("wikiAi.preview")}>

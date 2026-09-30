@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { DecisionDialog, type Decision } from "./decision-dialog";
 import { DECISION_TONE } from "./decisions-list";
 import type { MessageKey } from "@/lib/i18n/core";
+import { Meta, MetaChip } from "@/components/ui/meta";
 
 /** One decision: what, why, alternatives, evidence, people, links and its supersede chain. */
 export function DecisionDetail({ workspaceId, workspaceSlug, decisionId }: { workspaceId: string; workspaceSlug: string; decisionId: string }) {
@@ -54,7 +55,7 @@ export function DecisionDetail({ workspaceId, workspaceSlug, decisionId }: { wor
           <ArrowLeft size={12} /> {t("brain.decisions")}
         </Link>
         <div className="flex items-start gap-3">
-          <Gavel size={22} className="text-purple-600 mt-1 shrink-0" />
+          <Gavel size={22} className="text-indigo-600 mt-1 shrink-0" />
           <h1 className="text-2xl font-bold flex-1 text-neutral-900 dark:text-neutral-50">{d.title}</h1>
           <span className={cn("text-xs px-2 py-0.5 rounded-md", DECISION_TONE[d.status])} data-testid="decision-status-badge">{t(`brain.decisionStatus.${d.status}` as MessageKey)}</span>
         </div>
@@ -137,7 +138,7 @@ export function DecisionDetail({ workspaceId, workspaceSlug, decisionId }: { wor
                 <ArrowRight size={12} /> {d.supersedes.title}
               </Link>
             )}
-          {row(t("brain.decision.recordedBy"), `${d.createdBy?.name ?? "—"} · ${t(`brain.source.${d.sourceType}` as MessageKey)}`)}
+          {row(t("brain.decision.recordedBy"), <Meta className="text-sm text-inherit"><span>{d.createdBy?.name ?? "—"}</span><MetaChip>{t(`brain.source.${d.sourceType}` as MessageKey)}</MetaChip></Meta>)}
         </div>
       </div>
       {editing && (

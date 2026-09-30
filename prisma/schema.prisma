@@ -216,6 +216,14 @@ model User {
   aiTone             String     @default("professional") @map("ai_tone") @db.VarChar(20)
   /// "short" | "balanced" | "detailed"
   aiLength           String     @default("balanced") @map("ai_length") @db.VarChar(10)
+  /// Notification groups (see NOTIFY_GROUPS) that should not pop up inside the app.
+  notifyPopupOff     String[]   @default([]) @map("notify_popup_off")
+  /// Notification groups that should not raise a desktop / mobile system notification.
+  notifyNativeOff    String[]   @default([]) @map("notify_native_off")
+  /// Ringtone played for a new notification ("none" = silent).
+  notifySound        String     @default("chime") @map("notify_sound") @db.VarChar(20)
+  /// Ringtone volume, 0-100.
+  notifyVolume       Int        @default(70) @map("notify_volume") @db.SmallInt
   lastLoginAt        DateTime?  @map("last_login_at") @db.Timestamptz(6)
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)

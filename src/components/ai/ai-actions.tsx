@@ -143,7 +143,7 @@ export function AiActionMenu({
                   <li key={idx} className="rounded-lg border border-neutral-200 dark:border-neutral-800 px-3 py-2">
                     <div className="text-sm font-medium">{i.title}</div>
                     <div className="text-xs text-neutral-500">
-                      {i.estimateHours ? `${i.estimateHours} h · ` : ""}
+                      {i.estimateHours ? `${i.estimateHours}h ` : ""}
                       {i.note}
                     </div>
                   </li>

@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Award, Gift, Inbox, Send, Settings2, Sparkles, Trophy, Heart } from "lucide-react";
+import { Award, Gift, Inbox, Send, Settings2, Sparkles, Trophy } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
@@ -15,7 +15,7 @@ import { RecognitionAdmin } from "./recognition-admin";
 import { fmtNumber, type PersonLite } from "./shared";
 import type { MessageKey } from "@/lib/i18n/core";
 
-export type RecoTab = "leaderboard" | "wall" | "mine" | "rewards" | "manage";
+export type RecoTab = "leaderboard" | "mine" | "rewards" | "manage";
 
 interface Overview {
   enabled: boolean;
@@ -44,7 +44,6 @@ export function RecognitionHub({ workspaceId, workspaceSlug, tab, me }: { worksp
   useEffect(() => {
     const kinds: Record<RecoTab, (n: NotificationItem) => boolean> = {
       leaderboard: () => false,
-      wall: () => false,
       mine: () => false, // letters are marked read when opened
       rewards: (n) => n.type === "reward_result" || n.type === "ai_suggestion",
       manage: (n) => n.type === "reward_request",
@@ -55,7 +54,6 @@ export function RecognitionHub({ workspaceId, workspaceSlug, tab, me }: { worksp
   const go = (k: RecoTab) => router.replace(`/w/${workspaceSlug}/recognition?tab=${k}`);
   const tabs: { key: RecoTab; icon: typeof Trophy; badge?: number }[] = [
     { key: "leaderboard", icon: Trophy },
-    { key: "wall", icon: Heart },
     { key: "mine", icon: Inbox, badge: o?.unreadKudos },
     { key: "rewards", icon: Gift, badge: o?.affordable },
     ...(o?.canManage ? [{ key: "manage" as const, icon: Settings2, badge: o?.pendingRequests }] : []),
@@ -66,7 +64,7 @@ export function RecognitionHub({ workspaceId, workspaceSlug, tab, me }: { worksp
         <div className="flex flex-wrap items-end justify-between gap-3 mb-4">
           <div>
             <h1 className="text-[22px] font-bold tracking-tight inline-flex items-center gap-2">
-              <Award size={22} className="text-amber-500" /> {t("reco.title")}
+              <Award size={22} className="text-indigo-500" /> {t("reco.title")}
             </h1>
             <p className="text-sm text-neutral-500 mt-0.5">{t("reco.subtitle")}</p>
           </div>
@@ -77,7 +75,7 @@ export function RecognitionHub({ workspaceId, workspaceSlug, tab, me }: { worksp
         {o && !o.enabled && <p className="mb-4 rounded-lg bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 px-3 py-2 text-sm">{t("reco.disabled")}</p>}
         {o && (
           <div className="grid gap-3 sm:grid-cols-3 mb-5" data-testid="reco-overview">
-            <div className="rounded-2xl p-4 bg-gradient-to-br from-indigo-600 to-violet-600 text-white">
+            <div className="rounded-2xl p-4 bg-gradient-to-br from-indigo-600 to-indigo-400 text-white">
               <p className="text-xs opacity-80">{t("reco.me.balance")}</p>
               <p className="text-3xl font-bold tabular-nums" data-testid="reco-balance">{fmtNumber(o.points.balance)}</p>
               <p className="text-[11px] opacity-80">{t("reco.me.detail", { earned: fmtNumber(o.points.earned), pending: fmtNumber(o.points.pending), spent: fmtNumber(o.points.spent) })}</p>
@@ -112,7 +110,6 @@ export function RecognitionHub({ workspaceId, workspaceSlug, tab, me }: { worksp
           ))}
         </div>
         {tab === "leaderboard" && <Leaderboards workspaceId={workspaceId} canSeePoints={!!o?.canSeeOthersPoints} onThank={(p) => setCompose({ to: p })} />}
-        {tab === "wall" && <KudosList workspaceId={workspaceId} scope="wall" refreshKey={tick} />}
         {tab === "mine" && (
           <div className="space-y-6">
             <KudosList workspaceId={workspaceId} scope="received" refreshKey={tick} />

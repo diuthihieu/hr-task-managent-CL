@@ -137,12 +137,12 @@ export function WeeklyReview({ workspaceId }: { workspaceId: string }) {
           </section>
 
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3" data-testid="weekly-sections">
-            <Section title={t("brain.weekly.sec.wins")} icon={<Trophy size={15} className="text-amber-500" />} ai={reflection?.wins} emptyText={t("brain.weekly.needAi")} />
-            <Card title={`${t("brain.weekly.sec.completed")} (${data.completed.length})`} icon={<CheckCircle2 size={15} className="text-emerald-600" />}>
+            <Section title={t("brain.weekly.sec.wins")} icon={<Trophy size={15} className="text-indigo-500" />} ai={reflection?.wins} emptyText={t("brain.weekly.needAi")} />
+            <Card title={`${t("brain.weekly.sec.completed")} (${data.completed.length})`} icon={<CheckCircle2 size={15} className="text-indigo-600" />}>
               {data.completed.length ? data.completed.slice(0, 8).map((d) => <ItemRow key={d.id} href={d.href} title={d.title} sub={d.project} />) : <EmptyNote text={t("brain.weekly.noneCompleted")} />}
               {data.completed.length > 8 && <p className="text-[11px] text-neutral-400 px-2">+{data.completed.length - 8}</p>}
             </Card>
-            <Card title={`${t("brain.weekly.sec.decisions")} (${data.decisions.length})`} icon={<Gavel size={15} className="text-purple-600" />}>
+            <Card title={`${t("brain.weekly.sec.decisions")} (${data.decisions.length})`} icon={<Gavel size={15} className="text-indigo-600" />}>
               {data.decisions.length ? data.decisions.map((d) => <ItemRow key={d.id} href={d.href} title={d.title} sub={d.project} />) : <EmptyNote text={t("brain.weekly.noneDecisions")} />}
             </Card>
             <Card title={`${t("brain.weekly.sec.knowledge")} (${data.newKnowledge.length + data.updatedKnowledge.length + data.meetings.length})`} icon={<Lightbulb size={15} className="text-indigo-600" />}>
@@ -160,7 +160,7 @@ export function WeeklyReview({ workspaceId }: { workspaceId: string }) {
                 <EmptyNote text={t("brain.weekly.noneLoops")} />
               )}
             </Card>
-            <Card title={t("brain.weekly.sec.automation")} icon={<Repeat size={15} className="text-teal-600" />} testId="weekly-automation">
+            <Card title={t("brain.weekly.sec.automation")} icon={<Repeat size={15} className="text-indigo-600" />} testId="weekly-automation">
               {reflection?.automation.length ? <Bullets items={reflection.automation} /> : null}
               {data.automation.length ? (
                 data.automation.map((a) => <ItemRow key={a.title} title={a.title} extra={<span className="text-[10px] text-teal-700 dark:text-teal-300">{t("brain.weekly.repeated", { n: a.n })}</span>} />)

@@ -31,7 +31,7 @@ export function KudosList({ workspaceId, scope, refreshKey }: { workspaceId: str
           <span className="px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800 font-medium">{t("reco.list.total", { n: data.items.length })}</span>
           {Object.entries(data.byStyle).map(([s, n]) => (
             <span key={s} className="px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200">
-              {STYLE_META[s]?.emoji} {t(`reco.style.${s}` as MessageKey)} · {n}
+              {STYLE_META[s]?.emoji} {t(`reco.style.${s}` as MessageKey)} <span className="ml-1 font-semibold tabular-nums">{n}</span>
             </span>
           ))}
         </div>
@@ -53,7 +53,7 @@ export function KudosList({ workspaceId, scope, refreshKey }: { workspaceId: str
             <div className="mt-2 flex items-center gap-2 text-[11px] opacity-60 font-sans">
               <span>{formatDate(k.createdAt)}</span>
               {!k.isPublic && <Lock size={10} />}
-              {k.mine && (k.read ? <MailOpen size={11} /> : <span className="inline-flex items-center gap-0.5 text-rose-600 font-medium"><Mail size={11} /> {t("reco.list.new")}</span>)}
+              {k.mine && (k.read ? <MailOpen size={11} /> : <span className="inline-flex items-center gap-0.5 text-indigo-600 font-medium"><Mail size={11} /> {t("reco.list.new")}</span>)}
             </div>
           </Link>
         ))}

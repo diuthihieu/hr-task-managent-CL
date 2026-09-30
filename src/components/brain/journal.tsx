@@ -28,13 +28,13 @@ interface TimelineEvent {
   href?: string;
 }
 const EVENT_META: Record<TimelineEvent["type"], { icon: typeof Gavel; tone: string }> = {
-  completed: { icon: CheckCircle2, tone: "text-emerald-600 bg-emerald-50 dark:bg-emerald-950/50" },
-  created: { icon: PlusCircle, tone: "text-sky-600 bg-sky-50 dark:bg-sky-950/50" },
-  meeting: { icon: CalendarDays, tone: "text-rose-600 bg-rose-50 dark:bg-rose-950/50" },
-  decision: { icon: Gavel, tone: "text-purple-600 bg-purple-50 dark:bg-purple-950/50" },
-  wrote: { icon: FilePlus2, tone: "text-amber-600 bg-amber-50 dark:bg-amber-950/50" },
-  edited: { icon: FilePenLine, tone: "text-amber-600 bg-amber-50 dark:bg-amber-950/50" },
-  reviewed: { icon: RotateCcw, tone: "text-teal-600 bg-teal-50 dark:bg-teal-950/50" },
+  completed: { icon: CheckCircle2, tone: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50" },
+  created: { icon: PlusCircle, tone: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50" },
+  meeting: { icon: CalendarDays, tone: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50" },
+  decision: { icon: Gavel, tone: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50" },
+  wrote: { icon: FilePlus2, tone: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50" },
+  edited: { icon: FilePenLine, tone: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50" },
+  reviewed: { icon: RotateCcw, tone: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50" },
   focus: { icon: Timer, tone: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/50" },
   comment: { icon: MessageSquare, tone: "text-neutral-600 bg-neutral-100 dark:bg-neutral-800" },
 };
@@ -90,11 +90,11 @@ export function Journal({ workspaceId }: { workspaceId: string }) {
   const time = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const stats = day
     ? [
-        { k: "completed", n: day.completed.length, icon: CheckCircle2, tone: "text-emerald-600" },
-        { k: "created", n: day.created.length, icon: PlusCircle, tone: "text-sky-600" },
-        { k: "meetings", n: day.meetings.length, icon: CalendarDays, tone: "text-rose-600" },
-        { k: "decisions", n: day.decisions.length, icon: Gavel, tone: "text-purple-600" },
-        { k: "learning", n: day.learning.length, icon: Lightbulb, tone: "text-amber-500" },
+        { k: "completed", n: day.completed.length, icon: CheckCircle2, tone: "text-indigo-600" },
+        { k: "created", n: day.created.length, icon: PlusCircle, tone: "text-indigo-600" },
+        { k: "meetings", n: day.meetings.length, icon: CalendarDays, tone: "text-indigo-600" },
+        { k: "decisions", n: day.decisions.length, icon: Gavel, tone: "text-indigo-600" },
+        { k: "learning", n: day.learning.length, icon: Lightbulb, tone: "text-indigo-500" },
       ]
     : [];
 

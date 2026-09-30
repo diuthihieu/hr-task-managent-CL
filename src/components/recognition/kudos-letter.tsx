@@ -35,7 +35,7 @@ export function KudosLetter({ workspaceId, workspaceSlug, kudosId, me }: { works
   const [closingRaw, sig] = (k?.closing ?? "").split(/\n— /);
   const closingLine = closingRaw || (k ? t(`reco.letter.closing.${k.style}` as MessageKey) : "");
   const signature = sig || k?.from.name || "";
-  const back = `/w/${workspaceSlug}/recognition?tab=${k?.mine ? "mine" : "wall"}`;
+  const back = `/w/${workspaceSlug}/recognition?tab=mine`;
 
   if (missing) return <div className="p-10 text-center text-sm text-neutral-500">{t("reco.letter.notFound")}</div>;
   if (!k)

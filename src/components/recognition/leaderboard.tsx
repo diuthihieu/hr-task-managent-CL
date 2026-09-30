@@ -157,7 +157,7 @@ export function Leaderboards({ workspaceId, canSeePoints, onThank }: { workspace
                     <p className="text-[11px] text-neutral-500">
                       {Object.entries(r.detail ?? {})
                         .map(([k, n]) => t(`reco.supporters.${k}` as MessageKey, { n }))
-                        .join(" · ")}
+                        .join(" ")}
                     </p>
                   </div>
                   <Button size="sm" variant="outline" onClick={() => onThank(r.user)} data-testid="reco-thank">

@@ -321,8 +321,8 @@ function DotCanvas({
           <div className="font-medium truncate">{hovered.taskName}</div>
           <div className="text-[10px] opacity-80 flex items-center gap-1.5 mt-0.5">
             {hovered.categoryLabel && <span>{hovered.categoryLabel}</span>}
-            {hovered.estimatedDurationMinutes != null && <span>· {hovered.estimatedDurationMinutes}m</span>}
-            <span>· {TIME_BUCKET_LABELS[hoveredPos.bucket]}</span>
+            {hovered.estimatedDurationMinutes != null && <span className="ml-2">{hovered.estimatedDurationMinutes}m</span>}
+            <span className="ml-2">{TIME_BUCKET_LABELS[hoveredPos.bucket]}</span>
           </div>
         </div>
       )}

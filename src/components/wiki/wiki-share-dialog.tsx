@@ -12,6 +12,7 @@ import { api } from "@/lib/api-client";
 import { cn, initials } from "@/lib/utils";
 import type { MessageKey } from "@/lib/i18n/core";
 import type { WikiRow } from "@/lib/wiki";
+import { AvatarImg } from "@/components/ui/avatar-img";
 
 type Role = "viewer" | "editor" | "manager";
 interface MemberRow {
@@ -165,8 +166,9 @@ export function WikiShareDialog({ wiki, onClose }: { wiki: WikiRow; workspaceId:
             <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 divide-y divide-neutral-100 dark:divide-neutral-800">
               {shown.map((m) => (
                 <div key={m.id} className="flex items-center gap-3 px-3 py-2 text-sm" data-testid="wiki-member">
-                  <span className="h-7 w-7 rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0" style={{ backgroundColor: m.avatarColor }}>
+                  <span className="relative overflow-hidden h-7 w-7 rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0" style={{ backgroundColor: m.avatarColor }}>
                     {initials(m.name)}
+                    <AvatarImg id={m.id} />
                   </span>
                   <span className="flex-1 min-w-0">
                     <span className="block truncate font-medium">{m.name}</span>

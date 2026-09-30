@@ -1606,6 +1606,23 @@ test("recognition: reward catalog, redemption with reserved points, approval and
   assert.equal((await contributor.get(`/api/workspaces/${s.ws}/recognition/settings`)).status, 403, "delegation revoked");
 });
 
+test("notification settings: per-group pop-up / device switches and a ringtone, validated", async () => {
+  const def = await viewer.get<{ popupOff: string[]; nativeOff: string[]; sound: string; volume: number }>("/api/account/notification-settings");
+  assert.equal(def.status, 200);
+  assert.deepEqual(def.body, { popupOff: [], nativeOff: [], sound: "chime", volume: 70 });
+  const put = await viewer.put<{ popupOff: string[]; nativeOff: string[]; sound: string; volume: number }>("/api/account/notification-settings", { popupOff: ["updates", "updates", "ai"], nativeOff: ["comment"], sound: "marimba", volume: 40 });
+  assert.equal(put.status, 200, JSON.stringify(put.body));
+  assert.deepEqual(put.body.popupOff.sort(), ["ai", "updates"], "de-duplicated");
+  assert.equal(put.body.sound, "marimba");
+  assert.equal((await viewer.put("/api/account/notification-settings", { popupOff: ["nope"] })).status, 400);
+  assert.equal((await viewer.put("/api/account/notification-settings", { sound: "siren" })).status, 400);
+  assert.equal((await viewer.put("/api/account/notification-settings", { volume: 101 })).status, 400);
+  assert.equal((await contributor.get<{ sound: string }>("/api/account/notification-settings")).body.sound, "chime", "settings are personal");
+  // Notifications carry the actor, so the Action center can show their profile picture.
+  const n = await contributor.get<{ items: { actor: { id: string } | null; workspaceId: string | null }[] }>("/api/notifications");
+  assert.ok(n.body.items.some((x) => x.actor?.id && x.workspaceId));
+});
+
 test("invite links and invitations for people without an account: accept, decline, revoke, replace", async () => {
   const ws = await admin.post<{ id: string }>("/api/workspaces", { name: "Invite Co" });
   // Join link: off by default; admins turn it on and pick the role.

@@ -12,6 +12,7 @@ import { api } from "@/lib/api-client";
 import { cn, formatDate } from "@/lib/utils";
 import { Card, EmptyNote, ItemRow } from "./brain-hub";
 import type { MessageKey } from "@/lib/i18n/core";
+import { Meta } from "@/components/ui/meta";
 
 interface Item {
   id: string;
@@ -54,9 +55,9 @@ const EMPTY: ForYouData = { hero: null, needsAttention: [], insights: [], activi
 
 const ATTENTION_META: Record<Attention["kind"], { icon: typeof Gavel; tone: string }> = {
   stale_linked: { icon: AlertTriangle, tone: "text-red-600 bg-red-50 dark:bg-red-950/40" },
-  decision_review: { icon: Gavel, tone: "text-purple-600 bg-purple-50 dark:bg-purple-950/40" },
-  review_due: { icon: CalendarClock, tone: "text-amber-600 bg-amber-50 dark:bg-amber-950/40" },
-  draft_to_confirm: { icon: FilePenLine, tone: "text-sky-600 bg-sky-50 dark:bg-sky-950/40" },
+  decision_review: { icon: Gavel, tone: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40" },
+  review_due: { icon: CalendarClock, tone: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40" },
+  draft_to_confirm: { icon: FilePenLine, tone: "text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40" },
 };
 
 export function ForYou({ workspaceId }: { workspaceId: string }) {
@@ -186,7 +187,7 @@ export function ForYou({ workspaceId }: { workspaceId: string }) {
           </ul>
         ) : (
           <div className="px-4 pb-4 flex items-start gap-3">
-            <CheckCircle2 size={18} className="text-emerald-500 mt-0.5 shrink-0" />
+            <CheckCircle2 size={18} className="text-indigo-500 mt-0.5 shrink-0" />
             <div className="text-sm">
               <p className="font-medium">{t("brain.di.allClear")}</p>
               <p className="text-xs text-neutral-500">{t("brain.di.allClearHint")}</p>
@@ -219,10 +220,10 @@ export function ForYou({ workspaceId }: { workspaceId: string }) {
           </Card>
         </div>
         <div className="space-y-4">
-          <Card title={t("brain.forYou.decisions")} icon={<Gavel size={15} className="text-purple-600" />}>
+          <Card title={t("brain.forYou.decisions")} icon={<Gavel size={15} className="text-indigo-600" />}>
             {data.recentDecisions.length ? data.recentDecisions.map((i) => <ItemRow key={i.id} href={i.href} title={i.title} sub={i.sub} extra={<span className="text-[10px] text-neutral-400">{i.because[0]}</span>} />) : <EmptyNote text={t("brain.forYou.decisionsEmpty")} />}
           </Card>
-          <Card title={t("brain.forYou.rediscover")} icon={<Compass size={15} className="text-emerald-600" />}>
+          <Card title={t("brain.forYou.rediscover")} icon={<Compass size={15} className="text-indigo-600" />}>
             {data.rediscover.length ? data.rediscover.map((i) => <ItemRow key={i.id} href={i.href} title={i.title} sub={i.sub} extra={<span className="text-[10px] text-neutral-400">{t("brain.forYou.lastUpdated", { date: formatDate(i.because[0]) })}</span>} />) : <EmptyNote text={t("brain.forYou.rediscoverEmpty")} />}
           </Card>
         </div>
@@ -249,10 +250,10 @@ export function ForYou({ workspaceId }: { workspaceId: string }) {
                 <Link href={a.href} className="text-sm hover:text-indigo-600">
                   {a.title}
                 </Link>
-                <span className="text-[11px] text-neutral-400">
-                  {" "}
-                  · {t(a.created ? "brain.di.createdBy" : "brain.di.updatedBy", { name: a.by ?? "?" })} · {formatDate(a.at)}
-                </span>
+                <Meta className="ml-2 text-neutral-400">
+                  <span>{t(a.created ? "brain.di.createdBy" : "brain.di.updatedBy", { name: a.by ?? "?" })}</span>
+                  <span className="tabular-nums">{formatDate(a.at)}</span>
+                </Meta>
               </li>
             ))}
           </ol>

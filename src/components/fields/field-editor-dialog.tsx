@@ -78,14 +78,14 @@ export function FieldEditorDialog({
             {field ? (
               <div className="text-sm text-neutral-700 dark:text-neutral-300 px-2.5 py-1.5 rounded-md border border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-950">
                 {CUSTOM_FIELD_TYPE_IDS.includes(draft.type) ? t(`ft.${draft.type}` as MessageKey) : getFieldType(draft.type).label}
-                <span className="text-[11px] text-neutral-400"> · the type is fixed once a field is created</span>
+                <span className="ml-2 text-[11px] text-neutral-400">the type is fixed once a field is created</span>
               </div>
             ) : (
               <Select
                 value={draft.type}
                 onValueChange={(v) => setDraft((d) => ({ ...d, type: v, config: {} }))}
                 options={CATEGORIES.flatMap((cat) =>
-                  FIELD_TYPES.filter((f) => f.category === cat && CUSTOM_FIELD_TYPE_IDS.includes(f.type)).map((f) => ({ value: f.type, label: `${t(`fc.${cat}` as MessageKey)} · ${t(`ft.${f.type}` as MessageKey)}` }))
+                  FIELD_TYPES.filter((f) => f.category === cat && CUSTOM_FIELD_TYPE_IDS.includes(f.type)).map((f) => ({ value: f.type, label: `${t(`fc.${cat}` as MessageKey)} ${t(`ft.${f.type}` as MessageKey)}` }))
                 )}
                 className="w-full"
               />

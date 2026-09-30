@@ -4,7 +4,7 @@ import { RecognitionHub, type RecoTab } from "@/components/recognition/recogniti
 
 export const metadata = { title: "Recognition" };
 
-const TABS: RecoTab[] = ["leaderboard", "wall", "mine", "rewards", "manage"];
+const TABS: RecoTab[] = ["leaderboard", "mine", "rewards", "manage"];
 
 export default async function RecognitionPage({ params, searchParams }: { params: Promise<{ workspaceSlug: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { workspaceSlug } = await params;
@@ -12,7 +12,7 @@ export default async function RecognitionPage({ params, searchParams }: { params
   const { user, workspace } = await requireWorkspacePage(workspaceSlug);
   return (
     <Suspense>
-      <RecognitionHub workspaceId={workspace.id} workspaceSlug={workspaceSlug} tab={TABS.includes(tab as RecoTab) ? (tab as RecoTab) : "leaderboard"} me={{ id: user.id, name: user.name }} />
+      <RecognitionHub workspaceId={workspace.id} workspaceSlug={workspaceSlug} tab={TABS.includes(tab as RecoTab) ? (tab as RecoTab) : tab === "wall" ? "mine" : "leaderboard"} me={{ id: user.id, name: user.name }} />
     </Suspense>
   );
 }

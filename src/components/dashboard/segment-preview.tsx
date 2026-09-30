@@ -68,7 +68,7 @@ export function SegmentPreview({
   }, [tasks, today]);
 
   const shown = statusFilter ? tasks.filter((x) => (x.status?.label ?? "—") === statusFilter) : tasks;
-  const heading = state ? [state.segment.label, state.segment.seriesLabel].filter(Boolean).join(" · ") : "";
+  const heading = state ? [state.segment.label, state.segment.seriesLabel].filter(Boolean).join(" ") : "";
 
   return (
     <Dialog open={!!state} onOpenChange={(v) => !v && onClose()}>
@@ -87,12 +87,12 @@ export function SegmentPreview({
           {summary.byStatus.length > 1 && (
             <div className="flex flex-wrap gap-1.5 mt-3" data-testid="segment-status-chips">
               <button onClick={() => setStatusFilter(null)} className={cn("rounded-full border px-2.5 py-0.5 text-xs", !statusFilter ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300" : "border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300")}>
-                {t("seg.all")} · {tasks.length}
+                {t("seg.all")} <span className="ml-1 tabular-nums opacity-70">{tasks.length}</span>
               </button>
               {summary.byStatus.map((s) => (
                 <button key={s.label} onClick={() => setStatusFilter(s.label === statusFilter ? null : s.label)} className={cn("inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs", statusFilter === s.label ? "border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300" : "border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300")}>
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: s.color ?? "#94a3b8" }} />
-                  {s.label} · {s.n}
+                  {s.label} <span className="ml-1 tabular-nums opacity-70">{s.n}</span>
                 </button>
               ))}
             </div>

@@ -81,7 +81,6 @@ export function DashboardWorkspace({
   }, [dashboardId, t]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching dashboard data on mount is exactly what this effect is for
     load();
   }, [load]);
 

@@ -51,6 +51,10 @@ test("only CI (release token) or a system admin can register releases", async ()
   assert.equal((await member.post("/api/desktop/releases", asset("0.1.0"))).status, 401);
   assert.equal((await publish({ ...asset("0.1.0"), version: "latest" })).status, 400);
   assert.equal((await publish({ ...asset("0.1.0"), installerUrl: "http://insecure.example.com/a.exe" })).status, 400);
+  assert.equal((await publish({ ...asset("0.1.0"), installerUrl: "https://evil.example.com/a.exe" })).status, 400, "only allowed artifact hosts");
+  const { sha256: _omit, ...noHash } = asset("0.1.0");
+  void _omit;
+  assert.equal((await publish(noHash)).status, 400, "a checksum is required");
   assert.equal(await prisma.desktopRelease.count(), 0);
 });
 

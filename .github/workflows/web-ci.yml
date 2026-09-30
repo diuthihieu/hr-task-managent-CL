@@ -1,0 +1,64 @@
+# Release gate for the web app: every push / PR must lint, type-check, pass unit
+# tests, build, validate migrations and pass the HTTP integration suite against a
+# throwaway PostgreSQL. Make "Web CI / verify" a required check on the default branch.
+name: Web CI
+
+on:
+  push:
+    branches: ["**"]
+    paths-ignore: ["desktop/**", "docs/**", "**/*.md"]
+  pull_request:
+    paths-ignore: ["desktop/**", "docs/**", "**/*.md"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: basework
+          POSTGRES_PASSWORD: basework
+          POSTGRES_DB: basework
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U basework" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://basework:basework@localhost:5432/basework
+      DIRECT_URL: postgresql://basework:basework@localhost:5432/basework
+      TEST_DATABASE_URL: postgresql://basework:basework@localhost:5432/basework_it
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx prisma generate
+      - name: Lint
+        run: npx eslint src tests --max-warnings=0
+      - name: Type check
+        run: npx tsc --noEmit -p .
+      - name: Unit tests
+        run: npm test
+      - name: Migrations apply cleanly and match the schema
+        run: |
+          npx prisma migrate deploy
+          npx prisma migrate diff --from-url "$DATABASE_URL" --to-schema-datamodel prisma/schema.prisma --exit-code
+      - name: Production build
+        run: npm run build
+        env:
+          AUTH_SECRET: ci-only-${{ github.run_id }}-not-a-real-secret-value-xx
+      - name: Integration tests
+        run: npm run test:integration
+      - name: Dependency audit (critical)
+        run: npm audit --omit=dev --audit-level=critical

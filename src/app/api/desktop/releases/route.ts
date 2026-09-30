@@ -14,14 +14,22 @@ export const GET = route(async () => {
 });
 
 const https = z.string().url().regex(/^https:\/\//, "must be an https:// URL");
+/** Installers may only be served from these hosts (comma list in DESKTOP_ARTIFACT_HOSTS; "*." allows subdomains). */
+const ARTIFACT_HOSTS = (process.env.DESKTOP_ARTIFACT_HOSTS ?? "github.com,objects.githubusercontent.com,*.public.blob.vercel-storage.com").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
+const allowedHost = (url: string) => {
+  const host = new URL(url).hostname.toLowerCase();
+  return ARTIFACT_HOSTS.some((h) => (h.startsWith("*.") ? host.endsWith(h.slice(1)) : host === h));
+};
+const artifactUrl = https.refine(allowedHost, "host is not an allowed artifact host (DESKTOP_ARTIFACT_HOSTS)");
 const publishSchema = z.object({
   version: z.string().regex(/^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/, "must be a semantic version like 1.2.0"),
   platform: z.enum(PLATFORMS).default("windows-x86_64"),
   channel: z.enum(["stable", "beta"]).default("stable"),
-  installerUrl: https,
+  installerUrl: artifactUrl,
   installerFileName: z.string().min(1).max(255),
   installerSizeBytes: z.number().int().nonnegative().optional(),
-  sha256: z.string().regex(/^[0-9a-f]{64}$/).optional(),
+  /** Required: clients and the download page show it so the installer can be verified. */
+  sha256: z.string().regex(/^[0-9a-f]{64}$/),
   updaterUrl: https.optional(),
   updaterSignature: z.string().min(1).max(4000).optional(),
   minOsVersion: z.string().min(1).max(120).optional(),

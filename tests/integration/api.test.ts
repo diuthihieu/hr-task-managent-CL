@@ -582,12 +582,20 @@ test("project visibility: owners hide a project from chosen members", async () =
   assert.ok(!JSON.stringify(search.body).includes(hiddenTask.id), "not in search");
   const mywork = await viewer.get<{ tasks: { taskId: string }[] }>(`/api/workspaces/${s.ws}/my-work`);
   assert.ok(!JSON.stringify(mywork.body).includes(hiddenTask.id), "not in My Work even when assigned");
+  const notifs = async () => (await viewer.get<{ items: { title: string; projectName: string | null }[] }>("/api/notifications")).body.items;
+  assert.ok(!(await notifs()).some((n) => n.title === "Call the insurer"), "older notifications about the hidden project disappear too");
+  // OKRs of a hidden project don't leak through the pickers either.
+  const hiddenObj = await admin.post<{ id: string; keyResults: { id: string }[] }>(`/api/workspaces/${s.ws}/objectives`, { title: "Secret insurer objective", projectId: s.otherProject });
+  const hiddenKr = await admin.post<{ keyResults: { id: string; title: string }[] }>(`/api/objectives/${hiddenObj.body.id}/key-results`, { title: "Secret KR" });
+  const opts = await viewer.get<{ objectives: { id: string }[]; keyResults: { id: string }[] }>(`/api/workspaces/${s.ws}/okr-options`);
+  assert.ok(!JSON.stringify(opts.body).includes(hiddenObj.body.id) && !opts.body.keyResults.some((k) => hiddenKr.body.keyResults.some((h) => h.id === k.id)), "no hidden objective or key result in the pickers");
   // Everyone else still sees it.
   assert.equal((await contributor.get(`/api/projects/${s.otherProject}`)).status, 200);
 
   // Promoting the member to admin clears the rule; so does un-hiding.
   assert.equal((await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] })).status, 200);
   assert.equal((await viewer.get(`/api/projects/${s.otherProject}`)).status, 200);
+  assert.ok((await notifs()).some((n) => n.title === "Call the insurer"), "and come back when access is restored");
 });
 
 const BASE = process.env.TEST_BASE_URL ?? "http://localhost:3100";
@@ -1737,4 +1745,62 @@ test("deactivating an account revokes access immediately, even with a live sessi
   // The last admin can't lock themselves out.
   const me = await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } });
   assert.equal((await admin.patch(`/api/admin/users/${me.id}`, { isActive: false })).status, 400);
+});
+
+test("security: stolen sessions die on reset, sign-in is throttled, public forms don't expose people, viewers can't log time", async () => {
+  // Session revocation: an admin password reset kills every existing cookie of that account.
+  const before = await outsider.get("/api/workspaces");
+  assert.equal(before.status, 200);
+  const reset = await admin.patch<{ temporaryPassword: string }>(`/api/admin/users/${s.outsiderId}`, { resetPassword: true });
+  assert.equal(reset.status, 200);
+  assert.equal((await outsider.get("/api/workspaces")).status, 401, "the old cookie no longer works");
+  assert.ok(await outsider.login("outsider@integration.test", reset.body.temporaryPassword));
+  assert.equal((await outsider.post("/api/account/password", { currentPassword: reset.body.temporaryPassword, newPassword: "Outsider456" })).status, 200);
+
+  // Sign-in throttling is per account and shared by all instances (database counters).
+  const victim = new Client();
+  assert.equal((await victim.post("/api/register", { email: "throttle@integration.test", password: "Throttle123", name: "Throttle" })).status, 201);
+  for (let i = 0; i < 10; i++) assert.equal(await victim.login("throttle@integration.test", `wrong-${i}`), false);
+  assert.equal(await victim.login("throttle@integration.test", "Throttle123"), false, "even the right password waits once the account is throttled");
+  assert.ok(await prisma.activityLog.findFirst({ where: { action: "sign_in_throttled" } }), "throttling is audit-logged");
+  assert.ok(await prisma.activityLog.findFirst({ where: { action: "sign_in_failed", ip: { not: null } } }), "failed sign-ins carry the client address");
+  await prisma.rateLimit.deleteMany({ where: { key: { startsWith: "login-" } } });
+  assert.ok(await victim.login("throttle@integration.test", "Throttle123"));
+
+  // Public forms: no people fields, no staff list, anonymous submissions rate limited.
+  const view = await prisma.view.create({ data: { projectId: s.project, name: "Public intake", type: "form", isPublic: true, config: {} } });
+  const anon = new Client();
+  const form = await anon.get<{ fields: { id: string; type: string }[]; members: unknown[] }>(`/api/public/forms/${view.id}`);
+  assert.equal(form.status, 200);
+  assert.deepEqual(form.body.members, [], "the member list is never published");
+  assert.ok(form.body.fields.length > 0 && !form.body.fields.some((f) => f.type === "person" || f.type === "people"), "people fields are not offered anonymously");
+  const sub = await anon.post(`/api/public/forms/${view.id}`, { data: { sys_title: "From the internet", sys_assignees: [s.contributorId] } });
+  assert.equal(sub.status, 201);
+  const created = await prisma.task.findFirstOrThrow({ where: { title: "From the internet" }, include: { assignees: true } });
+  assert.equal(created.assignees.length, 0, "strangers can't assign (and notify) staff");
+  let limited = 0;
+  for (let i = 0; i < 12; i++) if ((await anon.post(`/api/public/forms/${view.id}`, { data: { sys_title: `Spam ${i}` } })).status === 429) limited++;
+  assert.ok(limited >= 2, "anonymous submissions are rate limited");
+
+  // Focus: a viewer may keep a personal focus record but can't add time to someone's task.
+  const t = await prisma.task.findFirstOrThrow({ where: { projectId: s.project, deletedAt: null }, select: { id: true, actualMinutes: true } });
+  const f = await viewer.post<{ id: string }>(`/api/tasks/${t.id}/focus`, {});
+  assert.equal(f.status, 201);
+  await prisma.focusSession.update({ where: { id: f.body.id }, data: { elapsedSeconds: 600, resumedAt: null, status: "paused" } });
+  assert.equal((await viewer.patch(`/api/focus/${f.body.id}`, { action: "complete" })).status, 200);
+  assert.equal((await prisma.task.findUniqueOrThrow({ where: { id: t.id } })).actualMinutes, t.actualMinutes, "actual time unchanged");
+  assert.equal((await viewer.patch(`/api/focus/${f.body.id}`, { action: "complete", completeTask: true })).status, 400, "ended sessions can't be reused");
+
+  // Security headers on every page.
+  const page = await fetch(`${BASE}/`);
+  assert.equal(page.headers.get("x-content-type-options"), "nosniff");
+  assert.match(page.headers.get("content-security-policy") ?? "", /frame-ancestors 'self'/);
+  assert.equal(page.headers.get("x-powered-by"), null);
+  const health = await fetch(`${BASE}/api/health`);
+  assert.equal(health.status, 200);
+  assert.deepEqual(Object.keys(await health.json()).sort(), ["db", "ms", "status"]);
+
+  // The audit log can't be edited or deleted, even with the app's database credentials.
+  const row = await prisma.activityLog.findFirstOrThrow();
+  await assert.rejects(prisma.activityLog.delete({ where: { id: row.id } }), /append-only/);
 });

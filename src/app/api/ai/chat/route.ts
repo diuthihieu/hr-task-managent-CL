@@ -71,7 +71,7 @@ export const POST = route(async (req) => {
   // Ask the model first: if Gemini is unavailable nothing is saved, so a retry
   // doesn't leave empty chats or duplicate questions behind.
   const usage: Usage = { tokensIn: null, tokensOut: null };
-  const chunks = await streamGenerate({ system, contents, temperature: body.kind === "wiki" ? 0.3 : 0.2 }, usage, req.signal);
+  const chunks = await streamGenerate({ workspaceId, system, contents, temperature: body.kind === "wiki" ? 0.3 : 0.2 }, usage, req.signal);
 
   if (!conversationId) {
     const c = await prisma.aiConversation.create({ data: { workspaceId, wikiId, userId: user.id, kind: body.kind, title: body.message.replace(/\s+/g, " ").slice(0, 120) } });

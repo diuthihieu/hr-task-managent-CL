@@ -14,7 +14,7 @@ export const maxDuration = 120;
 export const POST = route<P>(async (req, { params }) => {
   const { workspaceId } = await params;
   const { user, access, base } = await brainContext(workspaceId);
-  assertAi(user.id);
+  await assertAi(user.id);
   const { week } = z.object({ week: z.string().nullable().optional() }).parse(await readJson(req));
   const w = await weeklyReview(access, base, weekStartOf(week ?? null));
   const list = (t: string, xs: { title: string }[]) => `${t} (${xs.length}):\n${xs.map((x) => `- ${x.title}`).join("\n") || "(none)"}`;
@@ -37,7 +37,7 @@ export const POST = route<P>(async (req, { params }) => {
     data,
     responseName: "weekly",
   });
-  const r = await generateJson<Record<string, unknown>>(system);
+  const r = await generateJson<Record<string, unknown>>(workspaceId, system);
   const reflection = { headline: str(r.headline, 300), wins: strList(r.wins, 6), knowledge: strList(r.knowledge, 6), openLoops: strList(r.openLoops, 8), automation: strList(r.automation, 6), nextWeek: strList(r.nextWeek, 6) };
   const t = makeT(user.locale === "en" ? "en" : "vi");
   const sec = (k: "wins" | "knowledge" | "openLoops" | "automation" | "nextWeek") => `## ${t(`brain.weekly.sec.${k}`)}\n${reflection[k].map((x) => `- ${x}`).join("\n") || "-"}`;

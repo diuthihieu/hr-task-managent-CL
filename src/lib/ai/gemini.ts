@@ -22,6 +22,19 @@ export interface GenerateOptions {
   maxOutputTokens?: number;
   /** Ask for a JSON response (application/json). */
   json?: boolean;
+  /**
+   * Workspace whose content is sent. Required: AI only runs where a workspace
+   * admin switched it on. `null` only for content-free platform checks.
+   */
+  workspaceId: string | null;
+}
+
+/** Workspace admins opt in to AI (it sends workspace content to Google Gemini). */
+export async function assertWorkspaceAi(workspaceId: string | null) {
+  if (!workspaceId) return;
+  const { prisma } = await import("../prisma");
+  const ws = await prisma.workspace.findUnique({ where: { id: workspaceId }, select: { aiEnabled: true } });
+  if (!ws?.aiEnabled) throw new HttpError(403, "AI is turned off for this workspace - a workspace admin can switch it on in Settings", "ai_disabled");
 }
 export interface Usage {
   tokensIn: number | null;
@@ -203,6 +216,7 @@ async function failure(res: Response, model: string): Promise<HttpError> {
 
 /** One-shot generation (used for document text extraction). */
 export async function generate(opts: GenerateOptions): Promise<{ text: string; model: string } & Usage> {
+  await assertWorkspaceAi(opts.workspaceId);
   const { res, model } = await callWithFallback("generateContent", requestInit(opts));
   const body = (await res.json()) as GeminiResponse;
   if (body.promptFeedback?.blockReason) throw new HttpError(400, `The AI declined this request (${body.promptFeedback.blockReason})`);
@@ -211,6 +225,7 @@ export async function generate(opts: GenerateOptions): Promise<{ text: string; m
 
 /** Streaming generation: yields text chunks; `usage` is filled in when the stream ends. */
 export async function streamGenerate(opts: GenerateOptions, usage: Usage, signal?: AbortSignal): Promise<AsyncGenerator<string>> {
+  await assertWorkspaceAi(opts.workspaceId);
   const { res } = await callWithFallback("streamGenerateContent", { ...requestInit(opts), signal });
   if (!res.body) throw new HttpError(502, "The AI service returned an empty response");
   const reader = res.body.getReader();

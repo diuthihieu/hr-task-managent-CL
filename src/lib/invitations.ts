@@ -3,7 +3,7 @@ import { randomBytes } from "crypto";
 import type { Prisma, WorkspaceRole } from "@prisma/client";
 import { prisma } from "./prisma";
 import { logActivity } from "./activity";
-import { badRequest, forbidden, notFound } from "./http-errors";
+import { HttpError, badRequest, forbidden, notFound } from "./http-errors";
 
 type Tx = Prisma.TransactionClient;
 
@@ -30,8 +30,10 @@ export async function createInvitations(
   const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * 86400_000);
   const results: { email: string; status: "invited" | "already_member" | "reinvited"; invitationId?: string; token?: string; hasAccount: boolean }[] = [];
   for (const raw of [...new Set(opts.emails.map((e) => e.trim().toLowerCase()))]) {
-    const account = await tx.user.findFirst({ where: { email: raw, deletedAt: null }, select: { id: true, isActive: true } });
-    if (account && (await tx.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: opts.workspaceId, userId: account.id } } }))) {
+    const found = await tx.user.findFirst({ where: { email: raw, deletedAt: null }, select: { id: true, isActive: true, emailVerifiedAt: true } });
+    // An unverified account with this email may belong to someone else: it only gets the invitation after verifying.
+    const account = found?.emailVerifiedAt ? found : null;
+    if (found && (await tx.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: opts.workspaceId, userId: found.id } } }))) {
       results.push({ email: raw, status: "already_member", hasAccount: true });
       continue;
     }
@@ -43,7 +45,7 @@ export async function createInvitations(
         });
     if (account?.isActive) await notifyInvitee(tx, inv.id, account.id);
     await logActivity(tx, { workspaceId: opts.workspaceId, actorId: opts.invitedById, entityType: "member", entityId: inv.id, action: "created", summary: `Invited ${raw} as ${opts.role} to ${ws.name}` });
-    results.push({ email: raw, status: existing ? "reinvited" : "invited", invitationId: inv.id, token: inv.token, hasAccount: !!account });
+    results.push({ email: raw, status: existing ? "reinvited" : "invited", invitationId: inv.id, token: inv.token, hasAccount: !!found });
   }
   return results;
 }
@@ -68,7 +70,8 @@ async function notifyInvitee(db: Tx | typeof prisma, invitationId: string, userI
 }
 
 /** Links invitations sent to this user's email before they had an account, and makes sure each has a notification. */
-export async function syncInvitations(user: { id: string; email: string }) {
+export async function syncInvitations(user: { id: string; email: string; emailVerifiedAt?: Date | null }) {
+  if (!user.emailVerifiedAt) return;
   const email = user.email.toLowerCase();
   const pending = await prisma.workspaceInvitation.findMany({ where: { ...livePending(), OR: [{ invitedUserId: user.id }, { invitedUserId: null, email }] }, select: { id: true, invitedUserId: true } });
   for (const inv of pending) {
@@ -78,7 +81,8 @@ export async function syncInvitations(user: { id: string; email: string }) {
 }
 
 /** The user's open invitations (for the workspace chooser). */
-export async function pendingInvitationsFor(user: { id: string; email: string }) {
+export async function pendingInvitationsFor(user: { id: string; email: string; emailVerifiedAt?: Date | null }) {
+  if (!user.emailVerifiedAt) return [];
   const rows = await prisma.workspaceInvitation.findMany({
     where: { ...livePending(), OR: [{ invitedUserId: user.id }, { email: user.email.toLowerCase() }] },
     orderBy: { createdAt: "desc" },
@@ -111,10 +115,11 @@ export async function resolveInviteToken(token: string) {
  * Accept or decline. A personal invitation is only for the account with that
  * email; a join link works for anyone signed in. Accepting creates the membership.
  */
-export async function respondToInvite(user: { id: string; email: string; name: string }, token: string, decision: "accept" | "decline") {
+export async function respondToInvite(user: { id: string; email: string; name: string; emailVerifiedAt?: Date | null }, token: string, decision: "accept" | "decline") {
   const target = await resolveInviteToken(token);
   if (!target) throw notFound("Invitation");
   if (target.kind === "invitation" && target.email.toLowerCase() !== user.email.toLowerCase()) throw forbidden(`This invitation was sent to ${target.email}. Sign in with that email to accept it.`);
+  if (target.kind === "invitation" && decision === "accept" && !user.emailVerifiedAt) throw new HttpError(403, "Verify your email address first - check your inbox for the verification link", "email_unverified");
   const already = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: target.workspace.id, userId: user.id } } });
   if (already) return { joined: true, slug: target.workspace.slug, alreadyMember: true };
   if (target.state !== "pending") throw badRequest(target.state === "expired" ? "This invitation has expired - ask for a new one" : "This invitation is no longer valid");

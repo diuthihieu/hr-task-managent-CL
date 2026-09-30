@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { wikiRoleOf, type SessionUser } from "@/lib/authz";
+import { supportAccess, wikiRoleOf, type SessionUser } from "@/lib/authz";
 import type { WorkspaceRole } from "@prisma/client";
 
 /**
@@ -19,7 +19,7 @@ export async function wikiReaders(wikiId: string, workspaceId: string, sourcePro
   const out: { id: string; name: string; email: string; avatarColor: string }[] = [];
   for (const m of members) {
     const role = await wikiRoleOf(m.user as SessionUser, wikiId, m.role as WorkspaceRole);
-    if (hiddenFromPage.has(m.user.id) && m.user.systemRole !== "ADMIN") continue;
+    if (hiddenFromPage.has(m.user.id) && !supportAccess(m.user)) continue;
     if (role) out.push({ id: m.user.id, name: m.user.name, email: m.user.email, avatarColor: m.user.avatarColor });
   }
   return out;

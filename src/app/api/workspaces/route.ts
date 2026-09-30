@@ -1,14 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, route, readJson, badRequest } from "@/lib/authz";
+import { requireUser, route, readJson, badRequest, supportAccess } from "@/lib/authz";
 import { createWorkspace } from "@/lib/workspace-setup";
 import { nameSchema } from "@/lib/validation";
 
-/** Workspaces the caller can open (system admins see all). */
+/** Workspaces the caller can open (all of them only in break-glass support mode). */
 export const GET = route(async () => {
   const user = await requireUser();
-  if (user.systemRole === "ADMIN") {
+  if (supportAccess(user)) {
     const all = await prisma.workspace.findMany({ where: { deletedAt: null }, orderBy: { createdAt: "asc" } });
     return NextResponse.json(all.map((w) => ({ id: w.id, name: w.name, slug: w.slug, role: "owner" })));
   }

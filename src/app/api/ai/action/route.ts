@@ -32,7 +32,7 @@ export const POST = route(async (req) => {
   const user = await requireUser();
   const body = schema.parse(await readJson(req));
   if (!aiConfigured()) throw new HttpError(503, "AI is not configured on this server (GEMINI_API_KEY missing)");
-  if (!rateLimit(`ai-action:${user.id}`, 30, 10 * 60_000)) throw new HttpError(429, "Too many AI actions - please wait a few minutes");
+  if (!(await rateLimit(`ai-action:${user.id}`, 30, 10 * 60_000))) throw new HttpError(429, "Too many AI actions - please wait a few minutes");
 
   const kind = body.action.split("_")[0];
   let workspaceId: string;
@@ -74,7 +74,7 @@ export const POST = route(async (req) => {
   const contents = [{ role: "user" as const, parts: [{ text: body.note || "Go." }] }];
 
   if (STRUCTURED_ACTIONS.has(body.action)) {
-    const r = await generate({ system, contents, temperature: 0.2, json: true, maxOutputTokens: 4096 });
+    const r = await generate({ workspaceId, system, contents, temperature: 0.2, json: true, maxOutputTokens: 4096 });
     const parsed = parseJsonAnswer<{ items?: { title?: unknown; estimateHours?: unknown; note?: unknown }[] }>(r.text);
     const items = (parsed?.items ?? [])
       .filter((i) => typeof i.title === "string" && i.title.trim())
@@ -85,7 +85,7 @@ export const POST = route(async (req) => {
   }
 
   const usage: Usage = { tokensIn: null, tokensOut: null };
-  const chunks = await streamGenerate({ system, contents, temperature: 0.3 }, usage, req.signal);
+  const chunks = await streamGenerate({ workspaceId, system, contents, temperature: 0.3 }, usage, req.signal);
   const encoder = new TextEncoder();
   return new Response(
     new ReadableStream<Uint8Array>({

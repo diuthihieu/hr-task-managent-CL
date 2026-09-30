@@ -56,7 +56,7 @@ export const POST = route<P>(async (req, { params }) => {
   const raw = await readJson<Record<string, unknown>>(req);
   const body = objectiveSchema.parse({ ...raw, startDate: lenientDateOnly(raw.startDate), endDate: lenientDateOnly(raw.endDate) });
   const objective = await prisma.$transaction(async (tx) => {
-    await assertObjectiveRefs(tx, workspaceId, body);
+    await assertObjectiveRefs(tx, workspaceId, body, undefined, user.id);
     const krOwners = (body.keyResults ?? []).map((k) => k.ownerId).filter((id): id is string => Boolean(id));
     if (krOwners.length) await assertObjectiveRefs(tx, workspaceId, { contributorIds: krOwners });
     const created = await tx.objective.create({

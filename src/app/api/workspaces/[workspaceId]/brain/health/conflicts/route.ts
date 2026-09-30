@@ -17,7 +17,7 @@ export const maxDuration = 120;
 export const POST = route<P>(async (_req, { params }) => {
   const { workspaceId } = await params;
   const { user, access, base } = await brainContext(workspaceId);
-  assertAi(user.id);
+  await assertAi(user.id);
   const pairs = await conflictCandidates(access);
   if (!pairs.length) return NextResponse.json({ checkedPairs: 0, conflicts: [] });
   const data = pairs
@@ -30,7 +30,7 @@ export const POST = route<P>(async (_req, { params }) => {
     data,
     responseName: "conflicts",
   });
-  const r = await generateJson<{ conflicts?: { pair?: unknown; issue?: unknown; quoteA?: unknown; quoteB?: unknown; suggestion?: unknown }[] }>(system);
+  const r = await generateJson<{ conflicts?: { pair?: unknown; issue?: unknown; quoteA?: unknown; quoteB?: unknown; suggestion?: unknown }[] }>(workspaceId, system);
   const conflicts = (Array.isArray(r.conflicts) ? r.conflicts : [])
     .map((c) => ({ c, pair: pairs[Number(c.pair) - 1] }))
     .filter((x) => x.pair && str(x.c.issue))

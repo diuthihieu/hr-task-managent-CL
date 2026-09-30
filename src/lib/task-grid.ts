@@ -15,6 +15,7 @@ import { badRequest } from "./http-errors";
 import { IMPORTANCE_OPTIONS, URGENCY_OPTIONS, PRIORITY_OPTIONS_DEFAULT } from "./field-types";
 import type { FieldRow, RecordRow } from "@/types";
 import { makeT, type MessageKey, type TFunction } from "./i18n/core";
+import { objectiveVisibility } from "./okr-write";
 
 type Tx = Prisma.TransactionClient;
 
@@ -450,13 +451,15 @@ export async function applyTaskPatch(
         if (raw) {
           const [kind, id] = key === SYS.keyResult ? ["kr", raw] : raw.includes(":") ? raw.split(":", 2) : ["obj", raw];
           if (!isUuid(id) || (kind !== "kr" && kind !== "obj")) throw badRequest("Invalid objective");
+          // The actor may only link objectives they can see (not those of projects hidden from them).
+          const visibleObjective = await objectiveVisibility(tx, actorId);
           if (kind === "kr") {
-            const kr = await tx.keyResult.findFirst({ where: { id, deletedAt: null, objective: { workspaceId, deletedAt: null } }, select: { id: true, objectiveId: true } });
+            const kr = await tx.keyResult.findFirst({ where: { id, deletedAt: null, objective: { workspaceId, deletedAt: null, ...visibleObjective } }, select: { id: true, objectiveId: true } });
             if (!kr) throw badRequest("Unknown key result");
             keyResultId = kr.id;
             objectiveId = kr.objectiveId;
           } else {
-            const o = await tx.objective.findFirst({ where: { id, workspaceId, deletedAt: null }, select: { id: true } });
+            const o = await tx.objective.findFirst({ where: { id, workspaceId, deletedAt: null, ...visibleObjective }, select: { id: true } });
             if (!o) throw badRequest("Unknown objective");
             objectiveId = o.id;
           }

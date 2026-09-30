@@ -1,0 +1,19 @@
+# Keep secrets, history and local artifacts out of the Docker build context.
+.env
+.env.*
+!.env.example
+.git
+.github
+.claude
+.next
+node_modules
+desktop/src-tauri/target
+coverage
+*.log
+*.pem
+*.key
+*.p12
+*.pfx
+tsconfig.tsbuildinfo
+tests
+docs

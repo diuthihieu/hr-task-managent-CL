@@ -17,7 +17,7 @@ export const maxDuration = 60;
 export const POST = route<P>(async (_req, { params }) => {
   const { workspaceId } = await params;
   const { user, access, base } = await brainContext(workspaceId);
-  assertAi(user.id);
+  await assertAi(user.id);
   const f = await forYou(access, base);
   const tasks = await prisma.task.findMany({
     where: { id: { in: f.myTasks.map((t) => t.id) } },
@@ -37,7 +37,7 @@ export const POST = route<P>(async (_req, { params }) => {
     data,
     responseName: "insights",
   });
-  const r = await generateJson<{ insights?: { title?: unknown; detail?: unknown; action?: unknown }[] }>(system);
+  const r = await generateJson<{ insights?: { title?: unknown; detail?: unknown; action?: unknown }[] }>(workspaceId, system);
   const insights = (Array.isArray(r.insights) ? r.insights : []).map((i) => ({ title: str(i.title, 160), detail: str(i.detail, 500), action: str(i.action, 300) })).filter((i) => i.title).slice(0, 5);
   return NextResponse.json({ insights });
 });

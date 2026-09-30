@@ -16,7 +16,7 @@ export const maxDuration = 60;
 export const POST = route<P>(async (req, { params }) => {
   const { workspaceId } = await params;
   const { user } = await recoContext(workspaceId, { sync: false });
-  assertAi(user.id, "kudos");
+  await assertAi(user.id, "kudos");
   const body = z.object({ toId: uuid, reason: z.string().trim().max(1500).default(""), style: z.enum(KUDOS_STYLES).default("gratitude") }).parse(await readJson(req));
   const to = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId: body.toId } }, select: { user: { select: { name: true } } } });
   if (!to) throw badRequest("Unknown receiver");
@@ -28,6 +28,6 @@ export const POST = route<P>(async (req, { params }) => {
     data: `WHAT THEY DID (sender's words): ${body.reason || "(not given - use the history)"}\n\nOUR WORK TOGETHER (last 90 days):\n${ctx.text}`,
     responseName: "kudos",
   });
-  const r = await generateJson<{ title?: unknown; message?: unknown; reasons?: unknown }>(system);
+  const r = await generateJson<{ title?: unknown; message?: unknown; reasons?: unknown }>(workspaceId, system);
   return NextResponse.json({ title: nfc(str(r.title, 200)), message: nfc(str(r.message, 4000)), reasons: strList(r.reasons, 3, 200).map(nfc), facts: ctx.facts });
 });

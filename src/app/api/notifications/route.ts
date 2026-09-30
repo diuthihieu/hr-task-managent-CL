@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, route } from "@/lib/authz";
+import { hiddenProjectIds, requireUser, route } from "@/lib/authz";
 import { generateReminders } from "@/lib/notifications";
 import { syncInvitations } from "@/lib/invitations";
 import { syncPointsIfStale } from "@/lib/recognition/points";
@@ -22,7 +22,16 @@ export const GET = route(async (req) => {
   const url = new URL(req.url);
   const now = new Date();
   const view = url.searchParams.get("view") ?? "all";
-  const live = { OR: [{ workspaceId: null }, { workspace: { deletedAt: null } }] };
+  // Only what the user may still see: workspaces they belong to (invitations excepted,
+  // they come before membership) and projects not hidden from them. Access removed
+  // later hides older notifications too, instead of leaking titles, names and links.
+  const hidden = [...(await hiddenProjectIds(user))];
+  const live = {
+    AND: [
+      { OR: [{ workspaceId: null }, { type: { in: ["workspace_invite", "workspace_invite_result"] }, workspace: { deletedAt: null } }, { workspace: { deletedAt: null, members: { some: { userId: user.id } } } }] },
+      ...(hidden.length ? [{ OR: [{ projectId: null }, { projectId: { notIn: hidden } }] }] : []),
+    ],
+  };
   const notSnoozed = { OR: [{ snoozedUntil: null }, { snoozedUntil: { lte: now } }] };
   const where = {
     userId: user.id,

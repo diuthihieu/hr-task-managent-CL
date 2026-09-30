@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfDashboard } from "@/lib/authz";
 import { serializeWidget } from "@/lib/dashboard-serialize";
+import { assertWidgetSource } from "@/lib/dashboard-data";
 
 type P = { dashboardId: string };
 
@@ -18,8 +19,9 @@ const widgetSchema = z.object({
 export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { dashboardId } = await params;
-  await requireWorkspaceRole(user, await workspaceOfDashboard(dashboardId), "editor");
+  const ctx = await requireWorkspaceRole(user, await workspaceOfDashboard(dashboardId), "editor");
   const body = widgetSchema.parse(await readJson(req));
+  if (body.config) await assertWidgetSource(user, ctx.workspaceId, body.config);
   const existing = await prisma.dashboardWidget.findMany({ where: { dashboardId }, select: { y: true, h: true } });
   // Stack new widgets below the tallest existing one so they never overlap.
   const maxY = existing.reduce((m, b) => Math.max(m, b.y + b.h), 0);

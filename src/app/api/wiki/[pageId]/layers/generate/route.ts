@@ -16,8 +16,8 @@ export const maxDuration = 120;
 export const POST = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { pageId } = await params;
-  await requireWorkspaceRole(user, await workspaceOfWikiPage(pageId), "viewer");
-  assertAi(user.id);
+  const ctx = await requireWorkspaceRole(user, await workspaceOfWikiPage(pageId), "viewer");
+  await assertAi(user.id);
   const [page, layer] = await Promise.all([
     prisma.wikiPage.findUniqueOrThrow({ where: { id: pageId }, select: { title: true, content: true, updatedAt: true, status: true, version: true } }),
     prisma.knowledgeLayer.findUnique({ where: { pageId }, select: { highlights: true } }),
@@ -35,7 +35,7 @@ export const POST = route<P>(async (_req, { params }) => {
     data,
     responseName: "layers",
   });
-  const r = await generateJson<{ keyPoints?: unknown; summary?: unknown; insights?: unknown }>(system);
+  const r = await generateJson<{ keyPoints?: unknown; summary?: unknown; insights?: unknown }>(ctx.workspaceId, system);
   return NextResponse.json({
     keyPoints: strList(r.keyPoints, 12).map((k) => `- ${k}`).join("\n"),
     summary: str(r.summary, 3000),

@@ -6,6 +6,7 @@ import { logActivity } from "@/lib/activity";
 import { recoContext } from "@/lib/recognition/route-helpers";
 import { pointRules, requireRecognitionManager } from "@/lib/recognition/points";
 import { POINT_ACTIONS } from "@/lib/recognition/core";
+import { supportAccess } from "@/lib/authz";
 
 type P = { workspaceId: string };
 
@@ -24,7 +25,7 @@ export const GET = route<P>(async (_req, { params }) => {
     enabled: settings.enabled,
     membersSeePoints: settings.membersSeePoints,
     pointsSince: settings.pointsSince?.toISOString().slice(0, 10) ?? null,
-    canDelegate: ctx.role === "admin" || ctx.role === "owner" || user.systemRole === "ADMIN",
+    canDelegate: ctx.role === "admin" || ctx.role === "owner" || supportAccess(user),
     rules: POINT_ACTIONS.map((a) => ({ action: a, ...rules[a] })),
     members: members.map((m) => ({
       ...m.user,

@@ -83,7 +83,7 @@ export const POST = route<P>(async (req, { params }) => {
       const blob = await openAttachment(f.url, f.storageProvider);
       if (!blob) continue;
       const buf = Buffer.from(await new Response(blob.stream).arrayBuffer());
-      const text = (await extractBufferText(f.fileName, buf)).slice(0, MAX_DOC_CHARS);
+      const text = (await extractBufferText(f.fileName, buf, ctx.workspaceId)).slice(0, MAX_DOC_CHARS);
       await prisma.attachment.update({ where: { id: f.id }, data: { extractedText: text } });
     } catch (e) {
       console.warn("[wiki-comment] could not extract", f.fileName, e instanceof Error ? e.message : e);

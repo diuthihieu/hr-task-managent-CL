@@ -24,7 +24,7 @@ export function AuthCard({ initialMode = "login", callbackUrl = "/workspaces", g
 
   async function doSignIn() {
     const result = await signIn("credentials", { email, password, redirect: false });
-    if (result?.error) throw new Error(t("auth.invalid"));
+    if (result?.error) throw new Error(result.code === "rate_limited" ? t("auth.rateLimited") : t("auth.invalid"));
     // Full navigation: the app renders with the user's own accent / tone,
     // which the (always-orange) landing page's root layout doesn't carry.
     window.location.assign(target);

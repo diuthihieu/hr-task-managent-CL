@@ -20,7 +20,7 @@ export const POST = route(async (req) => {
   const user = await requireUser();
   const body = schema.parse(await readJson(req));
   const ctx = await requireWorkspaceRole(user, body.taskId ? await workspaceOfTask(body.taskId) : await workspaceOfProject(body.projectId!), "viewer");
-  assertAi(user.id);
+  await assertAi(user.id);
   let data: string;
   let label: string;
   if (body.taskId) {
@@ -39,7 +39,7 @@ export const POST = route(async (req) => {
     data,
     responseName: "retro",
   });
-  const r = await generateJson<Record<string, unknown>>(system);
+  const r = await generateJson<Record<string, unknown>>(ctx.workspaceId, system);
   const draft: RetroDraft = {
     title: str(r.title, 200) || `Retrospective: ${label}`,
     retrospective: str(r.retrospective, 6000),

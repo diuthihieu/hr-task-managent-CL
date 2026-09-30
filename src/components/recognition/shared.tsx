@@ -1,5 +1,6 @@
 "use client";
 import { cn, initials } from "@/lib/utils";
+import { AvatarImg } from "@/components/ui/avatar-img";
 
 export interface PersonLite {
   id: string;
@@ -8,13 +9,12 @@ export interface PersonLite {
   hasAvatar?: boolean;
 }
 
+/** Profile picture (upload or initials SVG from the server) over the initials circle, whatever the API returned. */
 export function Avatar({ p, size = 32, className }: { p: PersonLite; size?: number; className?: string }) {
-  return p.hasAvatar ? (
-    // eslint-disable-next-line @next/next/no-img-element -- authorized avatar route
-    <img src={`/api/users/${p.id}/avatar`} alt={p.name} width={size} height={size} className={cn("rounded-full object-cover shrink-0", className)} style={{ width: size, height: size }} />
-  ) : (
-    <span className={cn("rounded-full flex items-center justify-center text-white font-semibold shrink-0", className)} style={{ width: size, height: size, backgroundColor: p.avatarColor ?? "#6366f1", fontSize: Math.max(10, size * 0.36) }}>
+  return (
+    <span className={cn("relative overflow-hidden rounded-full flex items-center justify-center text-white font-semibold shrink-0", className)} style={{ width: size, height: size, backgroundColor: p.avatarColor ?? "#6366f1", fontSize: Math.max(10, size * 0.36) }} title={p.name}>
       {initials(p.name)}
+      <AvatarImg id={p.id} />
     </span>
   );
 }

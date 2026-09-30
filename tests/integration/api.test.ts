@@ -77,6 +77,13 @@ test("admin creates a workspace with default statuses and no categories", async 
   assert.equal((await admin.get(`/api/workspaces/${s.ws}/categories`)).status, 404);
   const owner = await prisma.workspaceMember.findFirstOrThrow({ where: { workspaceId: s.ws } });
   assert.equal(owner.role, "owner", "creator becomes the owner");
+  // AI is opt-in per workspace: nothing is sent to the AI provider until an admin switches it on.
+  const ws0 = await admin.get<{ aiEnabled: boolean }>(`/api/workspaces/${s.ws}`);
+  assert.equal(ws0.body.aiEnabled, false);
+  const off = await admin.post<{ code: string }>(`/api/workspaces/${s.ws}/brain/insights`, {});
+  assert.equal(off.status, 403);
+  assert.equal(off.body.code, "ai_disabled");
+  assert.equal((await admin.patch<{ aiEnabled: boolean }>(`/api/workspaces/${s.ws}`, { aiEnabled: true })).body.aiEnabled, true);
 });
 
 test("owners invite people by email - they join only after accepting; any user can create their own workspaces", async () => {
@@ -92,6 +99,12 @@ test("owners invite people by email - they join only after accepting; any user c
   assert.ok(await contributor.login("contributor@integration.test", "Contrib123"));
   assert.ok(await viewer.login("viewer@integration.test", "Viewer1234"));
   assert.ok(await outsider.login("outsider@integration.test", s.outsiderPw));
+  // A temporary password only opens the "choose a new password" endpoint - every other API refuses.
+  const blocked = await outsider.get<{ code: string }>("/api/workspaces");
+  assert.equal(blocked.status, 403);
+  assert.equal(blocked.body.code, "password_change_required");
+  assert.equal((await outsider.post("/api/account/password", { currentPassword: s.outsiderPw, newPassword: "Outsider123" })).status, 200);
+  assert.equal((await outsider.get("/api/workspaces")).status, 200, "the same device keeps working after its own password change");
 
   // Nobody is added directly: they get an invitation and join only after accepting.
   const inv = await admin.post<{ invitations: { email: string; status: string; url: string; hasAccount: boolean }[] }>(`/api/workspaces/${s.ws}/members`, {
@@ -101,6 +114,16 @@ test("owners invite people by email - they join only after accepting; any user c
   });
   assert.equal(inv.status, 201, JSON.stringify(inv.body));
   assert.deepEqual(inv.body.invitations.map((i) => [i.email, i.status, i.hasAccount]), [["contributor@integration.test", "invited", true], ["viewer@integration.test", "invited", true]]);
+  // Password sign-ups haven't proven they own the address: no email invitation until it is verified.
+  assert.equal((v.body as { verification?: string }).verification, "unavailable", "no mail provider in tests");
+  assert.equal((await viewer.get<{ items: { type: string }[] }>("/api/notifications")).body.items.filter((n) => n.type === "workspace_invite").length, 0, "unverified accounts don't see email invitations");
+  const pendingTok = (await prisma.workspaceInvitation.findFirstOrThrow({ where: { workspaceId: s.ws, email: "viewer@integration.test" } })).token;
+  const unverified = await viewer.post<{ code: string }>(`/api/invite/${pendingTok}`, { decision: "accept" });
+  assert.equal(unverified.status, 403);
+  assert.equal(unverified.body.code, "email_unverified");
+  assert.equal((await contributor.patch(`/api/admin/users/${s.viewerId}`, { verifyEmail: true })).status, 403, "only system admins confirm addresses");
+  for (const id of [s.contributorId, s.viewerId]) assert.equal((await admin.patch(`/api/admin/users/${id}`, { verifyEmail: true })).status, 200);
+  assert.ok((await prisma.user.findUniqueOrThrow({ where: { id: s.viewerId } })).emailVerifiedAt);
   assert.equal(await prisma.workspaceMember.count({ where: { workspaceId: s.ws, userId: s.viewerId } }), 0, "not a member before accepting");
   assert.equal((await viewer.get(`/api/workspaces/${s.ws}`)).status, 404);
   const vNotif = (await viewer.get<{ items: { type: string; link: string }[] }>("/api/notifications")).body.items.find((n) => n.type === "workspace_invite");
@@ -135,7 +158,7 @@ test("owners invite people by email - they join only after accepting; any user c
   s.contributorWs = mine.body.id;
   const list = await contributor.get<{ id: string; role: string }[]>("/api/workspaces");
   assert.deepEqual(list.body.map((w) => w.role).sort(), ["contributor", "owner"]);
-  assert.equal((await admin.get(`/api/workspaces/${s.contributorWs}`)).status, 200, "system admin can still open any workspace for support");
+  assert.equal((await admin.get(`/api/workspaces/${s.contributorWs}`)).status, 404, "system admins see tenant content only as members (support access is break-glass: ADMIN_SUPPORT_ACCESS=1)");
   assert.equal((await viewer.get(`/api/workspaces/${s.contributorWs}`)).status, 404, "others can't see it");
 });
 
@@ -1651,6 +1674,9 @@ test("invite links and invitations for people without an account: accept, declin
   const newbie = new Client();
   assert.equal((await newbie.post("/api/register", { email: "newbie@integration.test", password: "Newbie1234", name: "Nina New" })).status, 201);
   assert.ok(await newbie.login("newbie@integration.test", "Newbie1234"));
+  assert.deepEqual((await newbie.get<unknown[]>("/api/invitations")).body, [], "nothing until the address is verified");
+  const nb = await prisma.user.findUniqueOrThrow({ where: { email: "newbie@integration.test" } });
+  assert.equal((await admin.patch(`/api/admin/users/${nb.id}`, { verifyEmail: true })).status, 200);
   const mine = await newbie.get<{ workspaceName: string; token: string }[]>("/api/invitations");
   assert.deepEqual(mine.body.map((x) => x.workspaceName), ["Invite Co"]);
   assert.ok((await newbie.get<{ items: { type: string }[] }>("/api/notifications")).body.items.some((n) => n.type === "workspace_invite"), "and in the Action Center");
@@ -1671,7 +1697,7 @@ test("invite links and invitations for people without an account: accept, declin
 });
 
 test("members can leave; only owners delete a workspace", async () => {
-  const invited = await admin.post<{ invitations: { url: string }[] }>(`/api/workspaces/${s.contributorWs}/members`, { email: "viewer@integration.test", role: "admin" });
+  const invited = await contributor.post<{ invitations: { url: string }[] }>(`/api/workspaces/${s.contributorWs}/members`, { email: "viewer@integration.test", role: "admin" });
   assert.equal(invited.status, 201);
   assert.equal((await viewer.post(`/api/invite/${invited.body.invitations[0].url.split("/invite/")[1]}`, { decision: "accept" })).status, 200);
   assert.equal((await viewer.del(`/api/workspaces/${s.contributorWs}`)).status, 403, "workspace admins can't delete it");

@@ -8,9 +8,9 @@ import { SCOPE_GUARD } from "../ai/personal";
 // DRAFT: nothing the AI writes is saved until a person accepts it, and no AI
 // output ever replaces a page's own content.
 
-export function assertAi(userId: string, bucket = "brain") {
+export async function assertAi(userId: string, bucket = "brain") {
   if (!aiConfigured()) throw new HttpError(503, "AI is not configured on this server (GEMINI_API_KEY missing)");
-  if (!rateLimit(`ai-${bucket}:${userId}`, 30, 10 * 60_000)) throw new HttpError(429, "Too many AI requests - please wait a few minutes");
+  if (!(await rateLimit(`ai-${bucket}:${userId}`, 30, 10 * 60_000))) throw new HttpError(429, "Too many AI requests - please wait a few minutes");
 }
 
 export function brainSystem(o: { task: string; schema: string; locale: string; data: string; responseName: string }) {
@@ -32,8 +32,8 @@ DATA:
 ${o.data}`;
 }
 
-export async function generateJson<T>(system: string, prompt = "Go."): Promise<T> {
-  const r = await generate({ system, contents: [{ role: "user", parts: [{ text: prompt }] }], temperature: 0.2, json: true, maxOutputTokens: 6144 });
+export async function generateJson<T>(workspaceId: string, system: string, prompt = "Go."): Promise<T> {
+  const r = await generate({ workspaceId, system, contents: [{ role: "user", parts: [{ text: prompt }] }], temperature: 0.2, json: true, maxOutputTokens: 6144 });
   const parsed = parseJsonAnswer<T>(r.text);
   if (!parsed) throw new HttpError(502, "The AI didn't return a usable answer - please try again");
   return parsed;

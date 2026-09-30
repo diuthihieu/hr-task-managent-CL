@@ -21,7 +21,7 @@ export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { workspaceId } = await params;
   const ctx = await requireWorkspaceRole(user, workspaceId, "viewer");
-  assertAi(user.id);
+  await assertAi(user.id);
   const body = schema.parse(await readJson(req));
   const access = await brainAccess(user, workspaceId, ctx.role);
   const ws = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { slug: true, name: true } });
@@ -35,7 +35,7 @@ export const POST = route<P>(async (req, { params }) => {
     data: journalText(j, htmlToText(j.notes)),
     personal: await personalPromptBlock(user.id),
   });
-  const r = await generate({ system, contents: [{ role: "user", parts: [{ text: "Summarize my day." }] }], temperature: 0.3 });
+  const r = await generate({ workspaceId, system, contents: [{ role: "user", parts: [{ text: "Summarize my day." }] }], temperature: 0.3 });
   const date = new Date(`${body.date}T00:00:00Z`);
   await prisma.journalEntry.upsert({
     where: { userId_workspaceId_date: { userId: user.id, workspaceId, date } },

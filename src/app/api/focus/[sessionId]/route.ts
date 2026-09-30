@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, assertCanEditTask, route, readJson, notFound, badRequest, workspaceOfTask } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, assertCanEditTask, route, readJson, notFound, badRequest, forbidden, roleAtLeast, workspaceOfTask } from "@/lib/authz";
 import { applyTaskPatch, SYS } from "@/lib/task-grid";
 import { logActivity } from "@/lib/activity";
 import { notifyTaskPatched } from "@/lib/notifications";
@@ -28,6 +28,12 @@ export const PATCH = route<P>(async (req, { params }) => {
   const body = schema.parse(await readJson(req));
   const s = await prisma.focusSession.findFirst({ where: { id: sessionId, userId: user.id } });
   if (!s) throw notFound("Focus session");
+  // Re-check access on every change: someone removed from the workspace or hidden
+  // from the project can only cancel an old session, never touch the task.
+  const access = await requireWorkspaceRole(user, await workspaceOfTask(s.taskId), "viewer").catch(() => null);
+  if (!access && body.action !== "cancel") throw notFound("Focus session");
+  // Adding focused time to the task needs edit rights on it (viewers keep a personal record only).
+  const canEdit = access && roleAtLeast(access.role, "contributor") ? await assertCanEditTask(access, s.taskId).then(() => true, () => false) : false;
   if ((s.status === "completed" || s.status === "cancelled") && body.action) throw badRequest("This focus session has ended");
   const now = new Date();
   const elapsed = focusElapsed(s, now);
@@ -49,11 +55,12 @@ export const PATCH = route<P>(async (req, { params }) => {
       Object.assign(data, { status: "completed", elapsedSeconds: elapsed, resumedAt: null, endedAt: now });
       const minutes = Math.max(1, Math.round(elapsed / 60));
       const task = await tx.task.findUniqueOrThrow({ where: { id: s.taskId }, select: { actualMinutes: true, projectId: true, workspaceId: true } });
-      await tx.task.update({ where: { id: s.taskId }, data: { actualMinutes: (task.actualMinutes ?? 0) + minutes, updatedById: user.id } });
-      await logActivity(tx, { workspaceId: task.workspaceId, actorId: user.id, entityType: "task", entityId: s.taskId, action: "updated", summary: `Focused ${minutes} min`, changes: { actualMinutes: { from: task.actualMinutes, to: (task.actualMinutes ?? 0) + minutes } } });
+      if (canEdit) {
+        await tx.task.update({ where: { id: s.taskId }, data: { actualMinutes: (task.actualMinutes ?? 0) + minutes, updatedById: user.id } });
+        await logActivity(tx, { workspaceId: task.workspaceId, actorId: user.id, entityType: "task", entityId: s.taskId, action: "updated", summary: `Focused ${minutes} min`, changes: { actualMinutes: { from: task.actualMinutes, to: (task.actualMinutes ?? 0) + minutes } } });
+      }
       if (body.completeTask) {
-        const ctx = await requireWorkspaceRole(user, await workspaceOfTask(s.taskId), "contributor");
-        await assertCanEditTask(ctx, s.taskId);
+        if (!canEdit) throw forbidden("You can't change this task");
         const done = await tx.status.findFirst({ where: { workspaceId: task.workspaceId, category: "done" }, orderBy: { sortOrder: "asc" } });
         if (done) {
           const res = await applyTaskPatch(tx, { taskId: s.taskId, projectId: task.projectId, workspaceId: task.workspaceId, actorId: user.id, data: { [SYS.status]: done.id } });

@@ -224,6 +224,10 @@ model User {
   notifySound        String     @default("chime") @map("notify_sound") @db.VarChar(20)
   /// Ringtone volume, 0-100.
   notifyVolume       Int        @default(70) @map("notify_volume") @db.SmallInt
+  /// Bumped when credentials change or access is revoked; older session cookies stop working.
+  sessionVersion     Int        @default(0) @map("session_version")
+  /// When the user proved they own the email (Google sign-in, verification link, or an admin).
+  emailVerifiedAt    DateTime?  @map("email_verified_at") @db.Timestamptz(6)
   lastLoginAt        DateTime?  @map("last_login_at") @db.Timestamptz(6)
   createdAt          DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt          DateTime   @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -298,6 +302,8 @@ model Workspace {
   /// Workspace logo (PNG/JPEG/WebP, max 256 KB), served by /api/workspaces/[id]/logo and used as the favicon.
   logoData      Bytes?    @map("logo_data")
   logoMimeType  String?   @map("logo_mime_type") @db.VarChar(40)
+  /// Workspace admins must switch AI on: it sends workspace content to the AI provider.
+  aiEnabled     Boolean   @default(false) @map("ai_enabled")
   logoUpdatedAt DateTime? @map("logo_updated_at") @db.Timestamptz(6)
 
   members             WorkspaceMember[]
@@ -715,6 +721,9 @@ model ActivityLog {
   summary     String?
   /// { field: { from, to } } for updates.
   changes     Json?
+  /// Request metadata for security-relevant events (sign-in, credential changes...).
+  ip          String?  @db.VarChar(64)
+  userAgent   String?  @map("user_agent") @db.VarChar(300)
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
@@ -1789,4 +1798,14 @@ model RewardRedemption {
   @@index([workspaceId, status, createdAt(sort: Desc)])
   @@index([userId, status])
   @@map("reward_redemptions")
+}
+
+/// Fixed-window counters shared by every server instance (login, sign-up, public forms, uploads...).
+model RateLimit {
+  key     String   @id @db.VarChar(200)
+  count   Int
+  resetAt DateTime @map("reset_at") @db.Timestamptz(6)
+
+  @@index([resetAt])
+  @@map("rate_limits")
 }

@@ -1,6 +1,17 @@
 import "server-only";
 import { HttpError } from "../http-errors";
 import { generate } from "./gemini";
+import { assertSafeZip, ZipRejected } from "../zip-guard";
+import { readXlsx, sheetToCsv } from "../xlsx-lite";
+
+/** Rejects archive bombs with a clear 400 before any parser expands the file. */
+function guardZip(buf: Buffer) {
+  try {
+    assertSafeZip(buf);
+  } catch (e) {
+    throw new HttpError(400, e instanceof ZipRejected ? e.message : "Could not read this file");
+  }
+}
 
 export const MAX_DOC_BYTES = 4 * 1024 * 1024; // Vercel request body limit is 4.5 MB.
 export const MAX_DOC_CHARS = 300_000;
@@ -18,6 +29,7 @@ export const SUPPORTED_DOC_HINT = "PDF, Word (.docx), Excel (.xlsx/.xls), PowerP
 /** Every slide's text (and speaker notes) of a .pptx, in slide order. */
 export async function pptxSlides(buf: Buffer): Promise<{ n: number; text: string; notes: string }[]> {
   const JSZip = (await import("jszip")).default;
+  guardZip(buf);
   const zip = await JSZip.loadAsync(buf);
   const num = (n: string) => Number(n.match(/(\d+)\.xml$/)?.[1] ?? 0);
   const decode = (x: string) => x.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, "&");
@@ -61,8 +73,9 @@ export function htmlToText(html: string | null | undefined): string {
     .trim();
 }
 
-async function transcribeWithGemini(buf: Buffer, mimeType: string) {
+async function transcribeWithGemini(buf: Buffer, mimeType: string, workspaceId: string) {
   const r = await generate({
+    workspaceId,
     system: "You convert documents to plain text. Output only the document's text content, preserving headings, lists and tables (as Markdown). Do not summarize, translate or add commentary.",
     contents: [{ role: "user", parts: [{ inlineData: { mimeType, data: buf.toString("base64") } }, { text: "Transcribe the full text of this document." }] }],
     temperature: 0,
@@ -72,10 +85,10 @@ async function transcribeWithGemini(buf: Buffer, mimeType: string) {
 }
 
 /** Extract the text of an uploaded reference document. */
-export async function extractDocText(file: File): Promise<string> {
+export async function extractDocText(file: File, workspaceId: string): Promise<string> {
   if (!file.size) throw new HttpError(400, "File is empty");
   if (file.size > MAX_DOC_BYTES) throw new HttpError(413, "File is too large (max 4 MB) - split it or upload the key sections");
-  return extractBufferText(file.name, Buffer.from(await file.arrayBuffer()));
+  return extractBufferText(file.name, Buffer.from(await file.arrayBuffer()), workspaceId);
 }
 
 /** Whether `extractBufferText` understands this file name. */
@@ -84,23 +97,26 @@ export function isExtractable(name: string): boolean {
 }
 
 /** Text of a file already in memory (uploads, stored attachments). */
-export async function extractBufferText(name: string, buf: Buffer): Promise<string> {
+export async function extractBufferText(name: string, buf: Buffer, workspaceId: string): Promise<string> {
   let text: string;
   if (TEXT_EXT.test(name)) text = buf.toString("utf8");
   else if (HTML_EXT.test(name)) text = htmlToText(buf.toString("utf8"));
   else if (DOCX_EXT.test(name)) {
+    guardZip(buf);
     const mammoth = await import("mammoth");
     text = (await mammoth.extractRawText({ buffer: buf })).value;
   } else if (SHEET_EXT.test(name)) {
-    const XLSX = await import("xlsx");
-    const wb = XLSX.read(buf, { type: "buffer" });
-    text = wb.SheetNames.map((s) => `## ${s}\n${XLSX.utils.sheet_to_csv(wb.Sheets[s])}`).join("\n\n");
+    // Legacy binary .xls isn't parsed on the server (no maintained safe parser); .xlsx goes through xlsx-lite.
+    if (/\.xls$/i.test(name)) throw new HttpError(400, "Old .xls files aren't supported - save it as .xlsx and upload again");
+    guardZip(buf);
+    const sheets = await readXlsx(buf);
+    text = sheets.map((sh) => `## ${sh.name}\n${sheetToCsv(sh.rows)}`).join("\n\n");
   } else if (PPTX_EXT.test(name)) text = await pptxText(buf);
-  else if (PDF_EXT.test(name)) text = await transcribeWithGemini(buf, "application/pdf");
+  else if (PDF_EXT.test(name)) text = await transcribeWithGemini(buf, "application/pdf", workspaceId);
   else {
     const ext = name.split(".").pop()?.toLowerCase() ?? "";
     if (!IMAGE_TYPES[ext]) throw new HttpError(400, `Unsupported file type. Use: ${SUPPORTED_DOC_HINT}`);
-    text = await transcribeWithGemini(buf, IMAGE_TYPES[ext]);
+    text = await transcribeWithGemini(buf, IMAGE_TYPES[ext], workspaceId);
   }
   text = text.replace(/\u0000/g, "").trim();
   if (!text) throw new HttpError(400, "No readable text found in this file");

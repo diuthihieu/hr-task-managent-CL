@@ -36,6 +36,7 @@ export type ActivityAction =
   | "unassigned"
   | "status_changed"
   | "password_reset"
+  | "password_changed"
   | "deactivated"
   | "activated"
   | "role_changed"

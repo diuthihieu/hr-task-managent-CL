@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { hiddenProjectIds, type SessionUser } from "@/lib/authz";
+import { HttpError, hiddenProjectIds, type SessionUser } from "@/lib/authz";
 import { mergeFilters, parseBlockConfig, resolveCrossFilterConditions, type CrossFilter, type DashboardBlockConfig } from "@/lib/dashboard-engine";
 import { loadProjectGrid } from "@/lib/task-grid";
 import type { FieldRow, RecordRow } from "@/types";
@@ -51,4 +51,14 @@ export async function loadBlockData(
     records: grid!.records,
     members: memberList,
   };
+}
+
+/** A widget may only point at a project of its own workspace that the author can see. */
+export async function assertWidgetSource(user: SessionUser, workspaceId: string, config: unknown) {
+  const ds = (config as { dataSource?: { projectId?: unknown; viewId?: unknown } } | undefined)?.dataSource;
+  const projectId = typeof ds?.projectId === "string" ? ds.projectId : null;
+  if (!projectId) return;
+  const ok = /^[0-9a-f-]{36}$/i.test(projectId) && (await prisma.project.findFirst({ where: { id: projectId, workspaceId, deletedAt: null }, select: { id: true } }));
+  if (!ok || (await hiddenProjectIds(user)).has(projectId)) throw new HttpError(400, "Unknown data source project");
+  if (typeof ds?.viewId === "string" && !(await prisma.view.findFirst({ where: { id: ds.viewId, projectId }, select: { id: true } }))) throw new HttpError(400, "Unknown data source view");
 }

@@ -29,7 +29,7 @@ export const PATCH = route<P>(async (req, { params }) => {
   const raw = await readJson<Record<string, unknown>>(req);
   const body = objectiveSchema.partial().parse({ ...raw, startDate: lenientDateOnly(raw.startDate), endDate: lenientDateOnly(raw.endDate) });
   const objective = await prisma.$transaction(async (tx) => {
-    await assertObjectiveRefs(tx, ctx.workspaceId, body, objectiveId);
+    await assertObjectiveRefs(tx, ctx.workspaceId, body, objectiveId, user.id);
     const before = await tx.objective.findUniqueOrThrow({ where: { id: objectiveId } });
     if (body.contributorIds) {
       await tx.objectiveContributor.deleteMany({ where: { objectiveId } });

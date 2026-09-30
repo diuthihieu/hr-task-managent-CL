@@ -7,8 +7,11 @@ import { workspaceRoleSchema } from "@/lib/validation";
 
 type P = { workspaceId: string; userId: string };
 
-async function assertKeepsAnOwner(workspaceId: string, userId: string) {
-  const others = await prisma.workspaceMember.count({ where: { workspaceId, role: "owner", userId: { not: userId } } });
+type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+/** Checked inside the change's transaction under a per-workspace lock, so concurrent removals can't drop the last owner. */
+async function assertKeepsAnOwner(tx: Tx, workspaceId: string, userId: string) {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"ws-owners:" + workspaceId}))`;
+  const others = await tx.workspaceMember.count({ where: { workspaceId, role: "owner", userId: { not: userId } } });
   if (others === 0) throw badRequest("A workspace needs at least one owner");
 }
 
@@ -20,8 +23,8 @@ export const PATCH = route<P>(async (req, { params }) => {
   const target = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId } } });
   if (!target) throw notFound("Member");
   if ((role === "owner" || target.role === "owner") && ctx.role !== "owner") throw forbidden("Only owners can grant or remove the owner role");
-  if (target.role === "owner" && role !== "owner") await assertKeepsAnOwner(workspaceId, userId);
   const updated = await prisma.$transaction(async (tx) => {
+    if (target.role === "owner" && role !== "owner") await assertKeepsAnOwner(tx, workspaceId, userId);
     const m = await tx.workspaceMember.update({
       where: { workspaceId_userId: { workspaceId, userId } },
       data: { role },
@@ -44,9 +47,9 @@ export const DELETE = route<P>(async (_req, { params }) => {
   if (!target) throw notFound("Member");
   if (target.role === "owner") {
     if (ctx.role !== "owner" && userId !== user.id) throw forbidden("Only owners can remove an owner");
-    await assertKeepsAnOwner(workspaceId, userId);
   }
   await prisma.$transaction(async (tx) => {
+    if (target.role === "owner") await assertKeepsAnOwner(tx, workspaceId, userId);
     // Unassign from this workspace's tasks, then drop the membership.
     await tx.taskAssignee.deleteMany({ where: { userId, task: { workspaceId } } });
     await tx.taskReportRecipient.deleteMany({ where: { userId, task: { workspaceId } } });

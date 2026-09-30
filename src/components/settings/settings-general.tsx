@@ -10,6 +10,7 @@ import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
 import { SettingsSection } from "./settings-shell";
 import { WorkspaceLogoEditor } from "./workspace-logo-editor";
+import { Switch } from "@/components/ui/misc";
 
 interface WorkspaceDetail {
   id: string;
@@ -18,6 +19,7 @@ interface WorkspaceDetail {
   logoUrl: string | null;
   createdAt: string;
   role: string;
+  aiEnabled: boolean;
 }
 
 export function SettingsGeneral({ workspaceId, workspaceSlug, currentUserRole }: { workspaceId: string; workspaceSlug: string; currentUserRole: string }) {
@@ -91,6 +93,29 @@ export function SettingsGeneral({ workspaceId, workspaceSlug, currentUserRole }:
         <div>
           <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("set.yourRole")}</label>
           <p className="text-sm text-neutral-600 dark:text-neutral-300">{t(`role.${detail.role}` as MessageKey)}</p>
+        </div>
+        <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-4" data-testid="settings-ai">
+          <div className="flex items-start gap-3">
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold">{t("set.ai.title")}</h3>
+              <p className="text-xs text-neutral-500 mt-1 leading-relaxed">{t("set.ai.desc")}</p>
+            </div>
+            <Switch
+              checked={detail.aiEnabled}
+              onCheckedChange={async (v) => {
+                if (!canEdit) return;
+                if (v && !confirm(t("set.ai.confirm"))) return;
+                try {
+                  await api.patch(`/api/workspaces/${workspaceId}`, { aiEnabled: v });
+                  setDetail((d) => (d ? { ...d, aiEnabled: v } : d));
+                  toast.success(v ? t("set.ai.on") : t("set.ai.off"));
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : t("common.failed"));
+                }
+              }}
+            />
+          </div>
+          {!canEdit && <p className="text-[11px] text-neutral-400 mt-2">{t("set.ai.adminOnly")}</p>}
         </div>
         {!canEdit && <p className="text-xs text-neutral-400">{t("set.renameOnly")}</p>}
         {currentUserRole === "owner" && (

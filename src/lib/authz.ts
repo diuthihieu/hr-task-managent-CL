@@ -6,7 +6,10 @@
 //   takes effect immediately, not when the JWT expires.
 // - Every resource is resolved to its workspace, then the caller's role in
 //   that workspace is checked against the minimum role the action needs.
-// - System ADMINs act as workspace owners everywhere (support/break-glass).
+// - System ADMINs manage the platform (accounts, releases) but see tenant
+//   content only through their own memberships. Support access to other
+//   workspaces is break-glass: it needs ADMIN_SUPPORT_ACCESS=1 on the server
+//   (set temporarily) and every workspace opened that way is audit-logged.
 
 import { NextResponse } from "next/server";
 import { Prisma, type SystemRole, type WorkspaceRole } from "@prisma/client";
@@ -25,22 +28,32 @@ export interface SessionUser {
   mustChangePassword: boolean;
   avatarColor: string;
   locale: string;
+  emailVerifiedAt: Date | null;
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
   const session = await auth();
-  const id = (session?.user as { id?: string } | undefined)?.id;
-  if (!id) return null;
+  const su = session?.user as { id?: string; sv?: number } | undefined;
+  if (!su?.id) return null;
   const user = await prisma.user.findFirst({
-    where: { id, isActive: true, deletedAt: null },
-    select: { id: true, email: true, name: true, systemRole: true, mustChangePassword: true, avatarColor: true, locale: true },
+    where: { id: su.id, isActive: true, deletedAt: null },
+    select: { id: true, email: true, name: true, systemRole: true, mustChangePassword: true, avatarColor: true, locale: true, sessionVersion: true, emailVerifiedAt: true },
   });
-  return user;
+  // A cookie issued before the last password change / reset / revocation is dead.
+  if (!user || user.sessionVersion !== (su.sv ?? 0)) return null;
+  const { sessionVersion: _sv, ...rest } = user;
+  void _sv;
+  return rest;
 }
 
-export async function requireUser(): Promise<SessionUser> {
+/**
+ * The signed-in user. Accounts that still have to replace a temporary password
+ * can only reach the endpoints that let them do that (`allowPasswordChange`).
+ */
+export async function requireUser(opts: { allowPasswordChange?: boolean } = {}): Promise<SessionUser> {
   const user = await getSessionUser();
   if (!user) throw unauthorized();
+  if (user.mustChangePassword && !opts.allowPasswordChange) throw new HttpError(403, "Choose a new password before continuing", "password_change_required");
   return user;
 }
 
@@ -48,6 +61,11 @@ export async function requireAdmin(): Promise<SessionUser> {
   const user = await requireUser();
   if (user.systemRole !== "ADMIN") throw forbidden("Admin only");
   return user;
+}
+
+/** Break-glass support mode: system admins act as owners everywhere while ADMIN_SUPPORT_ACCESS=1. */
+export function supportAccess(user: Pick<SessionUser, "systemRole">): boolean {
+  return user.systemRole === "ADMIN" && process.env.ADMIN_SUPPORT_ACCESS === "1";
 }
 
 const ROLE_RANK: Record<WorkspaceRole, number> = { viewer: 0, contributor: 1, editor: 2, admin: 3, owner: 4 };
@@ -61,7 +79,14 @@ export function roleAtLeast(role: WorkspaceRole | null | undefined, min: Workspa
 export async function effectiveRole(user: SessionUser, workspaceId: string): Promise<WorkspaceRole | null> {
   const workspace = await prisma.workspace.findFirst({ where: { id: workspaceId, deletedAt: null }, select: { id: true } });
   if (!workspace) return null;
-  if (user.systemRole === "ADMIN") return "owner";
+  if (supportAccess(user)) {
+    // One audit entry per admin, workspace and day.
+    const { rateLimit } = await import("./rate-limit");
+    if (await rateLimit(`support-access:${user.id}:${workspaceId}`, 1, 24 * 3600_000)) {
+      await prisma.activityLog.create({ data: { workspaceId, actorId: user.id, entityType: "workspace", entityId: workspaceId, action: "support_access", summary: `System admin ${user.email} opened this workspace with support access` } }).catch(() => {});
+    }
+    return "owner";
+  }
   const m = await prisma.workspaceMember.findUnique({
     where: { workspaceId_userId: { workspaceId, userId: user.id } },
     select: { role: true },
@@ -89,23 +114,23 @@ export interface Scope {
   sourceProjectIds?: string[];
 }
 
-/** True when a project's creator/admin hid it from this user. System admins are never hidden. */
+/** True when a project's creator/admin hid it from this user (not in break-glass support mode). */
 export async function isProjectHiddenFrom(user: SessionUser, projectId: string): Promise<boolean> {
-  if (user.systemRole === "ADMIN") return false;
+  if (supportAccess(user)) return false;
   const row = await prisma.projectHiddenMember.findUnique({ where: { projectId_userId: { projectId, userId: user.id } }, select: { projectId: true } });
   return !!row;
 }
 
 /** Ids of projects hidden from this user (empty for system admins). */
 export async function hiddenProjectIds(user: SessionUser): Promise<Set<string>> {
-  if (user.systemRole === "ADMIN") return new Set();
+  if (supportAccess(user)) return new Set();
   const rows = await prisma.projectHiddenMember.findMany({ where: { userId: user.id }, select: { projectId: true } });
   return new Set(rows.map((r) => r.projectId));
 }
 
 /** Prisma filter for "projects this user may see" — combine into every project/task listing. */
 export function visibleProjectWhere(user: SessionUser) {
-  return user.systemRole === "ADMIN" ? {} : { hiddenMembers: { none: { userId: user.id } } };
+  return supportAccess(user) ? {} : { hiddenMembers: { none: { userId: user.id } } };
 }
 
 /**
@@ -236,7 +261,7 @@ export async function requireWiki(user: SessionUser, wikiId: string, min: WikiRo
 
 /** Prisma filter for "wikis this user may open" in a workspace where they have `role`. */
 export function visibleWikiWhere(user: SessionUser, role: WorkspaceRole) {
-  if (user.systemRole === "ADMIN" || roleAtLeast(role, "admin")) return { deletedAt: null };
+  if (supportAccess(user) || roleAtLeast(role, "admin")) return { deletedAt: null };
   return { deletedAt: null, OR: [{ access: "workspace" as const }, { createdById: user.id }, { members: { some: { userId: user.id } } }] };
 }
 
@@ -297,7 +322,7 @@ const CONSTRAINT_MESSAGES: Record<string, string> = {
 const TRIGGER_MESSAGE = /(task (?:project|status|category|key result|objective) must belong to the task (?:workspace|project|objective)|parent (?:page|task) must belong to the same project|parent key result must belong to another objective in the workspace|assignee must be a member of the task workspace|custom field must be defined on the task project|option does not belong to this custom field|dependent tasks must belong to the same workspace|report recipient must be a member of the task workspace|hidden member must be a member of the project workspace|project must belong to the same workspace|wiki must belong to the same workspace|wiki member must be a member of the wiki workspace|wiki page must belong to a wiki of its workspace|parent page must belong to the same wiki|focus session task must belong to the session workspace|wiki comment page must belong to the comment workspace|wiki comment reply must be on the same page as its parent|wiki comment attachment must be on the comment page|approval task must belong to the approval workspace|approver must be a member of the task workspace)/;
 
 export function errorResponse(e: unknown): Response {
-  if (e instanceof HttpError) return NextResponse.json({ error: e.message }, { status: e.status });
+  if (e instanceof HttpError) return NextResponse.json(e.code ? { error: e.message, code: e.code } : { error: e.message }, { status: e.status });
   if (e instanceof ZodError) {
     const first = e.issues[0];
     const path = first?.path.join(".");

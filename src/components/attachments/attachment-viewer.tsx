@@ -142,12 +142,11 @@ function ParsedPreview({ file, kind }: { file: ViewableFile; kind: "text" | "she
         if (!res.ok) throw new Error(String(res.status));
         const isCsv = /\.(csv|tsv)$/i.test(file.fileName) || file.contentType === "text/csv";
         if (kind === "sheet" || isCsv) {
-          const XLSX = await import("xlsx");
-          const wb = isCsv ? XLSX.read(await res.text(), { type: "string" }) : XLSX.read(await res.arrayBuffer(), { type: "array" });
-          const parsed = wb.SheetNames.slice(0, 20).map((name) => ({
-            name,
-            rows: (XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[name], { header: 1, raw: false, defval: "" }) as unknown[][]).slice(0, 500).map((r) => r.slice(0, 50).map((c) => String(c ?? ""))),
-          }));
+          // Files come from other people: parsed with the bounded xlsx-lite reader, never SheetJS.
+          const { parseCsv, readXlsx } = await import("@/lib/xlsx-lite");
+          if (!isCsv && /\.xls$/i.test(file.fileName)) throw new Error("legacy xls");
+          const all = isCsv ? [{ name: file.fileName, rows: parseCsv(await res.text(), 500) }] : await readXlsx(new Uint8Array(await res.arrayBuffer()));
+          const parsed = all.slice(0, 20).map((sh) => ({ name: sh.name, rows: sh.rows.slice(0, 500).map((r) => r.slice(0, 50)) }));
           if (!cancelled) setSheets(parsed);
         } else {
           const body = await res.text();

@@ -3,6 +3,7 @@ import type { PointAction, Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { forbidden, roleAtLeast, type SessionUser } from "../authz";
 import { DEFAULT_POINTS, POINT_ACTIONS, type PointActionName } from "./core";
+import { supportAccess } from "@/lib/authz";
 
 // Points: every rewarded action is materialized into the point_events ledger
 // from the activity that already exists (tasks, comments, kudos, wiki pages,
@@ -29,7 +30,7 @@ export async function pointRules(workspaceId: string): Promise<Record<PointActio
 
 /** Workspace admins/owners, plus the people they delegated recognition to. */
 export async function canManageRecognition(user: SessionUser, workspaceId: string, role: string): Promise<boolean> {
-  if (user.systemRole === "ADMIN" || roleAtLeast(role as never, "admin")) return true;
+  if (supportAccess(user) || roleAtLeast(role as never, "admin")) return true;
   return !!(await prisma.recognitionManager.findUnique({ where: { workspaceId_userId: { workspaceId, userId: user.id } } }));
 }
 export async function requireRecognitionManager(user: SessionUser, workspaceId: string, role: string) {

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, workspaceOfWikiPage, badRequest, forbidden, wikiRoleAtLeast } from "@/lib/authz";
-import { assertUploadAllowed, uploadAttachment, deleteAttachmentBlob, safeFileName } from "@/lib/storage";
+import { assertUploadAllowed, assertUploadQuota, safeContentType, uploadAttachment, deleteAttachmentBlob, safeFileName } from "@/lib/storage";
 
 type P = { pageId: string };
 
@@ -16,6 +16,7 @@ export const POST = route<P>(async (req, { params }) => {
   const file = form?.get("file");
   if (!(file instanceof File)) throw badRequest("Send the file as multipart form field `file`");
   assertUploadAllowed(file);
+  await assertUploadQuota(user.id);
   const blob = await uploadAttachment({ workspaceId: ctx.workspaceId, wikiPageId: pageId, file });
   try {
     const a = await prisma.attachment.create({
@@ -23,7 +24,7 @@ export const POST = route<P>(async (req, { params }) => {
         workspaceId: ctx.workspaceId,
         wikiPageId: pageId,
         fileName: safeFileName(file.name),
-        contentType: file.type || "application/octet-stream",
+        contentType: safeContentType(file),
         sizeBytes: file.size,
         storageProvider: blob.provider,
         storageKey: blob.pathname,

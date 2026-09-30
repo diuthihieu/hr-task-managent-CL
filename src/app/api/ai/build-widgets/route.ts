@@ -51,17 +51,19 @@ export const POST = route(async (req) => {
   const user = await requireUser();
   const body = schema.parse(await readJson(req));
   if (!aiConfigured()) throw new HttpError(503, "AI is not configured on this server (GEMINI_API_KEY missing)");
-  if (!rateLimit(`ai-build:${user.id}`, 10, 10 * 60_000)) throw new HttpError(429, "Too many AI requests - please wait a few minutes");
+  if (!(await rateLimit(`ai-build:${user.id}`, 10, 10 * 60_000))) throw new HttpError(429, "Too many AI requests - please wait a few minutes");
   const t = makeT(normalizeLocale(user.locale));
 
   let projectIds: string[];
+  let workspaceId: string;
   if (body.target === "dashboard") {
     if (!body.dashboardId) throw badRequest("dashboardId is required");
     const ctx = await requireWorkspaceRole(user, await workspaceOfDashboard(body.dashboardId), "editor");
+    workspaceId = ctx.workspaceId;
     projectIds = (await prisma.project.findMany({ where: { workspaceId: ctx.workspaceId, deletedAt: null, ...visibleProjectWhere(user) }, orderBy: { sortOrder: "asc" }, take: 12, select: { id: true } })).map((p) => p.id);
   } else {
     if (!body.projectId) throw badRequest("projectId is required");
-    await requireWorkspaceRole(user, await workspaceOfProject(body.projectId), "editor");
+    workspaceId = (await requireWorkspaceRole(user, await workspaceOfProject(body.projectId), "editor")).workspaceId;
     projectIds = [body.projectId];
   }
   const catalog: { id: string; name: string; fields: { id: string; name: string; type: string; kind: string }[] }[] = [];
@@ -82,7 +84,7 @@ Rules:
 - Titles are short, in the user's language.
 CATALOG:
 ${JSON.stringify(catalog)}`;
-  const r = await generate({ system, contents: [{ role: "user", parts: [{ text: body.prompt }] }], temperature: 0.1, json: true, maxOutputTokens: 4096 });
+  const r = await generate({ workspaceId, system, contents: [{ role: "user", parts: [{ text: body.prompt }] }], temperature: 0.1, json: true, maxOutputTokens: 4096 });
   const specs = (parseJsonAnswer<{ widgets?: Spec[] }>(r.text)?.widgets ?? []).slice(0, 6);
 
   // Validate every id against the catalog.

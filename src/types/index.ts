@@ -97,6 +97,7 @@ export interface AdminUserRow {
   systemRole: "ADMIN" | "MEMBER";
   isActive: boolean;
   mustChangePassword: boolean;
+  emailVerifiedAt?: string | null;
   lastLoginAt: string | null;
   createdAt: string;
   workspaces: { id: string; name: string; role: WorkspaceRoleName }[];

@@ -60,7 +60,7 @@ export const POST = route<P>(async (req, { params }) => {
   if (!settings.enabled) throw badRequest("Recognition is turned off in this workspace");
   const body = schema.parse(await readJson(req));
   if (body.toId === user.id) throw badRequest("You can't send kudos to yourself");
-  if (!rateLimit(`kudos:${user.id}`, 20, 24 * 3600_000)) throw new HttpError(429, "That's a lot of kudos today - try again tomorrow");
+  if (!(await rateLimit(`kudos:${user.id}`, 20, 24 * 3600_000))) throw new HttpError(429, "That's a lot of kudos today - try again tomorrow");
   const member = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId: body.toId } }, select: { user: { select: { isActive: true } } } });
   if (!member?.user.isActive) throw badRequest("The receiver must be an active member of this workspace");
   let projectId: string | null = null;

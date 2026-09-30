@@ -1,7 +1,7 @@
 // Dependency-free error types, usable from scripts (seed) and route handlers alike.
 
 export class HttpError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public code?: string) {
     super(message);
   }
 }

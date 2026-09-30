@@ -1311,8 +1311,9 @@ model FocusSession {
   startedAt       DateTime    @default(now()) @map("started_at") @db.Timestamptz(6)
   endedAt         DateTime?   @map("ended_at") @db.Timestamptz(6)
 
-  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  runs FocusRun[]
 
   @@index([userId, status])
   @@index([taskId])
@@ -1918,4 +1919,23 @@ model HomeTemplateShare {
   @@id([templateId, userId])
   @@index([userId])
   @@map("home_template_shares")
+}
+
+/// One stretch of focus inside a session: when it started (start / resume) and
+/// when and how it stopped (pause, switch to another task, stop, complete).
+model FocusRun {
+  id        String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId String    @map("session_id") @db.Uuid
+  startedAt DateTime  @map("started_at") @db.Timestamptz(6)
+  endedAt   DateTime? @map("ended_at") @db.Timestamptz(6)
+  /// started | resumed
+  startKind String    @default("started") @map("start_kind") @db.VarChar(12)
+  /// paused | switched | stopped | completed (null while running)
+  endKind   String?   @map("end_kind") @db.VarChar(12)
+  seconds   Int?
+
+  session FocusSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, startedAt])
+  @@map("focus_runs")
 }

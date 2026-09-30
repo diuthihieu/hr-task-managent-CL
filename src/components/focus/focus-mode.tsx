@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import type { MessageKey } from "@/lib/i18n/core";
 
 interface ChecklistItem {
   text: string;
@@ -23,7 +24,56 @@ export interface FocusSessionDto {
   notes: string;
   checklist: ChecklistItem[];
   serverTime: string;
+  startedAt?: string;
+  endedAt?: string | null;
+  runs?: FocusRunDto[];
   task: { id: string; title: string; estimateMinutes: number | null; actualMinutes: number | null; link: string } | null;
+}
+
+export interface FocusRunDto {
+  startedAt: string;
+  endedAt: string | null;
+  startKind: string;
+  endKind: string | null;
+  seconds: number;
+}
+
+const clock = (iso: string) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+const dayLabel = (iso: string) => new Date(iso).toLocaleDateString([], { day: "2-digit", month: "2-digit", year: "numeric" });
+const dur = (sec: number) => {
+  if (sec < 60) return `${sec}s`;
+  const m = Math.round(sec / 60);
+  return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+};
+
+/** Every start / resume of a session with its end time, how it ended and its length. */
+export function FocusRunLog({ runs, startedAt, endedAt, testId = "focus-runs" }: { runs: FocusRunDto[]; startedAt?: string; endedAt?: string | null; testId?: string }) {
+  const { t } = useT();
+  if (!runs.length) return null;
+  return (
+    <div data-testid={testId}>
+      {startedAt && (
+        <p className="text-[11px] text-neutral-500 mb-1.5">
+          {t("focus.log.session", { start: `${dayLabel(startedAt)} ${clock(startedAt)}` })}
+          {endedAt ? ` ${t("focus.log.sessionEnd", { end: `${dayLabel(endedAt)} ${clock(endedAt)}` })}` : ""}
+        </p>
+      )}
+      <ol className="space-y-1">
+        {runs.map((r, i) => (
+          <li key={i} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs" data-testid="focus-run">
+            <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", r.endedAt ? "bg-neutral-300 dark:bg-neutral-600" : "bg-emerald-500 animate-pulse")} />
+            <span className="font-mono tabular-nums text-neutral-700 dark:text-neutral-200">
+              {dayLabel(r.startedAt) !== dayLabel(runs[0].startedAt) && `${dayLabel(r.startedAt)} `}
+              {clock(r.startedAt)} → {r.endedAt ? clock(r.endedAt) : t("focus.log.now")}
+            </span>
+            <span className="text-neutral-400">{t(`focus.log.start.${r.startKind}` as MessageKey)}</span>
+            <span className="text-neutral-500">{r.endedAt ? t(`focus.log.end.${r.endKind ?? "stopped"}` as MessageKey) : t("focus.log.running")}</span>
+            <span className="ml-auto font-medium tabular-nums">{dur(r.seconds)}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
 }
 
 interface FocusState {
@@ -310,6 +360,15 @@ export function FocusDock({ workspaceId }: { workspaceId: string }) {
               )}
             </div>
 
+            {!!session.runs?.length && (
+              <details className="rounded-lg border border-neutral-100 dark:border-neutral-800 px-3 py-2" open>
+                <summary className="cursor-pointer text-[11px] font-semibold text-neutral-500 uppercase tracking-wide">{t("focus.log.title", { n: session.runs.length })}</summary>
+                <div className="mt-2">
+                  <FocusRunLog runs={session.runs} startedAt={session.startedAt} endedAt={session.endedAt} />
+                </div>
+              </details>
+            )}
+
             <div>
               <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wide mb-1.5">{t("focus.checklist")}</div>
               <ul className="space-y-1">
@@ -382,5 +441,41 @@ export function FocusDock({ workspaceId }: { workspaceId: string }) {
         </div>
       </div>
     </div>
+  );
+}
+
+
+interface TaskFocusHistory {
+  totalMinutes: number;
+  sessions: { id: string; user: string; status: string; minutes: number; startedAt: string; endedAt: string | null; runs: FocusRunDto[] }[];
+}
+
+/** A task's focus history: who focused when (start, pauses, resumes, end) and for how long. */
+export function TaskFocusHistory({ taskId }: { taskId: string }) {
+  const { t } = useT();
+  const [h, setH] = useState<TaskFocusHistory | null>(null);
+  const running = useFocus((s) => s.sessions.find((x) => x.taskId === taskId)?.status);
+  useEffect(() => {
+    api.get<TaskFocusHistory>(`/api/tasks/${taskId}/focus`).then(setH).catch(() => {});
+  }, [taskId, running]);
+  if (!h || !h.sessions.length) return null;
+  return (
+    <details className="mt-3 rounded-lg border border-neutral-200 dark:border-neutral-800 px-3 py-2" data-testid="task-focus-history">
+      <summary className="cursor-pointer text-xs font-medium text-neutral-600 dark:text-neutral-300 flex items-center gap-1.5">
+        <Timer size={13} className="text-indigo-600" /> {t("focus.history", { n: h.sessions.length, total: dur(h.totalMinutes * 60) })}
+      </summary>
+      <ul className="mt-2 space-y-3">
+        {h.sessions.map((s) => (
+          <li key={s.id}>
+            <div className="flex items-center gap-2 text-xs mb-1">
+              <span className="font-medium">{s.user}</span>
+              <span className="text-neutral-400">{t(`focus.status.${s.status}` as MessageKey)}</span>
+              <span className="ml-auto tabular-nums font-medium">{dur(s.minutes * 60)}</span>
+            </div>
+            <FocusRunLog runs={s.runs} startedAt={s.startedAt} endedAt={s.endedAt} testId="task-focus-runs" />
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }

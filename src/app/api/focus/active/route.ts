@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, route } from "@/lib/authz";
-import { serializeFocus, FOCUS_TASK_SELECT } from "@/lib/focus";
+import { serializeFocus, FOCUS_TASK_SELECT, FOCUS_RUNS } from "@/lib/focus";
 
 /**
  * The caller's open focus sessions: `?all=1` lists every running and paused
@@ -14,7 +14,7 @@ export const GET = route(async (req) => {
     where: { userId: user.id, status: { in: ["running", "paused"] }, task: { deletedAt: null } },
     orderBy: { startedAt: "desc" },
     take: 20,
-    include: { task: { select: FOCUS_TASK_SELECT } },
+    include: { task: { select: FOCUS_TASK_SELECT }, runs: FOCUS_RUNS },
   });
   const now = new Date();
   const sorted = [...rows.filter((r) => r.status === "running"), ...rows.filter((r) => r.status !== "running")];

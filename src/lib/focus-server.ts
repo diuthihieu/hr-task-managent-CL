@@ -40,6 +40,7 @@ export async function pauseOtherRuns(tx: Tx, user: SessionUser, exceptId: string
   for (const o of running) {
     const elapsed = focusElapsed(o, now);
     await tx.focusSession.update({ where: { id: o.id }, data: { status: "paused", elapsedSeconds: elapsed, resumedAt: null } });
+    await closeRun(tx, o.id, now, "switched");
     const { canEdit } = await focusAccess(user, o.taskId);
     await recordFocusTime(tx, o, elapsed, user.id, canEdit);
   }
@@ -54,4 +55,16 @@ export async function markInProgress(tx: Tx, taskId: string, actorId: string, ca
   if (!next) return;
   const res = await applyTaskPatch(tx, { taskId, projectId: task.projectId, workspaceId: task.workspaceId, actorId, data: { [SYS.status]: next.id } });
   if (Object.keys(res.changes).length) await notifyTaskPatched(tx, { taskId, actorId, changedKeys: Object.keys(res.changes), statusChanged: res.statusChanged, newStatusName: res.newStatusName, assigned: [], reportAdded: [] });
+}
+
+/** Opens a run (start / resume) for a session. */
+export async function openRun(tx: Tx, sessionId: string, now: Date, kind: "started" | "resumed") {
+  await tx.focusRun.create({ data: { sessionId, startedAt: now, startKind: kind } });
+}
+
+/** Closes the session's open run, recording when and how it stopped. */
+export async function closeRun(tx: Tx, sessionId: string, now: Date, endKind: "paused" | "switched" | "stopped" | "completed") {
+  const open = await tx.focusRun.findFirst({ where: { sessionId, endedAt: null }, orderBy: { startedAt: "desc" } });
+  if (!open) return;
+  await tx.focusRun.update({ where: { id: open.id }, data: { endedAt: now, endKind, seconds: Math.max(0, Math.round((now.getTime() - open.startedAt.getTime()) / 1000)) } });
 }

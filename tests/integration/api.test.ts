@@ -978,6 +978,16 @@ test("focus: switching tasks pauses and records the running one; all open sessio
   assert.equal((await contributor.patch(`/api/focus/${b.body.id}`, { action: "complete" })).status, 200);
   assert.equal(await actual(t1), 15, "completing another session doesn't touch this task");
   assert.deepEqual((await contributor.get<unknown[]>("/api/focus/active?all=1")).body, []);
+  // Every start / resume and how it ended is logged with its times.
+  const runs = await prisma.focusRun.findMany({ where: { sessionId: a.body.id }, orderBy: { startedAt: "asc" } });
+  assert.deepEqual(runs.map((r) => [r.startKind, r.endKind]), [["started", "switched"], ["resumed", "stopped"]]);
+  assert.ok(runs.every((r) => r.endedAt && r.endedAt >= r.startedAt));
+  const hist = await contributor.get<{ sessions: { id: string; startedAt: string; endedAt: string | null; runs: { startKind: string; endKind: string; startedAt: string; endedAt: string }[] }[] }>(`/api/tasks/${t1}/focus`);
+  const sess = hist.body.sessions.find((x) => x.id === a.body.id)!;
+  assert.equal(sess.runs.length, 2);
+  assert.ok(sess.endedAt, "the session's end time");
+  const bRuns = await prisma.focusRun.findMany({ where: { sessionId: b.body.id }, orderBy: { startedAt: "asc" } });
+  assert.deepEqual(bRuns.map((r) => [r.startKind, r.endKind]), [["started", "switched"]], "completing a paused session adds no run");
 });
 
 test("role changes: the member is notified, may decline a promotion (never a demotion), and the admin hears back", async () => {

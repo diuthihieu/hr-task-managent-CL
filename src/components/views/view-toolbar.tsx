@@ -1,6 +1,6 @@
 "use client";
 import { createContext, forwardRef, useContext } from "react";
-import { Search, ListFilter, ArrowUpDown, Group as GroupIcon, EyeOff, Paintbrush, Rows3, Trash2, X, Download, Copy } from "lucide-react";
+import { Search, ListFilter, ArrowUpDown, Group as GroupIcon, EyeOff, Paintbrush, Rows3, Trash2, X, Download, Copy, WrapText } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/misc";
@@ -106,6 +106,18 @@ export function ViewToolbar({
         <ToolbarPopover icon={<Paintbrush size={13} />} label={t("tb.colors")} count={formatCount}>
           <FormatPanel fields={fields} rules={config.conditionalFormats ?? []} members={members} onChange={(r) => onConfigChange({ conditionalFormats: r })} />
         </ToolbarPopover>
+      )}
+
+      {isGrid && (
+        <ToolbarButton
+          icon={<WrapText size={13} />}
+          label={t("tb.wrap")}
+          className={config.rowHeight === "auto" ? "!bg-indigo-50 dark:!bg-indigo-950 !text-indigo-700 dark:!text-indigo-300" : undefined}
+          aria-pressed={config.rowHeight === "auto"}
+          title={config.rowHeight === "auto" ? t("tb.wrapOff") : t("tb.wrapOn")}
+          onClick={() => onConfigChange({ rowHeight: config.rowHeight === "auto" ? "medium" : "auto" })}
+          data-testid="tb-wrap"
+        />
       )}
 
       {isGrid && (

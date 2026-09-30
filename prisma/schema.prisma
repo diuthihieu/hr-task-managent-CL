@@ -286,6 +286,8 @@ model User {
   kudosSent             Kudos[]                @relation("KudosFrom")
   kudosReceived         Kudos[]                @relation("KudosTo")
   redemptions           RewardRedemption[]     @relation("RedemptionUser")
+  kudosReactions        KudosReaction[]        @relation("KudosReactionUser")
+  journalNotes          JournalNote[]          @relation("JournalNoteUser")
 
   @@index([isActive, deletedAt])
   @@map("users")
@@ -338,6 +340,7 @@ model Workspace {
   kudos               Kudos[]
   rewards             Reward[]
   redemptions         RewardRedemption[]
+  journalNotes        JournalNote[]
 
   @@map("workspaces")
 }
@@ -1742,11 +1745,12 @@ model Kudos {
   createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
   deletedAt   DateTime?  @map("deleted_at") @db.Timestamptz(6)
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  from      User      @relation("KudosFrom", fields: [fromId], references: [id], onDelete: Cascade)
-  to        User      @relation("KudosTo", fields: [toId], references: [id], onDelete: Cascade)
-  task      Task?     @relation(fields: [taskId], references: [id], onDelete: SetNull)
-  project   Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  from      User            @relation("KudosFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to        User            @relation("KudosTo", fields: [toId], references: [id], onDelete: Cascade)
+  task      Task?           @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  project   Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  reactions KudosReaction[]
 
   @@index([workspaceId, createdAt(sort: Desc)])
   @@index([toId, createdAt(sort: Desc)])
@@ -1814,4 +1818,37 @@ model RateLimit {
 
   @@index([resetAt])
   @@map("rate_limits")
+}
+
+/// Emoji reactions to a thank-you letter (one of each emoji per person).
+model KudosReaction {
+  kudosId   String   @map("kudos_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  emoji     String   @db.VarChar(16)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  kudos Kudos @relation(fields: [kudosId], references: [id], onDelete: Cascade)
+  user  User  @relation("KudosReactionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([kudosId, userId, emoji])
+  @@map("kudos_reactions")
+}
+
+/// Notes a person saved from their daily journal ("Save to history"), kept to read back later.
+model JournalNote {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  /// The journal day the note was written for.
+  date        DateTime @db.Date
+  title       String   @db.VarChar(200)
+  /// Sanitized rich text.
+  content     String
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("JournalNoteUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, workspaceId, createdAt(sort: Desc)])
+  @@map("journal_notes")
 }

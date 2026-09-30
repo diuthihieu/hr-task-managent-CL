@@ -12,7 +12,7 @@ export const NOTIFY_GROUPS = [
   { key: "invite", types: ["workspace_invite", "workspace_invite_result", "role_changed", "role_change_result"] },
   { key: "okr", types: ["objective_risk"] },
   { key: "ai", types: ["ai_suggestion"] },
-  { key: "recognition", types: ["kudos", "reward_request", "reward_result"] },
+  { key: "recognition", types: ["kudos", "kudos_reaction", "reward_request", "reward_result"] },
 ] as const;
 export type NotifyGroup = (typeof NOTIFY_GROUPS)[number]["key"];
 export const NOTIFY_GROUP_KEYS = NOTIFY_GROUPS.map((g) => g.key) as NotifyGroup[];

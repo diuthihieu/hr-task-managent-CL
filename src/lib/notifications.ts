@@ -30,6 +30,7 @@ export type NotificationType =
   | "capture_due"
   | "reminder"
   | "kudos"
+  | "kudos_reaction"
   | "reward_request"
   | "reward_result";
 

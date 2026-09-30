@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ConvertToWikiDialog } from "./convert-to-wiki-dialog";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { Plus, Trash2, Sparkles, ShieldCheck, MessageSquare } from "lucide-react";
+import { Plus, Trash2, Sparkles, ShieldCheck, MessageSquare, ListPlus } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { cn, formatDate } from "@/lib/utils";
@@ -10,6 +10,8 @@ import { ChatThread } from "./chat-thread";
 import { useAiChat, type ChatMessage } from "./use-ai-chat";
 import { exportReportPdf } from "./print-report";
 import { MetaChip } from "@/components/ui/meta";
+import { TaskIntakeChat } from "./task-intake-chat";
+import { useTaskIntake } from "./use-task-intake";
 
 /** Workspace AI Assistant: reports and Q&A over everything the user may see, with PDF export. */
 export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: { workspaceId: string; workspaceName: string; logoUrl: string | null; userName: string }) {
@@ -21,11 +23,17 @@ export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: {
   const initialQuestion = searchParams.get("q");
   const [convert, setConvert] = useState<string | null>(null);
   const workspaceSlug = pathname.split("/")[2] ?? "";
+  // "Create tasks": describe a task, answer the AI's questions, confirm the draft.
+  const [mode, setMode] = useState<"ask" | "task">(searchParams.get("mode") === "task" ? "task" : "ask");
+  const intake = useTaskIntake({ workspaceId });
+  const intakeSuggestions = useMemo(() => [t("intake.s.create"), t("intake.s.remind")], [t]);
 
   // Ctrl+K "Ask AI": /ai?q=... starts a new chat with that question.
   useEffect(() => {
     if (!initialQuestion?.trim()) return;
     router.replace(pathname);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- a Ctrl+K question always opens in the Ask tab
+    setMode("ask");
     chat.open(null);
     chat.send(initialQuestion.trim());
     // eslint-disable-next-line react-hooks/exhaustive-deps -- once per question
@@ -47,7 +55,7 @@ export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: {
     <div className="flex-1 flex overflow-hidden" data-testid="ai-assistant">
       <aside className="hidden md:flex w-64 shrink-0 border-r border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex-col">
         <div className="p-3">
-          <Button className="w-full" onClick={() => chat.open(null)} data-testid="ai-new-chat">
+          <Button className="w-full" onClick={() => (mode === "task" ? intake.reset() : chat.open(null))} data-testid="ai-new-chat">
             <Plus size={14} /> {t("ai.newChat")}
           </Button>
         </div>
@@ -55,7 +63,10 @@ export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: {
         <div className="flex-1 overflow-y-auto thin-scroll px-2 pb-2 space-y-0.5">
           {chat.conversations.length === 0 && <div className="px-2 py-2 text-xs text-neutral-400">{t("ai.noHistory")}</div>}
           {chat.conversations.map((c) => (
-            <div key={c.id} className={cn("group flex items-center gap-2 rounded-lg px-2 py-1.5 cursor-pointer", c.id === chat.conversationId ? "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300" : "hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300")} onClick={() => chat.open(c.id)} data-testid="ai-conversation">
+            <div key={c.id} className={cn("group flex items-center gap-2 rounded-lg px-2 py-1.5 cursor-pointer", c.id === chat.conversationId ? "bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300" : "hover:bg-neutral-100 dark:hover:bg-neutral-800 text-neutral-700 dark:text-neutral-300")} onClick={() => {
+                setMode("ask");
+                chat.open(c.id);
+              }} data-testid="ai-conversation">
               <MessageSquare size={13} className="shrink-0 opacity-60" />
               <span className="flex-1 min-w-0">
                 <span className="block truncate text-[13px]">{c.title}</span>
@@ -84,7 +95,18 @@ export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: {
           <Sparkles size={16} className="text-indigo-600" />
           <h1 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">{t("nav.ai")}</h1>
           <MetaChip className="ml-1">{workspaceName}</MetaChip>
+          <div className="ml-auto flex rounded-lg bg-neutral-100 dark:bg-neutral-800 p-0.5 text-xs font-medium" role="tablist">
+            {(["ask", "task"] as const).map((m) => (
+              <button key={m} role="tab" aria-selected={mode === m} onClick={() => setMode(m)} className={cn("inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md", mode === m ? "bg-white dark:bg-neutral-900 text-indigo-700 dark:text-indigo-300 shadow-sm" : "text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200")} data-testid={`ai-mode-${m}`}>
+                {m === "ask" ? <MessageSquare size={13} /> : <ListPlus size={13} />}
+                <span className="hidden sm:inline">{t(m === "ask" ? "ai.mode.ask" : "ai.mode.task")}</span>
+              </button>
+            ))}
+          </div>
         </div>
+        {mode === "task" ? (
+          <TaskIntakeChat intake={intake} emptyTitle={t("intake.emptyTitleWs")} suggestions={intakeSuggestions} />
+        ) : (
         <ChatThread
           messages={chat.messages}
           busy={chat.busy}
@@ -102,6 +124,7 @@ export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: {
           suggestions={suggestions}
           placeholder={t("ai.placeholder")}
         />
+        )}
       </main>
       <ConvertToWikiDialog markdown={convert} workspaceId={workspaceId} workspaceSlug={workspaceSlug} onClose={() => setConvert(null)} />
     </div>

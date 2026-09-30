@@ -27,6 +27,8 @@ import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
 import type { OkrOptions } from "@/components/grid/cell";
 import type { FieldRow, RecordRow, ViewRow } from "@/types";
+import { ProjectAiChat } from "@/components/ai/project-ai-chat";
+import { cn } from "@/lib/utils";
 import { MetaStatus } from "@/components/ui/meta";
 
 interface ProjectDetail {
@@ -57,6 +59,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
   const [exportOpen, setExportOpen] = useState(false);
   const [okrOptions, setOkrOptions] = useState<OkrOptions>({ objectives: [], keyResults: [] });
   const [loading, setLoading] = useState(true);
+  const [aiSidebar, setAiSidebar] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
@@ -451,7 +454,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
   if (!table) return null;
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden">
+    <div className={cn("flex-1 flex flex-col overflow-hidden", aiSidebar && "sm:pr-[420px]")}>
       <ProjectHeader
         workspaceSlug={table.workspace.slug}
         workspaceName={breadcrumb.workspace}
@@ -631,6 +634,16 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         onOpenChange={(v) => setFieldDialog((d) => ({ ...d, open: v }))}
         field={fieldDialog.field ? { name: fieldDialog.field.name, type: fieldDialog.field.type, description: fieldDialog.field.description, config: parseFieldConfig(fieldDialog.field.config) } : null}
         onSave={handleFieldSave}
+      />
+
+      <ProjectAiChat
+        projectId={projectId}
+        projectName={breadcrumb.project}
+        onTaskCreated={(record, pid) => {
+          if (pid === projectId) setRecords((prev) => (prev.some((r) => r.id === record.id) ? prev : [...prev, record]));
+        }}
+        onOpenTask={setOpenRecordId}
+        onSidebarChange={setAiSidebar}
       />
 
       <ExportDialog

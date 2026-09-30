@@ -58,8 +58,19 @@ http
           kudos: { title: "Thank you for the payroll", message: "Thank you for fixing the payroll export - it saved the whole team a late night.", reasons: ["Fixed the payroll export", "Finished the laptop setup on time", "Always keeps me updated"] },
           retro: { title: "Retro: stub", retrospective: "It went fine.", lessons: ["Order laptops early"], decisions: [{ title: "Use vendor A", reason: "Faster delivery", alternatives: ["Vendor B"] }], process: ["Order", "Configure", "Hand over"], knowledgeNote: "Keep a checklist." },
         }[schema];
+        // AI task intake: ask, then summarize with the first project/member it was given.
+        const intake = schema === "task_intake" ? (() => {
+          const project = system.match(/project id: ([0-9a-f-]{36})/)?.[1] ?? null;
+          const member = system.match(/member id: ([0-9a-f-]{36})/)?.[1] ?? null;
+          if (userText.includes("#hallucinate")) return { type: "summary", message: "Summary", draft: { projectId: "00000000-0000-4000-8000-000000000000", title: "Ghost", assigneeIds: ["00000000-0000-4000-8000-000000000001"], priority: "urgent!!" } };
+          if (userText.trim().endsWith("?")) return { type: "answer", message: `Stub project answer. You asked: ${userText}` };
+          if (/#summary|\bok\b|yes/i.test(userText)) return { type: "summary", message: "- Task: Monthly report\n- Due: 2026-09-30 02:00\n\nConfirm?", draft: { projectId: project, title: "Monthly report", description: "PDF for the board", dueDate: "2026-09-30", dueTime: "02:00", priority: "high", assigneeIds: member ? [member] : [], reportToIds: [], categoryId: null, estimateHours: 2 } };
+          return { type: "question", message: "Which project, and who should do it?", draft: { projectId: null, title: "Monthly report", dueDate: "2026-09-30", dueTime: "02:00" } };
+        })() : null;
         const projectId = catalog ? JSON.parse(catalog)[0]?.id : undefined;
-        const json = brain
+        const json = intake
+          ? intake
+          : brain
           ? brain
           : catalog
           ? { widgets: [

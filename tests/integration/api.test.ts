@@ -796,6 +796,89 @@ test("AI assistant: answers from what the user may see, declines the rest, and e
   assert.equal(saved?.tokensIn, 111, "token usage recorded");
 });
 
+async function intake(client: Client, body: Record<string, unknown>) {
+  const res = await fetch(`${BASE}/api/ai/task-intake`, { method: "POST", headers: { cookie: client.cookieHeader(), "content-type": "application/json" }, body: JSON.stringify({ timeZone: "Asia/Ho_Chi_Minh", ...body }) });
+  return {
+    status: res.status,
+    body: (await res.json().catch(() => null)) as {
+      type: string;
+      message: string;
+      canCreate: boolean;
+      draft: { projectId: string | null; title: string; dueDate: string | null; dueTime: string | null; priority: string; assignees: { id: string }[]; missing: string[] } | null;
+    },
+  };
+}
+const say = (...texts: string[]) => texts.map((content, i) => ({ role: i % 2 ? "model" : "user", content }));
+
+test("AI task intake: asks, summarizes, creates only on confirm - within the user's access", async () => {
+  const secret = await admin.post<Rec>(`/api/projects/${s.otherProject}/tasks`, { data: { sys_title: "Secret merger checklist" } });
+  assert.equal(secret.status, 201);
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.contributorId] });
+  try {
+    // 1) The AI asks for what's missing; the draft defaults to the project the chat is opened in.
+    const q = await intake(contributor, { projectId: s.project, messages: say("Làm báo cáo tháng lúc 2h sáng nay") });
+    assert.equal(q.status, 200, JSON.stringify(q.body));
+    assert.equal(q.body.type, "question");
+    assert.equal(q.body.draft?.projectId, s.project);
+    assert.equal(q.body.draft?.dueTime, "02:00");
+    const system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+    assert.match(system, /RESPONSE_SCHEMA: task_intake/);
+    assert.match(system, /user's local time now: \d{4}-\d{2}-\d{2} \d{2}:\d{2} \(\w+, time zone Asia\/Ho_Chi_Minh\)/);
+    assert.match(system, /Payroll reconciliation/, "project data for questions");
+    assert.doesNotMatch(system, /Secret merger checklist/, "hidden project's tasks stay out");
+    assert.doesNotMatch(system, new RegExp(s.otherProject), "hidden project isn't offered either");
+
+    // 2) Summary: only ids the server handed out survive.
+    const sum = await intake(contributor, { projectId: s.project, messages: say("Làm báo cáo tháng lúc 2h sáng nay", q.body.message, "ok"), draft: { ...q.body.draft, assigneeIds: [] } });
+    assert.equal(sum.body.type, "summary");
+    assert.equal(sum.body.draft?.priority, "high");
+    assert.equal(sum.body.draft?.assignees.length, 1);
+    assert.deepEqual(sum.body.draft?.missing, []);
+    const ghost = await intake(contributor, { projectId: s.project, messages: say("#hallucinate") });
+    assert.equal(ghost.body.draft?.projectId, s.project, "an unknown project id falls back to the chat's project");
+    assert.deepEqual(ghost.body.draft?.assignees, [], "unknown people are dropped");
+    assert.equal(ghost.body.draft?.priority, "medium", "invalid priority is replaced");
+    const ws = await intake(contributor, { workspaceId: s.ws, messages: say("#hallucinate") });
+    assert.deepEqual(ws.body.draft?.missing, ["project"], "workspace mode: the project must be chosen");
+    assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /PROJECT DATA:\n\(not loaded - workspace mode\)/);
+
+    // 3) Nothing exists until the user confirms.
+    assert.equal(await prisma.task.count({ where: { title: "Monthly report" } }), 0);
+    const d = sum.body.draft!;
+    const confirm = (client: Client, draft: Record<string, unknown>) => client.post<{ record: Rec; href: string }>("/api/ai/task-intake/confirm", { draft });
+    const draftBody = { projectId: d.projectId, title: d.title, dueDate: d.dueDate, dueTime: d.dueTime, priority: d.priority, assigneeIds: d.assignees.map((a) => a.id), description: "PDF for the board", estimateHours: 2 };
+    assert.equal((await confirm(contributor, { ...draftBody, assigneeIds: ["00000000-0000-4000-8000-000000000001"] })).status, 400, "people are re-checked on confirm");
+    assert.equal((await confirm(contributor, { ...draftBody, projectId: s.otherProject })).status, 404, "a hidden project can't be targeted");
+    assert.equal((await confirm(viewer, draftBody)).status, 403, "viewers can't create tasks");
+    assert.equal((await confirm(outsider, draftBody)).status, 404);
+    const created = await confirm(contributor, draftBody);
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    assert.match(created.body.href, new RegExp(`/p/${s.project}/t/${created.body.record.id}$`));
+    const task = await prisma.task.findUniqueOrThrow({ where: { id: created.body.record.id }, include: { assignees: true } });
+    assert.equal(task.title, "Monthly report");
+    assert.equal(task.priority, "high");
+    assert.equal(task.dueDate?.toISOString().slice(0, 10), "2026-09-30");
+    assert.equal(task.estimateMinutes, 120);
+    assert.match(task.description ?? "", /^(Deadline: 02:00 on 2026-09-30|Hạn chót: 02:00 ngày 30\/09\/2026)\n\nPDF for the board$/, "the due time leads the description");
+    assert.deepEqual(task.assignees.map((a) => a.userId), d.assignees.map((a) => a.id));
+    assert.ok(await prisma.activityLog.findFirst({ where: { entityId: task.id, action: "created", summary: { contains: "woli AI" } } }), "audited");
+
+    // 4) Project chat for a hidden project, viewers and outsiders.
+    assert.equal((await intake(contributor, { projectId: s.otherProject, messages: say("status?") })).status, 404);
+    const v = await intake(viewer, { projectId: s.project, messages: say("How many tasks are overdue?") });
+    assert.equal(v.status, 200);
+    assert.equal(v.body.type, "answer");
+    assert.equal(v.body.canCreate, false);
+    assert.equal((await intake(viewer, { projectId: s.project, messages: say("#summary") })).body.draft, null, "viewers never get a draft");
+    assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /CANNOT create tasks/);
+    assert.equal((await intake(outsider, { workspaceId: s.ws, messages: say("hi") })).status, 404);
+    assert.equal((await intake(contributor, { projectId: s.project, messages: say("hi", "hello") })).status, 400, "the last turn must be the user's");
+  } finally {
+    await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
+    await admin.del(`/api/tasks/${secret.body.id}`);
+  }
+});
+
 async function action(client: Client, body: Record<string, unknown>) {
   const res = await fetch(`${BASE}/api/ai/action`, { method: "POST", headers: { cookie: client.cookieHeader(), "content-type": "application/json" }, body: JSON.stringify(body) });
   return { status: res.status, type: res.headers.get("content-type") ?? "", text: await res.text() };

@@ -6,7 +6,8 @@ import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { workspaceLogoUrl } from "@/lib/workspace-logo";
 import { redirect } from "next/navigation";
-import { Monitor, Download, UserPlus, Building2, Users, FolderKanban, BarChart3, Database, Target, FileText, PieChart, ShieldCheck, Palette, Check, ArrowRight, PlayCircle, ClipboardList, BookOpen, Sparkles, Sun } from "lucide-react";
+import { Monitor, Download, Target, PieChart, Check, ArrowRight, PlayCircle, ClipboardList, BookOpen, Sparkles } from "lucide-react";
+import { AiSection, GetStarted, WhyWoli } from "@/components/landing/sections";
 import { Brand } from "@/components/brand/brand";
 import { WorkspaceAvatar } from "@/components/workspaces/workspace-avatar";
 import type { MessageKey } from "@/lib/i18n/core";
@@ -51,40 +52,12 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   const showAuth = Boolean(auth || ws || error || callbackUrl);
   const date = (d: Date) => d.toLocaleDateString(locale === "vi" ? "vi-VN" : "en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 
-  const steps = [
-    { icon: UserPlus, t: t("landing.guide.s1.t"), d: t("landing.guide.s1.d") },
-    { icon: Building2, t: t("landing.guide.s2.t"), d: t("landing.guide.s2.d") },
-    { icon: Users, t: t("landing.guide.s3.t"), d: t("landing.guide.s3.d") },
-    { icon: FolderKanban, t: t("landing.guide.s4.t"), d: t("landing.guide.s4.d") },
-    { icon: BarChart3, t: t("landing.guide.s5.t"), d: t("landing.guide.s5.d") },
-  ];
   const features = [
     { icon: ClipboardList, t: t("landing.f.tasks.t"), d: t("landing.f.tasks.d") },
     { icon: Target, t: t("landing.f.okr.t"), d: t("landing.f.okr.d") },
     { icon: BookOpen, t: t("landing.f.wiki.t"), d: t("landing.f.wiki.d") },
     { icon: Sparkles, t: t("landing.f.ai.t"), d: t("landing.f.ai.d") },
     { icon: PieChart, t: t("landing.f.reports.t"), d: t("landing.f.reports.d") },
-  ];
-  const aiAreas = [
-    { icon: Sun, t: t("landing.ai.home.t"), d: t("landing.ai.home.d"), actions: [t("cc.ai.brief"), t("cc.ai.plan"), t("cc.ai.risks")] },
-    { icon: ClipboardList, t: t("landing.ai.task.t"), d: t("landing.ai.task.d"), actions: [t("aiAct.task_summarize"), t("aiAct.task_blockers"), t("aiAct.task_message"), t("aiAct.task_breakdown")] },
-    { icon: Target, t: t("landing.ai.okr.t"), d: t("landing.ai.okr.d"), actions: [t("aiAct.okr_risk"), t("aiAct.okr_update"), t("aiAct.okr_unlinked")] },
-    { icon: BookOpen, t: t("landing.ai.wiki.t"), d: t("landing.ai.wiki.d"), actions: [t("aiAct.wiki_summarize"), t("aiAct.wiki_rewrite"), t("aiAct.wiki_sop"), t("aiAct.wiki_extract_tasks")] },
-    { icon: PieChart, t: t("landing.ai.dash.t"), d: t("landing.ai.dash.d"), actions: [t("aiBuild.button"), t("aiAct.dash_explain"), t("aiAct.dash_anomaly"), t("aiAct.dash_trends")] },
-    { icon: Sparkles, t: t("landing.ai.intel.t"), d: t("landing.ai.intel.d"), actions: [t("landing.ai.intel.a1"), t("ai.exportPdf"), t("c2w.button")] },
-  ];
-  const aiTrust = [
-    { icon: ShieldCheck, t: t("landing.ai.trust1.t"), d: t("landing.ai.trust1.d") },
-    { icon: UserPlus, t: t("landing.ai.trust2.t"), d: t("landing.ai.trust2.d") },
-    { icon: FileText, t: t("landing.ai.trust3.t"), d: t("landing.ai.trust3.d") },
-  ];
-  const benefits = [
-    { icon: Database, t: t("landing.benefits.b1.t"), d: t("landing.benefits.b1.d") },
-    { icon: Target, t: t("landing.benefits.b2.t"), d: t("landing.benefits.b2.d") },
-    { icon: FileText, t: t("landing.benefits.b3.t"), d: t("landing.benefits.b3.d") },
-    { icon: PieChart, t: t("landing.benefits.b4.t"), d: t("landing.benefits.b4.d") },
-    { icon: ShieldCheck, t: t("landing.benefits.b5.t"), d: t("landing.benefits.b5.d") },
-    { icon: Palette, t: t("landing.benefits.b6.t"), d: t("landing.benefits.b6.d") },
   ];
 
   return (
@@ -221,84 +194,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
         </div>
       </section>
 
-      <section id="ai" className="scroll-mt-16 py-16 md:py-20 border-t border-neutral-100 dark:border-neutral-900 bg-gradient-to-b from-indigo-50/40 to-transparent dark:from-indigo-950/20">
-        <div className="max-w-6xl mx-auto px-4">
-          <div className="max-w-2xl">
-            <span className="inline-flex items-center gap-2 rounded-full bg-white dark:bg-neutral-900 border border-indigo-200/70 dark:border-indigo-900 px-3 py-1 text-xs font-semibold text-indigo-700 dark:text-indigo-300">
-              <Sparkles size={13} /> {t("landing.ai.badge")}
-            </span>
-            <h2 className="mt-4 text-2xl md:text-4xl font-bold tracking-tight">{t("landing.ai.title")}</h2>
-            <p className="mt-3 text-neutral-600 dark:text-neutral-400 leading-relaxed">{t("landing.ai.subtitle")}</p>
-          </div>
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-testid="landing-ai">
-            {aiAreas.map((a) => (
-              <div key={a.t} className="rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-5 transition-shadow hover:shadow-[0_12px_32px_-16px_rgba(15,23,42,0.25)]">
-                <div className="flex items-center gap-2.5">
-                  <span className="h-9 w-9 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300 flex items-center justify-center shrink-0">
-                    <a.icon size={18} />
-                  </span>
-                  <h3 className="font-semibold">{a.t}</h3>
-                </div>
-                <p className="mt-2 text-sm text-neutral-600 dark:text-neutral-400">{a.d}</p>
-                <div className="mt-3 flex flex-wrap gap-1.5">
-                  {a.actions.map((x) => (
-                    <span key={x} className="inline-flex items-center gap-1 rounded-full border border-indigo-100 dark:border-indigo-900/70 bg-indigo-50/60 dark:bg-indigo-950/40 px-2.5 py-0.5 text-xs text-indigo-800 dark:text-indigo-200">
-                      <Sparkles size={10} className="text-indigo-500" /> {x}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-          <ul className="mt-8 grid gap-3 sm:grid-cols-3">
-            {aiTrust.map((x) => (
-              <li key={x.t} className="flex items-start gap-3 rounded-xl bg-white/70 dark:bg-neutral-900/60 border border-neutral-200/70 dark:border-neutral-800 px-4 py-3">
-                <x.icon size={18} className="text-indigo-600 shrink-0 mt-0.5" />
-                <span className="text-sm">
-                  <span className="block font-semibold text-neutral-900 dark:text-white">{x.t}</span>
-                  <span className="text-neutral-600 dark:text-neutral-400">{x.d}</span>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </section>
-
-      <section id="guide" className="scroll-mt-16 border-t border-neutral-100 dark:border-neutral-900 py-16 bg-neutral-50/60 dark:bg-neutral-900/30">
-        <div className="max-w-6xl mx-auto px-4">
-          <h2 className="text-2xl md:text-3xl font-bold tracking-tight">{t("landing.guide.title")}</h2>
-          <p className="mt-2 text-neutral-600 dark:text-neutral-400">{t("landing.guide.subtitle")}</p>
-          <ol className="mt-8 grid gap-4 md:grid-cols-5">
-            {steps.map((s, i) => (
-              <li key={s.t} className="rounded-2xl border border-neutral-200 dark:border-neutral-800 p-5 bg-white dark:bg-neutral-900">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="h-7 w-7 rounded-full bg-indigo-600 text-white text-sm font-semibold flex items-center justify-center">{i + 1}</span>
-                  <s.icon size={18} className="text-indigo-600" />
-                </div>
-                <h3 className="font-semibold">{s.t}</h3>
-                <p className="mt-1.5 text-sm text-neutral-600 dark:text-neutral-400">{s.d}</p>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
-
-      <section id="benefits" className="scroll-mt-16 py-16">
-        <div className="max-w-6xl mx-auto px-4">
-          <h2 className="text-2xl md:text-3xl font-bold tracking-tight">{t("landing.benefits.title")}</h2>
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {benefits.map((b) => (
-              <div key={b.t} className="rounded-2xl border border-neutral-200 dark:border-neutral-800 p-5 bg-white dark:bg-neutral-900">
-                <span className="h-10 w-10 rounded-xl bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-300 flex items-center justify-center mb-3">
-                  <b.icon size={20} />
-                </span>
-                <h3 className="font-semibold">{b.t}</h3>
-                <p className="mt-1.5 text-sm text-neutral-600 dark:text-neutral-400">{b.d}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
+      <WhyWoli t={t} />
+      <AiSection t={t} />
+      <GetStarted t={t} />
 
       <section id="desktop" className="scroll-mt-16 pb-16">
         <div className="max-w-6xl mx-auto px-4">
@@ -311,7 +209,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               <p className="mt-1 text-white/85">{t("landing.desktop.subtitle")}</p>
               {latest ? (
                 <p className="mt-3 text-sm text-white/85" data-testid="landing-desktop-meta">
-                  {t("landing.desktop.version", { version: latest.version })} · {t("landing.desktop.released", { date: date(latest.publishedAt) })} · {t("landing.desktop.os", { os: latest.minOsVersion })}
+                  <span className="inline-flex flex-wrap gap-x-4 gap-y-1"><span>{t("landing.desktop.version", { version: latest.version })}</span><span>{t("landing.desktop.released", { date: date(latest.publishedAt) })}</span><span>{t("landing.desktop.os", { os: latest.minOsVersion })}</span></span>
                 </p>
               ) : (
                 <p className="mt-3 text-sm text-white/85">{t("landing.desktop.none")}</p>

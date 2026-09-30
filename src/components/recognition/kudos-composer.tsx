@@ -70,7 +70,8 @@ export function KudosComposer({ workspaceId, me, to: initialTo, onClose, onSent 
 
   const factText = (f: Fact) => {
     const tasks = f.tasks.slice(0, 2).map((x) => `“${x.title}”`).join(", ");
-    const base = t(`reco.fact.${f.kind}` as MessageKey, { n: f.n, value: f.value ?? 0 });
+    const key = f.kind === "speed" && (f.value ?? 0) < 1 ? "reco.fact.speedFast" : `reco.fact.${f.kind}`;
+    const base = t(key as MessageKey, { n: f.n, value: f.value ?? 0 });
     return tasks ? `${base}: ${tasks}` : base;
   };
 
@@ -229,7 +230,7 @@ export function KudosComposer({ workspaceId, me, to: initialTo, onClose, onSent 
           </div>
 
           {/* The card itself: every line is editable. */}
-          <div className={cn("kudos-card-face rounded-2xl p-6 sm:p-9 relative min-h-[30rem] flex flex-col", `tpl-${template}`)} data-testid="kudos-paper">
+          <div className={cn("kudos-card-face rounded-2xl p-6 sm:p-9 relative min-h-[30rem] flex flex-col md:sticky md:top-0 self-start w-full", `tpl-${template}`)} data-testid="kudos-paper">
             <span className="absolute right-7 top-6 text-3xl" aria-hidden>
               {STYLE_META[style].emoji}
             </span>

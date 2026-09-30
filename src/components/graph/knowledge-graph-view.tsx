@@ -25,7 +25,7 @@ function Spinner() {
   );
 }
 
-export function KnowledgeGraphView({ workspaceId, initialFocus, initialMode }: { workspaceId: string; initialFocus?: string; initialMode?: "global" | "local" }) {
+export function KnowledgeGraphView({ workspaceId, initialFocus, initialMode, embedded }: { workspaceId: string; initialFocus?: string; initialMode?: "global" | "local"; embedded?: boolean }) {
   const { t } = useT();
   const { theme } = useTheme();
   const router = useRouter();
@@ -124,12 +124,16 @@ export function KnowledgeGraphView({ workspaceId, initialFocus, initialMode }: {
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
-      <div className="px-4 sm:px-6 pt-5 pb-3 space-y-3 border-b border-neutral-200/80 dark:border-neutral-800">
+      <div className={cn("px-4 sm:px-6 pb-3 space-y-3 border-b border-neutral-200/80 dark:border-neutral-800", embedded ? "pt-3" : "pt-5")}>
         <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-[22px] font-bold tracking-tight text-neutral-900 dark:text-neutral-50">{t("graph.title")}</h1>
-            <p className="text-sm text-neutral-500 mt-0.5">{t("graph.subtitle")}</p>
-          </div>
+          {embedded ? (
+            <p className="text-xs text-neutral-500">{t("graph.subtitle")}</p>
+          ) : (
+            <div>
+              <h1 className="text-[22px] font-bold tracking-tight text-neutral-900 dark:text-neutral-50">{t("graph.title")}</h1>
+              <p className="text-sm text-neutral-500 mt-0.5">{t("graph.subtitle")}</p>
+            </div>
+          )}
           <div className="flex items-center gap-2 flex-wrap">
             <div className="inline-flex rounded-lg border border-neutral-200 dark:border-neutral-800 p-0.5 bg-white dark:bg-neutral-900" role="tablist">
               {(["global", "local"] as const).map((m) => (

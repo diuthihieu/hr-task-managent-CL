@@ -47,6 +47,8 @@ export function DecisionDialog({
   const [projectId, setProjectId] = useState(decision?.project?.id ?? prefill?.projectId ?? "");
   const [people, setPeople] = useState<string[]>(decision?.people.map((p) => p.id) ?? []);
   const [supersedesId, setSupersedesId] = useState(decision?.supersedes?.id ?? "");
+  const [ownerId, setOwnerId] = useState(decision?.owner?.id ?? "");
+  const [reviewDate, setReviewDate] = useState(decision?.reviewDate ?? "");
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [members, setMembers] = useState<{ id: string; name: string }[]>([]);
   const [others, setOthers] = useState<Decision[]>([]);
@@ -71,6 +73,9 @@ export function DecisionDialog({
       status,
       projectId: projectId || null,
       people,
+      // New decisions without an explicit owner belong to their author (server default).
+      ownerId: ownerId || (decision ? null : undefined),
+      reviewDate: reviewDate || null,
       ...(supersedesId && supersedesId !== decision?.supersedes?.id ? { supersedesId } : {}),
       ...(decision ? {} : { wikiPageId: prefill?.wikiPageId ?? null, sourceBlockId: prefill?.sourceBlockId ?? null, taskId: prefill?.taskId ?? null }),
     };
@@ -149,6 +154,23 @@ export function DecisionDialog({
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-300">
+              {t("brain.decision.owner")}
+              <select className={`${sel} mt-1`} value={ownerId} onChange={(e) => setOwnerId(e.target.value)} data-testid="decision-owner">
+                <option value="">{decision ? "—" : t("brain.decision.ownerMe")}</option>
+                {members.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>
+              <span className="block mt-0.5 text-[11px] font-normal text-neutral-400">{t("brain.decision.ownerHint")}</span>
+            </label>
+            <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-300">
+              {t("brain.decision.reviewDate")}
+              <input type="date" className={`${sel} mt-1`} value={reviewDate} onChange={(e) => setReviewDate(e.target.value)} data-testid="decision-review-date" />
+              <span className="block mt-0.5 text-[11px] font-normal text-neutral-400">{t("brain.decision.reviewDateHint")}</span>
             </label>
             <label className="block text-xs font-medium text-neutral-600 dark:text-neutral-300 sm:col-span-2">
               {t("brain.decision.supersedes")}

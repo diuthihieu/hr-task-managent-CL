@@ -4,7 +4,7 @@ import { BrainHub, type BrainTab } from "@/components/brain/brain-hub";
 
 export const metadata = { title: "Second Brain" };
 
-const TABS: BrainTab[] = ["today", "ask", "journal", "decisions", "health", "weekly"];
+const TABS: BrainTab[] = ["today", "ask", "journal", "weekly", "decisions", "graph", "health"];
 
 export default async function BrainPage({ params, searchParams }: { params: Promise<{ workspaceSlug: string }>; searchParams: Promise<{ tab?: string }> }) {
   const { workspaceSlug } = await params;

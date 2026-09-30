@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Gavel, Pencil, Trash2, ArrowRight, History, FileText, CheckSquare, Target, Waypoints, Loader2 } from "lucide-react";
+import { ArrowLeft, Gavel, Pencil, Trash2, ArrowRight, History, FileText, CheckSquare, Target, Waypoints, Loader2, CalendarClock } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
@@ -77,6 +77,14 @@ export function DecisionDetail({ workspaceId, workspaceSlug, decisionId }: { wor
             </Link>
           </div>
         )}
+        {d.reviewDue && (
+          <div className="mt-4 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/40 px-3 py-2 text-xs text-amber-800 dark:text-amber-200" data-testid="decision-review-banner">
+            <CalendarClock size={13} /> {t("brain.decision.reviewBanner", { date: d.reviewDate ?? "" })}
+            <Button size="sm" variant="outline" className="ml-auto h-7" onClick={() => setEditing(true)}>
+              {t("brain.decision.reviewNow")}
+            </Button>
+          </div>
+        )}
         <div className="mt-5 rounded-2xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-4">
           {row(t("brain.decision.reason"), <p className="whitespace-pre-wrap">{d.reason || "—"}</p>)}
           {row(
@@ -97,6 +105,8 @@ export function DecisionDetail({ workspaceId, workspaceSlug, decisionId }: { wor
           {row(t("brain.decision.evidence"), <p className="whitespace-pre-wrap">{d.evidence || "—"}</p>)}
           {d.sourceUrl && row(t("brain.decision.sourceUrl"), <a href={d.sourceUrl} target={d.sourceUrl.startsWith("/") ? undefined : "_blank"} rel="noreferrer" className="text-indigo-600 break-all">{d.sourceUrl}</a>)}
           {row(t("brain.decision.date"), d.decidedAt + (d.validTo ? ` → ${d.validTo}` : ""))}
+          {row(t("brain.decision.owner"), d.owner?.name ?? "—")}
+          {row(t("brain.decision.reviewDate"), d.reviewDate ? <span className={d.reviewDue ? "text-amber-600 font-medium" : ""}>{d.reviewDate}</span> : "—")}
           {row(t("brain.decision.people"), d.people.map((p) => p.name).join(", ") || "—")}
           {row(t("brain.decision.project"), d.project?.name ?? "—")}
           {row(

@@ -11,6 +11,7 @@ import { useT } from "@/components/i18n-provider";
 import { cn } from "@/lib/utils";
 import type { CategoryRow } from "@/types";
 import { ProjectVisibility } from "./project-visibility";
+import { ColorPicker } from "@/components/ui/color-picker";
 import { ProjectIconPicker } from "./project-icon";
 
 const COLORS = ["#6366f1", "#0ea5e9", "#22c55e", "#f97316", "#ec4899", "#eab308", "#14b8a6", "#8b5cf6", "#ef4444", "#64748b"];
@@ -163,18 +164,7 @@ export function ProjectSettings({ project, workspaceId, workspaceSlug, canManage
             {categories.length === 0 && <div className="px-3 py-4 text-sm text-neutral-400">{t("ps.noCategories")}</div>}
             {categories.map((c) => (
               <div key={c.id} className="flex items-center gap-2 px-3 py-2">
-                <div className="flex gap-0.5 shrink-0">
-                  {COLORS.map((col) => (
-                    <button
-                      key={col}
-                      disabled={!canEditCategories}
-                      onClick={() => patchCategory(c, { color: col })}
-                      className={cn("h-3.5 w-3.5 rounded-full border", c.color === col ? "border-neutral-900 dark:border-white" : "border-transparent")}
-                      style={{ backgroundColor: col }}
-                      aria-label={col}
-                    />
-                  ))}
-                </div>
+                <ColorPicker color={c.color} disabled={!canEditCategories} onPick={(col) => patchCategory(c, { color: col })} label={t("st.pickColor", { name: c.name })} testId="category-color" />
                 <Input defaultValue={c.name} disabled={!canEditCategories} onBlur={(e) => e.target.value.trim() && e.target.value.trim() !== c.name && patchCategory(c, { name: e.target.value.trim() })} className="flex-1 h-7" aria-label={t("common.name")} />
                 <span className="text-xs text-neutral-400 w-16 text-right shrink-0">{t("common.tasks", { count: c.taskCount ?? 0 })}</span>
                 {canEditCategories && (

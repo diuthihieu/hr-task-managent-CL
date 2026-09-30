@@ -115,11 +115,11 @@ export function Rewards({ workspaceId, balance, onChanged }: { workspaceId: stri
         })}
       </div>
       {preview && <RewardPreview r={preview} balance={balance} onClose={() => setPreview(null)} onRedeem={(note) => redeem(preview, note)} />}
-      {!!mine.length && (
+      {mine.some((m) => m.status === "pending") && (
         <section className="rounded-2xl border border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-4" data-testid="reco-my-requests">
           <h3 className="text-sm font-semibold mb-2">{t("reco.rewards.myRequests")}</h3>
           <ul className="space-y-1.5 text-sm">
-            {mine.map((m) => (
+            {mine.filter((m) => m.status === "pending").map((m) => (
               <li key={m.id} className="flex flex-wrap items-center gap-2">
                 <span className="font-medium">{m.reward.name}</span>
                 <Meta className="text-xs"><span className="font-medium text-indigo-600 tabular-nums">{t("reco.unit.points", { n: fmtNumber(m.points) })}</span><span>{formatDate(m.createdAt)}</span></Meta>

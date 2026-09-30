@@ -2,7 +2,8 @@
 // Opening a thank-you letter: an envelope that opens, then the letter.
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Send, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, Send, Trash2, SmilePlus } from "lucide-react";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { useRouter } from "next/navigation";
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
@@ -93,6 +94,7 @@ export function KudosLetter({ workspaceId, workspaceSlug, kudosId, me }: { works
             )}
           </article>
         )}
+        {opened && <Reactions kudosId={k.id} initial={k.reactions} />}
         {opened && (
           <div className="mt-4 flex justify-center gap-2">
             {k.mine && (
@@ -117,6 +119,61 @@ export function KudosLetter({ workspaceId, workspaceSlug, kudosId, me }: { works
         )}
       </div>
       {reply && <KudosComposer workspaceId={workspaceId} me={me} to={k.from} onClose={() => setReply(false)} onSent={() => setReply(false)} />}
+    </div>
+  );
+}
+
+const REACTIONS = ["❤️", "😍", "😢", "😂", "🙏", "👏", "🎉", "🔥"] as const;
+
+/** Heart / emoji reactions under a letter; each person can leave any of them once. */
+function Reactions({ kudosId, initial }: { kudosId: string; initial: KudosDto["reactions"] }) {
+  const { t } = useT();
+  const [items, setItems] = useState(initial);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  async function toggle(emoji: string) {
+    if (busy) return;
+    setBusy(true);
+    setOpen(false);
+    try {
+      setItems(await api.post<KudosDto["reactions"]>(`/api/kudos/${kudosId}/reactions`, { emoji }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-center gap-1.5" data-testid="kudos-reactions">
+      {items.map((r) => (
+        <button
+          key={r.emoji}
+          onClick={() => toggle(r.emoji)}
+          title={r.names.join(", ")}
+          className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-sm transition-colors", r.mine ? "border-indigo-300 bg-indigo-50 dark:bg-indigo-950/60 dark:border-indigo-800" : "border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 hover:border-indigo-200")}
+          data-testid="kudos-reaction"
+          aria-pressed={r.mine}
+        >
+          <span className="text-base leading-none">{r.emoji}</span>
+          <span className="text-xs font-medium tabular-nums text-neutral-600 dark:text-neutral-300">{r.count}</span>
+        </button>
+      ))}
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button className="inline-flex items-center gap-1 rounded-full border border-dashed border-neutral-300 dark:border-neutral-700 px-2.5 py-1 text-xs text-neutral-500 hover:text-indigo-600 hover:border-indigo-300" data-testid="kudos-react">
+            <SmilePlus size={14} /> {items.length ? null : t("reco.letter.react")}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent className="w-auto p-1.5">
+          <div className="flex gap-0.5">
+            {REACTIONS.map((e) => (
+              <button key={e} onClick={() => toggle(e)} className={cn("h-9 w-9 rounded-full text-xl hover:bg-neutral-100 dark:hover:bg-neutral-800 hover:scale-125 transition-transform", items.some((x) => x.emoji === e && x.mine) && "bg-indigo-50 dark:bg-indigo-950")} aria-label={e} data-testid="kudos-react-option">
+                {e}
+              </button>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

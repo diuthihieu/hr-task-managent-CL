@@ -36,7 +36,10 @@ export function WidgetCard({
   crossFilterActive,
   onData,
   onSegmentClick,
+  readOnly,
 }: {
+  /** Shown elsewhere (e.g. on Home): no edit menu, no drag handle. */
+  readOnly?: boolean;
   /** Drill-down into the tasks behind a clicked segment (or the whole KPI). */
   onSegmentClick?: (segment: Segment) => void;
   /** Reports loaded data upward (feeds the dashboard's "AI Insight"). */
@@ -84,9 +87,10 @@ export function WidgetCard({
 
   return (
     <div className="woli-widget h-full w-full flex flex-col rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden">
-      <div className="drag-handle flex items-center gap-1.5 px-2.5 h-8 border-b border-neutral-100 dark:border-neutral-800 cursor-grab shrink-0">
-        <GripVertical size={12} className="text-neutral-300 shrink-0" />
+      <div className={cn("flex items-center gap-1.5 px-2.5 h-8 border-b border-neutral-100 dark:border-neutral-800 shrink-0", !readOnly && "drag-handle cursor-grab")}>
+        {!readOnly && <GripVertical size={12} className="text-neutral-300 shrink-0" />}
         <span className="text-xs font-medium text-neutral-700 dark:text-neutral-200 truncate flex-1">{block.title || "Untitled widget"}</span>
+        {!readOnly && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" onMouseDown={(e) => e.stopPropagation()}>
@@ -102,6 +106,7 @@ export function WidgetCard({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
       </div>
       <div className="flex-1 min-h-0 p-2 relative">
         {loading && !data ? (

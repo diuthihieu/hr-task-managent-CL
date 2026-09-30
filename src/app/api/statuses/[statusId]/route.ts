@@ -20,6 +20,11 @@ export const PATCH = route<P>(async (req, { params }) => {
   const after = await prisma.$transaction(async (tx) => {
     if (body.isDefault) await tx.status.updateMany({ where: { workspaceId: ctx.workspaceId, id: { not: statusId } }, data: { isDefault: false } });
     const s = await tx.status.update({ where: { id: statusId }, data: { ...body, sortOrder: order, updatedById: user.id } });
+    // A status moving in or out of "done" re-counts its tasks the same way a status change would.
+    if (body.category && body.category !== before.category) {
+      if (body.category === "done") await tx.task.updateMany({ where: { statusId, completedAt: null }, data: { completedAt: new Date(), progress: 100 } });
+      else if (before.category === "done") await tx.task.updateMany({ where: { statusId }, data: { completedAt: null } });
+    }
     const changes = diff(before, s, ["name", "color", "category", "isDefault"]);
     if (changes) await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "status", entityId: statusId, action: "updated", changes });
     return s;

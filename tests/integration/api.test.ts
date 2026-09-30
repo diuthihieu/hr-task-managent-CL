@@ -978,6 +978,16 @@ test("focus: switching tasks pauses and records the running one; all open sessio
   assert.equal((await contributor.patch(`/api/focus/${b.body.id}`, { action: "complete" })).status, 200);
   assert.equal(await actual(t1), 15, "completing another session doesn't touch this task");
   assert.deepEqual((await contributor.get<unknown[]>("/api/focus/active?all=1")).body, []);
+  // Every start / resume and how it ended is logged with its times.
+  const runs = await prisma.focusRun.findMany({ where: { sessionId: a.body.id }, orderBy: { startedAt: "asc" } });
+  assert.deepEqual(runs.map((r) => [r.startKind, r.endKind]), [["started", "switched"], ["resumed", "stopped"]]);
+  assert.ok(runs.every((r) => r.endedAt && r.endedAt >= r.startedAt));
+  const hist = await contributor.get<{ sessions: { id: string; startedAt: string; endedAt: string | null; runs: { startKind: string; endKind: string; startedAt: string; endedAt: string }[] }[] }>(`/api/tasks/${t1}/focus`);
+  const sess = hist.body.sessions.find((x) => x.id === a.body.id)!;
+  assert.equal(sess.runs.length, 2);
+  assert.ok(sess.endedAt, "the session's end time");
+  const bRuns = await prisma.focusRun.findMany({ where: { sessionId: b.body.id }, orderBy: { startedAt: "asc" } });
+  assert.deepEqual(bRuns.map((r) => [r.startKind, r.endKind]), [["started", "switched"]], "completing a paused session adds no run");
 });
 
 test("role changes: the member is notified, may decline a promotion (never a demotion), and the admin hears back", async () => {
@@ -1053,6 +1063,60 @@ test("quick capture dots move along their ring and can be deleted by their owner
   assert.equal((await admin.del(`/api/thoughts/${th.body.id}`)).status, 404);
   assert.equal((await contributor.del(`/api/thoughts/${th.body.id}`)).status, 204);
   assert.ok(!(await contributor.get<{ id: string }[]>(`/api/workspaces/${s.ws}/thoughts`)).body.some((r) => r.id === th.body.id));
+});
+
+test("Home: personal layouts, validated widgets, and templates shared within the workspace", async () => {
+  const def = await viewer.get<{ widgets: { type: string }[]; custom: boolean }>(`/api/workspaces/${s.ws}/home-layout`);
+  assert.equal(def.body.custom, false);
+  assert.equal(def.body.widgets[0].type, "kpis", "the default command-center layout");
+  assert.equal((await viewer.put(`/api/workspaces/${s.ws}/home-layout`, { widgets: [{ id: "x1", type: "hack", size: "s", style: "x" }] })).status, 400);
+  const saved = await viewer.put<{ widgets: { type: string; size: string; style: string }[] }>(`/api/workspaces/${s.ws}/home-layout`, { widgets: [{ id: "m1", type: "metric", size: "xl", style: "weird", config: { metric: "overdue" } }, { id: "n1", type: "note", size: "s", style: "sticky", config: { text: "Call payroll" } }] });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.deepEqual(saved.body.widgets.map((w) => [w.type, w.size, w.style]), [["metric", "s", "tile"], ["note", "s", "sticky"]], "unsupported sizes / styles fall back to defaults");
+  assert.equal((await contributor.get<{ custom: boolean }>(`/api/workspaces/${s.ws}/home-layout`)).body.custom, false, "layouts are personal");
+  assert.equal((await outsider.get(`/api/workspaces/${s.ws}/home-layout`)).status, 404);
+
+  const widgets = [{ id: "k", type: "kpis", size: "xl", style: "big" }, { id: "t", type: "my_tasks", size: "xl", style: "list" }];
+  assert.equal((await viewer.post(`/api/workspaces/${s.ws}/home-templates`, { name: "Board", widgets, visibility: "workspace" })).status, 403, "viewers can't publish to everyone");
+  assert.equal((await viewer.post(`/api/workspaces/${s.ws}/home-templates`, { name: "Board", widgets, visibility: "shared", shareWith: [s.outsiderId] })).status, 400, "only members");
+  const shared = await viewer.post<{ id: string; visibility: string }>(`/api/workspaces/${s.ws}/home-templates`, { name: "HR daily", widgets, visibility: "shared", shareWith: [s.contributorId] });
+  assert.equal(shared.status, 201, JSON.stringify(shared.body));
+  const priv = await viewer.post<{ id: string }>(`/api/workspaces/${s.ws}/home-templates`, { name: "Just me", widgets });
+  const pub = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/home-templates`, { name: "Company", widgets, visibility: "workspace" });
+  assert.equal(pub.status, 201);
+  const seen = await contributor.get<{ mine: { id: string }[]; shared: { id: string; sharedWith: unknown[] }[] }>(`/api/workspaces/${s.ws}/home-templates`);
+  const ids = seen.body.shared.map((x) => x.id);
+  assert.ok(ids.includes(shared.body.id) && ids.includes(pub.body.id), "shared with me + workspace-wide");
+  assert.ok(!ids.includes(priv.body.id), "private stays private");
+  assert.deepEqual(seen.body.shared.find((x) => x.id === shared.body.id)?.sharedWith, [], "who else it is shared with is the owner's business");
+  assert.ok(await prisma.notification.findFirst({ where: { userId: s.contributorId, type: "template_shared", actorId: s.viewerId } }), "recipients are notified");
+  assert.equal((await contributor.patch(`/api/home-templates/${shared.body.id}`, { name: "Mine now" })).status, 404, "only the owner edits");
+  assert.equal((await contributor.del(`/api/home-templates/${shared.body.id}`)).status, 403);
+  const copy = await contributor.post<{ id: string; visibility: string }>(`/api/home-templates/${shared.body.id}/copy`);
+  assert.equal(copy.status, 201);
+  assert.equal(copy.body.visibility, "private", "a copy starts private");
+  assert.equal((await outsider.post(`/api/home-templates/${shared.body.id}/copy`)).status, 404);
+  assert.equal((await contributor.post(`/api/home-templates/${priv.body.id}/copy`)).status, 404);
+  // Using a template counts its use; unsharing removes access.
+  await contributor.put(`/api/workspaces/${s.ws}/home-layout`, { widgets, templateId: pub.body.id });
+  assert.equal((await prisma.homeTemplate.findUniqueOrThrow({ where: { id: pub.body.id } })).useCount, 1);
+  assert.equal((await viewer.patch(`/api/home-templates/${shared.body.id}`, { visibility: "private" })).status, 200);
+  assert.ok(!(await contributor.get<{ shared: { id: string }[] }>(`/api/workspaces/${s.ws}/home-templates`)).body.shared.some((x) => x.id === shared.body.id));
+  assert.equal((await admin.del(`/api/home-templates/${pub.body.id}`)).status, 204);
+  assert.equal((await viewer.del(`/api/workspaces/${s.ws}/home-layout`)).status, 200);
+});
+
+test("journal notes: Save files a note in a private history", async () => {
+  const saved = await viewer.post<{ id: string; title: string }>(`/api/workspaces/${s.ws}/journal/notes`, { date: "2026-09-30", content: "<p>Learned: <b>probation</b> is 60 days</p><script>x</script>" });
+  assert.equal(saved.status, 201, JSON.stringify(saved.body));
+  assert.equal(saved.body.title, "Learned: probation is 60 days");
+  assert.equal((await viewer.post(`/api/workspaces/${s.ws}/journal/notes`, { date: "2026-09-30", content: "<p> </p>" })).status, 400);
+  const day = await viewer.get<{ id: string; content: string }[]>(`/api/workspaces/${s.ws}/journal/notes?date=2026-09-30`);
+  assert.equal(day.body.length, 1);
+  assert.doesNotMatch(day.body[0].content, /script/, "sanitized");
+  assert.equal((await contributor.get<unknown[]>(`/api/workspaces/${s.ws}/journal/notes`)).body.length, 0, "private to the author");
+  assert.equal((await contributor.del(`/api/journal-notes/${saved.body.id}`)).status, 404);
+  assert.equal((await viewer.del(`/api/journal-notes/${saved.body.id}`)).status, 204);
 });
 
 test("universal search covers tasks, projects, wikis, objectives and people - within what the user can see", async () => {
@@ -1760,6 +1824,22 @@ test("recognition: thank-you letters notify, open, stay private when asked, and 
   assert.equal((await viewer.get(`/api/workspaces/${s.ws}/kudos/context?toId=${s.outsiderId}`)).status, 400, "only members");
 });
 
+test("thank-you letters take emoji reactions; the other party hears about it once", async () => {
+  const k = await prisma.kudos.findFirstOrThrow({ where: { fromId: s.viewerId, toId: s.contributorId, deletedAt: null } });
+  const r = await contributor.post<{ emoji: string; count: number; mine: boolean }[]>(`/api/kudos/${k.id}/reactions`, { emoji: "❤️" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.map((x) => [x.emoji, x.count, x.mine]), [["❤️", 1, true]]);
+  assert.equal((await contributor.post(`/api/kudos/${k.id}/reactions`, { emoji: "💩" })).status, 400, "only the offered reactions");
+  const n = () => prisma.notification.count({ where: { userId: s.viewerId, type: "kudos_reaction", actorId: s.contributorId } });
+  assert.equal(await n(), 1, "the sender is told");
+  await contributor.post(`/api/kudos/${k.id}/reactions`, { emoji: "❤️" }); // un-react
+  await contributor.post(`/api/kudos/${k.id}/reactions`, { emoji: "❤️" }); // react again
+  assert.equal(await n(), 1, "no duplicate notices");
+  const open = await viewer.get<{ reactions: { emoji: string; names: string[] }[] }>(`/api/kudos/${k.id}`);
+  assert.equal(open.body.reactions[0].names.length, 1);
+  assert.equal((await outsider.post(`/api/kudos/${k.id}/reactions`, { emoji: "🎉" })).status, 404);
+});
+
 test("recognition: reward catalog, redemption with reserved points, approval and stock limits, reachable-reward alerts", async () => {
   type R = { id: string; remaining: number; soldOut: boolean };
   assert.equal((await viewer.post(`/api/workspaces/${s.ws}/rewards`, { name: "Nope", pointsCost: 1, quantity: 1 })).status, 403);
@@ -1804,7 +1884,11 @@ test("recognition: reward catalog, redemption with reserved points, approval and
   const r2 = await admin.post<{ id: string }>(`/api/rewards/${coffee.id}/redeem`, {});
   assert.equal(r2.status, 201);
   assert.equal((await viewer.patch(`/api/redemptions/${r1.body.id}`, { action: "approve" })).status, 403, "members can't approve");
+  const notice = await prisma.notification.findFirstOrThrow({ where: { userId: adminUser.id, type: "reward_request", actorId: s.contributorId }, orderBy: { createdAt: "desc" } });
+  assert.equal((notice.data as { redemptionId: string }).redemptionId, r1.body.id, "the notice points at the request");
+  assert.match(notice.link ?? "", new RegExp(`tab=manage&request=${r1.body.id}$`));
   assert.equal((await contributor.patch(`/api/redemptions/${r1.body.id}`, { action: "approve" })).status, 200);
+  assert.ok((await prisma.notification.findUniqueOrThrow({ where: { id: notice.id } })).actionedAt, "every approver's notice is answered once decided");
   const out = await contributor.patch<{ error: string }>(`/api/redemptions/${r2.body.id}`, { action: "approve" });
   assert.equal(out.status, 400);
   assert.match(out.body.error, /out of stock/i, "stock is never exceeded");

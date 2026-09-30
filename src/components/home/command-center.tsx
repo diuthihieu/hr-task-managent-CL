@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlarmClock, CalendarClock, CheckCircle2, ClipboardList, Hourglass, Loader, Lock, Play, CalendarPlus, Check, Sun, Sparkles, ShieldAlert, ListTodo, CircleDashed, Target, CircleCheck, UsersRound } from "lucide-react";
@@ -121,7 +121,13 @@ export function CommandCenter({
   tasks: initialTasks,
   waiting,
   doneLast30,
+  part = "all",
+  variant,
 }: {
+  /** One piece of the command center (a Home widget), or all of it. */
+  part?: "all" | "kpis" | "focus" | "my_day" | "attention" | "waiting" | "completed" | "my_tasks";
+  /** The widget's style (kpis: cards | compact | big; lists: list | compact; my_tasks: table | list; focus: banner | card). */
+  variant?: string;
   workspaceId: string;
   base: string;
   today: string;
@@ -138,6 +144,16 @@ export function CommandCenter({
   const param = params.get("tasks") as TaskFilter | null;
   const [filter, setFilter] = useState<TaskFilter>(param && FILTERS.includes(param) ? param : "open");
   const [busy, setBusy] = useState<string | null>(null);
+  // Widgets share the filter through the URL (a KPI click filters the task list widget).
+  useEffect(() => {
+     
+    if (param && FILTERS.includes(param)) setFilter(param);
+  }, [param]);
+  // Fresh server data after a refresh.
+  useEffect(() => {
+     
+    setTasks(initialTasks);
+  }, [initialTasks]);
 
   const counts = useMemo(() => Object.fromEntries(FILTERS.map((f) => [f, tasks.filter((x) => matches(f, x, today, soon)).length])) as Record<TaskFilter, number>, [tasks, today, soon]);
   const byFocus = (a: HomeTask, b: HomeTask) => focusScore(a, today, soon) - focusScore(b, today, soon) || (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999");
@@ -152,7 +168,11 @@ export function CommandCenter({
   const focus = myDay[0] ?? tasks.filter((x) => classify(x, today, soon).open && !x.blockedBy.length).sort(byFocus)[0];
   const list = tasks.filter((x) => matches(filter, x, today, soon)).sort(filter === "done" ? () => 0 : byFocus);
 
-  const dateFmt = (d: string) => new Date(`${d}T00:00:00Z`).toLocaleDateString(locale === "vi" ? "vi-VN" : "en-GB", { day: "2-digit", month: "short", timeZone: "UTC" });
+  // Built by hand so server and browser render the same text (their ICU data can differ).
+  const dateFmt = (d: string) => {
+    const [, mo, da] = d.split("-");
+    return locale === "vi" ? `${da}/${mo}` : `${da} ${["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][Number(mo) - 1]}`;
+  };
   const hours = (m: number | null) => (m ? `${Math.round((m / 60) * 10) / 10}h` : "—");
 
   function pick(f: TaskFilter) {
@@ -241,11 +261,19 @@ export function CommandCenter({
     );
   };
 
-  const section = ({ title, icon: Icon, items, empty, testId, more }: { title: string; icon: typeof ClipboardList; items: HomeTask[]; empty: string; testId: string; more?: TaskFilter }) => (
-    <section className={cn(card, "flex flex-col overflow-hidden")} data-testid={testId}>
+  /** One line per task: the "compact" list style. */
+  const titleRow = (task: HomeTask) => (
+    <Link key={task.id} href={`${base}/p/${task.projectId}/t/${task.id}`} className="flex items-center gap-2 px-4 py-1.5 text-sm hover:bg-neutral-50 dark:hover:bg-neutral-800/40" data-testid="cc-task">
+      <TaskTick done={task.category === "done"} />
+      <span className={cn("truncate flex-1", task.category === "done" && "line-through text-neutral-400")}>{task.title || t("common.untitled")}</span>
+      {task.dueDate && <span className="text-[11px] text-neutral-400 shrink-0">{dateFmt(task.dueDate)}</span>}
+    </Link>
+  );
+  const section = ({ title, icon: Icon, items, empty, testId, more, compact }: { title: string; icon: typeof ClipboardList; items: HomeTask[]; empty: string; testId: string; more?: TaskFilter; compact?: boolean }) => (
+    <section className={cn(card, "flex flex-col overflow-hidden h-full")} data-testid={testId}>
       <SectionHeader icon={Icon} title={title} count={items.length} />
       <div className="max-h-72 overflow-y-auto thin-scroll divide-y divide-neutral-100 dark:divide-neutral-800 flex-1">
-        {items.length === 0 ? <p className="px-4 pb-4 pt-1 text-xs text-neutral-400">{empty}</p> : items.slice(0, 30).map((x) => row(x, true))}
+        {items.length === 0 ? <p className="px-4 pb-4 pt-1 text-xs text-neutral-400">{empty}</p> : items.slice(0, 30).map((x) => (compact ? titleRow(x) : row(x, true)))}
       </div>
       {more && items.length > 0 && (
         <button onClick={() => pick(more)} className="text-xs font-medium text-indigo-600 hover:underline px-4 py-2 text-left border-t border-neutral-100 dark:border-neutral-800">
@@ -262,8 +290,7 @@ export function CommandCenter({
     { f: "unplanned" as const, n: counts.unplanned, tone: "text-neutral-600 bg-neutral-100 dark:bg-neutral-800 dark:text-neutral-300" },
   ];
 
-  return (
-    <div className="space-y-5">
+  const kpisCards = (
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="home-kpis">
         {kpis.map((k) => (
           <button key={k.f} onClick={() => pick(k.f)} className={cn(card, "p-4 flex items-center gap-3 text-left hover:border-indigo-200 dark:hover:border-indigo-900 transition-colors", filter === k.f && "ring-2 ring-indigo-500/40")} data-testid={`kpi-${k.f}`}>
@@ -277,7 +304,29 @@ export function CommandCenter({
           </button>
         ))}
       </div>
-
+  );
+  const kpisCompact = (
+    <div className={cn(card, "px-2 py-2 flex flex-wrap items-center divide-x divide-neutral-100 dark:divide-neutral-800")} data-testid="home-kpis">
+      {kpis.map((k) => (
+        <button key={k.f} onClick={() => pick(k.f)} className={cn("flex-1 min-w-[8rem] px-4 py-1.5 flex items-center gap-2 text-left rounded-lg hover:bg-neutral-50 dark:hover:bg-neutral-800/50", filter === k.f && "text-indigo-700 dark:text-indigo-300")} data-testid={`kpi-${k.f}`}>
+          <k.icon size={15} className={k.alert ? "text-red-600" : "text-indigo-600"} />
+          <span className="text-xs text-neutral-500 truncate flex-1">{k.label}</span>
+          <span className={cn("text-lg font-bold tabular-nums", k.alert && "text-red-600")}>{k.value}</span>
+        </button>
+      ))}
+    </div>
+  );
+  const kpisBig = (
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3" data-testid="home-kpis">
+      {kpis.map((k) => (
+        <button key={k.f} onClick={() => pick(k.f)} className={cn(card, "p-5 text-left hover:border-indigo-200 dark:hover:border-indigo-900")} data-testid={`kpi-${k.f}`}>
+          <span className={cn("block text-4xl font-extrabold tabular-nums tracking-tight", k.alert ? "text-red-600" : "text-indigo-600")}>{k.value}</span>
+          <span className="block mt-1 text-xs font-medium uppercase tracking-wide text-neutral-500">{k.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+  const focusBanner = (
       <section className={cn(card, "p-4 flex flex-wrap items-center gap-4 bg-gradient-to-r from-indigo-50/70 to-transparent dark:from-indigo-950/40")} data-testid="cc-focus">
         <span className="h-11 w-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
           <Sun size={20} />
@@ -314,10 +363,37 @@ export function CommandCenter({
           />
         </div>
       </section>
+  );
+  const focusCard = (
+    <section className={cn(card, "p-5 h-full flex flex-col gap-3")} data-testid="cc-focus">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-600">
+        <Sun size={14} /> {t("cc.focusToday")}
+      </div>
+      {focus ? (
+        <Link href={`${base}/p/${focus.projectId}/t/${focus.id}`} className="text-lg font-semibold text-neutral-900 dark:text-neutral-50 hover:text-indigo-600 line-clamp-2">
+          {focus.title}
+        </Link>
+      ) : (
+        <p className="text-sm text-neutral-500">{t("cc.focusEmpty")}</p>
+      )}
+      {focus && (
+        <Meta className="text-xs">
+          <MetaChip>{focus.projectName}</MetaChip>
+          {focus.dueDate && <MetaDate value={dateFmt(focus.dueDate)} title={t("home.col.due")} />}
+        </Meta>
+      )}
+      <div className="mt-auto flex flex-wrap gap-2">{focus && <StartFocusButton taskId={focus.id} />}</div>
+    </section>
+  );
+  const compactList = variant === "compact";
+  const lists = {
+    my_day: () => section({ title: t("cc.myDay"), icon: Sun, items: myDay, empty: t("cc.myDayEmpty"), testId: "cc-myday", more: "today", compact: compactList }),
+    waiting: () => section({ title: t("cc.waiting"), icon: Hourglass, items: waiting, empty: t("cc.waitingEmpty"), testId: "cc-waiting", compact: compactList }),
+    completed: () => section({ title: t("cc.completed"), icon: CheckCircle2, items: completed, empty: t("cc.completedEmpty"), testId: "cc-completed", more: "done", compact: compactList }),
+  };
+  const attentionEl = (
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {section({ title: t("cc.myDay"), icon: Sun, items: myDay, empty: t("cc.myDayEmpty"), testId: "cc-myday", more: "today" })}
-        <section className={cn(card, "flex flex-col overflow-hidden")} data-testid="cc-attention">
+        <section className={cn(card, "flex flex-col overflow-hidden h-full")} data-testid="cc-attention">
           <SectionHeader icon={AlarmClock} title={t("cc.attention")} count={attention.length} />
           <div className="flex flex-wrap gap-1 px-4 pb-2">
             {attentionCounts.map((a) => (
@@ -327,13 +403,30 @@ export function CommandCenter({
             ))}
           </div>
           <div className="max-h-64 overflow-y-auto thin-scroll divide-y divide-neutral-100 dark:divide-neutral-800 flex-1">
-            {attention.length === 0 ? <p className="px-4 pb-4 text-xs text-neutral-400">{t("cc.attentionEmpty")}</p> : attention.slice(0, 30).map((x) => row(x, true))}
+            {attention.length === 0 ? <p className="px-4 pb-4 text-xs text-neutral-400">{t("cc.attentionEmpty")}</p> : attention.slice(0, 30).map((x) => (compactList ? titleRow(x) : row(x, true)))}
           </div>
         </section>
-        {section({ title: t("cc.waiting"), icon: Hourglass, items: waiting, empty: t("cc.waitingEmpty"), testId: "cc-waiting" })}
-        {section({ title: t("cc.completed"), icon: CheckCircle2, items: completed, empty: t("cc.completedEmpty"), testId: "cc-completed", more: "done" })}
-      </div>
+  );
 
+  const myTasksList = (
+    <section id="my-tasks" className={cn(card, "overflow-hidden scroll-mt-4")} data-testid="home-my-tasks">
+      <div className="flex flex-wrap items-center gap-2 px-5 pt-4 pb-3">
+        <ListTodo size={16} className="text-indigo-600" />
+        <h2 className="font-semibold text-neutral-900 dark:text-neutral-50 mr-2">{t("home.myTasks")}</h2>
+        <div className="flex flex-wrap gap-1">
+          {FILTERS.map((f) => (
+            <button key={f} onClick={() => pick(f)} className={cn("rounded-full px-2.5 py-1 text-xs font-medium border", filter === f ? "bg-indigo-600 border-indigo-600 text-white" : "border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300 hover:border-indigo-300")} data-testid={`cc-filter-${f}`}>
+              {t(`cc.filter.${f}` as MessageKey)} <span className="tabular-nums opacity-70">{counts[f]}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="max-h-[520px] overflow-y-auto thin-scroll border-t border-neutral-100 dark:border-neutral-800 divide-y divide-neutral-100 dark:divide-neutral-800" data-testid="cc-list">
+        {list.length === 0 ? <p className="px-5 py-6 text-sm text-neutral-400 text-center">{t("home.noTasks")}</p> : list.map((x) => row(x))}
+      </div>
+    </section>
+  );
+  const myTasksTable = (
       <section id="my-tasks" className={cn(card, "overflow-hidden scroll-mt-4")} data-testid="home-my-tasks">
         <div className="flex flex-wrap items-center gap-2 px-5 pt-4 pb-3">
           <ListTodo size={16} className="text-indigo-600" />
@@ -433,6 +526,34 @@ export function CommandCenter({
           </div>
         )}
       </section>
-    </div>
   );
+
+  switch (part) {
+    case "kpis":
+      return variant === "compact" ? kpisCompact : variant === "big" ? kpisBig : kpisCards;
+    case "focus":
+      return variant === "card" ? focusCard : focusBanner;
+    case "attention":
+      return attentionEl;
+    case "my_day":
+    case "waiting":
+    case "completed":
+      return lists[part]();
+    case "my_tasks":
+      return variant === "list" ? myTasksList : myTasksTable;
+    default:
+      return (
+        <div className="space-y-5">
+          {kpisCards}
+          {focusBanner}
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {lists.my_day()}
+            {attentionEl}
+            {lists.waiting()}
+            {lists.completed()}
+          </div>
+          {myTasksTable}
+        </div>
+      );
+  }
 }

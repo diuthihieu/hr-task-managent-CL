@@ -53,6 +53,7 @@ export function RichEditor({
   onUploadImage,
   placeholder,
   onSaveStateChange,
+  onChange,
   minHeight = 320,
   workspaceId,
   renderBubble,
@@ -61,6 +62,8 @@ export function RichEditor({
   content: string | null;
   editable: boolean;
   onSave: (html: string) => Promise<void>;
+  /** Every edit, immediately (the debounced save still goes through onSave). */
+  onChange?: (html: string) => void;
   onUploadImage?: (file: File) => Promise<string>;
   placeholder?: string;
   onSaveStateChange?: (s: SaveState) => void;
@@ -80,10 +83,12 @@ export function RichEditor({
   const lastSaved = useRef<string>(content ?? "");
   const saveRef = useRef(onSave);
   const stateRef = useRef(onSaveStateChange);
+  const changeRef = useRef(onChange);
   const fileRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     saveRef.current = onSave;
     stateRef.current = onSaveStateChange;
+    changeRef.current = onChange;
   });
 
   const editor = useEditor({
@@ -115,6 +120,7 @@ export function RichEditor({
       },
     },
     onUpdate: ({ editor: ed }) => {
+      changeRef.current?.(ed.isEmpty ? "" : ed.getHTML());
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => flush(ed), 900);
     },

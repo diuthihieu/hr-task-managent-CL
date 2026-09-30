@@ -26,7 +26,7 @@ interface Settings {
   members: { id: string; name: string; email: string; avatarColor: string; role: string; isManager: boolean; canViewOthersPoints: boolean | null }[];
 }
 
-export function RecognitionAdmin({ workspaceId }: { workspaceId: string }) {
+export function RecognitionAdmin({ workspaceId, highlightId }: { workspaceId: string; highlightId?: string | null }) {
   const { t } = useT();
   const [s, setS] = useState<Settings | null>(null);
   const [rewards, setRewards] = useState<RewardDto[]>([]);
@@ -39,6 +39,10 @@ export function RecognitionAdmin({ workspaceId }: { workspaceId: string }) {
     api.get<Redemption[]>(`/api/workspaces/${workspaceId}/redemptions`).then(setRequests).catch(() => {});
   };
   useEffect(loadAll, [workspaceId]);
+  // Opened from a "wants to redeem" notification: bring that request into view.
+  useEffect(() => {
+    if (highlightId && requests.length) document.getElementById(`request-${highlightId}`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [highlightId, requests.length]);
 
   async function saveSettings() {
     if (!s) return;
@@ -113,7 +117,7 @@ export function RecognitionAdmin({ workspaceId }: { workspaceId: string }) {
         ) : (
           <ul className="space-y-1.5 text-sm">
             {requests.map((r) => (
-              <li key={r.id} className="flex flex-wrap items-center gap-2" data-testid="reco-request">
+              <li key={r.id} id={`request-${r.id}`} className={cn("flex flex-wrap items-center gap-2 rounded-lg", r.id === highlightId && "ring-2 ring-indigo-400 bg-indigo-50/60 dark:bg-indigo-950/30 p-2")} data-testid="reco-request">
                 <span className="font-medium">{r.user.name}</span>
                 <span className="text-neutral-400">→</span>
                 <span>{r.reward.name}</span>

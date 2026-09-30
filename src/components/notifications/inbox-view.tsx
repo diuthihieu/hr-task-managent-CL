@@ -21,12 +21,12 @@ const GROUPS: { key: string; types: string[] }[] = [
   { key: "mention", types: ["mention"] },
   { key: "due", types: ["task_due_soon", "task_overdue", "task_due_changed", "capture_due", "reminder"] },
   { key: "comment", types: ["task_comment"] },
-  { key: "updates", types: ["task_status", "task_updated"] },
+  { key: "updates", types: ["task_status", "task_updated", "template_shared"] },
   { key: "approval", types: ["approval_request", "approval_result"] },
   { key: "invite", types: ["workspace_invite", "workspace_invite_result", "role_changed", "role_change_result"] },
   { key: "okr", types: ["objective_risk"] },
   { key: "ai", types: ["ai_suggestion"] },
-  { key: "recognition", types: ["kudos", "reward_request", "reward_result"] },
+  { key: "recognition", types: ["kudos", "kudos_reaction", "reward_request", "reward_result"] },
 ];
 
 const ROLE_ORDER = ["viewer", "contributor", "editor", "admin", "owner"];
@@ -105,6 +105,22 @@ export function InboxView() {
   }
 
   /** Workspace invitation: the notification links to /invite/<token>. */
+  async function decideReward(n: NotificationItem, action: "approve" | "reject") {
+    const id = String(n.data?.redemptionId ?? "");
+    if (!id) return open(n);
+    const note = action === "reject" ? window.prompt(t("reco.admin.rejectNote")) : "";
+    if (note === null) return;
+    try {
+      await api.patch(`/api/redemptions/${id}`, { action, note: note || undefined });
+      toast.success(action === "approve" ? t("reco.admin.approvedToast") : t("reco.admin.rejectedToast"));
+      await load();
+      fetchInbox().catch(() => {});
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+      load();
+    }
+  }
+
   async function answerRole(n: NotificationItem, decision: "accept" | "decline") {
     if (decision === "decline" && !confirm(t("role.declineConfirm"))) return;
     try {
@@ -221,6 +237,12 @@ export function InboxView() {
                   <>
                     <ActionButton icon={UserCheck} label={t("inv.accept")} onClick={() => answerInvite(n, "accept")} testId="ac-invite-accept" />
                     <ActionButton icon={ThumbsDown} label={t("inv.decline")} onClick={() => answerInvite(n, "decline")} testId="ac-invite-decline" />
+                  </>
+                )}
+                {n.type === "reward_request" && !n.actioned && !!n.data?.redemptionId && (
+                  <>
+                    <ActionButton icon={ThumbsUp} label={t("reco.admin.approve")} onClick={() => decideReward(n, "approve")} testId="ac-reward-approve" />
+                    <ActionButton icon={ThumbsDown} label={t("reco.admin.reject")} onClick={() => decideReward(n, "reject")} testId="ac-reward-reject" />
                   </>
                 )}
                 {n.type === "role_changed" && !n.actioned && (

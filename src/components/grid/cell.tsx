@@ -383,20 +383,8 @@ export function Cell({ field, value, record, members, linkTargets, okrOptions, w
       return (
         <Popover>
           <PopoverTrigger asChild>
-            <button className={cn(base, "gap-1 cursor-pointer overflow-hidden")}>
-              {selectedMembers.length ? (
-                selectedMembers.map((m) => (
-                  <span key={m.id} className="inline-flex items-center gap-1 rounded-full bg-neutral-100 dark:bg-neutral-800 pl-0.5 pr-2 py-0.5 text-xs">
-                    <span className="relative overflow-hidden h-4 w-4 rounded-full flex items-center justify-center text-white text-[9px]" style={{ backgroundColor: m.avatarColor }}>
-                      {initials(m.name)}
-                      <AvatarImg id={m.id} />
-                    </span>
-                    {m.name}
-                  </span>
-                ))
-              ) : (
-                <UserIcon size={13} className="text-neutral-300" />
-              )}
+            <button className={cn(base, "cursor-pointer overflow-hidden", wrapText && "py-1")}>
+              {selectedMembers.length ? <PeopleChips people={selectedMembers} wrap={!!wrapText} /> : <UserIcon size={13} className="text-neutral-300" />}
             </button>
           </PopoverTrigger>
           <PopoverContent className="w-52 p-1">
@@ -696,4 +684,62 @@ export function CellDisplayValue(field: FieldRow, value: unknown): string {
   if (typeof value === "boolean") return value ? "Yes" : "No";
   if (Array.isArray(value)) return value.join(", ");
   return value === null || value === undefined ? "" : String(value);
+}
+
+/**
+ * Assignee chips keep each name whole. With wrapping on they flow onto new
+ * lines; otherwise the chips that don't fit collapse into a "+N" chip (names in
+ * its tooltip) instead of squeezing or covering each other.
+ */
+function PeopleChips({ people, wrap }: { people: { id: string; name: string; avatarColor: string }[]; wrap: boolean }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [fit, setFit] = useState(people.length);
+  const key = people.map((p) => p.id).join(",");
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || wrap) return;
+    const measure = () => {
+      const chips = [...el.querySelectorAll<HTMLElement>("[data-chip]")];
+      // Widths, not positions: chips already collapsed into "+N" are out of the flow.
+      const GAP = 4;
+      let used = 0;
+      let n = 0;
+      for (const [i, c] of chips.entries()) {
+        const next = used + (i ? GAP : 0) + c.offsetWidth;
+        const room = i === chips.length - 1 ? el.clientWidth : el.clientWidth - 34; // keep space for "+N"
+        if (next > room) break;
+        used = next;
+        n++;
+      }
+      setFit(Math.max(1, n));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [key, wrap]);
+  const hidden = wrap ? [] : people.slice(fit);
+  return (
+    <span ref={ref} className={cn("relative flex min-w-0 w-full gap-1", wrap ? "flex-wrap" : "flex-nowrap overflow-hidden")}>
+      {people.map((m, i) => (
+        <span
+          key={m.id}
+          data-chip
+          title={m.name}
+          className={cn("inline-flex items-center gap-1 rounded-full bg-neutral-100 dark:bg-neutral-800 pl-0.5 pr-2 py-0.5 text-xs whitespace-nowrap shrink-0 max-w-full", !wrap && i >= fit && "invisible absolute")}
+        >
+          <span className="relative overflow-hidden h-4 w-4 rounded-full flex items-center justify-center text-white text-[9px] shrink-0" style={{ backgroundColor: m.avatarColor }}>
+            {initials(m.name)}
+            <AvatarImg id={m.id} />
+          </span>
+          <span className="truncate">{m.name}</span>
+        </span>
+      ))}
+      {hidden.length > 0 && (
+        <span className="inline-flex items-center rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 text-[11px] font-medium shrink-0" title={hidden.map((h) => h.name).join(", ")} data-testid="people-more">
+          +{hidden.length}
+        </span>
+      )}
+    </span>
+  );
 }

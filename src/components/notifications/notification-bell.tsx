@@ -65,7 +65,7 @@ export async function markAllRead() {
 
 /** Notifications that belong to the Recognition area: letters, reward requests/results, "you can redeem" alerts. */
 export function isRecognitionNotification(n: NotificationItem) {
-  return n.type === "kudos" || n.type === "reward_request" || n.type === "reward_result" || (n.type === "ai_suggestion" && (n.data as { kind?: string } | null)?.kind === "reward_reachable");
+  return n.type === "kudos" || n.type === "kudos_reaction" || n.type === "reward_request" || n.type === "reward_result" || (n.type === "ai_suggestion" && (n.data as { kind?: string } | null)?.kind === "reward_reachable");
 }
 
 /** Unread Recognition notifications for one workspace (sidebar badge). */
@@ -138,6 +138,10 @@ export function describeNotification(n: NotificationItem, t: TFunction): string 
       return t("notif.reminder");
     case "kudos":
       return t("notif.kudos", { actor });
+    case "template_shared":
+      return t("notif.template_shared", { actor });
+    case "kudos_reaction":
+      return t("notif.kudos_reaction", { actor, emoji: String(d.emoji ?? "❤️") });
     case "reward_request":
       return t("notif.reward_request", { actor });
     case "reward_result":

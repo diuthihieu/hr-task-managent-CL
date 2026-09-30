@@ -11,8 +11,20 @@ export interface ChecklistItem {
   done: boolean;
 }
 
+type RunRow = { startedAt: Date; endedAt: Date | null; startKind: string; endKind: string | null; seconds: number | null };
+
+/** A session's runs for display: each start / resume with its end, how it ended and its length. */
+export const serializeRuns = (runs: RunRow[] | undefined, now = new Date()) =>
+  (runs ?? []).map((r) => ({
+    startedAt: r.startedAt.toISOString(),
+    endedAt: r.endedAt?.toISOString() ?? null,
+    startKind: r.startKind,
+    endKind: r.endKind,
+    seconds: r.seconds ?? (r.endedAt ? 0 : Math.max(0, Math.round((now.getTime() - r.startedAt.getTime()) / 1000))),
+  }));
+
 export function serializeFocus(
-  s: FocusSession & { task?: { id: string; title: string; projectId: string; estimateMinutes: number | null; actualMinutes: number | null; workspace: { slug: string } } },
+  s: FocusSession & { runs?: RunRow[]; task?: { id: string; title: string; projectId: string; estimateMinutes: number | null; actualMinutes: number | null; workspace: { slug: string } } },
   now = new Date()
 ) {
   return {
@@ -26,6 +38,7 @@ export function serializeFocus(
     checklist: (Array.isArray(s.checklist) ? s.checklist : []) as unknown as ChecklistItem[],
     startedAt: s.startedAt.toISOString(),
     endedAt: s.endedAt?.toISOString() ?? null,
+    runs: serializeRuns(s.runs, now),
     serverTime: now.toISOString(),
     task: s.task
       ? { id: s.task.id, title: s.task.title, estimateMinutes: s.task.estimateMinutes, actualMinutes: s.task.actualMinutes, link: `/w/${s.task.workspace.slug}/p/${s.task.projectId}/t/${s.task.id}` }
@@ -33,4 +46,5 @@ export function serializeFocus(
   };
 }
 
+export const FOCUS_RUNS = { orderBy: { startedAt: "asc" as const }, take: 200 };
 export const FOCUS_TASK_SELECT = { id: true, title: true, projectId: true, estimateMinutes: true, actualMinutes: true, workspace: { select: { slug: true } } } as const;

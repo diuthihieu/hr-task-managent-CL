@@ -24,12 +24,14 @@ export type NotificationType =
   | "workspace_invite"
   | "workspace_invite_result"
   | "role_changed"
+  | "template_shared"
   | "role_change_result"
   | "task_due_soon"
   | "task_overdue"
   | "capture_due"
   | "reminder"
   | "kudos"
+  | "kudos_reaction"
   | "reward_request"
   | "reward_result";
 

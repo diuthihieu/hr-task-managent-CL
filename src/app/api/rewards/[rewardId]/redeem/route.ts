@@ -29,6 +29,6 @@ export const POST = route<P>(async (req, { params }) => {
   const admins = await prisma.workspaceMember.findMany({ where: { workspaceId: reward.workspaceId, role: { in: ["owner", "admin"] } }, select: { userId: true } });
   const managers = await prisma.recognitionManager.findMany({ where: { workspaceId: reward.workspaceId }, select: { userId: true } });
   const to = [...new Set([...admins, ...managers].map((m) => m.userId))].filter((id) => id !== user.id);
-  await prisma.notification.createMany({ data: to.map((userId) => ({ userId, workspaceId: reward.workspaceId, actorId: user.id, type: "reward_request", title: reward.name, body: note || null, link: `${base}/recognition?tab=manage` })) });
+  await prisma.notification.createMany({ data: to.map((userId) => ({ userId, workspaceId: reward.workspaceId, actorId: user.id, type: "reward_request", title: reward.name, body: note || null, data: { redemptionId: red.id, points: reward.pointsCost }, link: `${base}/recognition?tab=manage&request=${red.id}` })) });
   return NextResponse.json({ id: red.id, status: red.status, points: red.points }, { status: 201 });
 });

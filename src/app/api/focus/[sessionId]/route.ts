@@ -4,8 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, route, readJson, notFound, badRequest, forbidden } from "@/lib/authz";
 import { applyTaskPatch, SYS } from "@/lib/task-grid";
 import { notifyTaskPatched } from "@/lib/notifications";
-import { focusElapsed, serializeFocus, FOCUS_TASK_SELECT } from "@/lib/focus";
-import { focusAccess, recordFocusTime, pauseOtherRuns, markInProgress } from "@/lib/focus-server";
+import { focusElapsed, serializeFocus, FOCUS_TASK_SELECT, FOCUS_RUNS } from "@/lib/focus";
+import { focusAccess, recordFocusTime, pauseOtherRuns, markInProgress, openRun, closeRun } from "@/lib/focus-server";
 
 type P = { sessionId: string };
 
@@ -46,20 +46,24 @@ export const PATCH = route<P>(async (req, { params }) => {
     if (body.plannedMinutes !== undefined) data.plannedMinutes = body.plannedMinutes;
     if (body.action === "pause" && s.status === "running") {
       Object.assign(data, { status: "paused", elapsedSeconds: elapsed, resumedAt: null });
+      await closeRun(tx, s.id, now, "paused");
       await recordFocusTime(tx, s, elapsed, user.id, canEdit);
     }
     if (body.action === "resume" && s.status === "paused") {
       // Only one running session at a time: the others pause (and their time is recorded).
       await pauseOtherRuns(tx, user, s.id, now);
       Object.assign(data, { status: "running", resumedAt: now });
+      await openRun(tx, s.id, now, "resumed");
       await markInProgress(tx, s.taskId, user.id, canEdit);
     }
     if (body.action === "cancel") {
       Object.assign(data, { status: "cancelled", elapsedSeconds: elapsed, resumedAt: null, endedAt: now });
+      await closeRun(tx, s.id, now, "stopped");
       if (access) await recordFocusTime(tx, s, elapsed, user.id, canEdit);
     }
     if (body.action === "complete") {
       Object.assign(data, { status: "completed", elapsedSeconds: elapsed, resumedAt: null, endedAt: now });
+      await closeRun(tx, s.id, now, "completed");
       const task = await tx.task.findUniqueOrThrow({ where: { id: s.taskId }, select: { projectId: true, workspaceId: true } });
       await recordFocusTime(tx, s, elapsed, user.id, canEdit, true);
       if (body.completeTask) {
@@ -71,7 +75,7 @@ export const PATCH = route<P>(async (req, { params }) => {
         }
       }
     }
-    return tx.focusSession.update({ where: { id: s.id }, data, include: { task: { select: FOCUS_TASK_SELECT } } });
+    return tx.focusSession.update({ where: { id: s.id }, data, include: { task: { select: FOCUS_TASK_SELECT }, runs: FOCUS_RUNS } });
   });
   return NextResponse.json(serializeFocus(updated, now));
 });

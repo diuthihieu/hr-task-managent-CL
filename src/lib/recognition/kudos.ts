@@ -6,7 +6,11 @@ export const KUDOS_INCLUDE = {
   to: { select: { id: true, name: true, avatarColor: true, avatarUpdatedAt: true } },
   task: { select: { id: true, title: true, projectId: true, deletedAt: true } },
   project: { select: { id: true, name: true, deletedAt: true } },
+  reactions: { orderBy: { createdAt: "asc" }, select: { emoji: true, userId: true, user: { select: { name: true } } } },
 } satisfies Prisma.KudosInclude;
+
+/** Reactions people can leave on a letter. */
+export const KUDOS_REACTIONS = ["❤️", "😍", "😢", "😂", "🙏", "👏", "🎉", "🔥"] as const;
 
 type Row = Prisma.KudosGetPayload<{ include: typeof KUDOS_INCLUDE }>;
 
@@ -32,6 +36,10 @@ export function serializeKudos(k: Row, base: string, viewerId: string) {
     mine: k.toId === viewerId,
     sentByMe: k.fromId === viewerId,
     href: `${base}/recognition/kudos/${k.id}`,
+    reactions: KUDOS_REACTIONS.map((emoji) => {
+      const rs = k.reactions.filter((r) => r.emoji === emoji);
+      return { emoji, count: rs.length, mine: rs.some((r) => r.userId === viewerId), names: rs.map((r) => r.user.name) };
+    }).filter((r) => r.count > 0),
     createdAt: k.createdAt.toISOString(),
   };
 }

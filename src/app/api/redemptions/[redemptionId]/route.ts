@@ -35,7 +35,9 @@ export const PATCH = route<P>(async (req, { params }) => {
     const n = await tx.rewardRedemption.updateMany({ where: { id: redemptionId, status: "pending" }, data: { status, decisionNote: body.note || null, decidedById: user.id, decidedAt: new Date() } });
     if (!n.count) throw badRequest("This request was already decided");
     if (body.action !== "cancel")
-      await tx.notification.create({ data: { userId: red.userId, workspaceId: red.workspaceId, actorId: user.id, type: "reward_result", title: red.reward.name, body: body.note || null, data: { decision: status }, link: `${base}/recognition?tab=rewards` } });
+      await tx.notification.create({ data: { userId: red.userId, workspaceId: red.workspaceId, actorId: user.id, type: "reward_result", title: red.reward.name, body: body.note || null, data: { decision: status, redemptionId }, link: `${base}/recognition?tab=history&request=${redemptionId}` } });
+    // Every approver's "wants to redeem" notice is answered now.
+    await tx.notification.updateMany({ where: { workspaceId: red.workspaceId, type: "reward_request", actionedAt: null, data: { path: ["redemptionId"], equals: redemptionId } }, data: { actionedAt: new Date() } });
     await logActivity(tx, { workspaceId: red.workspaceId, actorId: user.id, entityType: "workspace", entityId: red.workspaceId, action: "updated", summary: `Reward request "${red.reward.name}" ${status}` });
   });
   return NextResponse.json({ id: redemptionId, status: body.action === "approve" ? "approved" : body.action === "reject" ? "rejected" : "cancelled" });

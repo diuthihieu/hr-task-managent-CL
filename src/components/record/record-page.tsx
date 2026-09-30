@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { AttachmentViewer } from "@/components/attachments/attachment-viewer";
 import { TaskApprovals } from "@/components/approvals/task-approvals";
 import { MentionInput, CommentBody } from "@/components/comments/mention-input";
-import { StartFocusButton } from "@/components/focus/focus-mode";
+import { StartFocusButton, TaskFocusHistory } from "@/components/focus/focus-mode";
 import { RetroButton } from "@/components/brain/retro-dialog";
 import { AiTaskActions } from "@/components/ai/ai-actions";
 import { stripMentions, mentionToken } from "@/lib/mentions";
@@ -281,6 +281,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
             <TaskApprovals taskId={taskId} canEdit={canEdit} onChanged={() => router.refresh()} />
             <RetroButton taskId={taskId} />
           </div>
+          <TaskFocusHistory taskId={taskId} />
           {!canEdit && <p className="text-xs text-amber-600 mt-1">{t("record.readOnly")}</p>}
           <Meta className="mt-1 text-xs text-neutral-400">
             <span>{t("record.created", { when: formatDate(record.createdAt, true) })}</span>

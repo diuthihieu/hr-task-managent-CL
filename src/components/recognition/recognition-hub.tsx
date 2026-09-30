@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Award, Gift, Inbox, Send, Settings2, Sparkles, Trophy } from "lucide-react";
+import { Award, Gift, Inbox, Send, Settings2, Sparkles, Trophy, History } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
@@ -12,10 +12,11 @@ import { KudosList } from "./kudos-list";
 import { KudosComposer } from "./kudos-composer";
 import { Rewards } from "./rewards";
 import { RecognitionAdmin } from "./recognition-admin";
+import { RedemptionHistory } from "./redemption-history";
 import { fmtNumber, type PersonLite } from "./shared";
 import type { MessageKey } from "@/lib/i18n/core";
 
-export type RecoTab = "leaderboard" | "mine" | "rewards" | "manage";
+export type RecoTab = "leaderboard" | "mine" | "rewards" | "history" | "manage";
 
 interface Overview {
   enabled: boolean;
@@ -45,7 +46,8 @@ export function RecognitionHub({ workspaceId, workspaceSlug, tab, me }: { worksp
     const kinds: Record<RecoTab, (n: NotificationItem) => boolean> = {
       leaderboard: () => false,
       mine: () => false, // letters are marked read when opened
-      rewards: (n) => n.type === "reward_result" || n.type === "ai_suggestion",
+      rewards: (n) => n.type === "ai_suggestion",
+      history: (n) => n.type === "reward_result",
       manage: (n) => n.type === "reward_request",
     };
     const inbox = useInbox.getState().items;
@@ -56,6 +58,7 @@ export function RecognitionHub({ workspaceId, workspaceSlug, tab, me }: { worksp
     { key: "leaderboard", icon: Trophy },
     { key: "mine", icon: Inbox, badge: o?.unreadKudos },
     { key: "rewards", icon: Gift, badge: o?.affordable },
+    { key: "history", icon: History },
     ...(o?.canManage ? [{ key: "manage" as const, icon: Settings2, badge: o?.pendingRequests }] : []),
   ];
   return (
@@ -120,7 +123,8 @@ export function RecognitionHub({ workspaceId, workspaceSlug, tab, me }: { worksp
           </div>
         )}
         {tab === "rewards" && <Rewards workspaceId={workspaceId} balance={o?.points.balance ?? 0} onChanged={() => setTick((n) => n + 1)} />}
-        {tab === "manage" && o?.canManage && <RecognitionAdmin workspaceId={workspaceId} />}
+        {tab === "history" && <RedemptionHistory workspaceId={workspaceId} highlightId={params.get("request")} onChanged={() => setTick((n) => n + 1)} />}
+        {tab === "manage" && o?.canManage && <RecognitionAdmin workspaceId={workspaceId} highlightId={params.get("request")} />}
       </div>
       {compose && <KudosComposer workspaceId={workspaceId} me={me} to={compose.to} onClose={() => setCompose(null)} onSent={() => { setCompose(null); setTick((n) => n + 1); }} />}
     </div>

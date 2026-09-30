@@ -288,6 +288,9 @@ model User {
   redemptions           RewardRedemption[]     @relation("RedemptionUser")
   kudosReactions        KudosReaction[]        @relation("KudosReactionUser")
   journalNotes          JournalNote[]          @relation("JournalNoteUser")
+  homeLayouts           HomeLayout[]           @relation("HomeLayoutUser")
+  homeTemplates         HomeTemplate[]         @relation("HomeTemplateOwner")
+  homeTemplateShares    HomeTemplateShare[]    @relation("HomeTemplateShareUser")
 
   @@index([isActive, deletedAt])
   @@map("users")
@@ -341,6 +344,8 @@ model Workspace {
   rewards             Reward[]
   redemptions         RewardRedemption[]
   journalNotes        JournalNote[]
+  homeLayouts         HomeLayout[]
+  homeTemplates       HomeTemplate[]
 
   @@map("workspaces")
 }
@@ -1851,4 +1856,66 @@ model JournalNote {
 
   @@index([userId, workspaceId, createdAt(sort: Desc)])
   @@map("journal_notes")
+}
+
+/// A person's own Home: which widgets, in what order, size and style.
+model HomeLayout {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  /// { widgets: [{ id, type, size, style, config }] } - validated by the API.
+  widgets     Json
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation("HomeLayoutUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@map("home_layouts")
+}
+
+enum HomeTemplateVisibility {
+  /// Only the owner.
+  private
+  /// Everyone in the workspace.
+  workspace
+  /// The owner and the people it is shared with.
+  shared
+
+  @@map("home_template_visibility")
+}
+
+/// A reusable Home design someone packaged; others use it by copying its widgets.
+model HomeTemplate {
+  id          String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String                 @map("workspace_id") @db.Uuid
+  ownerId     String                 @map("owner_id") @db.Uuid
+  name        String                 @db.VarChar(120)
+  description String?                @db.VarChar(500)
+  widgets     Json
+  visibility  HomeTemplateVisibility @default(private)
+  useCount    Int                    @default(0) @map("use_count")
+  createdAt   DateTime               @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt   DateTime               @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner     User                @relation("HomeTemplateOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  shares    HomeTemplateShare[]
+
+  @@index([workspaceId, visibility])
+  @@index([ownerId])
+  @@map("home_templates")
+}
+
+model HomeTemplateShare {
+  templateId String   @map("template_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  template HomeTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  user     User         @relation("HomeTemplateShareUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([templateId, userId])
+  @@index([userId])
+  @@map("home_template_shares")
 }

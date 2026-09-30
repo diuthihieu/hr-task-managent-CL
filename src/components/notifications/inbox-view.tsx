@@ -21,7 +21,7 @@ const GROUPS: { key: string; types: string[] }[] = [
   { key: "mention", types: ["mention"] },
   { key: "due", types: ["task_due_soon", "task_overdue", "task_due_changed", "capture_due", "reminder"] },
   { key: "comment", types: ["task_comment"] },
-  { key: "updates", types: ["task_status", "task_updated"] },
+  { key: "updates", types: ["task_status", "task_updated", "template_shared"] },
   { key: "approval", types: ["approval_request", "approval_result"] },
   { key: "invite", types: ["workspace_invite", "workspace_invite_result", "role_changed", "role_change_result"] },
   { key: "okr", types: ["objective_risk"] },

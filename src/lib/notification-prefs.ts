@@ -7,7 +7,7 @@ export const NOTIFY_GROUPS = [
   { key: "mention", types: ["mention"] },
   { key: "comment", types: ["task_comment"] },
   { key: "due", types: ["task_due_soon", "task_overdue", "task_due_changed", "capture_due", "reminder"] },
-  { key: "updates", types: ["task_status", "task_updated"] },
+  { key: "updates", types: ["task_status", "task_updated", "template_shared"] },
   { key: "approval", types: ["approval_request", "approval_result"] },
   { key: "invite", types: ["workspace_invite", "workspace_invite_result", "role_changed", "role_change_result"] },
   { key: "okr", types: ["objective_risk"] },

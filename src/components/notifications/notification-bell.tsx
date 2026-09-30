@@ -138,6 +138,8 @@ export function describeNotification(n: NotificationItem, t: TFunction): string 
       return t("notif.reminder");
     case "kudos":
       return t("notif.kudos", { actor });
+    case "template_shared":
+      return t("notif.template_shared", { actor });
     case "kudos_reaction":
       return t("notif.kudos_reaction", { actor, emoji: String(d.emoji ?? "❤️") });
     case "reward_request":

@@ -30,7 +30,7 @@ const VIEW_ICONS: Record<string, React.ComponentType<{ size?: number; className?
   report: BarChart3,
 };
 
-export function SettingsViews({ workspaceId, workspaceSlug }: { workspaceId: string; workspaceSlug: string }) {
+export function SettingsViews({ workspaceId, workspaceSlug, canManage }: { workspaceId: string; workspaceSlug: string; canManage: boolean }) {
   const { t } = useT();
   const { projects, projectId, project, picker } = useProjectPicker(workspaceId);
   const [views, setViews] = useState<ViewRow[]>([]);
@@ -97,6 +97,7 @@ export function SettingsViews({ workspaceId, workspaceSlug }: { workspaceId: str
   return (
     <SettingsSection title={t("set.views")} description={t("sv.desc", { project: project.name })}>
       {picker}
+      {!canManage && <p className="text-xs text-neutral-400 mb-2">{t("sv.readOnly")}</p>}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={table.views.map((v) => v.id)} strategy={verticalListSortingStrategy}>
           <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg divide-y divide-neutral-100 dark:divide-neutral-900 max-w-2xl">
@@ -105,6 +106,7 @@ export function SettingsViews({ workspaceId, workspaceSlug }: { workspaceId: str
                 key={view.id}
                 view={view}
                 href={`/w/${workspaceSlug}/p/${projectId}?view=${view.id}`}
+                canManage={canManage}
                 onRename={() => rename(view)}
                 onDuplicate={() => duplicate(view)}
                 onDelete={() => remove(view)}
@@ -117,22 +119,26 @@ export function SettingsViews({ workspaceId, workspaceSlug }: { workspaceId: str
   );
 }
 
-function ViewSettingsRow({ view, href, onRename, onDuplicate, onDelete }: { view: ViewRow; href: string; onRename: () => void; onDuplicate: () => void; onDelete: () => void }) {
+function ViewSettingsRow({ view, href, canManage, onRename, onDuplicate, onDelete }: { view: ViewRow; href: string; canManage: boolean; onRename: () => void; onDuplicate: () => void; onDelete: () => void }) {
   const { t } = useT();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: view.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: view.id, disabled: !canManage });
   const Icon = VIEW_ICONS[view.type] ?? Sheet;
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className={isDragging ? "opacity-50 relative z-10 bg-white dark:bg-neutral-900" : ""}>
       <div className="flex items-center gap-2 px-3 py-2">
-        <span {...attributes} {...listeners} className="text-neutral-300 dark:text-neutral-700 cursor-grab shrink-0">
-          <GripVertical size={13} />
-        </span>
+        {canManage && (
+          <span {...attributes} {...listeners} className="text-neutral-300 dark:text-neutral-700 cursor-grab shrink-0">
+            <GripVertical size={13} />
+          </span>
+        )}
         <Icon size={14} className="text-neutral-400 shrink-0" />
         <span className="flex-1 min-w-0 truncate text-sm text-neutral-800 dark:text-neutral-100">{view.name}</span>
         <span className="text-[11px] text-neutral-400 shrink-0 capitalize">{view.type}</span>
         <Link href={href} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title={t("sv.open")}>
           <ExternalLink size={13} />
         </Link>
+        {canManage && (
+          <>
         <button onClick={onRename} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title={t("common.rename")}>
           <Pencil size={13} />
         </button>
@@ -142,6 +148,8 @@ function ViewSettingsRow({ view, href, onRename, onDuplicate, onDelete }: { view
         <button onClick={onDelete} className="text-neutral-400 hover:text-red-600 shrink-0" title={t("common.delete")}>
           <Trash2 size={13} />
         </button>
+          </>
+        )}
       </div>
     </div>
   );

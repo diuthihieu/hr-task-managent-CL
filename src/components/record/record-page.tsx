@@ -13,7 +13,7 @@ import { MentionInput, CommentBody } from "@/components/comments/mention-input";
 import { StartFocusButton } from "@/components/focus/focus-mode";
 import { RetroButton } from "@/components/brain/retro-dialog";
 import { AiTaskActions } from "@/components/ai/ai-actions";
-import { stripMentions } from "@/lib/mentions";
+import { stripMentions, mentionToken } from "@/lib/mentions";
 import { toast } from "@/components/ui/toast";
 import { useT } from "@/components/i18n-provider";
 import { getCellValue } from "@/lib/query-engine";
@@ -211,6 +211,12 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
   const primary = PRIMARY_FIELDS.map((id) => pageFields.find((f) => f.id === id)).filter((f): f is FieldRow => Boolean(f));
   const rest = pageFields.filter((f) => !PRIMARY_FIELDS.includes(f.id));
   const shown = showAll ? [...primary, ...rest] : primary;
+  /** Reply to a comment or to a reply: replies join the thread and tag the person you answer. */
+  function startReply(c: CommentItem) {
+    setReplyTo(c);
+    const u = c.user;
+    if (c.parentCommentId && u && u.id !== currentUserId && !draft.includes(`](${u.id})`)) setDraft(`${mentionToken(u.name, u.id)} ${draft}`);
+  }
   const rootComments = comments.filter((c) => !c.parentCommentId);
   const repliesOf = (id: string) => comments.filter((c) => c.parentCommentId === id);
   const idx = siblings.findIndex((s) => s.id === taskId);
@@ -228,11 +234,9 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
         </div>
         <CommentBody body={c.body} className="text-sm text-neutral-700 dark:text-neutral-300" />
         <div className="flex gap-3 text-[11px] text-neutral-400 mt-0.5">
-          {!nested && (
-            <button onClick={() => setReplyTo(c)} className="hover:text-indigo-600 flex items-center gap-0.5">
-              <Reply size={11} /> {t("record.reply")}
-            </button>
-          )}
+          <button onClick={() => startReply(c)} className="hover:text-indigo-600 flex items-center gap-0.5" data-testid="comment-reply">
+            <Reply size={11} /> {t("record.reply")}
+          </button>
           {(c.user?.id === currentUserId || canModerate) && (
             <button onClick={() => deleteComment(c)} className="hover:text-red-600">
               {t("common.delete")}

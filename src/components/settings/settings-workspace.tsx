@@ -98,7 +98,7 @@ export function SettingsWorkspace({
         {section === "members" && <SettingsMembers workspaceId={workspaceId} currentUserId={currentUserId} currentUserRole={currentUserRole} isSystemAdmin={isSystemAdmin} />}
         {section === "permissions" && <SettingsPermissions />}
         {section === "statuses" && <SettingsTaskConfig workspaceId={workspaceId} mode="statuses" canEdit={currentUserRole === "owner" || currentUserRole === "admin"} />}
-        {section === "views" && <SettingsViews workspaceId={workspaceId} workspaceSlug={workspaceSlug} />}
+        {section === "views" && <SettingsViews workspaceId={workspaceId} workspaceSlug={workspaceSlug} canManage={["owner", "admin", "editor"].includes(currentUserRole)} />}
         {section === "profile" && <SettingsProfile />}
         {section === "appearance" && <SettingsAppearance />}
         {section === "notifications" && <SettingsNotifications />}

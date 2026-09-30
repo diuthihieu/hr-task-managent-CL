@@ -23,6 +23,8 @@ export type NotificationType =
   | "ai_suggestion"
   | "workspace_invite"
   | "workspace_invite_result"
+  | "role_changed"
+  | "role_change_result"
   | "task_due_soon"
   | "task_overdue"
   | "capture_due"

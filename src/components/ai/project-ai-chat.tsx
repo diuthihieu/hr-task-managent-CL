@@ -90,54 +90,55 @@ export function ProjectAiChat({
       <button
         onClick={() => open()}
         className={cn(
-          "fixed z-40 bottom-4 right-4 flex items-center gap-2 rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-600/25 hover:bg-indigo-500 transition-all",
-          minimized ? "h-11 pl-3 pr-4" : "h-12 w-12 justify-center"
+          "fixed z-40 bottom-4 right-4 flex items-center justify-center gap-2 rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 transition-all ring-4 ring-white dark:ring-neutral-950",
+          minimized ? "h-14 w-14" : "h-12 pl-4 pr-5"
         )}
         title={t("intake.launcher")}
         aria-label={t("intake.launcher")}
         data-testid={minimized ? "project-ai-bubble" : "project-ai-launcher"}
       >
-        <Sparkles size={minimized ? 16 : 20} />
-        {minimized && <span className="text-sm font-medium max-w-[180px] truncate">{t("intake.title")}</span>}
-        {unread && <span className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-red-500 ring-2 ring-white dark:ring-neutral-950" data-testid="project-ai-unread" />}
+        <Sparkles size={minimized ? 22 : 18} />
+        {!minimized && <span className="text-sm font-semibold">{t("intake.ask")}</span>}
+        {unread && <span className="absolute top-0 right-0 h-3.5 w-3.5 rounded-full bg-red-500 ring-2 ring-white dark:ring-neutral-950" data-testid="project-ai-unread" />}
       </button>
     );
   }
 
   const sidebar = mode === "sidebar";
-  const iconBtn = "h-7 w-7 rounded-md flex items-center justify-center text-neutral-500 hover:text-neutral-900 hover:bg-neutral-100 dark:hover:bg-neutral-800 dark:hover:text-neutral-100";
+  const iconBtn = "h-8 w-8 rounded-full flex items-center justify-center text-white/90 hover:text-white hover:bg-white/15";
   return (
     <div
       className={cn(
-        "fixed z-40 flex flex-col bg-neutral-50 dark:bg-neutral-950 border-neutral-200 dark:border-neutral-800 overflow-hidden",
-        sidebar ? "top-0 right-0 h-full w-full sm:w-[420px] border-l shadow-2xl" : "bottom-4 right-4 left-4 sm:left-auto sm:w-[380px] h-[min(560px,calc(100vh-2rem))] rounded-2xl border shadow-2xl"
+        "fixed z-40 flex flex-col bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 overflow-hidden",
+        sidebar ? "top-0 right-0 h-full w-full sm:w-[420px] border-l shadow-2xl" : "bottom-4 right-4 left-4 sm:left-auto sm:w-[360px] h-[min(540px,calc(100vh-2rem))] rounded-t-2xl rounded-b-xl border shadow-2xl"
       )}
       role="dialog"
       aria-label={t("intake.title")}
       data-testid="project-ai-chat"
       data-layout={mode}
     >
-      <div className="h-12 shrink-0 px-3 flex items-center gap-2 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
-        <span className="h-7 w-7 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-600 flex items-center justify-center shrink-0">
-          <Sparkles size={14} />
+      <div className="h-14 shrink-0 pl-3 pr-1.5 flex items-center gap-2.5 bg-indigo-600 text-white">
+        <span className="relative h-9 w-9 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+          <Sparkles size={17} />
+          <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full bg-emerald-400 ring-2 ring-indigo-600" />
         </span>
         <div className="flex-1 min-w-0 leading-tight">
-          <div className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">{t("intake.title")}</div>
-          <div className="text-[11px] text-neutral-500 truncate">{projectName}</div>
+          <div className="text-[15px] font-semibold truncate">{t("intake.title")}</div>
+          <div className="text-[11px] text-white/80 truncate">{projectName}</div>
         </div>
         {intake.messages.length > 0 && (
           <button onClick={intake.reset} className={iconBtn} title={t("intake.newChat")} aria-label={t("intake.newChat")} data-testid="project-ai-new">
-            <RotateCcw size={14} />
+            <RotateCcw size={15} />
           </button>
         )}
         <button onClick={() => open(sidebar ? "mini" : "sidebar")} className={cn(iconBtn, "hidden sm:flex")} title={sidebar ? t("intake.toMini") : t("intake.toSidebar")} aria-label={sidebar ? t("intake.toMini") : t("intake.toSidebar")} data-testid="project-ai-expand">
-          {sidebar ? <PanelRightClose size={15} /> : <PanelRightOpen size={15} />}
+          {sidebar ? <PanelRightClose size={17} /> : <PanelRightOpen size={17} />}
         </button>
         <button onClick={() => setMode("minimized")} className={iconBtn} title={t("intake.minimize")} aria-label={t("intake.minimize")} data-testid="project-ai-minimize">
-          <Minus size={15} />
+          <Minus size={20} strokeWidth={2.5} />
         </button>
         <button onClick={close} className={iconBtn} title={t("intake.close")} aria-label={t("intake.close")} data-testid="project-ai-close">
-          <X size={15} />
+          <X size={20} strokeWidth={2.5} />
         </button>
       </div>
       <TaskIntakeChat

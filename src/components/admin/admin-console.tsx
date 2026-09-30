@@ -13,6 +13,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { formatDate, cn } from "@/lib/utils";
 import type { AdminUserRow } from "@/types";
 import { DesktopReleasesPanel } from "./desktop-releases-panel";
+import { MailCheckPanel } from "./mail-check-panel";
 import { useT } from "@/components/i18n-provider";
 
 interface WorkspaceItem {
@@ -136,6 +137,8 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
         ) : tab === "desktop" ? (
           <DesktopReleasesPanel />
         ) : tab === "users" ? (
+          <>
+          <MailCheckPanel />
           <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-x-auto">
             <table className="w-full">
               <thead className="text-xs text-neutral-500 border-b border-neutral-200 dark:border-neutral-800">
@@ -206,6 +209,7 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
               </tbody>
             </table>
           </div>
+          </>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {workspaces.length === 0 && <div className="text-neutral-400 py-10">{tr("adm.noWorkspaces")}</div>}

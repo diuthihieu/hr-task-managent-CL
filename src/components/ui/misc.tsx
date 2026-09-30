@@ -85,6 +85,7 @@ export function Select({
   options,
   placeholder,
   className,
+  disabled,
   "data-testid": testId,
 }: {
   value: string;
@@ -92,17 +93,18 @@ export function Select({
   options: { value: string; label: string }[];
   placeholder?: string;
   className?: string;
+  disabled?: boolean;
   "data-testid"?: string;
 }) {
   // Radix treats "" as "no value" (shows the placeholder), but our option
   // lists use "" for "All ..." / "None" - map it to a sentinel internally.
   const EMPTY = "__empty__";
   return (
-    <RSelect.Root value={value === "" ? EMPTY : value} onValueChange={(v) => onValueChange(v === EMPTY ? "" : v)}>
+    <RSelect.Root value={value === "" ? EMPTY : value} onValueChange={(v) => onValueChange(v === EMPTY ? "" : v)} disabled={disabled}>
       <RSelect.Trigger
         data-testid={testId}
         className={cn(
-          "flex h-8 items-center justify-between gap-1 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 text-sm whitespace-nowrap overflow-hidden [&>span]:truncate",
+          "disabled:cursor-not-allowed disabled:opacity-60 flex h-8 items-center justify-between gap-1 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 text-sm whitespace-nowrap overflow-hidden [&>span]:truncate",
           className
         )}
       >

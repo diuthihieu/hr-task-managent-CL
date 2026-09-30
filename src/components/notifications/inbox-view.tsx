@@ -23,11 +23,13 @@ const GROUPS: { key: string; types: string[] }[] = [
   { key: "comment", types: ["task_comment"] },
   { key: "updates", types: ["task_status", "task_updated"] },
   { key: "approval", types: ["approval_request", "approval_result"] },
-  { key: "invite", types: ["workspace_invite", "workspace_invite_result"] },
+  { key: "invite", types: ["workspace_invite", "workspace_invite_result", "role_changed", "role_change_result"] },
   { key: "okr", types: ["objective_risk"] },
   { key: "ai", types: ["ai_suggestion"] },
   { key: "recognition", types: ["kudos", "reward_request", "reward_result"] },
 ];
+
+const ROLE_ORDER = ["viewer", "contributor", "editor", "admin", "owner"];
 
 function snoozeTimes() {
   const now = new Date();
@@ -103,6 +105,20 @@ export function InboxView() {
   }
 
   /** Workspace invitation: the notification links to /invite/<token>. */
+  async function answerRole(n: NotificationItem, decision: "accept" | "decline") {
+    if (decision === "decline" && !confirm(t("role.declineConfirm"))) return;
+    try {
+      await api.post(`/api/notifications/${n.id}/role-response`, { decision });
+      toast.success(decision === "accept" ? t("role.acceptedToast") : t("role.declinedToast"));
+      await load();
+      fetchInbox().catch(() => {});
+      if (decision === "decline") router.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+      load();
+    }
+  }
+
   async function answerInvite(n: NotificationItem, decision: "accept" | "decline") {
     const token = n.link?.split("/invite/")[1];
     if (!token) return;
@@ -207,6 +223,12 @@ export function InboxView() {
                     <ActionButton icon={ThumbsDown} label={t("inv.decline")} onClick={() => answerInvite(n, "decline")} testId="ac-invite-decline" />
                   </>
                 )}
+                {n.type === "role_changed" && !n.actioned && (
+                  <>
+                    <ActionButton icon={UserCheck} label={t("role.accept")} onClick={() => answerRole(n, "accept")} testId="ac-role-accept" />
+                    {ROLE_ORDER.indexOf(String(n.data?.to)) > ROLE_ORDER.indexOf(String(n.data?.from)) && <ActionButton icon={ThumbsDown} label={t("role.decline")} onClick={() => answerRole(n, "decline")} testId="ac-role-decline" />}
+                  </>
+                )}
                 {n.type === "ai_suggestion" && (
                   <ActionButton
                     icon={Sparkles}
@@ -218,7 +240,7 @@ export function InboxView() {
                     testId="ac-run-ai"
                   />
                 )}
-                {!n.actioned && n.type !== "task_assigned" && <ActionButton icon={Check} label={t("ac.done")} onClick={() => act(n, { actioned: true })} testId="ac-done" />}
+                {!n.actioned && n.type !== "task_assigned" && n.type !== "role_changed" && <ActionButton icon={Check} label={t("ac.done")} onClick={() => act(n, { actioned: true })} testId="ac-done" />}
                 {n.snoozedUntil ? (
                   <ActionButton icon={AlarmClockOff} label={t("ac.unsnooze")} onClick={() => act(n, { snoozeUntil: null })} />
                 ) : (

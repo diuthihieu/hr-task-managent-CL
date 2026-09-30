@@ -9,7 +9,7 @@ export const NOTIFY_GROUPS = [
   { key: "due", types: ["task_due_soon", "task_overdue", "task_due_changed", "capture_due", "reminder"] },
   { key: "updates", types: ["task_status", "task_updated"] },
   { key: "approval", types: ["approval_request", "approval_result"] },
-  { key: "invite", types: ["workspace_invite", "workspace_invite_result"] },
+  { key: "invite", types: ["workspace_invite", "workspace_invite_result", "role_changed", "role_change_result"] },
   { key: "okr", types: ["objective_risk"] },
   { key: "ai", types: ["ai_suggestion"] },
   { key: "recognition", types: ["kudos", "reward_request", "reward_result"] },

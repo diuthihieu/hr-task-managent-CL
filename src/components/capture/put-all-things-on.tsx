@@ -1,20 +1,22 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Target, Sparkles } from "lucide-react";
+import { Plus, Target, Sparkles, Trash2 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { TIME_BUCKETS, TIME_BUCKET_DISTANCE, TIME_BUCKET_LABELS, bucketForPlannedAt, dotRadiusForDuration, type TimeBucket } from "@/lib/capture-engine";
+import { TIME_BUCKETS, TIME_BUCKET_DISTANCE, bucketForPlannedAt, dotRadiusForDuration, angleOf, type TimeBucket } from "@/lib/capture-engine";
+import type { MessageKey } from "@/lib/i18n/core";
 import type { CaptureTargetRow, CapturedThoughtRow } from "@/types";
 import { useT } from "@/components/i18n-provider";
 
-const CANVAS_SIZE = 460;
+const CANVAS_SIZE = 540;
 const CENTER = CANVAS_SIZE / 2;
-const MAX_RADIUS = CENTER - 60; // leaves room for the outer "Unplanned" band beyond the Later ring
+const MAX_RADIUS = CENTER - 50; // leaves room for the outer "Unplanned" band beyond the Later ring
+const DRAG_THRESHOLD = 4;
 
 interface OkrOption {
   objectives: { id: string; title: string }[];
@@ -36,13 +38,16 @@ function hashCode(str: string): number {
   return Math.abs(hash);
 }
 
-function dotPosition(thought: CapturedThoughtRow): { x: number; y: number; bucket: TimeBucket } {
+/**
+ * Dots sit exactly on the orbit of their time ring (the date decides the ring).
+ * The angle is the one the user dragged the dot to, else a stable spread.
+ */
+function dotPosition(thought: CapturedThoughtRow, angleOverride?: number): { x: number; y: number; bucket: TimeBucket; angle: number } {
   const bucket = bucketForPlannedAt(thought.plannedAt);
-  const angle = (hashCode(thought.id) % 360) * (Math.PI / 180);
-  const base = TIME_BUCKET_DISTANCE[bucket];
-  const jitter = ((hashCode(thought.id + "r") % 14) - 7) / 100; // +-7% so same-bucket dots don't sit on an exact ring
-  const radius = Math.max(10, (base + jitter) * MAX_RADIUS);
-  return { x: CENTER + Math.cos(angle) * radius, y: CENTER + Math.sin(angle) * radius, bucket };
+  const angle = angleOverride ?? thought.orbitAngle ?? hashCode(thought.id) % 360;
+  const radius = TIME_BUCKET_DISTANCE[bucket] * MAX_RADIUS;
+  const rad = (angle * Math.PI) / 180;
+  return { x: CENTER + Math.cos(rad) * radius, y: CENTER + Math.sin(rad) * radius, bucket, angle };
 }
 
 function toDatetimeLocal(iso: string | null | undefined): string {
@@ -125,6 +130,27 @@ export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: st
     }
   }
 
+  async function handleMoved(thoughtId: string, orbitAngle: number) {
+    setThoughts((prev) => prev.map((x) => (x.id === thoughtId ? { ...x, orbitAngle } : x)));
+    try {
+      await api.patch(`/api/thoughts/${thoughtId}`, { orbitAngle });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+    }
+  }
+
+  async function handleDelete(thought: CapturedThoughtRow) {
+    if (!confirm(t("cap.deleteConfirm", { name: thought.taskName }))) return;
+    try {
+      await api.delete(`/api/thoughts/${thought.id}`);
+      setThoughts((prev) => prev.filter((x) => x.id !== thought.id));
+      setClarifying(null);
+      toast.success(t("cap.deleted"));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+    }
+  }
+
   function handleConverted(thoughtId: string) {
     setThoughts((prev) => prev.filter((t) => t.id !== thoughtId));
     setClarifying(null);
@@ -192,7 +218,7 @@ export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: st
 
       {/* Dot visualization */}
       <div className="flex-1 overflow-auto flex items-center justify-center bg-neutral-50 dark:bg-neutral-950 relative">
-        <DotCanvas thoughts={thoughts} hoverId={hoverId} onHover={setHoverId} onClickDot={setClarifying} />
+        <DotCanvas thoughts={thoughts} hoverId={hoverId} onHover={setHoverId} onClickDot={setClarifying} onMoveDot={handleMoved} />
       </div>
 
       {clarifying && (
@@ -203,6 +229,7 @@ export function PutAllThingsOn({ workspaceId, workspaceSlug }: { workspaceId: st
           workspaceSlug={workspaceSlug}
           onClose={() => setClarifying(null)}
           onConverted={handleConverted}
+          onDelete={() => handleDelete(clarifying)}
         />
       )}
     </div>
@@ -214,16 +241,28 @@ function DotCanvas({
   hoverId,
   onHover,
   onClickDot,
+  onMoveDot,
 }: {
   thoughts: CapturedThoughtRow[];
   hoverId: string | null;
   onHover: (id: string | null) => void;
   onClickDot: (t: CapturedThoughtRow) => void;
+  onMoveDot: (id: string, angle: number) => void;
 }) {
   const { t } = useT();
-  const hovered = thoughts.find((t) => t.id === hoverId);
-  const hoveredPos = hovered ? dotPosition(hovered) : null;
+  const svgRef = useRef<SVGSVGElement>(null);
+  // Dragging a dot moves it around the center along its own orbit; a short press is a click.
+  const [drag, setDrag] = useState<{ id: string; angle: number; startX: number; startY: number; moved: boolean } | null>(null);
+  const ringLabel = (b: TimeBucket) => t(`cap.ring.${b}` as MessageKey);
+  const hovered = thoughts.find((x) => x.id === (drag?.id ?? hoverId));
+  const hoveredPos = hovered ? dotPosition(hovered, drag?.id === hovered.id ? drag.angle : undefined) : null;
   const innerBuckets = TIME_BUCKETS.filter((b) => b !== "unscheduled");
+  const dragBucket = drag ? bucketForPlannedAt(thoughts.find((x) => x.id === drag.id)?.plannedAt) : null;
+
+  function svgPoint(e: React.PointerEvent) {
+    const box = svgRef.current!.getBoundingClientRect();
+    return { x: ((e.clientX - box.left) / box.width) * CANVAS_SIZE, y: ((e.clientY - box.top) / box.height) * CANVAS_SIZE };
+  }
 
   return (
     <div className="relative">
@@ -234,7 +273,29 @@ function DotCanvas({
         .ptao-dot { transition: filter 0.2s ease; }
         .ptao-dot:hover { filter: brightness(1.15); }
       `}</style>
-      <svg width={CANVAS_SIZE} height={CANVAS_SIZE} viewBox={`0 0 ${CANVAS_SIZE} ${CANVAS_SIZE}`}>
+      <svg
+        ref={svgRef}
+        width={CANVAS_SIZE}
+        height={CANVAS_SIZE}
+        viewBox={`0 0 ${CANVAS_SIZE} ${CANVAS_SIZE}`}
+        className="max-w-[calc(100vw-2rem)] h-auto touch-none select-none"
+        onPointerMove={(e) => {
+          if (!drag) return;
+          const p = svgPoint(e);
+          const moved = drag.moved || Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY) > DRAG_THRESHOLD;
+          setDrag({ ...drag, moved, angle: moved ? angleOf(p.x - CENTER, p.y - CENTER) : drag.angle });
+        }}
+        onPointerUp={() => {
+          if (!drag) return;
+          const thought = thoughts.find((x) => x.id === drag.id);
+          setDrag(null);
+          if (!thought) return;
+          if (drag.moved) onMoveDot(thought.id, Math.round(drag.angle * 10) / 10);
+          else onClickDot(thought);
+        }}
+        onPointerCancel={() => setDrag(null)}
+        data-testid="ptao-canvas"
+      >
         {/* Unplanned band - a dashed ring beyond Later, visually separated from the scheduled rings */}
         <circle
           cx={CENTER}
@@ -242,9 +303,9 @@ function DotCanvas({
           r={TIME_BUCKET_DISTANCE.unscheduled * MAX_RADIUS}
           fill="none"
           stroke="currentColor"
-          strokeWidth={1}
+          strokeWidth={dragBucket === "unscheduled" ? 2 : 1}
           strokeDasharray="2 5"
-          className="text-neutral-300 dark:text-neutral-700"
+          className={dragBucket === "unscheduled" ? "text-indigo-400" : "text-neutral-300 dark:text-neutral-700"}
         />
         <text
           x={CENTER}
@@ -253,7 +314,7 @@ function DotCanvas({
           className="fill-neutral-300 dark:fill-neutral-700"
           style={{ fontSize: 9, letterSpacing: 1 }}
         >
-          {TIME_BUCKET_LABELS.unscheduled.toUpperCase()}
+          {ringLabel("unscheduled").toUpperCase()}
         </text>
 
         {innerBuckets.map((b) => (
@@ -264,8 +325,8 @@ function DotCanvas({
             r={TIME_BUCKET_DISTANCE[b] * MAX_RADIUS}
             fill="none"
             stroke="currentColor"
-            strokeWidth={1}
-            className="text-neutral-200 dark:text-neutral-800"
+            strokeWidth={dragBucket === b ? 2 : 1}
+            className={dragBucket === b ? "text-indigo-400" : "text-neutral-200 dark:text-neutral-800"}
           />
         ))}
         {innerBuckets.map((b) => (
@@ -277,7 +338,7 @@ function DotCanvas({
             className="fill-neutral-400 dark:fill-neutral-600"
             style={{ fontSize: 9, letterSpacing: 1 }}
           >
-            {TIME_BUCKET_LABELS[b].toUpperCase()}
+            {ringLabel(b).toUpperCase()}
           </text>
         ))}
 
@@ -285,22 +346,35 @@ function DotCanvas({
         <circle cx={CENTER} cy={CENTER} r={5} className="fill-indigo-500" />
         <circle cx={CENTER} cy={CENTER} r={10} fill="none" className="stroke-indigo-400" strokeWidth={1} opacity={0.5} />
         <text x={CENTER} y={CENTER + 24} textAnchor="middle" className="fill-indigo-500 dark:fill-indigo-400 font-medium" style={{ fontSize: 10, letterSpacing: 1 }}>
-          NOW
+          {t("cap.now").toUpperCase()}
         </text>
 
-        {thoughts.map((t) => {
-          const { x, y } = dotPosition(t);
-          const r = dotRadiusForDuration(t.estimatedDurationMinutes);
-          const anim = ["ptao-drift-a", "ptao-drift-b", "ptao-drift-c"][hashCode(t.id) % 3];
-          const duration = 7 + (hashCode(t.id + "d") % 5);
+        {thoughts.map((th) => {
+          const dragging = drag?.id === th.id;
+          const { x, y } = dotPosition(th, dragging ? drag.angle : undefined);
+          const r = dotRadiusForDuration(th.estimatedDurationMinutes);
+          const anim = ["ptao-drift-a", "ptao-drift-b", "ptao-drift-c"][hashCode(th.id) % 3];
+          const duration = 7 + (hashCode(th.id + "d") % 5);
           return (
             // Positioning lives on this outer group's `transform` ATTRIBUTE; the drift
             // animation lives on the inner group's CSS `transform` PROPERTY. Putting
             // both on the same element doesn't work - an animated CSS transform always
             // wins over the SVG attribute, so every dot would collapse to the origin.
-            <g key={t.id} transform={`translate(${x},${y})`} onMouseEnter={() => onHover(t.id)} onMouseLeave={() => onHover(null)} onClick={() => onClickDot(t)}>
-              <g style={{ animation: `${anim} ${duration}s ease-in-out infinite`, cursor: "pointer" }}>
-                <circle r={r} fill={t.categoryColor ?? "#6366f1"} opacity={0.88} className="ptao-dot" stroke="white" strokeWidth={1.5} />
+            <g
+              key={th.id}
+              transform={`translate(${x},${y})`}
+              onMouseEnter={() => onHover(th.id)}
+              onMouseLeave={() => onHover(null)}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                svgRef.current?.setPointerCapture(e.pointerId);
+                setDrag({ id: th.id, angle: dotPosition(th).angle, startX: e.clientX, startY: e.clientY, moved: false });
+              }}
+              data-testid="ptao-dot"
+              data-bucket={bucketForPlannedAt(th.plannedAt)}
+            >
+              <g style={{ animation: dragging ? "none" : `${anim} ${duration}s ease-in-out infinite`, cursor: dragging ? "grabbing" : "grab" }}>
+                <circle r={dragging ? r + 2 : r} fill={th.categoryColor ?? "#6366f1"} opacity={0.88} className="ptao-dot" stroke="white" strokeWidth={1.5} />
               </g>
             </g>
           );
@@ -312,17 +386,18 @@ function DotCanvas({
           <p className="text-sm text-neutral-400 max-w-[220px] text-center">{t("cap.empty")}</p>
         </div>
       )}
+      {thoughts.length > 0 && <p className="text-center text-[11px] text-neutral-400 -mt-2">{t("cap.dragHint")}</p>}
 
       {hovered && hoveredPos && (
         <div
           className="absolute pointer-events-none bg-neutral-900 dark:bg-neutral-100 text-white dark:text-neutral-900 text-xs rounded-md px-2.5 py-1.5 shadow-lg z-10 max-w-[200px]"
-          style={{ left: hoveredPos.x + 16, top: hoveredPos.y - 10 }}
+          style={{ left: `${((hoveredPos.x + 16) / CANVAS_SIZE) * 100}%`, top: `${((hoveredPos.y - 10) / CANVAS_SIZE) * 100}%` }}
         >
           <div className="font-medium truncate">{hovered.taskName}</div>
           <div className="text-[10px] opacity-80 flex items-center gap-1.5 mt-0.5">
             {hovered.categoryLabel && <span>{hovered.categoryLabel}</span>}
             {hovered.estimatedDurationMinutes != null && <span className="ml-2">{hovered.estimatedDurationMinutes}m</span>}
-            <span className="ml-2">{TIME_BUCKET_LABELS[hoveredPos.bucket]}</span>
+            <span className="ml-2">{ringLabel(hoveredPos.bucket)}</span>
           </div>
         </div>
       )}
@@ -337,6 +412,7 @@ function ClarificationPanel({
   workspaceSlug,
   onClose,
   onConverted,
+  onDelete,
 }: {
   thought: CapturedThoughtRow;
   targets: CaptureTargetRow[];
@@ -344,6 +420,7 @@ function ClarificationPanel({
   workspaceSlug: string;
   onClose: () => void;
   onConverted: (id: string) => void;
+  onDelete: () => void;
 }) {
   const { t } = useT();
   const router = useRouter();
@@ -516,6 +593,9 @@ function ClarificationPanel({
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-4">
+          <Button variant="ghost" className="mr-auto text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40" onClick={onDelete} data-testid="clarify-delete">
+            <Trash2 size={13} /> {t("cap.delete")}
+          </Button>
           <Button variant="secondary" onClick={onClose}>{t("common.cancel")}</Button>
           <Button onClick={submit} disabled={submitting || !projectId} data-testid="clarify-convert">
             <Target size={13} /> {t("cap.convert")}

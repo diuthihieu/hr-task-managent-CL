@@ -49,7 +49,10 @@ export function ViewTabs({
   onDuplicate,
   onReorder,
   trailing,
+  canManage = true,
 }: {
+  /** Editors and above rename, add, duplicate, reorder and delete views; others only switch between them. */
+  canManage?: boolean;
   /** Controls shown on the same row, right-aligned (one-row toolbar for some views). */
   trailing?: React.ReactNode;
   views: ViewRow[];
@@ -88,6 +91,7 @@ export function ViewTabs({
               renameValue={renameValue}
               onRenameValueChange={setRenameValue}
               canDelete={views.length > 1}
+              canManage={canManage}
               onSelect={() => onSelect(view.id)}
               onStartRename={() => {
                 setRenamingId(view.id);
@@ -106,6 +110,7 @@ export function ViewTabs({
         </SortableContext>
       </DndContext>
 
+      {canManage && (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button className="flex items-center gap-1 h-7 px-2 rounded-md text-sm text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-900 ml-1">
@@ -123,6 +128,7 @@ export function ViewTabs({
           })}
         </DropdownMenuContent>
       </DropdownMenu>
+      )}
       {trailing && <div className="ml-auto flex items-center gap-1 pl-3 shrink-0" data-testid="view-tabs-trailing">{trailing}</div>}
     </div>
   );
@@ -135,6 +141,7 @@ function ViewTab({
   renameValue,
   onRenameValueChange,
   canDelete,
+  canManage,
   onSelect,
   onStartRename,
   onCommitRename,
@@ -147,6 +154,7 @@ function ViewTab({
   renameValue: string;
   onRenameValueChange: (v: string) => void;
   canDelete: boolean;
+  canManage: boolean;
   onSelect: () => void;
   onStartRename: () => void;
   onCommitRename: () => void;
@@ -154,10 +162,10 @@ function ViewTab({
   onDelete: () => void;
 }) {
   const { t } = useT();
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: view.id });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: view.id, disabled: !canManage });
   const Icon = VIEW_ICONS[view.type] ?? Sheet;
 
-  if (renaming) {
+  if (renaming && canManage) {
     return (
       <input
         autoFocus
@@ -180,7 +188,7 @@ function ViewTab({
     >
       <button
         onClick={onSelect}
-        onDoubleClick={onStartRename}
+        onDoubleClick={canManage ? onStartRename : undefined}
         className={cn(
           "flex items-center gap-1.5 h-7 pl-2.5 pr-1 rounded-md text-sm font-medium",
           active ? "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-50" : "text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-900"
@@ -189,6 +197,7 @@ function ViewTab({
         <Icon size={13} />
         {view.name}
       </button>
+      {canManage && (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -215,6 +224,7 @@ function ViewTab({
           )}
         </DropdownMenuContent>
       </DropdownMenu>
+      )}
     </div>
   );
 }

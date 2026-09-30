@@ -132,6 +132,8 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
   function persistViewConfig(next: ViewConfig) {
     if (!activeView) return;
     setTable((t) => (t ? { ...t, views: t.views.map((v) => (v.id === activeView.id ? { ...v, config: JSON.stringify(next) } : v)) } : t));
+    // Below editor, filters / sorts apply for this visit only: shared views are changed by editors.
+    if (!canEdit) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       api.patch(`/api/views/${activeView.id}`, { config: next }).catch(() => toast.error(t("common.failed")));
@@ -476,6 +478,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         onDelete={handleDeleteView}
         onDuplicate={handleDuplicateView}
         onReorder={handleReorderViews}
+        canManage={canEdit}
         trailing={activeView?.type === "gallery" ? <ViewToolbar
           inline
           fields={fields}

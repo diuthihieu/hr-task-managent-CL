@@ -80,7 +80,7 @@ export async function wikiKnowledge(wikiId: string, budget = CONTEXT_CHARS, hidd
 /** Everything this user may see in the workspace: projects, tasks, OKRs, wikis and docs. */
 export async function workspaceData(user: SessionUser, workspaceId: string, role: WorkspaceRole, budget = CONTEXT_CHARS) {
   const visible = visibleProjectWhere(user);
-  const [projects, tasks, objectives, hidden] = await Promise.all([
+  const [projects, tasks, objectives, hidden, members] = await Promise.all([
     prisma.project.findMany({ where: { workspaceId, deletedAt: null, ...visible }, orderBy: { sortOrder: "asc" }, include: { owner: { select: { name: true } } } }),
     prisma.task.findMany({
       where: { workspaceId, deletedAt: null, project: { deletedAt: null, ...visible } },
@@ -110,9 +110,20 @@ export async function workspaceData(user: SessionUser, workspaceId: string, role
       orderBy: { createdAt: "asc" },
     }),
     hiddenProjectIds(user),
+    prisma.workspaceMember.findMany({
+      where: { workspaceId, user: { isActive: true, deletedAt: null } },
+      orderBy: { user: { name: "asc" } },
+      select: { role: true, createdAt: true, user: { select: { name: true, email: true, jobTitle: true, formerNames: true } } },
+    }),
   ]);
 
   const b = new Budget(budget);
+  // Everyone in the workspace (the member list is visible to every member), not only people with tasks.
+  // Former display names let the model match a question that still uses someone's old name.
+  b.add(
+    `## Workspace members (${members.length})\nname (current display name) | also known as (former names) | workspace role | job title | email | member since\n` +
+      members.map((m) => [m.user.name, m.user.formerNames.join(", ") || "-", m.role, m.user.jobTitle || "-", m.user.email, day(m.createdAt)].join(" | ")).join("\n")
+  );
   b.add(
     "## Projects\n" +
       projects.map((p) => `- ${p.name} | status: ${p.status} | owner: ${p.owner?.name ?? "-"} | ${day(p.startDate)} → ${day(p.endDate)}${p.description ? ` | ${p.description.slice(0, 300)}` : ""}`).join("\n")

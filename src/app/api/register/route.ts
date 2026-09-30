@@ -44,6 +44,6 @@ export const POST = route(async (req) => {
     return u;
   });
   // Email invitations are only accepted from verified addresses (someone could sign up with a colleague's email).
-  const verification = (await sendVerificationEmail({ ...user, locale: body.locale ?? "vi" }, new URL(req.url).origin)) ? "sent" : "unavailable";
+  const verification = (await sendVerificationEmail({ ...user, locale: body.locale ?? "vi" }, new URL(req.url).origin)).ok ? "sent" : "unavailable";
   return NextResponse.json({ ...user, verification }, { status: 201 });
 });

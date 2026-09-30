@@ -1,7 +1,7 @@
 import "server-only";
 import { createHmac, timingSafeEqual } from "crypto";
 import { prisma } from "./prisma";
-import { mailConfigured, sendMail } from "./mail";
+import { mailConfigured, sendMailDetailed, simpleHtmlEmail, type MailResult } from "./mail";
 
 // Email ownership. Google sign-in, an admin-created account or an admin's
 // confirmation count as proof; password sign-ups prove it by opening a signed,
@@ -43,16 +43,21 @@ export async function confirmEmail(token: string) {
   return r.count === 1;
 }
 
-/** Sends the verification link; false when email isn't configured on this server. */
-export async function sendVerificationEmail(user: { id: string; email: string; name: string; locale?: string | null }, origin: string) {
-  if (!mailConfigured()) return false;
+/** Sends the verification link; the result says why when the provider refuses. */
+export async function sendVerificationEmail(user: { id: string; email: string; name: string; locale?: string | null }, origin: string): Promise<MailResult> {
+  if (!mailConfigured()) return { ok: false, error: "Email isn't configured" };
   const link = `${origin}/api/account/verify-email?token=${encodeURIComponent(verificationToken(user.id, user.email))}`;
   const vi = user.locale !== "en";
-  return sendMail(
+  return sendMailDetailed(
     user.email,
     vi ? "Xác minh email cho tài khoản woli" : "Verify your email for woli",
     vi
       ? `Chào ${user.name},\n\nBấm vào link sau để xác minh email (hết hạn sau 48 giờ):\n${link}\n\nNếu bạn không tạo tài khoản woli, hãy bỏ qua email này.`
-      : `Hi ${user.name},\n\nOpen this link to verify your email (expires in 48 hours):\n${link}\n\nIf you didn't create a woli account, ignore this email.`
+      : `Hi ${user.name},\n\nOpen this link to verify your email (expires in 48 hours):\n${link}\n\nIf you didn't create a woli account, ignore this email.`,
+    simpleHtmlEmail(
+      vi
+        ? { heading: `Chào ${user.name},`, intro: "Bấm nút bên dưới để xác minh email cho tài khoản woli của bạn. Link hết hạn sau 48 giờ.", button: "Xác minh email", link, footer: "Nếu bạn không tạo tài khoản woli, hãy bỏ qua email này. Nếu nút không hoạt động, mở link sau:" }
+        : { heading: `Hi ${user.name},`, intro: "Press the button below to verify the email of your woli account. The link expires in 48 hours.", button: "Verify email", link, footer: "If you didn't create a woli account, ignore this email. If the button doesn't work, open this link:" }
+    )
   );
 }

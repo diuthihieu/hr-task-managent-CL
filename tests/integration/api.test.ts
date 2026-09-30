@@ -772,6 +772,7 @@ test("AI assistant: answers from what the user may see, declines the rest, and e
   assert.match(system, /Probation lasts 60 days/, "wiki documents of visible projects");
   assert.doesNotMatch(system, /Call the insurer|Other project/, "hidden project stays out");
   assert.match(system, /decline in one or two sentences/, "out-of-scope rule");
+  assert.match(system, /## Workspace members \(\d+\)[\s\S]*Casey Contributor \| [^|\n]* \| contributor/, "every member is listed, not only people with tasks");
   await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
   // Wikis the user can't open stay out too.
   const secret = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/wikis`, { name: "Board notes", access: "restricted" });
@@ -948,6 +949,110 @@ test("focus sessions: one running session at a time; completing adds the minutes
   const grid = await contributor.get<Rec[]>(`/api/projects/${s.project}/tasks`);
   const rec = grid.body.find((r) => r.id === s.r6task)!;
   assert.ok(Number(rec.data.sys_actual) >= 0.4, "shown as hours in the grid");
+});
+
+test("focus: switching tasks pauses and records the running one; all open sessions are listed; stop keeps the time", async () => {
+  const mk = async (title: string) => (await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: title, sys_assignees: [s.contributorId] } })).body.id;
+  const [t1, t2] = [await mk("Focus flow A"), await mk("Focus flow B")];
+  const cat = async (id: string) => (await prisma.task.findUniqueOrThrow({ where: { id }, include: { status: true } })).status.category;
+  const actual = async (id: string) => (await prisma.task.findUniqueOrThrow({ where: { id } })).actualMinutes ?? 0;
+  assert.equal(await cat(t1), "todo");
+  const a = await contributor.post<{ id: string }>(`/api/tasks/${t1}/focus`, {});
+  assert.equal(await cat(t1), "in_progress", "focusing starts the task");
+  await prisma.focusSession.update({ where: { id: a.body.id }, data: { elapsedSeconds: 0, resumedAt: new Date(Date.now() - 10 * 60_000) } });
+  const b = await contributor.post<{ id: string }>(`/api/tasks/${t2}/focus`, {});
+  assert.equal((await prisma.focusSession.findUniqueOrThrow({ where: { id: a.body.id } })).status, "paused");
+  assert.equal(await actual(t1), 10, "the paused task's time is recorded right away");
+  const open = await contributor.get<{ id: string; status: string; running: boolean }[]>("/api/focus/active?all=1");
+  assert.deepEqual(open.body.map((x) => [x.id, x.status]), [[b.body.id, "running"], [a.body.id, "paused"]], "running first, then paused");
+  // Focusing on a task that already has a paused session resumes it (no duplicate).
+  const again = await contributor.post<{ id: string; status: string }>(`/api/tasks/${t1}/focus`, {});
+  assert.equal(again.body.id, a.body.id);
+  assert.equal(again.body.status, "running");
+  assert.equal((await prisma.focusSession.findUniqueOrThrow({ where: { id: b.body.id } })).status, "paused");
+  // Stop (not complete): time counted, task stays in progress, nothing double-counted.
+  await prisma.focusSession.update({ where: { id: a.body.id }, data: { resumedAt: new Date(Date.now() - 5 * 60_000) } });
+  assert.equal((await contributor.patch(`/api/focus/${a.body.id}`, { action: "cancel" })).status, 200);
+  assert.equal(await actual(t1), 15);
+  assert.equal(await cat(t1), "in_progress");
+  assert.equal((await contributor.patch(`/api/focus/${b.body.id}`, { action: "complete" })).status, 200);
+  assert.equal(await actual(t1), 15, "completing another session doesn't touch this task");
+  assert.deepEqual((await contributor.get<unknown[]>("/api/focus/active?all=1")).body, []);
+});
+
+test("role changes: the member is notified, may decline a promotion (never a demotion), and the admin hears back", async () => {
+  const latest = async () => prisma.notification.findFirstOrThrow({ where: { userId: s.viewerId, type: "role_changed" }, orderBy: { createdAt: "desc" } });
+  assert.equal((await admin.patch(`/api/workspaces/${s.ws}/members/${s.viewerId}`, { role: "editor" })).status, 200);
+  const up = await latest();
+  assert.deepEqual(up.data, { from: "viewer", to: "editor" });
+  assert.equal((await contributor.post(`/api/notifications/${up.id}/role-response`, { decision: "decline" })).status, 404, "only the person concerned");
+  const declined = await viewer.post<{ role: string }>(`/api/notifications/${up.id}/role-response`, { decision: "decline" });
+  assert.equal(declined.status, 200, JSON.stringify(declined.body));
+  assert.equal(declined.body.role, "viewer");
+  assert.equal((await prisma.workspaceMember.findFirstOrThrow({ where: { workspaceId: s.ws, userId: s.viewerId } })).role, "viewer");
+  assert.equal((await viewer.post(`/api/notifications/${up.id}/role-response`, { decision: "decline" })).status, 409, "answered once");
+  const back = await prisma.notification.findFirstOrThrow({ where: { type: "role_change_result", actorId: s.viewerId }, orderBy: { createdAt: "desc" } });
+  assert.equal((back.data as { decision: string }).decision, "declined");
+
+  // A stale promotion (role changed again since) or a demotion can't be declined.
+  await admin.patch(`/api/workspaces/${s.ws}/members/${s.viewerId}`, { role: "contributor" });
+  const promo = await latest();
+  await admin.patch(`/api/workspaces/${s.ws}/members/${s.viewerId}`, { role: "viewer" });
+  const demo = await latest();
+  assert.equal((await viewer.post(`/api/notifications/${promo.id}/role-response`, { decision: "decline" })).status, 409);
+  assert.equal((await viewer.post(`/api/notifications/${demo.id}/role-response`, { decision: "decline" })).status, 400);
+  assert.equal((await viewer.post(`/api/notifications/${demo.id}/role-response`, { decision: "accept" })).status, 200, "a demotion can be acknowledged");
+  assert.equal((await prisma.workspaceMember.findFirstOrThrow({ where: { workspaceId: s.ws, userId: s.viewerId } })).role, "viewer");
+  // Changing your own role (or no change) sends nothing.
+  const before = await prisma.notification.count({ where: { type: "role_changed" } });
+  await admin.patch(`/api/workspaces/${s.ws}/members/${s.viewerId}`, { role: "viewer" });
+  assert.equal(await prisma.notification.count({ where: { type: "role_changed" } }), before);
+});
+
+test("email setup is visible to system admins only; a missing provider is reported, not faked", async () => {
+  assert.equal((await contributor.get("/api/admin/mail")).status, 403);
+  const st = await admin.get<{ configured: boolean; missing: string[] }>("/api/admin/mail");
+  assert.equal(st.status, 200);
+  assert.equal(st.body.configured, false);
+  assert.deepEqual(st.body.missing, ["RESEND_API_KEY", "MAIL_FROM"]);
+  const test = await admin.post<{ ok: boolean; error: string }>("/api/admin/mail", {});
+  assert.equal(test.body.ok, false);
+  assert.match(test.body.error, /missing RESEND_API_KEY/);
+});
+
+test("renames: mentions show the current name, the AI knows former names; replies to replies join the thread", async () => {
+  const old = (await prisma.user.findUniqueOrThrow({ where: { id: s.viewerId } })).name;
+  assert.equal((await viewer.patch("/api/account/profile", { name: "Vivi Renamed" })).status, 200);
+  assert.deepEqual((await prisma.user.findUniqueOrThrow({ where: { id: s.viewerId } })).formerNames, [old], "the old name is kept by the database");
+  try {
+    const root = await contributor.post<{ id: string }>(`/api/tasks/${s.r6task}/comments`, { body: `@[${old}](${s.viewerId}) please check` });
+    assert.equal(root.status, 201, JSON.stringify(root.body));
+    const r1 = await admin.post<{ id: string }>(`/api/tasks/${s.r6task}/comments`, { body: "on it", parentCommentId: root.body.id });
+    const r2 = await contributor.post<{ id: string; parentCommentId: string }>(`/api/tasks/${s.r6task}/comments`, { body: "thanks", parentCommentId: r1.body.id });
+    assert.equal(r2.status, 201);
+    assert.equal(r2.body.parentCommentId, root.body.id, "a reply to a reply joins the root thread");
+    const list = await contributor.get<{ id: string; body: string }[]>(`/api/tasks/${s.r6task}/comments`);
+    assert.equal(list.body.find((c) => c.id === root.body.id)?.body, `@[Vivi Renamed](${s.viewerId}) please check`, "mentions show the current name");
+    const a = await ask(admin, { kind: "assistant", workspaceId: s.ws, message: `What is ${old} working on?` });
+    assert.equal(a.status, 200, a.text);
+    const system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+    assert.ok(system.includes(`Vivi Renamed | ${old} |`), "current name with the former one");
+    assert.match(system, /refers to the same person/);
+  } finally {
+    await viewer.patch("/api/account/profile", { name: old });
+  }
+});
+
+test("quick capture dots move along their ring and can be deleted by their owner only", async () => {
+  const th = await contributor.post<{ id: string }>(`/api/workspaces/${s.ws}/thoughts`, { taskName: "Orbit me", projectId: s.project, plannedAt: new Date(Date.now() + 10 * 86400000).toISOString() });
+  assert.equal(th.status, 201, JSON.stringify(th.body));
+  assert.equal((await contributor.patch<{ orbitAngle: number }>(`/api/thoughts/${th.body.id}`, { orbitAngle: 400 })).body.orbitAngle, 40, "angles wrap to 0-360");
+  assert.equal((await admin.patch(`/api/thoughts/${th.body.id}`, { orbitAngle: 10 })).status, 404, "captures are personal");
+  const rows = await contributor.get<{ id: string; orbitAngle: number | null; plannedAt: string }[]>(`/api/workspaces/${s.ws}/thoughts`);
+  assert.equal(rows.body.find((r) => r.id === th.body.id)?.orbitAngle, 40);
+  assert.equal((await admin.del(`/api/thoughts/${th.body.id}`)).status, 404);
+  assert.equal((await contributor.del(`/api/thoughts/${th.body.id}`)).status, 204);
+  assert.ok(!(await contributor.get<{ id: string }[]>(`/api/workspaces/${s.ws}/thoughts`)).body.some((r) => r.id === th.body.id));
 });
 
 test("universal search covers tasks, projects, wikis, objectives and people - within what the user can see", async () => {

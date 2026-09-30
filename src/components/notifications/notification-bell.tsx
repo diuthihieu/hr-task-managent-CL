@@ -116,6 +116,13 @@ export function describeNotification(n: NotificationItem, t: TFunction): string 
       return t("notif.workspace_invite", { actor, role: t(`role.${String(d.role ?? "editor")}` as MessageKey) });
     case "workspace_invite_result":
       return t(d.decision === "accepted" ? "notif.invite_accepted" : "notif.invite_declined", { actor });
+    case "role_changed": {
+      const from = t(`role.${String(d.from ?? "viewer")}` as MessageKey);
+      const to = t(`role.${String(d.to ?? "viewer")}` as MessageKey);
+      return t("notif.role_changed", { actor, from, to });
+    }
+    case "role_change_result":
+      return t(d.decision === "declined" ? "notif.role_declined" : "notif.role_accepted", { actor, from: t(`role.${String(d.from ?? "viewer")}` as MessageKey), to: t(`role.${String(d.to ?? "viewer")}` as MessageKey) });
     case "ai_suggestion":
       if (d.kind === "reward_reachable") return t("notif.ai.reward_reachable", { points: Number(d.points ?? 0), cost: Number(d.cost ?? 0) });
       return t(`notif.ai.${String(d.kind ?? "plan_day")}` as MessageKey, { count: Number(d.count ?? 0) });

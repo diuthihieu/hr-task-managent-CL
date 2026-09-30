@@ -1,4 +1,5 @@
 "use client";
+import { mentionToken } from "@/lib/mentions";
 import { useEffect, useRef, useState } from "react";
 import { MessageSquare, Paperclip, Send, Trash2, X, CornerDownRight, Loader2, FileText } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
@@ -103,6 +104,13 @@ export function WikiComments({ pageId, currentUserId, canManage }: { pageId: str
   const roots = items.filter((c) => !c.parentCommentId || !items.some((x) => x.id === c.parentCommentId));
   const repliesOf = (id: string) => items.filter((c) => c.parentCommentId === id);
 
+  /** Reply to a comment or to a reply: replies join the thread and tag the person you answer. */
+  function startReply(c: WikiCommentRow) {
+    setReplyTo(c);
+    const a = c.author;
+    if (c.parentCommentId && a && a.id !== currentUserId && !draft.includes(`](${a.id})`)) setDraft(`${mentionToken(a.name, a.id)} ${draft}`);
+  }
+
   const view = (c: WikiCommentRow, nested = false) => (
     <div key={c.id} className={cn("flex gap-2.5 group", nested && "mt-3")} data-testid="wiki-comment">
       <span className="relative overflow-hidden h-7 w-7 rounded-full text-white text-[10px] font-semibold flex items-center justify-center shrink-0" style={{ backgroundColor: c.author?.avatarColor ?? "#94a3b8" }}>
@@ -114,11 +122,9 @@ export function WikiComments({ pageId, currentUserId, canManage }: { pageId: str
           <span className="font-semibold text-neutral-800 dark:text-neutral-100">{c.author?.name ?? t("record.deletedUser")}</span>
           <span className="text-neutral-400">{formatDate(c.createdAt, true)}</span>
           <span className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100">
-            {!nested && (
-              <button onClick={() => setReplyTo(c)} className="text-neutral-400 hover:text-indigo-600" title={t("wc.reply")}>
-                <CornerDownRight size={12} />
-              </button>
-            )}
+            <button onClick={() => startReply(c)} className="text-neutral-400 hover:text-indigo-600" title={t("wc.reply")} data-testid="wiki-comment-reply">
+              <CornerDownRight size={12} />
+            </button>
             {(c.author?.id === currentUserId || canManage) && (
               <button onClick={() => remove(c)} className="text-neutral-400 hover:text-red-600" title={t("common.delete")}>
                 <Trash2 size={12} />

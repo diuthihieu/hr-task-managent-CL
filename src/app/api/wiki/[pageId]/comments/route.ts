@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { withCurrentMentionNames } from "@/lib/mentions-server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfWikiPage, badRequest } from "@/lib/authz";
@@ -34,7 +35,7 @@ export const GET = route<P>(async (_req, { params }) => {
   const { pageId } = await params;
   await requireWorkspaceRole(user, await workspaceOfWikiPage(pageId), "viewer");
   const rows = await prisma.wikiComment.findMany({ where: { wikiPageId: pageId, deletedAt: null }, orderBy: { createdAt: "asc" }, select: WIKI_COMMENT_SELECT });
-  return NextResponse.json(rows.map(serialize));
+  return NextResponse.json((await withCurrentMentionNames(rows)).map(serialize));
 });
 
 /**
@@ -54,7 +55,10 @@ export const POST = route<P>(async (req, { params }) => {
   const quoted = await detectSourceProjects(prisma, ctx.workspaceId, stripMentions(body.body));
   const readers = new Set((await wikiReaders(page.wikiId, ctx.workspaceId, [...new Set([...current, ...quoted])])).map((r) => r.id));
   const mentioned = mentionedUserIds(body.body).filter((id) => readers.has(id) && id !== user.id);
-  if (body.parentCommentId && !(await prisma.wikiComment.findFirst({ where: { id: body.parentCommentId, wikiPageId: pageId, deletedAt: null }, select: { id: true } })))
+  const parent = body.parentCommentId ? await prisma.wikiComment.findFirst({ where: { id: body.parentCommentId, wikiPageId: pageId, deletedAt: null }, select: { id: true, parentCommentId: true } }) : null;
+  // Replying to a reply joins the same thread (one level).
+  const parentCommentId = parent ? (parent.parentCommentId ?? parent.id) : null;
+  if (body.parentCommentId && !parent)
     throw badRequest("The comment you reply to is gone");
   const files = body.attachmentIds?.length
     ? await prisma.attachment.findMany({ where: { id: { in: body.attachmentIds }, wikiPageId: pageId, uploadedById: user.id, wikiCommentId: null, deletedAt: null }, select: { id: true, fileName: true, url: true, storageProvider: true } })
@@ -62,7 +66,7 @@ export const POST = route<P>(async (req, { params }) => {
   if (files.length !== (body.attachmentIds?.length ?? 0)) throw badRequest("Some files are missing - upload them again");
 
   const comment = await prisma.$transaction(async (tx) => {
-    const c = await tx.wikiComment.create({ data: { workspaceId: ctx.workspaceId, wikiPageId: pageId, authorId: user.id, parentCommentId: body.parentCommentId ?? null, body: body.body }, select: { id: true } });
+    const c = await tx.wikiComment.create({ data: { workspaceId: ctx.workspaceId, wikiPageId: pageId, authorId: user.id, parentCommentId, body: body.body }, select: { id: true } });
     if (mentioned.length) await tx.wikiCommentMention.createMany({ data: mentioned.map((userId) => ({ commentId: c.id, userId })), skipDuplicates: true });
     if (files.length) await tx.attachment.updateMany({ where: { id: { in: files.map((f) => f.id) } }, data: { wikiCommentId: c.id } });
     const excerpt = stripMentions(body.body).slice(0, 180);

@@ -71,7 +71,7 @@ export function TaskIntakeChat({
           {messages.map((m) =>
             m.role === "user" ? (
               <div key={m.id} className="flex justify-end">
-                <div className="max-w-[85%] rounded-2xl rounded-br-md bg-indigo-600 text-white px-3.5 py-2 text-sm whitespace-pre-wrap" data-testid="intake-user-msg">
+                <div className={cn("max-w-[85%] bg-indigo-600 text-white px-3.5 py-2 text-sm whitespace-pre-wrap", compact ? "rounded-[20px]" : "rounded-2xl rounded-br-md")} data-testid="intake-user-msg">
                   {m.content}
                 </div>
               </div>
@@ -83,7 +83,7 @@ export function TaskIntakeChat({
                   <Sparkles size={13} />
                 </span>
                 <div className="flex-1 min-w-0 space-y-2">
-                  <div className="rounded-2xl rounded-tl-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3.5 py-2.5 text-sm">{m.pending ? <TypingDots /> : <Markdown text={m.content} />}</div>
+                  <div className={cn("px-3.5 py-2.5 text-sm", compact ? "rounded-[20px] bg-neutral-100 dark:bg-neutral-800" : "rounded-2xl rounded-tl-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900")}>{m.pending ? <TypingDots /> : <Markdown text={m.content} />}</div>
                   {m.type === "summary" && m.draft && (
                     <DraftCard
                       draft={m.draft}
@@ -116,8 +116,8 @@ export function TaskIntakeChat({
           <div ref={endRef} />
         </div>
       </div>
-      <div className={cn("border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900", compact ? "p-2.5" : "p-4")}>
-        <div className={cn("mx-auto flex items-end gap-2 rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-950", !compact && "max-w-3xl")}>
+      <div className={cn("bg-white dark:bg-neutral-900", compact ? "p-2.5" : "p-4 border-t border-neutral-200 dark:border-neutral-800")}>
+        <div className={cn("mx-auto flex items-end gap-2 px-3 py-2", compact ? "rounded-[22px] bg-neutral-100 dark:bg-neutral-800 focus-within:ring-2 focus-within:ring-indigo-200 dark:focus-within:ring-indigo-900" : "max-w-3xl rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-950")}>
           <textarea
             ref={inputRef}
             value={text}

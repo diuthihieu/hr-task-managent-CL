@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, route, HttpError, badRequest } from "@/lib/authz";
+import { requireUser, route, HttpError } from "@/lib/authz";
 import { rateLimit } from "@/lib/rate-limit";
 import { confirmEmail, sendVerificationEmail } from "@/lib/email-verification";
 import { mailConfigured } from "@/lib/mail";
@@ -20,7 +20,8 @@ export const POST = route(async (req) => {
   if (!mailConfigured()) throw new HttpError(503, "Email isn't set up on this server - ask an administrator to verify your address", "mail_unavailable");
   if (!(await rateLimit(`verify-mail:${user.id}`, 5, 3600_000))) throw new HttpError(429, "Too many emails - try again in an hour");
   const u = await prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { id: true, email: true, name: true, locale: true } });
-  if (!(await sendVerificationEmail(u, new URL(req.url).origin))) throw badRequest("Could not send the email - try again later");
+  const sent = await sendVerificationEmail(u, new URL(req.url).origin);
+  if (!sent.ok) throw new HttpError(502, `The email provider refused to send the message (${sent.error}). Ask an administrator to check the email settings, or to verify your address.`, "mail_failed");
   await logSecurityEvent(user.id, "verification_sent", "Verification email sent", req);
   return NextResponse.json({ sent: true });
 });

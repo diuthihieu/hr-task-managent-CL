@@ -57,7 +57,7 @@ export interface IntakeScope {
   canCreate: boolean;
   /** Projects the user can see (and create tasks in when canCreate). */
   projects: { id: string; name: string; categories: { id: string; name: string }[] }[];
-  members: { id: string; name: string; email: string }[];
+  members: { id: string; name: string; email: string; role: string; jobTitle: string | null; formerNames: string[] }[];
   /** The project chat's project, when asked from a project. */
   projectId: string | null;
 }
@@ -73,10 +73,10 @@ export async function intakeScope(user: SessionUser, workspaceId: string, role: 
     prisma.workspaceMember.findMany({
       where: { workspaceId, user: { isActive: true, deletedAt: null } },
       orderBy: { user: { name: "asc" } },
-      select: { user: { select: { id: true, name: true, email: true } } },
+      select: { role: true, user: { select: { id: true, name: true, email: true, jobTitle: true, formerNames: true } } },
     }),
   ]);
-  return { workspaceId, role, canCreate: roleAtLeast(role, "contributor"), projects, members: members.map((m) => m.user), projectId };
+  return { workspaceId, role, canCreate: roleAtLeast(role, "contributor"), projects, members: members.map((m) => ({ ...m.user, role: m.role })), projectId };
 }
 
 /** Keeps only what we can vouch for: known project, members and category; valid dates and priority. */
@@ -213,7 +213,7 @@ export function intakeSystemPrompt(o: { workspace: string; user: { id: string; n
   const { scope } = o;
   const current = scope.projects.find((p) => p.id === scope.projectId);
   const projects = scope.projects.map((p) => `- project id: ${p.id} | name: ${p.name}${p.categories.length ? ` | categories: ${p.categories.map((c) => `${c.name} (id ${c.id})`).join(", ")}` : ""}`).join("\n");
-  const members = scope.members.map((m) => `- member id: ${m.id} | name: ${m.name} | email: ${m.email}${m.id === o.user.id ? " (this is the user - 'me', 'tôi', 'mình')" : ""}`).join("\n");
+  const members = scope.members.map((m) => `- member id: ${m.id} | name: ${m.name} ${m.formerNames.length ? ` | formerly: ${m.formerNames.join(", ")}` : ""} | role: ${m.role}${m.jobTitle ? ` | title: ${m.jobTitle}` : ""} | email: ${m.email}${m.id === o.user.id ? " (this is the user - 'me', 'tôi', 'mình')" : ""}`).join("\n");
   return `You are woli AI, the task assistant of the workspace "${o.workspace}"${current ? `, opened inside the project "${current.name}"` : ""}. You are talking to ${o.user.name} (workspace role: ${scope.role}). The user's local time now: ${o.now}.
 
 RESPONSE_SCHEMA: task_intake
@@ -227,7 +227,7 @@ YOUR TWO JOBS:
    - Resolve relative dates and times from the user's local time ("sáng nay" = this morning, "mai" = tomorrow, "thứ 6" = the coming Friday). If the deadline would already be in the past, point it out and ask whether they mean the next occurrence.
    - Ask for what is missing or ambiguous with type "question": at most 2-3 short questions in one message, most important first. Typical gaps: which project${current ? ` (default: ${current.name})` : ""}, the deadline, who does it (default: the user), who it reports to, priority, expected output/details. Don't ask about things the user clearly doesn't care about - use sensible defaults.
    - When you know enough, reply with type "summary": the message is a short checklist of the task (project, title, deadline with time, assignees, report to, priority, details) and asks the user to confirm or say what to change. The app shows a Confirm button - never claim the task is created yourself.
-   - Only use project, member and category ids from the lists below. Match names people mention to members (accents and nicknames count); if two members match, ask which one. If a person or project is not in the lists, say you can't find them within the user's access.
+   - Only use project, member and category ids from the lists below. Match names people mention to members (accents, nicknames, former names and emails count); if two members match, ask which one. If a person or project is not in the lists, say you can't find them within the user's access.
 2. ANSWER QUESTIONS about ${current ? `the project "${current.name}"` : "the projects"} with type "answer", using only PROJECT DATA (status, overdue tasks, workload per person, deadlines, OKRs...). Compute counts from the data. If PROJECT DATA is empty, say you can only see the project list here and suggest asking inside the project's AI chat or the Ask tab.
 
 RULES:
@@ -242,7 +242,7 @@ ${o.personal}
 PROJECTS the user can see:
 ${projects || "(none)"}
 
-MEMBERS:
+MEMBERS (everyone in the workspace - use this list to answer questions about people or the team):
 ${members}
 
 CURRENT DRAFT:

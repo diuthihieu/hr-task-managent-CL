@@ -53,6 +53,25 @@ export const MentionInput = forwardRef<MentionInputHandle, {
   const [active, setActive] = useState(0);
 
   useImperativeHandle(ref, () => ({ focus: () => taRef.current?.focus() }));
+
+  // The box shows "@Name"; the stored value keeps "@[Name](id)" so mentions stay exact.
+  const [picked, setPicked] = useState<{ id: string; name: string }[]>([]);
+  const known = useMemo(() => {
+    const m = new Map<string, { id: string; name: string }>();
+    for (const x of value.matchAll(MENTION_RE)) m.set(x[2], { id: x[2], name: x[1] });
+    for (const p of picked) if (!m.has(p.id)) m.set(p.id, p);
+    return [...m.values()].sort((a, b) => b.name.length - a.name.length);
+  }, [value, picked]);
+  const display = useMemo(() => value.replace(MENTION_RE, (_m, name: string) => `@${name}`), [value]);
+  const encode = (text: string) => {
+    let out = text;
+    for (const k of known) {
+      const esc = k.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      out = out.replace(new RegExp(`(^|[^\\p{L}\\p{N}\\]])@${esc}(?![\\p{L}\\p{N}])`, "gu"), (_m, pre: string) => `${pre}${mentionToken(k.name, k.id)}`);
+    }
+    return out;
+  };
+  const emit = (text: string) => onChange(encode(text));
   useEffect(() => {
     let alive = true;
     if (peopleUrl) loadPeople(peopleUrl).then((p) => alive && setPeople(p));
@@ -64,10 +83,10 @@ export const MentionInput = forwardRef<MentionInputHandle, {
   /** Wrap the selection (or insert a placeholder) with Markdown syntax. */
   function wrap(before: string, after = before, placeholder = "text") {
     const ta = taRef.current;
-    const a = ta?.selectionStart ?? value.length;
-    const b = ta?.selectionEnd ?? value.length;
-    const sel = value.slice(a, b) || placeholder;
-    onChange(value.slice(0, a) + before + sel + after + value.slice(b));
+    const a = ta?.selectionStart ?? display.length;
+    const b = ta?.selectionEnd ?? display.length;
+    const sel = display.slice(a, b) || placeholder;
+    emit(display.slice(0, a) + before + sel + after + display.slice(b));
     requestAnimationFrame(() => {
       ta?.focus();
       ta?.setSelectionRange(a + before.length, a + before.length + sel.length);
@@ -82,9 +101,9 @@ export const MentionInput = forwardRef<MentionInputHandle, {
   }
   function linePrefix(prefix: string) {
     const ta = taRef.current;
-    const a = ta?.selectionStart ?? value.length;
-    const start = value.lastIndexOf("\n", a - 1) + 1;
-    onChange(value.slice(0, start) + prefix + value.slice(start));
+    const a = ta?.selectionStart ?? display.length;
+    const start = display.lastIndexOf("\n", a - 1) + 1;
+    emit(display.slice(0, start) + prefix + display.slice(start));
     requestAnimationFrame(() => ta?.focus());
   }
 
@@ -105,10 +124,15 @@ export const MentionInput = forwardRef<MentionInputHandle, {
   }
 
   function pick(p: Person) {
-    const caret = taRef.current?.selectionStart ?? value.length;
-    const token = mentionToken(p.name, p.id) + " ";
-    const next = value.slice(0, anchor) + token + value.slice(caret);
-    onChange(next);
+    const caret = taRef.current?.selectionStart ?? display.length;
+    const token = `@${p.name} `;
+    const next = display.slice(0, anchor) + token + display.slice(caret);
+    setPicked((prev) => (prev.some((x) => x.id === p.id) ? prev : [...prev, { id: p.id, name: p.name }]));
+    // Encode with this person included (state updates later).
+    let stored = encode(next);
+    const esc = p.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    stored = stored.replace(new RegExp(`(^|[^\\p{L}\\p{N}\\]])@${esc}(?![\\p{L}\\p{N}])`, "gu"), (_m, pre: string) => `${pre}${mentionToken(p.name, p.id)}`);
+    onChange(stored);
     setQuery(null);
     requestAnimationFrame(() => {
       const pos = anchor + token.length;
@@ -119,10 +143,10 @@ export const MentionInput = forwardRef<MentionInputHandle, {
 
   function openPicker() {
     const ta = taRef.current;
-    const caret = ta?.selectionStart ?? value.length;
-    const needsSpace = caret > 0 && !/\s/.test(value[caret - 1]);
-    const next = value.slice(0, caret) + (needsSpace ? " @" : "@") + value.slice(caret);
-    onChange(next);
+    const caret = ta?.selectionStart ?? display.length;
+    const needsSpace = caret > 0 && !/\s/.test(display[caret - 1]);
+    const next = display.slice(0, caret) + (needsSpace ? " @" : "@") + display.slice(caret);
+    emit(next);
     const at = caret + (needsSpace ? 1 : 0);
     setAnchor(at);
     setQuery("");
@@ -155,10 +179,10 @@ export const MentionInput = forwardRef<MentionInputHandle, {
       <textarea
         ref={taRef}
         rows={rows}
-        value={value}
+        value={display}
         placeholder={placeholder}
         onChange={(e) => {
-          onChange(e.target.value);
+          emit(e.target.value);
           detect(e.target.value, e.target.selectionStart);
         }}
         onKeyDown={(e) => {

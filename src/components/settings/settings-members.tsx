@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { UserPlus, Trash2, Copy, Mail, Clock } from "lucide-react";
+import { UserPlus, Trash2, Copy, Mail, Clock, Check, X } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
@@ -73,13 +73,32 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
 
   useEffect(load, [workspaceId, canManage]);
 
-  async function changeRole(userId: string, role: string) {
-    setMembers((prev) => prev.map((m) => (m.id === userId ? { ...m, role } : m)));
+  // Role changes are staged: nothing changes until the admin presses Confirm.
+  const [staged, setStaged] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState<string | null>(null);
+  const roleLabel = (r: string) => t(`role.${r}` as MessageKey);
+  const unstage = (id: string) =>
+    setStaged((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+
+  async function confirmRole(m: MemberRow) {
+    const role = staged[m.id];
+    if (!role || role === m.role) return;
+    if (!confirm(t("mem.confirmPrompt", { name: m.name, from: roleLabel(m.role), to: roleLabel(role) }))) return;
+    setSaving(m.id);
     try {
-      await api.patch(`/api/workspaces/${workspaceId}/members/${userId}`, { role });
+      await api.patch(`/api/workspaces/${workspaceId}/members/${m.id}`, { role });
+      setMembers((prev) => prev.map((x) => (x.id === m.id ? { ...x, role } : x)));
+      unstage(m.id);
+      toast.success(t("mem.changed", { name: m.name }));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
       load();
+    } finally {
+      setSaving(null);
     }
   }
 
@@ -123,7 +142,26 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
                 <div className="text-xs text-neutral-400 truncate">{m.email}</div>
               </div>
               {canManage ? (
-                <Select className="w-32" value={m.role} onValueChange={(v) => changeRole(m.id, v)} options={currentUserRole === "owner" ? ROLES : ROLES.filter((r) => r.value !== "owner" || m.role === "owner")} />
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {staged[m.id] && staged[m.id] !== m.role && (
+                    <>
+                      <span className="hidden sm:inline text-[11px] text-amber-600" data-testid="role-pending">{t("mem.pendingChange", { from: roleLabel(m.role), to: roleLabel(staged[m.id]) })}</span>
+                      <Button size="sm" className="h-7 px-2 text-xs" disabled={saving === m.id} onClick={() => confirmRole(m)} data-testid="role-confirm">
+                        <Check size={12} /> {t("mem.confirmChange")}
+                      </Button>
+                      <button onClick={() => unstage(m.id)} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200" title={t("mem.cancelChange")} aria-label={t("mem.cancelChange")} data-testid="role-cancel">
+                        <X size={14} />
+                      </button>
+                    </>
+                  )}
+                  <Select
+                    className="w-32"
+                    value={staged[m.id] ?? m.role}
+                    onValueChange={(v) => setStaged((prev) => ({ ...prev, [m.id]: v }))}
+                    options={currentUserRole === "owner" ? ROLES : ROLES.filter((r) => r.value !== "owner" || m.role === "owner")}
+                    data-testid="member-role"
+                  />
+                </div>
               ) : (
                 <span className="text-xs text-neutral-500 w-32 text-right">{t(`role.${m.role}` as MessageKey)}</span>
               )}
@@ -136,6 +174,7 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
           ))}
         </div>
       )}
+      {canManage && Object.entries(staged).some(([id, r]) => members.find((m) => m.id === id)?.role !== r) && <p className="text-xs text-amber-600 mt-2 max-w-2xl">{t("mem.unsaved")}</p>}
 
       {canManage && pending.length > 0 && (
         <div className="max-w-2xl mt-6" data-testid="pending-invites">

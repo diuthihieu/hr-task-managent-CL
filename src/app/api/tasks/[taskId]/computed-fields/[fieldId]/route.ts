@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { assertCanEditTask, badRequest, HttpError, requireUser, requireWorkspaceRole, route, workspaceOfTask } from "@/lib/authz";
 import { aiConfigured, generate } from "@/lib/ai/gemini";
 import { taskContext } from "@/lib/ai/actions";
-import { consumeRateLimit } from "@/lib/rate-limit";
+import { rateLimit } from "@/lib/rate-limit";
 import { logActivity } from "@/lib/activity";
 import type { FieldConfig } from "@/lib/field-types";
 
@@ -53,7 +53,7 @@ export const POST = route<P>(async (_req, { params }) => {
   const { taskId, fieldId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfTask(taskId), "contributor");
   await assertCanEditTask(ctx, taskId);
-  if (!(await consumeRateLimit(`computed-field:${user.id}`, 60, 10 * 60_000))) throw new HttpError(429, "Too many refreshes - please wait a few minutes");
+  if (!(await rateLimit(`computed-field:${user.id}`, 60, 10 * 60_000))) throw new HttpError(429, "Too many refreshes - please wait a few minutes");
 
   const task = await prisma.task.findUniqueOrThrow({ where: { id: taskId }, select: { projectId: true, title: true } });
   const field = await prisma.customField.findFirst({ where: { id: fieldId, projectId: task.projectId, deletedAt: null }, select: { id: true, name: true, type: true, settings: true } });
@@ -66,6 +66,7 @@ export const POST = route<P>(async (_req, { params }) => {
     if (!config.aiPrompt?.trim()) throw badRequest("Configure an AI prompt for this field first");
     const context = await taskContext(taskId);
     const result = await generate({
+      workspaceId: ctx.workspaceId,
       system: "Compute one task field from the supplied task context. Follow the field instruction exactly. Return only the field value, with no preamble or Markdown fence.",
       contents: [{ role: "user", parts: [{ text: `FIELD INSTRUCTION:\n${config.aiPrompt}\n\nTASK CONTEXT:\n${context}` }] }],
       temperature: 0.1,

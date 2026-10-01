@@ -13,6 +13,10 @@ CREATE INDEX "task_custom_field_values_custom_field_id_value_team_id_idx"
 
 -- Blob completion callbacks are at-least-once; the storage key makes their
 -- metadata insert idempotent even when two callbacks race.
+DELETE FROM "attachments" AS duplicate
+USING "attachments" AS keeper
+WHERE duplicate."storage_key" = keeper."storage_key"
+  AND (duplicate."created_at", duplicate."id") > (keeper."created_at", keeper."id");
 CREATE UNIQUE INDEX "attachments_storage_key_key" ON "attachments"("storage_key");
 
 -- The existing scope trigger is extended so direct SQL writes cannot create
@@ -61,17 +65,6 @@ BEGIN
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-
--- Database-backed, multi-instance rate limiting.
-CREATE TABLE "rate_limit_buckets" (
-  "key_hash" CHAR(64) NOT NULL,
-  "count" INTEGER NOT NULL DEFAULT 0,
-  "reset_at" TIMESTAMPTZ(6) NOT NULL,
-  "updated_at" TIMESTAMPTZ(6) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT "rate_limit_buckets_pkey" PRIMARY KEY ("key_hash"),
-  CONSTRAINT "rate_limit_buckets_count_nonnegative" CHECK ("count" >= 0)
-);
-CREATE INDEX "rate_limit_buckets_reset_at_idx" ON "rate_limit_buckets"("reset_at");
 
 -- Cold audit storage. No foreign keys by design: audit history must survive
 -- deletion of the referenced workspace/user/entity.

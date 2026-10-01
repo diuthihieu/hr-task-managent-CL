@@ -784,18 +784,6 @@ model ActivityLogArchive {
   @@map("activity_log_archives")
 }
 
-/// Shared, database-backed rate-limit buckets. keyHash is an HMAC, never a
-/// raw IP/email, and UPSERT makes increments atomic across serverless workers.
-model RateLimitBucket {
-  keyHash   String   @id @map("key_hash") @db.Char(64)
-  count     Int      @default(0)
-  resetAt   DateTime @map("reset_at") @db.Timestamptz(6)
-  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
-
-  @@index([resetAt])
-  @@map("rate_limit_buckets")
-}
-
 // ---------------------------------------------------------------------------
 // Views & dashboards (UI configuration)
 // ---------------------------------------------------------------------------

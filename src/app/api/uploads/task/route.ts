@@ -3,7 +3,7 @@ import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, assertCanEditTask, route, workspaceOfTask, badRequest } from "@/lib/authz";
-import { assertClientUploadAllowed, safeFileName } from "@/lib/storage";
+import { assertClientUploadAllowed, assertUploadQuota, safeFileName } from "@/lib/storage";
 import { logActivity } from "@/lib/activity";
 import { notifyTaskDetail } from "@/lib/notifications";
 
@@ -39,6 +39,7 @@ export const POST = route(async (req) => {
       const payload = parsePayload(rawPayload);
       const ctx = await requireWorkspaceRole(user, await workspaceOfTask(payload.taskId), "contributor");
       await assertCanEditTask(ctx, payload.taskId);
+      await assertUploadQuota(user.id);
       assertClientUploadAllowed(payload.fileName, payload.contentType, payload.sizeBytes);
       const prefix = `workspaces/${ctx.workspaceId}/tasks/${payload.taskId}/`;
       if (!pathname.startsWith(prefix) || pathname !== `${prefix}${payload.fileName}`) throw badRequest("Invalid upload pathname");

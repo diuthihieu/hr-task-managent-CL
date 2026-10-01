@@ -6,6 +6,7 @@ import { put, get, del } from "@vercel/blob";
 import { HttpError } from "./http-errors";
 
 export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // Vercel function request body limit is 4.5 MB.
+export const MAX_CLIENT_UPLOAD_BYTES = 100 * 1024 * 1024;
 
 // Types a browser could execute or render as active content from our origin.
 const BLOCKED_TYPES = [/^text\/html/i, /^image\/svg\+xml/i, /javascript/i, /^application\/x-msdownload/i, /^application\/xhtml/i];
@@ -24,6 +25,14 @@ export function assertUploadAllowed(file: File) {
   if (file.size === 0) throw new HttpError(400, "File is empty");
   if (file.size > MAX_UPLOAD_BYTES) throw new HttpError(413, `File is too large (max ${MAX_UPLOAD_BYTES / 1024 / 1024} MB)`);
   if (BLOCKED_EXT.test(file.name) || BLOCKED_TYPES.some((re) => re.test(file.type))) throw new HttpError(400, "This file type is not allowed");
+}
+
+/** Validate metadata before issuing a short-lived direct-to-Blob upload token. */
+export function assertClientUploadAllowed(name: string, contentType: string, size: number) {
+  if (!storageConfigured()) throw new HttpError(503, "File storage is not configured (BLOB_READ_WRITE_TOKEN missing)");
+  if (!Number.isFinite(size) || size <= 0) throw new HttpError(400, "File is empty");
+  if (size > MAX_CLIENT_UPLOAD_BYTES) throw new HttpError(413, `File is too large (max ${MAX_CLIENT_UPLOAD_BYTES / 1024 / 1024} MB)`);
+  if (BLOCKED_EXT.test(name) || BLOCKED_TYPES.some((re) => re.test(contentType))) throw new HttpError(400, "This file type is not allowed");
 }
 
 /** Per-user upload quota across all instances (abuse / storage-cost protection). */

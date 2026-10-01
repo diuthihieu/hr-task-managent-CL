@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { computeKpiTrend, computeNetworkGraph, type DashboardBlockConfig } from "../dashboard-engine";
+import { computeKpiTrend, type DashboardBlockConfig } from "../dashboard-engine";
 import type { FieldRow, RecordRow } from "@/types";
 
 const fields: FieldRow[] = [
@@ -24,18 +24,4 @@ test("KPI trend reports an undefined percentage when the prior period is zero", 
   assert.equal(trend?.previous, 0);
   assert.equal(trend?.percentChange, null);
   assert.equal(trend?.direction, "up");
-});
-
-test("network graph only exposes links whose target is in the visible record set", () => {
-  const graphFields: FieldRow[] = [
-    { id: "sys_title", projectId: "p", name: "Task", type: "text", config: null, order: 0, isPrimary: true, visible: true, description: null, defaultValue: null },
-    { id: "links", projectId: "p", name: "Depends on", type: "link", config: null, order: 1, isPrimary: false, visible: true, description: null, defaultValue: null },
-  ];
-  const records: RecordRow[] = [
-    { ...record("a", "2026-09-01T00:00:00.000Z", 0), data: { sys_title: "A", links: ["b", "outside"] } },
-    { ...record("b", "2026-09-01T00:00:00.000Z", 0), data: { sys_title: "B", links: ["a"] } },
-  ];
-  const graph = computeNetworkGraph(records, graphFields, { networkLinkFieldId: "links", networkLabelFieldId: "sys_title" });
-  assert.deepEqual(graph.nodes, [{ id: "a", label: "A" }, { id: "b", label: "B" }]);
-  assert.deepEqual(graph.edges, [{ source: "a", target: "b" }]);
 });

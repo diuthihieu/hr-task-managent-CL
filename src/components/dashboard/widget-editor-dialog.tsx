@@ -93,7 +93,6 @@ export function WidgetEditorDialog({
   const needsMeasure = NEEDS_MEASURE.includes(draft.type);
   const needsMeasure2 = NEEDS_MEASURE2.includes(draft.type);
   const isTable = draft.type === "table";
-  const isNetwork = draft.type === "network";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -160,29 +159,6 @@ export function WidgetEditorDialog({
                     </label>
                   );
                 })}
-              </div>
-            </div>
-          ) : isNetwork ? (
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.linkField")}</label>
-                <Select
-                  className="w-full"
-                  value={draft.config.networkLinkFieldId ?? ""}
-                  onValueChange={(v) => patchConfig({ networkLinkFieldId: v })}
-                  options={fields.filter((field) => field.type === "link").map((field) => ({ value: field.id, label: field.name }))}
-                  placeholder={t("form.chooseField")}
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.nodeLabel")}</label>
-                <Select
-                  className="w-full"
-                  value={draft.config.networkLabelFieldId ?? "sys_title"}
-                  onValueChange={(v) => patchConfig({ networkLabelFieldId: v })}
-                  options={fields.map((field) => ({ value: field.id, label: field.name }))}
-                  placeholder={t("form.chooseField")}
-                />
               </div>
             </div>
           ) : (
@@ -437,7 +413,7 @@ export function WidgetEditorDialog({
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={() => onSave(draft)} disabled={!projectId || (isNetwork && !draft.config.networkLinkFieldId)}>
+          <Button onClick={() => onSave(draft)} disabled={!projectId}>
             {t("common.save")}
           </Button>
         </div>

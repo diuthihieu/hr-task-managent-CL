@@ -51,9 +51,6 @@ export interface DashboardBlockConfig {
   kpiCompareTo?: "none" | "previous_week" | "previous_month" | "previous_quarter" | "previous_year";
   /** Date field used to place records into the current and previous KPI periods. */
   kpiDateFieldId?: string;
-  /** Link field and label field used by the interactive relationship graph. */
-  networkLinkFieldId?: string;
-  networkLabelFieldId?: string;
   style?: WidgetStyleConfig;
 }
 
@@ -306,54 +303,6 @@ export function computeKpi(
   return aggregate(values, distinct, config.aggregation ?? "count", filtered.length);
 }
 
-export interface NetworkGraphNode {
-  id: string;
-  label: string;
-}
-
-export interface NetworkGraphEdge {
-  source: string;
-  target: string;
-}
-
-export interface NetworkGraphData {
-  nodes: NetworkGraphNode[];
-  edges: NetworkGraphEdge[];
-}
-
-/** Build a permission-filtered graph from the records already loaded for a
- * dashboard widget. Targets outside the filtered result are never exposed. */
-export function computeNetworkGraph(records: RecordRow[], fields: FieldRow[], config: DashboardBlockConfig, currentUserId?: string): NetworkGraphData {
-  const linkField = config.networkLinkFieldId ? fields.find((field) => field.id === config.networkLinkFieldId && field.type === "link") : undefined;
-  if (!linkField) return { nodes: [], edges: [] };
-  const labelField = config.networkLabelFieldId
-    ? fields.find((field) => field.id === config.networkLabelFieldId)
-    : fields.find((field) => field.id === "sys_title");
-  // Keep the graph readable and bound the amount of relationship metadata
-  // returned to the browser. Large tables should be narrowed with a view or
-  // dashboard filter before visualization.
-  const filtered = applyFilters(records, fields, config.filters, currentUserId).slice(0, 70);
-  const visibleIds = new Set(filtered.map((record) => record.id));
-  const nodes = filtered.map((record) => ({
-    id: record.id,
-    label: String(labelField ? getCellValue(record, labelField, fields) ?? "" : record.id),
-  }));
-  const seen = new Set<string>();
-  const edges: NetworkGraphEdge[] = [];
-  for (const record of filtered) {
-    const raw = getCellValue(record, linkField, fields);
-    const targets = Array.isArray(raw) ? raw.map(String) : raw ? [String(raw)] : [];
-    for (const target of targets) {
-      if (!visibleIds.has(target) || target === record.id) continue;
-      const key = [record.id, target].sort().join(":");
-      if (seen.has(key)) continue;
-      seen.add(key);
-      edges.push({ source: record.id, target });
-    }
-  }
-  return { nodes, edges };
-}
-
 export interface KpiTrend {
   current: number;
   previous: number;
@@ -450,7 +399,6 @@ export const CHART_TYPES = [
   { type: "donut", label: "Donut Chart" },
   { type: "combo", label: "Combo Chart" },
   { type: "scatter", label: "Scatter Plot" },
-  { type: "network", label: "Relationship Graph" },
   { type: "radar", label: "Radar Chart" },
   { type: "treemap", label: "Treemap" },
   { type: "funnel", label: "Funnel" },

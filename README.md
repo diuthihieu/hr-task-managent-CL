@@ -47,6 +47,9 @@ app ships with no pre-loaded business data.
   attachments with image previews, threaded comments and history.
 - **Project wiki**: nested pages with the same editor, for processes,
   guidelines and meeting notes.
+- **Wiki / Second Brain graph**: a permission-filtered global or local view of
+  how pages, tasks, projects, OKRs, people, files and tags connect. Nodes stay
+  on spaced circular rings; dragging a node places its direct links around it.
 - **Views**: Table, Kanban, Calendar, Gantt, Gallery, Eisenhower, Form (optional
   public link) and **Report** - a Power BI-style view where users add charts or
   pivot tables (group by any field, split by another, count tasks or
@@ -54,8 +57,7 @@ app ships with no pre-loaded business data.
 - **Dashboard sheets** open as tabs (like Excel / Power BI), with live charts,
   period-over-period KPI trends, cross-filtering and per-widget formatting for
   palettes, typography, borders, backgrounds, shadows, legends, grids and
-  labels. The relationship graph keeps records on circular rings and arranges
-  linked records evenly around a node while it is dragged.
+  labels.
 - **Custom fields per project**, including team, location, signature, linked
   record, lookup, rollup, action button, barcode, AI, JSON and allow-listed
   API result fields; comments and attachments (Vercel Blob, private,

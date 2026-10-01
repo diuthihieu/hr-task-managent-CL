@@ -1,28 +1,23 @@
 "use client";
-// Canvas renderer for the knowledge graph (react-force-graph-2d = d3-force +
-// canvas). Loaded only in the browser (see knowledge-graph-view.tsx).
-import {
-  useCallback,
-  useEffect,
-  useImperativeHandle,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import ForceGraph2D, {
-  type ForceGraphMethods,
-  type LinkObject,
-  type NodeObject,
-} from "react-force-graph-2d";
-import { forceCollide, forceRadial } from "d3-force";
-import {
-  GRAPH_COLORS,
-  type GraphLink,
-  type GraphNode,
-} from "@/lib/knowledge-graph-core";
+
+// Canvas renderer for the Wiki / Second Brain knowledge graph. The graph uses
+// deterministic circular rings instead of an unconstrained force layout: a
+// dragged node becomes the centre, its direct links form the inner ring(s),
+// and all remaining nodes settle on outer rings with a guaranteed gap.
+import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import ForceGraph2D, { type ForceGraphMethods, type LinkObject, type NodeObject } from "react-force-graph-2d";
+import { GRAPH_COLORS, type GraphLink, type GraphNode } from "@/lib/knowledge-graph-core";
+import { anchoredCircularGraphLayout, concentricCircularLayout, type GraphPosition } from "@/lib/radial-graph";
 
 export type CanvasNode = NodeObject<
-  GraphNode & { x?: number; y?: number; fx?: number; fy?: number }
+  GraphNode & {
+    x?: number;
+    y?: number;
+    vx?: number;
+    vy?: number;
+    fx?: number;
+    fy?: number;
+  }
 >;
 type CanvasLink = LinkObject<CanvasNode, GraphLink>;
 
@@ -32,35 +27,69 @@ export interface GraphCanvasHandle {
   focusNode: (id: string) => boolean;
 }
 
-/** Distance between the concentric rings of the local graph (graph units). */
 export const RING = 90;
+const NODE_RADIUS = 13;
+const NODE_GAP = 22;
 const MAX_FIT_ZOOM = 1.8;
 
-const radius = (n: GraphNode, focus?: string) =>
-  n.id === focus ? 11 : Math.min(3.5 + Math.sqrt(n.degree) * 1.7, 13);
-const escapeHtml = (s: string) =>
-  s.replace(
+const radius = (node: GraphNode, focus?: string) =>
+  node.id === focus ? 11 : Math.min(3.5 + Math.sqrt(node.degree) * 1.7, NODE_RADIUS);
+const escapeHtml = (value: string) =>
+  value.replace(
     /[&<>"']/g,
-    (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        c
-      ]!,
+    (character) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character]!,
   );
+
+interface RingOverlay {
+  center: GraphPosition;
+  radii: number[];
+}
+
+function overlayFor(positions: Record<string, GraphPosition>, center: GraphPosition): RingOverlay {
+  const radii = [...new Set(
+    Object.values(positions)
+      .map((position) => Math.round(Math.hypot(position.x - center.x, position.y - center.y)))
+      .filter((value) => value > 0),
+  )].sort((a, b) => a - b);
+  return { center, radii };
+}
+
+function initialCircularLayout(nodes: GraphNode[], focus?: string) {
+  const ordered = [...nodes].sort((a, b) => a.id.localeCompare(b.id));
+  if (!focus) {
+    return concentricCircularLayout(
+      ordered.map((node) => node.id),
+      { x: 0, y: 0 },
+      { nodeRadius: NODE_RADIUS, minGap: NODE_GAP, firstRingRadius: RING },
+    );
+  }
+
+  const positions: Record<string, GraphPosition> = { [focus]: { x: 0, y: 0 } };
+  const depths = [...new Set(ordered.filter((node) => node.id !== focus).map((node) => node.depth ?? 1))].sort((a, b) => a - b);
+  let firstRingRadius = RING;
+  for (const depth of depths) {
+    const ids = ordered.filter((node) => node.id !== focus && (node.depth ?? 1) === depth).map((node) => node.id);
+    const layer = concentricCircularLayout(ids, { x: 0, y: 0 }, { nodeRadius: NODE_RADIUS, minGap: NODE_GAP, firstRingRadius });
+    Object.assign(positions, layer);
+    const outerRadius = ids.length ? Math.max(...ids.map((id) => Math.hypot(layer[id].x, layer[id].y))) : firstRingRadius;
+    firstRingRadius = outerRadius + RING;
+  }
+  return positions;
+}
 
 export interface GraphCanvasProps {
   nodes: GraphNode[];
   links: GraphLink[];
   width: number;
   height: number;
-  /** Local mode: centre node id and ring count. */
   focus?: string;
   rings?: number;
   dark: boolean;
-  typeLabel: (t: GraphNode["type"]) => string;
-  linksLabel: (n: number) => string;
-  onOpen: (n: GraphNode) => void;
-  onFocus: (n: GraphNode) => void;
-  /** Imperative controls for the toolbar (next/dynamic does not forward refs, so it is a prop). */
+  typeLabel: (type: GraphNode["type"]) => string;
+  linksLabel: (count: number) => string;
+  onOpen: (node: GraphNode) => void;
+  onFocus: (node: GraphNode) => void;
   handleRef?: React.Ref<GraphCanvasHandle>;
 }
 
@@ -70,7 +99,6 @@ export default function GraphCanvas({
   width,
   height,
   focus,
-  rings = 0,
   dark,
   typeLabel,
   linksLabel,
@@ -78,80 +106,87 @@ export default function GraphCanvas({
   onFocus,
   handleRef,
 }: GraphCanvasProps) {
-  const fg = useRef<ForceGraphMethods<CanvasNode, CanvasLink> | undefined>(
-    undefined,
-  );
+  const fg = useRef<ForceGraphMethods<CanvasNode, CanvasLink> | undefined>(undefined);
   const [hover, setHover] = useState<string | null>(null);
 
-  // Fresh objects per data set: d3 mutates them (x, y, vx…).
-  const data = useMemo(() => {
-    const ns: CanvasNode[] = nodes.map((n) => ({ ...n }));
-    if (focus) {
-      const c = ns.find((n) => n.id === focus);
-      if (c) Object.assign(c, { fx: 0, fy: 0, x: 0, y: 0 });
-    }
-    return { nodes: ns, links: links.map((l) => ({ ...l })) as CanvasLink[] };
+  const prepared = useMemo(() => {
+    const positions = initialCircularLayout(nodes, focus);
+    const canvasNodes: CanvasNode[] = nodes.map((node) => {
+      const position = positions[node.id] ?? { x: 0, y: 0 };
+      return { ...node, x: position.x, y: position.y, fx: position.x, fy: position.y };
+    });
+    return {
+      data: { nodes: canvasNodes, links: links.map((link) => ({ ...link })) as CanvasLink[] },
+      overlay: overlayFor(positions, { x: 0, y: 0 }),
+    };
   }, [nodes, links, focus]);
+  const data = prepared.data;
+  const ringOverlay = useRef<RingOverlay>(prepared.overlay);
+  const nodeById = useMemo(() => new Map(data.nodes.map((node) => [node.id as string, node])), [data.nodes]);
+  const visibleNodeIds = useMemo(() => new Set(nodeById.keys()), [nodeById]);
+
+  useEffect(() => {
+    ringOverlay.current = prepared.overlay;
+  }, [prepared]);
 
   const neighbours = useMemo(() => {
-    const m = new Map<string, Set<string>>();
-    for (const l of links) {
-      (m.get(l.source) ?? m.set(l.source, new Set()).get(l.source)!).add(
-        l.target,
-      );
-      (m.get(l.target) ?? m.set(l.target, new Set()).get(l.target)!).add(
-        l.source,
-      );
+    const map = new Map<string, Set<string>>();
+    for (const link of links) {
+      (map.get(link.source) ?? map.set(link.source, new Set()).get(link.source)!).add(link.target);
+      (map.get(link.target) ?? map.set(link.target, new Set()).get(link.target)!).add(link.source);
     }
-    return m;
+    return map;
   }, [links]);
-  const lit = (id: string) =>
-    !hover || id === hover || !!neighbours.get(hover)?.has(id);
 
-  // Forces: local mode pulls each ring onto its circle; global mode spreads clusters.
-  useEffect(() => {
-    const g = fg.current;
-    if (!g) return;
-    g.d3Force(
-      "collide",
-      forceCollide<CanvasNode>((n) => radius(n, focus) + 3),
-    );
-    if (focus) {
-      g.d3Force(
-        "radial",
-        forceRadial<CanvasNode>((n) => (n.depth ?? 0) * RING, 0, 0).strength(
-          0.9,
-        ),
-      );
-      g.d3Force("charge")?.strength(-60);
-      g.d3Force("link")
-        ?.distance(RING * 0.6)
-        .strength(0.05);
-    } else {
-      g.d3Force("radial", null);
-      g.d3Force("charge")?.strength(-130).distanceMax(420);
-      g.d3Force("link")?.distance(55).strength(0.35);
-    }
-    g.d3ReheatSimulation();
-  }, [data, focus]);
+  const isLit = useCallback(
+    (id: string) => !hover || id === hover || !!neighbours.get(hover)?.has(id),
+    [hover, neighbours],
+  );
+
+  const applyPositions = useCallback(
+    (positions: Record<string, GraphPosition>) => {
+      for (const [id, position] of Object.entries(positions)) {
+        const node = nodeById.get(id);
+        if (!node) continue;
+        Object.assign(node, { x: position.x, y: position.y, fx: position.x, fy: position.y, vx: 0, vy: 0 });
+      }
+    },
+    [nodeById],
+  );
+
+  const arrangeAround = useCallback(
+    (node: CanvasNode, includeAll: boolean) => {
+      const id = node.id as string;
+      const center = { x: node.x ?? node.fx ?? 0, y: node.y ?? node.fy ?? 0 };
+      const linked = [...(neighbours.get(id) ?? [])].filter((linkedId) => visibleNodeIds.has(linkedId));
+      const ids = includeAll ? data.nodes.map((candidate) => candidate.id as string) : [id, ...linked];
+      const positions = anchoredCircularGraphLayout(ids, id, linked, center, {
+        nodeRadius: NODE_RADIUS,
+        minGap: NODE_GAP,
+        firstRingRadius: RING,
+      });
+      applyPositions(positions);
+      ringOverlay.current = overlayFor(positions, center);
+    },
+    [applyPositions, data.nodes, neighbours, visibleNodeIds],
+  );
 
   useImperativeHandle(handleRef, () => ({
     zoomToFit: () => {
-      // Small graphs would be blown up to fill the screen; cap the fit zoom.
       fg.current?.zoomToFit(500, 48);
       window.setTimeout(() => {
-        const g = fg.current;
-        if (g && g.zoom() > MAX_FIT_ZOOM) g.zoom(MAX_FIT_ZOOM, 250);
+        const graph = fg.current;
+        if (graph && graph.zoom() > MAX_FIT_ZOOM) graph.zoom(MAX_FIT_ZOOM, 250);
       }, 520);
     },
-    zoomBy: (f) => {
-      const g = fg.current;
-      if (g) g.zoom(g.zoom() * f, 250);
+    zoomBy: (factor) => {
+      const graph = fg.current;
+      if (graph) graph.zoom(graph.zoom() * factor, 250);
     },
     focusNode: (id) => {
-      const n = data.nodes.find((x) => x.id === id);
-      if (!n || n.x === undefined || n.y === undefined) return false;
-      fg.current?.centerAt(n.x, n.y, 500);
+      const node = data.nodes.find((candidate) => candidate.id === id);
+      if (!node || node.x === undefined || node.y === undefined) return false;
+      fg.current?.centerAt(node.x, node.y, 500);
       fg.current?.zoom(3, 500);
       setHover(id);
       return true;
@@ -159,69 +194,61 @@ export default function GraphCanvas({
   }));
 
   const drawNode = useCallback(
-    (node: CanvasNode, ctx: CanvasRenderingContext2D, scale: number) => {
-      const r = radius(node, focus);
-      const on = lit(node.id);
-      ctx.globalAlpha = on ? 1 : 0.15;
+    (node: CanvasNode, context: CanvasRenderingContext2D, scale: number) => {
+      const nodeRadius = radius(node, focus);
+      const lit = isLit(node.id as string);
+      context.globalAlpha = lit ? 1 : 0.15;
       if (node.id === focus || node.id === hover) {
-        ctx.beginPath();
-        ctx.arc(node.x!, node.y!, r + 4, 0, 2 * Math.PI);
-        ctx.fillStyle = `${GRAPH_COLORS[node.type]}33`;
-        ctx.fill();
+        context.beginPath();
+        context.arc(node.x!, node.y!, nodeRadius + 4, 0, 2 * Math.PI);
+        context.fillStyle = `${GRAPH_COLORS[node.type]}33`;
+        context.fill();
       }
-      ctx.beginPath();
-      ctx.arc(node.x!, node.y!, r, 0, 2 * Math.PI);
-      ctx.fillStyle = GRAPH_COLORS[node.type];
-      ctx.fill();
+      context.beginPath();
+      context.arc(node.x!, node.y!, nodeRadius, 0, 2 * Math.PI);
+      context.fillStyle = GRAPH_COLORS[node.type];
+      context.fill();
       if (node.done) {
-        ctx.lineWidth = 1.2 / scale;
-        ctx.strokeStyle = dark ? "#0a0a0a" : "#ffffff";
-        ctx.stroke();
+        context.lineWidth = 1.2 / scale;
+        context.strokeStyle = dark ? "#0a0a0a" : "#ffffff";
+        context.stroke();
       }
-      // Labels: always for the centre / hovered node and its neighbours, otherwise when zoomed in or for hubs.
-      const showLabel =
-        node.id === focus ||
-        node.id === hover ||
-        (hover
-          ? on
-          : scale > 1.6 || node.degree >= 8 || (focus && node.depth === 1));
+      const showLabel = node.id === focus || node.id === hover || (hover ? lit : scale > 1.6 || node.degree >= 8 || (focus && node.depth === 1));
       if (showLabel) {
         const size = Math.max(10 / scale, 2.2);
-        ctx.font = `${node.id === focus ? "600 " : ""}${size}px Inter, system-ui, sans-serif`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "top";
-        const text =
-          node.label.length > 40 ? `${node.label.slice(0, 38)}…` : node.label;
-        ctx.fillStyle = dark ? "rgba(229,229,229,0.92)" : "rgba(38,38,38,0.92)";
-        ctx.fillText(text, node.x!, node.y! + r + 2);
+        context.font = `${node.id === focus ? "600 " : ""}${size}px Inter, system-ui, sans-serif`;
+        context.textAlign = "center";
+        context.textBaseline = "top";
+        const text = node.label.length > 40 ? `${node.label.slice(0, 38)}…` : node.label;
+        context.fillStyle = dark ? "rgba(229,229,229,0.92)" : "rgba(38,38,38,0.92)";
+        context.fillText(text, node.x!, node.y! + nodeRadius + 2);
       }
-      ctx.globalAlpha = 1;
+      context.globalAlpha = 1;
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `lit` reads hover/neighbours listed here
-    [focus, hover, neighbours, dark],
+    [dark, focus, hover, isLit],
   );
 
   const drawRings = useCallback(
-    (ctx: CanvasRenderingContext2D, scale: number) => {
-      if (!focus || !rings) return;
-      ctx.save();
-      for (let k = 1; k <= rings; k++) {
-        ctx.beginPath();
-        ctx.arc(0, 0, k * RING, 0, 2 * Math.PI);
-        ctx.setLineDash([4 / scale, 6 / scale]);
-        ctx.lineWidth = 1 / scale;
-        ctx.strokeStyle = dark
-          ? "rgba(163,163,163,0.25)"
-          : "rgba(115,115,115,0.25)";
-        ctx.stroke();
+    (context: CanvasRenderingContext2D, scale: number) => {
+      const overlay = ringOverlay.current;
+      const step = Math.max(1, Math.ceil(overlay.radii.length / 12));
+      const visibleRadii = overlay.radii.filter((_, index) => index % step === 0 || index === overlay.radii.length - 1);
+      context.save();
+      context.setLineDash([4 / scale, 6 / scale]);
+      context.lineWidth = 1 / scale;
+      context.strokeStyle = dark ? "rgba(163,163,163,0.18)" : "rgba(115,115,115,0.18)";
+      for (const ringRadius of visibleRadii) {
+        context.beginPath();
+        context.arc(overlay.center.x, overlay.center.y, ringRadius, 0, 2 * Math.PI);
+        context.stroke();
       }
-      ctx.restore();
+      context.restore();
     },
-    [focus, rings, dark],
+    [dark],
   );
 
-  const endId = (e: string | number | CanvasNode | undefined) =>
-    typeof e === "object" ? (e?.id as string) : (e as string);
+  const endId = (end: string | number | CanvasNode | undefined) =>
+    typeof end === "object" ? (end?.id as string) : (end as string);
 
   return (
     <ForceGraph2D<CanvasNode, CanvasLink>
@@ -232,50 +259,35 @@ export default function GraphCanvas({
       backgroundColor="rgba(0,0,0,0)"
       nodeId="id"
       nodeRelSize={1}
-      nodeVal={(n) => radius(n, focus) ** 2}
+      nodeVal={(node) => radius(node, focus) ** 2}
       nodeCanvasObject={drawNode}
-      nodePointerAreaPaint={(n, color, ctx) => {
-        ctx.fillStyle = color;
-        ctx.beginPath();
-        ctx.arc(n.x!, n.y!, radius(n, focus) + 2, 0, 2 * Math.PI);
-        ctx.fill();
+      nodePointerAreaPaint={(node, color, context) => {
+        context.fillStyle = color;
+        context.beginPath();
+        context.arc(node.x!, node.y!, radius(node, focus) + 2, 0, 2 * Math.PI);
+        context.fill();
       }}
-      nodeLabel={(n) =>
+      nodeLabel={(node) =>
         `<div style="font:12px Inter,system-ui,sans-serif;max-width:260px;padding:6px 8px;border-radius:8px;background:${dark ? "#171717" : "#ffffff"};color:${dark ? "#f5f5f5" : "#171717"};box-shadow:0 4px 14px rgba(0,0,0,.18);border:1px solid ${dark ? "#262626" : "#e5e5e5"}">` +
-        `<div style="display:flex;align-items:center;gap:6px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:${GRAPH_COLORS[n.type]};font-weight:700"><span style="width:8px;height:8px;border-radius:50%;background:${GRAPH_COLORS[n.type]}"></span>${escapeHtml(typeLabel(n.type))}</div>` +
-        `<div style="font-weight:600;margin-top:2px">${escapeHtml(n.label)}</div>` +
-        (n.sub
-          ? `<div style="opacity:.7;margin-top:1px">${escapeHtml(n.sub)}</div>`
-          : "") +
-        `<div style="opacity:.6;margin-top:3px">${escapeHtml(linksLabel(n.degree))}</div></div>`
+        `<div style="display:flex;align-items:center;gap:6px;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:${GRAPH_COLORS[node.type]};font-weight:700"><span style="width:8px;height:8px;border-radius:50%;background:${GRAPH_COLORS[node.type]}"></span>${escapeHtml(typeLabel(node.type))}</div>` +
+        `<div style="font-weight:600;margin-top:2px">${escapeHtml(node.label)}</div>` +
+        (node.sub ? `<div style="opacity:.7;margin-top:1px">${escapeHtml(node.sub)}</div>` : "") +
+        `<div style="opacity:.6;margin-top:3px">${escapeHtml(linksLabel(node.degree))}</div></div>`
       }
-      linkColor={(l) => {
-        const on =
-          !hover || endId(l.source) === hover || endId(l.target) === hover;
+      linkColor={(link) => {
+        const lit = !hover || endId(link.source) === hover || endId(link.target) === hover;
         return dark
-          ? on
-            ? "rgba(163,163,163,0.45)"
-            : "rgba(163,163,163,0.06)"
-          : on
-            ? "rgba(115,115,115,0.4)"
-            : "rgba(115,115,115,0.06)";
+          ? lit ? "rgba(163,163,163,0.45)" : "rgba(163,163,163,0.06)"
+          : lit ? "rgba(115,115,115,0.4)" : "rgba(115,115,115,0.06)";
       }}
-      linkWidth={(l) =>
-        hover && (endId(l.source) === hover || endId(l.target) === hover)
-          ? 1.6
-          : 0.6
-      }
+      linkWidth={(link) => hover && (endId(link.source) === hover || endId(link.target) === hover) ? 1.6 : 0.6}
       onRenderFramePre={drawRings}
-      onNodeHover={(n) => setHover(n ? (n.id as string) : null)}
-      onNodeClick={(n) => onOpen(n)}
-      onNodeRightClick={(n) => onFocus(n)}
-      onNodeDragEnd={(n) => {
-        // Keep dragged nodes where the user put them (the centre stays pinned anyway).
-        n.fx = n.x;
-        n.fy = n.y;
-      }}
-      cooldownTicks={180}
-      d3VelocityDecay={0.3}
+      onNodeHover={(node) => setHover(node ? (node.id as string) : null)}
+      onNodeClick={(node) => onOpen(node)}
+      onNodeRightClick={(node) => onFocus(node)}
+      onNodeDrag={(node) => arrangeAround(node, false)}
+      onNodeDragEnd={(node) => arrangeAround(node, true)}
+      cooldownTicks={1}
       onEngineStop={() => undefined}
     />
   );

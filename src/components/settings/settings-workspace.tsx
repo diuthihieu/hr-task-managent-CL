@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { Settings as SettingsIcon, Building2, Users, ShieldCheck, Flag, LayoutList, Palette, ArrowDownUp, History, Lock, UserCircle, BellRing } from "lucide-react";
+import { Settings as SettingsIcon, Building2, Users, ShieldCheck, Flag, LayoutList, Palette, ArrowDownUp, Clock3, History, Lock, UserCircle, BellRing } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
@@ -15,6 +15,7 @@ import { SettingsAuditLog } from "./settings-audit-log";
 import { SettingsSecurity } from "./settings-security";
 import { SettingsProfile } from "./settings-profile";
 import { SettingsNotifications } from "./settings-notifications";
+import { SettingsProjectHistory } from "./settings-project-history";
 
 // Categories are configured per project (Project → Settings), not here.
 const SECTIONS: { key: string; label: MessageKey; icon: React.ComponentType<{ size?: number; className?: string }>; group: MessageKey }[] = [
@@ -27,6 +28,7 @@ const SECTIONS: { key: string; label: MessageKey; icon: React.ComponentType<{ si
   { key: "appearance", label: "set.appearance", icon: Palette, group: "set.group.personal" },
   { key: "notifications", label: "set.notifications", icon: BellRing, group: "set.group.personal" },
   { key: "data-io", label: "set.dataIo", icon: ArrowDownUp, group: "set.group.data" },
+  { key: "project-history", label: "vh.settingsTitle", icon: Clock3, group: "set.group.data" },
   { key: "audit", label: "set.audit", icon: History, group: "set.group.data" },
   { key: "security", label: "set.security", icon: Lock, group: "set.group.data" },
 ];
@@ -103,6 +105,7 @@ export function SettingsWorkspace({
         {section === "appearance" && <SettingsAppearance />}
         {section === "notifications" && <SettingsNotifications />}
         {section === "data-io" && <SettingsDataIO workspaceId={workspaceId} />}
+        {section === "project-history" && <SettingsProjectHistory workspaceId={workspaceId} />}
         {section === "audit" && <SettingsAuditLog workspaceId={workspaceId} />}
         {section === "security" && <SettingsSecurity />}
       </div>

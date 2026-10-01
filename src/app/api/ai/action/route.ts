@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { AgentOriginType } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfTask, workspaceOfObjective, workspaceOfWikiPage, workspaceOfDashboard, workspaceOfProject, badRequest, HttpError } from "@/lib/authz";
@@ -37,19 +38,34 @@ export const POST = route(async (req) => {
   const kind = body.action.split("_")[0];
   let workspaceId: string;
   let data: string;
+  let originType: AgentOriginType = "workspace";
+  let projectId: string | null = null;
+  let taskId: string | null = null;
+  let wikiId: string | null = null;
   if (kind === "task") {
-    workspaceId = (await requireWorkspaceRole(user, await workspaceOfTask(body.targetId), "viewer")).workspaceId;
+    const ctx = await requireWorkspaceRole(user, await workspaceOfTask(body.targetId), "viewer");
+    workspaceId = ctx.workspaceId;
+    projectId = ctx.projectId ?? null;
+    taskId = body.targetId;
+    originType = "task";
     data = await taskContext(body.targetId);
   } else if (kind === "okr") {
-    workspaceId = (await requireWorkspaceRole(user, await workspaceOfObjective(body.targetId), "viewer")).workspaceId;
+    const ctx = await requireWorkspaceRole(user, await workspaceOfObjective(body.targetId), "viewer");
+    workspaceId = ctx.workspaceId;
+    projectId = ctx.projectId ?? null;
     data = await objectiveContext(user, body.targetId, workspaceId, body.action === "okr_unlinked");
   } else if (kind === "wiki") {
-    workspaceId = (await requireWorkspaceRole(user, await workspaceOfWikiPage(body.targetId), "viewer")).workspaceId;
+    const ctx = await requireWorkspaceRole(user, await workspaceOfWikiPage(body.targetId), "viewer");
+    workspaceId = ctx.workspaceId;
+    wikiId = ctx.wikiId ?? null;
+    originType = "wiki";
     data = await wikiPageContext(body.targetId);
   } else if (kind === "dash") {
+    originType = "dashboard";
     if (!body.data) throw badRequest("Send the dashboard's chart data");
     if (body.targetKind === "project") {
       workspaceId = (await requireWorkspaceRole(user, await workspaceOfProject(body.targetId), "viewer")).workspaceId;
+      projectId = body.targetId;
       const p = await prisma.project.findUniqueOrThrow({ where: { id: body.targetId }, select: { name: true } });
       data = `Report view of project: ${p.name}\n\n${body.data}`;
     } else {
@@ -72,6 +88,17 @@ export const POST = route(async (req) => {
     personal: await personalPromptBlock(user.id),
   });
   const contents = [{ role: "user" as const, parts: [{ text: body.note || "Go." }] }];
+  const conversationData = {
+    workspaceId,
+    userId: user.id,
+    kind: "assistant" as const,
+    title: `${body.action.replaceAll("_", " ")}${body.note ? `: ${body.note}` : ""}`.slice(0, 200),
+    originType,
+    originId: body.targetId,
+    projectId,
+    taskId,
+    wikiId,
+  };
 
   if (STRUCTURED_ACTIONS.has(body.action)) {
     const r = await generate({ workspaceId, system, contents, temperature: 0.2, json: true, maxOutputTokens: 4096 });
@@ -81,25 +108,34 @@ export const POST = route(async (req) => {
       .slice(0, 20)
       .map((i) => ({ title: String(i.title).trim().slice(0, 300), estimateHours: typeof i.estimateHours === "number" && i.estimateHours > 0 ? Math.min(i.estimateHours, 200) : null, note: typeof i.note === "string" ? i.note.slice(0, 500) : "" }));
     if (!items.length) throw new HttpError(502, "The AI didn't return usable suggestions - please try again");
-    return NextResponse.json({ items });
+    const conversation = await prisma.aiConversation.create({ data: { ...conversationData, messages: { create: [{ role: "user", content: body.note || body.action }, { role: "model", content: JSON.stringify({ items }), tokensIn: r.tokensIn, tokensOut: r.tokensOut }] } } });
+    return NextResponse.json({ items, conversationId: conversation.id });
   }
 
   const usage: Usage = { tokensIn: null, tokensOut: null };
   const chunks = await streamGenerate({ workspaceId, system, contents, temperature: 0.3 }, usage, req.signal);
+  const conversation = await prisma.aiConversation.create({ data: { ...conversationData, messages: { create: { role: "user", content: body.note || body.action } } } });
   const encoder = new TextEncoder();
   return new Response(
     new ReadableStream<Uint8Array>({
       async start(controller) {
+        let answer = "";
         try {
-          for await (const text of chunks) controller.enqueue(encoder.encode(text));
+          for await (const text of chunks) {
+            answer += text;
+            controller.enqueue(encoder.encode(text));
+          }
         } catch (e) {
           console.error("[ai-action] stream failed", e);
-          controller.enqueue(encoder.encode("\n\n_(The answer was interrupted. Please try again.)_"));
+          const note = "\n\n_(The answer was interrupted. Please try again.)_";
+          answer += note;
+          controller.enqueue(encoder.encode(note));
         } finally {
+          await prisma.aiMessage.create({ data: { conversationId: conversation.id, role: "model", content: answer || "_(no answer)_", tokensIn: usage.tokensIn, tokensOut: usage.tokensOut } }).catch((error) => console.error("[ai-action] history save failed", error));
           controller.close();
         }
       },
     }),
-    { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } }
+    { headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store", "X-Conversation-Id": conversation.id } }
   );
 });

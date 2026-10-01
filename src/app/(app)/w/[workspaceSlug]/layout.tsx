@@ -4,6 +4,7 @@ import { requireWorkspacePage } from "@/lib/page-context";
 import type { Metadata } from "next";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
 import { workspaceLogoUrl } from "@/lib/workspace-logo";
+import { canDeleteView } from "@/lib/view-permissions";
 
 /** Tab title + favicon follow the workspace (its logo when one is set). */
 export async function generateMetadata({ params }: { params: Promise<{ workspaceSlug: string }> }): Promise<Metadata> {
@@ -27,11 +28,18 @@ export default async function WorkspaceLayout({ children, params }: { children: 
   const workspaces = memberships.map((m) => ({ id: m.workspace.id, name: m.workspace.name, slug: m.workspace.slug, logoUrl: workspaceLogoUrl(m.workspace) }));
   if (!workspaces.some((w) => w.id === workspace.id)) workspaces.unshift({ id: workspace.id, name: workspace.name, slug: workspace.slug, logoUrl: workspaceLogoUrl(workspace) });
 
-  const projects = await prisma.project.findMany({
+  const projectRows = await prisma.project.findMany({
     where: { workspaceId: workspace.id, deletedAt: null, ...visibleProjectWhere(user) },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
-    select: { id: true, name: true, color: true, icon: true, views: { orderBy: { sortOrder: "asc" }, select: { id: true, name: true, type: true } } },
+    select: { id: true, name: true, color: true, icon: true, createdById: true, views: { orderBy: { sortOrder: "asc" }, select: { id: true, name: true, type: true, createdById: true, isBase: true } } },
   });
+  const projects = projectRows.map((project) => ({
+    id: project.id,
+    name: project.name,
+    color: project.color,
+    icon: project.icon,
+    views: project.views.map((view) => ({ id: view.id, name: view.name, type: view.type, canDelete: canDeleteView({ workspaceRole: role, userId: user.id, projectCreatedById: project.createdById, viewCreatedById: view.createdById, isBase: view.isBase }) })),
+  }));
 
   const me = await prisma.user.findUnique({ where: { id: user.id }, select: { avatarUpdatedAt: true } });
 

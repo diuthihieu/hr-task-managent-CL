@@ -1,11 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject, notFound, badRequest, assertCanManageProject } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, roleAtLeast, route, readJson, workspaceOfProject, notFound, badRequest, assertCanManageProject } from "@/lib/authz";
 import { logActivity, diff } from "@/lib/activity";
 import { dateOnlyToDate, projectInputSchema } from "@/lib/validation";
 import { loadProjectMeta, buildFields } from "@/lib/task-grid";
 import { serializeProject, serializeView } from "@/lib/serializers";
 import { makeT, normalizeLocale } from "@/lib/i18n/core";
+import { canDeleteView } from "@/lib/view-permissions";
 
 type P = { projectId: string };
 
@@ -28,7 +29,7 @@ export const GET = route<P>(async (_req, { params }) => {
   return NextResponse.json({
     ...serializeProject(project),
     fields: buildFields(meta, makeT(normalizeLocale(user.locale))),
-    views: views.map(serializeView),
+    views: views.map((view) => serializeView(view, { canEdit: roleAtLeast(ctx.role, "editor"), canDelete: canDeleteView({ workspaceRole: ctx.role, userId: user.id, projectCreatedById: project.createdById, viewCreatedById: view.createdById, isBase: view.isBase }) })),
     members: members.map((m) => m.user),
     myRole: ctx.role,
     workspace,

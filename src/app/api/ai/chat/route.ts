@@ -74,7 +74,7 @@ export const POST = route(async (req) => {
   const chunks = await streamGenerate({ workspaceId, system, contents, temperature: body.kind === "wiki" ? 0.3 : 0.2 }, usage, req.signal);
 
   if (!conversationId) {
-    const c = await prisma.aiConversation.create({ data: { workspaceId, wikiId, userId: user.id, kind: body.kind, title: body.message.replace(/\s+/g, " ").slice(0, 120) } });
+    const c = await prisma.aiConversation.create({ data: { workspaceId, wikiId, userId: user.id, kind: body.kind, title: body.message.replace(/\s+/g, " ").slice(0, 120), originType: body.kind === "wiki" ? "wiki" : "workspace", originId: body.kind === "wiki" ? wikiId : workspaceId } });
     conversationId = c.id;
   }
   await prisma.aiMessage.create({ data: { conversationId, role: "user", content: body.message } });

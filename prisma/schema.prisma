@@ -184,6 +184,75 @@ enum ThoughtStatus {
   @@map("thought_status")
 }
 
+enum AgentOriginType {
+  task
+  wiki
+  dashboard
+  chat
+  workspace
+
+  @@map("agent_origin_type")
+}
+
+enum AgentRunStatus {
+  suggested
+  confirming
+  planning
+  running
+  waiting_approval
+  completed
+  failed
+  cancelled
+
+  @@map("agent_run_status")
+}
+
+enum AgentSuggestionStatus {
+  open
+  accepted
+  dismissed
+  expired
+
+  @@map("agent_suggestion_status")
+}
+
+enum AgentSkillVisibility {
+  private
+  specific_people
+  organization
+
+  @@map("agent_skill_visibility")
+}
+
+enum AgentOutputType {
+  markdown
+  text
+  json
+  file
+
+  @@map("agent_output_type")
+}
+
+enum AgentApprovalKind {
+  payroll
+  legal
+  termination
+  external_communication
+  delete_data
+  change_permission
+  database_write
+
+  @@map("agent_approval_kind")
+}
+
+enum AgentSuggestionMode {
+  silent
+  smart
+  proactive
+
+  @@map("agent_suggestion_mode")
+}
+
 // ---------------------------------------------------------------------------
 // Identity & access
 // ---------------------------------------------------------------------------
@@ -302,27 +371,39 @@ model User {
   homeLayouts           HomeLayout[]           @relation("HomeLayoutUser")
   homeTemplates         HomeTemplate[]         @relation("HomeTemplateOwner")
   homeTemplateShares    HomeTemplateShare[]    @relation("HomeTemplateShareUser")
+  agentSettings         AgentSettings[]
+  agentSkillsOwned      AgentSkill[]           @relation("AgentSkillOwner")
+  agentSkillActivations AgentSkillActivation[]
+  agentSkillShares      AgentSkillShare[]
+  agentRuns             AgentRun[]             @relation("AgentRunUser")
+  agentRunEvents        AgentRunEvent[]        @relation("AgentRunEventActor")
+  agentSuggestions      AgentSuggestion[]
+  agentApprovalsAsked   AgentApproval[]        @relation("AgentApprovalRequester")
+  agentApprovalsToAct   AgentApproval[]        @relation("AgentApprovalApprover")
+  agentOutputs          AgentOutput[]          @relation("AgentOutputCreator")
 
   @@index([isActive, deletedAt])
   @@map("users")
 }
 
 model Workspace {
-  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  name          String    @db.VarChar(120)
-  slug          String    @unique @db.VarChar(80)
-  description   String?
-  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
-  updatedAt     DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
-  createdById   String?   @map("created_by") @db.Uuid
-  updatedById   String?   @map("updated_by") @db.Uuid
-  deletedAt     DateTime? @map("deleted_at") @db.Timestamptz(6)
+  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name                     String    @db.VarChar(120)
+  slug                     String    @unique @db.VarChar(80)
+  description              String?
+  createdAt                DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt                DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  createdById              String?   @map("created_by") @db.Uuid
+  updatedById              String?   @map("updated_by") @db.Uuid
+  deletedAt                DateTime? @map("deleted_at") @db.Timestamptz(6)
   /// Workspace logo (PNG/JPEG/WebP, max 256 KB), served by /api/workspaces/[id]/logo and used as the favicon.
-  logoData      Bytes?    @map("logo_data")
-  logoMimeType  String?   @map("logo_mime_type") @db.VarChar(40)
+  logoData                 Bytes?    @map("logo_data")
+  logoMimeType             String?   @map("logo_mime_type") @db.VarChar(40)
   /// Workspace admins must switch AI on: it sends workspace content to the AI provider.
-  aiEnabled     Boolean   @default(false) @map("ai_enabled")
-  logoUpdatedAt DateTime? @map("logo_updated_at") @db.Timestamptz(6)
+  aiEnabled                Boolean   @default(false) @map("ai_enabled")
+  /// Number of recent days non-admin members may inspect in Project Version History; 0 disables member access.
+  projectHistoryMemberDays Int       @default(0) @map("project_history_member_days")
+  logoUpdatedAt            DateTime? @map("logo_updated_at") @db.Timestamptz(6)
 
   members             WorkspaceMember[]
   teams               Team[]
@@ -357,6 +438,11 @@ model Workspace {
   journalNotes        JournalNote[]
   homeLayouts         HomeLayout[]
   homeTemplates       HomeTemplate[]
+  agentSettings       AgentSettings[]
+  agentSkills         AgentSkill[]
+  agentRuns           AgentRun[]
+  agentSuggestions    AgentSuggestion[]
+  agentOutputs        AgentOutput[]
 
   @@map("workspaces")
 }
@@ -388,8 +474,8 @@ model Team {
   updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
   createdById String?  @map("created_by") @db.Uuid
 
-  workspace  Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  objectives Objective[]
+  workspace         Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  objectives        Objective[]
   customFieldValues TaskCustomFieldValue[] @relation("CustomValueTeam")
 
   @@unique([workspaceId, name])
@@ -432,6 +518,9 @@ model Project {
   objectives       Objective[]
   decisions        Decision[]
   kudos            Kudos[]
+  agentRuns        AgentRun[]
+  agentOutputs     AgentOutput[]
+  aiConversations  AiConversation[]
 
   @@index([workspaceId, deletedAt, sortOrder])
   @@map("projects")
@@ -556,6 +645,10 @@ model Task {
   thoughts         CapturedThought[]
   focusSessions    FocusSession[]
   approvals        TaskApproval[]
+  agentRuns        AgentRun[]
+  agentSuggestions AgentSuggestion[]
+  agentOutputs     AgentOutput[]
+  aiConversations  AiConversation[]
 
   @@index([projectId, deletedAt, sortOrder])
   @@index([workspaceId, deletedAt, dueDate])
@@ -694,12 +787,15 @@ model Comment {
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt       DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
+  /// Present for the single completion comment written back by an Agent Run.
+  agentRunId      String?   @unique @map("agent_run_id") @db.Uuid
 
   task     Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
   author   User?            @relation(fields: [authorId], references: [id], onDelete: SetNull)
   parent   Comment?         @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
   replies  Comment[]        @relation("CommentReplies")
   mentions CommentMention[]
+  agentRun AgentRun?        @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
 
   @@index([taskId, createdAt])
   @@map("comments")
@@ -732,10 +828,10 @@ model Attachment {
   wikiPage    WikiPage?    @relation(fields: [wikiPageId], references: [id], onDelete: Cascade)
   uploadedBy  User?        @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
 
+  @@unique([storageKey])
   @@index([taskId, deletedAt])
   @@index([wikiPageId])
   @@index([wikiCommentId])
-  @@unique([storageKey])
   @@map("attachments")
 }
 
@@ -797,6 +893,8 @@ model View {
   config      Json     @default("{}")
   sortOrder   Int      @default(0) @map("sort_order")
   isDefault   Boolean  @default(false) @map("is_default")
+  /// Immutable project base view (initially "All Tasks"); independent from the user's current default view.
+  isBase      Boolean  @default(false) @map("is_base")
   /// Form views only: accept anonymous submissions at /form/[id].
   isPublic    Boolean  @default(false) @map("is_public")
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
@@ -1205,6 +1303,7 @@ enum AiConversationKind {
   wiki
   assistant
   brain
+  agent
 }
 
 /// A user's private chat: with a project's wiki assistant, or with the workspace AI assistant.
@@ -1215,15 +1314,31 @@ model AiConversation {
   userId      String             @map("user_id") @db.Uuid
   kind        AiConversationKind
   title       String             @db.VarChar(200)
+  originType  AgentOriginType?   @map("origin_type")
+  originId    String?            @map("origin_id") @db.Uuid
+  projectId   String?            @map("project_id") @db.Uuid
+  taskId      String?            @map("task_id") @db.Uuid
+  skillId     String?            @map("skill_id") @db.Uuid
+  agentRunId  String?            @unique @map("agent_run_id") @db.Uuid
+  /// Lightweight metadata for files supplied to the conversation.
+  files       Json               @default("[]")
   createdAt   DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
 
-  workspace Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  wiki      Wiki?       @relation(fields: [wikiId], references: [id], onDelete: Cascade)
-  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages  AiMessage[]
+  workspace    Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  wiki         Wiki?         @relation(fields: [wikiId], references: [id], onDelete: Cascade)
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages     AiMessage[]
+  project      Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task         Task?         @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  skill        AgentSkill?   @relation("AgentConversationSkill", fields: [skillId], references: [id], onDelete: SetNull)
+  agentRun     AgentRun?     @relation("AgentRunConversation", fields: [agentRunId], references: [id], onDelete: SetNull)
+  outputs      AgentOutput[]
+  sourceSkills AgentSkill[]  @relation("AgentSkillSourceConversation")
 
   @@index([userId, workspaceId, kind, updatedAt(sort: Desc)])
+  @@index([userId, workspaceId, updatedAt(sort: Desc)])
+  @@index([originType, originId])
   @@map("ai_conversations")
 }
 
@@ -1247,6 +1362,270 @@ model AiMessage {
 
   @@index([conversationId, createdAt])
   @@map("ai_messages")
+}
+
+// ---------------------------------------------------------------------------
+// Agent Work: skills describe how; tools provide capabilities; every unit of
+// work is an auditable Agent Run. Skills never grant access to source data.
+// ---------------------------------------------------------------------------
+
+model AgentSettings {
+  id                  String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId         String              @map("workspace_id") @db.Uuid
+  userId              String              @map("user_id") @db.Uuid
+  proactiveEnabled    Boolean             @default(false) @map("proactive_enabled")
+  suggestionMode      AgentSuggestionMode @default(smart) @map("suggestion_mode")
+  minimumConfidence   Decimal             @default(0.9) @map("minimum_confidence") @db.Decimal(4, 3)
+  /// assignedToMe / createdByMe / includeAllVisible / projectIds.
+  scanScope           Json                @default("{}") @map("scan_scope")
+  requireConfirmation Boolean             @default(true) @map("require_confirmation")
+  automaticExecution  Boolean             @default(false) @map("automatic_execution")
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@map("agent_settings")
+}
+
+model AgentSkill {
+  id                   String               @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId          String               @map("workspace_id") @db.Uuid
+  ownerId              String?              @map("owner_id") @db.Uuid
+  /// Stable identifier for built-in skills. Null for user-created skills.
+  systemKey            String?              @map("system_key") @db.VarChar(80)
+  name                 String               @db.VarChar(160)
+  description          String?              @db.VarChar(1000)
+  instructions         String
+  triggers             Json                 @default("[]")
+  inputSchema          Json                 @default("{}") @map("input_schema")
+  workflow             Json                 @default("[]")
+  toolsAllowed         String[]             @default([]) @map("tools_allowed")
+  referenceFiles       Json                 @default("[]") @map("reference_files")
+  templates            Json                 @default("[]")
+  validationRules      Json                 @default("[]") @map("validation_rules")
+  outputDefinitions    Json                 @default("[]") @map("output_definitions")
+  version              Int                  @default(1)
+  visibility           AgentSkillVisibility @default(private)
+  sourceConversationId String?              @map("source_conversation_id") @db.Uuid
+  createdAt            DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt            DateTime             @updatedAt @map("updated_at") @db.Timestamptz(6)
+  deletedAt            DateTime?            @map("deleted_at") @db.Timestamptz(6)
+
+  workspace          Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner              User?                  @relation("AgentSkillOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  activations        AgentSkillActivation[]
+  shares             AgentSkillShare[]
+  runs               AgentRun[]
+  suggestions        AgentSuggestion[]
+  outputs            AgentOutput[]
+  conversations      AiConversation[]       @relation("AgentConversationSkill")
+  sourceConversation AiConversation?        @relation("AgentSkillSourceConversation", fields: [sourceConversationId], references: [id], onDelete: SetNull)
+
+  @@unique([workspaceId, systemKey])
+  @@index([workspaceId, visibility, deletedAt])
+  @@index([ownerId, deletedAt])
+  @@index([sourceConversationId])
+  @@map("agent_skills")
+}
+
+model AgentSkillActivation {
+  skillId   String   @map("skill_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  active    Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  skill AgentSkill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([skillId, userId])
+  @@index([userId, active])
+  @@map("agent_skill_activations")
+}
+
+model AgentSkillShare {
+  skillId   String   @map("skill_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  skill AgentSkill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([skillId, userId])
+  @@index([userId])
+  @@map("agent_skill_shares")
+}
+
+model AgentRun {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId   String          @map("workspace_id") @db.Uuid
+  userId        String          @map("user_id") @db.Uuid
+  skillId       String          @map("skill_id") @db.Uuid
+  /// Immutable Skill version/configuration captured when the Run is created.
+  skillVersion  Int             @default(1) @map("skill_version")
+  skillSnapshot Json            @default("{}") @map("skill_snapshot")
+  originType    AgentOriginType @map("origin_type")
+  originId      String?         @map("origin_id") @db.Uuid
+  projectId     String?         @map("project_id") @db.Uuid
+  taskId        String?         @map("task_id") @db.Uuid
+  goal          String          @db.VarChar(4000)
+  plan          Json            @default("[]")
+  status        AgentRunStatus  @default(suggested)
+  toolsUsed     Json            @default("[]") @map("tools_used")
+  inputs        Json            @default("{}")
+  outputsMeta   Json            @default("[]") @map("outputs_meta")
+  logs          Json            @default("[]")
+  outputSummary String?         @map("output_summary")
+  failureReason String?         @map("failure_reason") @db.VarChar(4000)
+  suggestedAt   DateTime        @default(now()) @map("suggested_at") @db.Timestamptz(6)
+  confirmedAt   DateTime?       @map("confirmed_at") @db.Timestamptz(6)
+  startedAt     DateTime?       @map("started_at") @db.Timestamptz(6)
+  completedAt   DateTime?       @map("completed_at") @db.Timestamptz(6)
+  cancelledAt   DateTime?       @map("cancelled_at") @db.Timestamptz(6)
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace     Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user          User             @relation("AgentRunUser", fields: [userId], references: [id], onDelete: Cascade)
+  skill         AgentSkill       @relation(fields: [skillId], references: [id], onDelete: Restrict)
+  project       Project?         @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  task          Task?            @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  conversation  AiConversation?  @relation("AgentRunConversation")
+  suggestion    AgentSuggestion?
+  events        AgentRunEvent[]
+  toolUses      AgentToolUse[]
+  approvals     AgentApproval[]
+  outputs       AgentOutput[]
+  resultComment Comment?
+
+  @@index([userId, workspaceId, status, updatedAt(sort: Desc)])
+  @@index([taskId, createdAt(sort: Desc)])
+  @@index([skillId, createdAt(sort: Desc)])
+  @@map("agent_runs")
+}
+
+model AgentSuggestion {
+  id           String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId  String                @map("workspace_id") @db.Uuid
+  userId       String                @map("user_id") @db.Uuid
+  taskId       String                @map("task_id") @db.Uuid
+  skillId      String                @map("skill_id") @db.Uuid
+  runId        String                @unique @map("run_id") @db.Uuid
+  title        String                @db.VarChar(240)
+  reason       String                @db.VarChar(1200)
+  proposedGoal String                @map("proposed_goal") @db.VarChar(4000)
+  impact       String                @db.VarChar(800)
+  confidence   Decimal               @db.Decimal(4, 3)
+  status       AgentSuggestionStatus @default(open)
+  createdAt    DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  decidedAt    DateTime?             @map("decided_at") @db.Timestamptz(6)
+  expiresAt    DateTime              @map("expires_at") @db.Timestamptz(6)
+
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task      Task       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  skill     AgentSkill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+  run       AgentRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([userId, workspaceId, status, confidence(sort: Desc)])
+  @@index([taskId, createdAt(sort: Desc)])
+  @@map("agent_suggestions")
+}
+
+model AgentRunEvent {
+  id         String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId      String          @map("run_id") @db.Uuid
+  actorId    String?         @map("actor_id") @db.Uuid
+  fromStatus AgentRunStatus? @map("from_status")
+  toStatus   AgentRunStatus? @map("to_status")
+  level      String          @default("info") @db.VarChar(20)
+  message    String          @db.VarChar(2000)
+  data       Json?
+  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  run   AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  actor User?    @relation("AgentRunEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([runId, createdAt])
+  @@map("agent_run_events")
+}
+
+model AgentToolUse {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId       String    @map("run_id") @db.Uuid
+  toolName    String    @map("tool_name") @db.VarChar(120)
+  riskLevel   String    @default("safe") @map("risk_level") @db.VarChar(30)
+  status      String    @default("running") @db.VarChar(30)
+  input       Json      @default("{}")
+  output      Json?
+  error       String?   @db.VarChar(4000)
+  startedAt   DateTime  @default(now()) @map("started_at") @db.Timestamptz(6)
+  completedAt DateTime? @map("completed_at") @db.Timestamptz(6)
+
+  run AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, startedAt])
+  @@map("agent_tool_uses")
+}
+
+model AgentApproval {
+  id            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  runId         String            @map("run_id") @db.Uuid
+  kind          AgentApprovalKind
+  requestedById String?           @map("requested_by") @db.Uuid
+  approverId    String            @map("approver_id") @db.Uuid
+  status        ApprovalStatus    @default(pending)
+  reason        String            @db.VarChar(2000)
+  decisionNote  String?           @map("decision_note") @db.VarChar(2000)
+  createdAt     DateTime          @default(now()) @map("created_at") @db.Timestamptz(6)
+  decidedAt     DateTime?         @map("decided_at") @db.Timestamptz(6)
+
+  run         AgentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  requestedBy User?    @relation("AgentApprovalRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  approver    User     @relation("AgentApprovalApprover", fields: [approverId], references: [id], onDelete: Cascade)
+
+  @@index([runId, status])
+  @@index([approverId, status])
+  @@map("agent_approvals")
+}
+
+model AgentOutput {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId     String          @map("workspace_id") @db.Uuid
+  runId           String          @map("run_id") @db.Uuid
+  skillId         String          @map("skill_id") @db.Uuid
+  conversationId  String?         @map("conversation_id") @db.Uuid
+  taskId          String?         @map("task_id") @db.Uuid
+  projectId       String?         @map("project_id") @db.Uuid
+  createdById     String          @map("created_by") @db.Uuid
+  filename        String          @db.VarChar(255)
+  type            AgentOutputType
+  mimeType        String          @map("mime_type") @db.VarChar(120)
+  sizeBytes       Int             @map("size_bytes")
+  contentText     String?         @map("content_text")
+  storageProvider String?         @map("storage_provider") @db.VarChar(40)
+  storageKey      String?         @map("storage_key")
+  url             String?
+  createdAt       DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+  deletedAt       DateTime?       @map("deleted_at") @db.Timestamptz(6)
+
+  workspace    Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  run          AgentRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  skill        AgentSkill      @relation(fields: [skillId], references: [id], onDelete: Restrict)
+  conversation AiConversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  task         Task?           @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  project      Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  createdBy    User            @relation("AgentOutputCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([createdById, workspaceId, createdAt(sort: Desc)])
+  @@index([runId])
+  @@index([taskId, createdAt(sort: Desc)])
+  @@index([skillId, createdAt(sort: Desc)])
+  @@map("agent_outputs")
 }
 
 enum WikiAccess {

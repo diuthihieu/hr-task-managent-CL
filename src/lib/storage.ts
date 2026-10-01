@@ -7,6 +7,7 @@ import { HttpError } from "./http-errors";
 
 export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // Vercel function request body limit is 4.5 MB.
 export const MAX_CLIENT_UPLOAD_BYTES = 100 * 1024 * 1024;
+export const MAX_AGENT_ARTIFACT_BYTES = 20 * 1024 * 1024;
 
 // Types a browser could execute or render as active content from our origin.
 const BLOCKED_TYPES = [/^text\/html/i, /^image\/svg\+xml/i, /javascript/i, /^application\/x-msdownload/i, /^application\/xhtml/i];
@@ -70,6 +71,33 @@ export async function uploadAttachment(opts: { workspaceId: string; taskId?: str
       throw new HttpError(503, `File storage is misconfigured: the Blob store does not accept ${mode} files (check BLOB_ACCESS and the store type)`);
     }
     throw storageError(e);
+  }
+}
+
+const AGENT_ARTIFACT_TYPES = new Set([
+  "application/json; charset=utf-8",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/markdown; charset=utf-8",
+  "text/plain; charset=utf-8",
+]);
+
+/** Store a server-generated Agent artifact in the same private-by-default Blob store as attachments. */
+export async function uploadAgentArtifact(opts: { workspaceId: string; runId: string; filename: string; mimeType: string; data: Buffer }) {
+  if (!storageConfigured()) throw new HttpError(503, "File storage is not configured (BLOB_READ_WRITE_TOKEN missing)");
+  if (!opts.data.length || opts.data.length > MAX_AGENT_ARTIFACT_BYTES) throw new HttpError(413, `Artifact is too large (max ${MAX_AGENT_ARTIFACT_BYTES / 1024 / 1024} MB)`);
+  if (!AGENT_ARTIFACT_TYPES.has(opts.mimeType)) throw new HttpError(400, "Unsupported Agent artifact type");
+  const pathname = `workspaces/${opts.workspaceId}/agent-runs/${opts.runId}/${safeFileName(opts.filename)}`;
+  const mode = access();
+  try {
+    const result = await put(pathname, opts.data, { access: mode, addRandomSuffix: true, contentType: opts.mimeType });
+    return { url: result.url, pathname: result.pathname, provider: providerOf(mode) };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/access|public|private/i.test(message)) throw new HttpError(503, `File storage is misconfigured: the Blob store does not accept ${mode} files`);
+    throw storageError(error);
   }
 }
 

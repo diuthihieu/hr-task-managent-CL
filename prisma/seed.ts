@@ -63,7 +63,7 @@ async function main() {
         name: "[DEV] Sample Project",
         ownerId: admin.id,
         createdById: admin.id,
-        views: { create: [{ name: "All Tasks", type: "grid", isDefault: true, sortOrder: 0 }, { name: "Board", type: "kanban", sortOrder: 1, config: { kanban: { groupFieldId: SYS.status } } }] },
+        views: { create: [{ name: "All Tasks", type: "grid", isDefault: true, isBase: true, sortOrder: 0 }, { name: "Board", type: "kanban", sortOrder: 1, config: { kanban: { groupFieldId: SYS.status } } }] },
       },
     });
     const [catA, catB] = await Promise.all([

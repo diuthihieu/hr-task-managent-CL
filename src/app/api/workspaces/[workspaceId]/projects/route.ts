@@ -43,7 +43,7 @@ export const POST = route<P>(async (req, { params }) => {
         updatedById: user.id,
         // A new project starts with one blank task table; any other views are added by the user.
         views: {
-          create: [{ name: t("view.default.all"), type: "grid", isDefault: true, sortOrder: 0, createdById: user.id }],
+          create: [{ name: t("view.default.all"), type: "grid", isDefault: true, isBase: true, sortOrder: 0, createdById: user.id }],
         },
       },
     });

@@ -11,13 +11,14 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy, useSortable, arrayMove } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Pencil, Copy, Trash2, ExternalLink, Sheet, Kanban, Calendar, GanttChartSquare, GalleryHorizontal, FileInput, Grid2x2, BarChart3 } from "lucide-react";
+import { GripVertical, Pencil, Copy, Trash2, ExternalLink, Plus, Sheet, Kanban, Calendar, GanttChartSquare, GalleryHorizontal, FileInput, Grid2x2, BarChart3 } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { SettingsSection } from "./settings-shell";
 import { useProjectPicker } from "./project-picker";
 import type { ViewRow } from "@/types";
 import { useT } from "@/components/i18n-provider";
+import { Button } from "@/components/ui/button";
 
 const VIEW_ICONS: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
   grid: Sheet,
@@ -69,6 +70,17 @@ export function SettingsViews({ workspaceId, workspaceSlug, canManage }: { works
     }
   }
 
+  async function createView() {
+    const name = prompt(t("view.namePrompt"), t("view.type.grid"));
+    if (!name) return;
+    try {
+      const created = await api.post<ViewRow>(`/api/projects/${projectId}/views`, { name, type: "grid" });
+      setViews((current) => [...current, created]);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : t("common.failed"));
+    }
+  }
+
   async function remove(view: ViewRow) {
     if (!table || table.views.length <= 1) {
       toast.error(t("sv.needOne"));
@@ -97,7 +109,7 @@ export function SettingsViews({ workspaceId, workspaceSlug, canManage }: { works
   return (
     <SettingsSection title={t("set.views")} description={t("sv.desc", { project: project.name })}>
       {picker}
-      {!canManage && <p className="text-xs text-neutral-400 mb-2">{t("sv.readOnly")}</p>}
+      <div className="flex items-center justify-between max-w-2xl mb-2"><p className="text-xs text-neutral-400">{!canManage ? t("sv.limited") : t("sv.permissionHint")}</p><Button size="sm" variant="outline" onClick={createView}><Plus size={13} />{t("nav.addView")}</Button></div>
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
         <SortableContext items={table.views.map((v) => v.id)} strategy={verticalListSortingStrategy}>
           <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg divide-y divide-neutral-100 dark:divide-neutral-900 max-w-2xl">
@@ -107,6 +119,7 @@ export function SettingsViews({ workspaceId, workspaceSlug, canManage }: { works
                 view={view}
                 href={`/w/${workspaceSlug}/p/${projectId}?view=${view.id}`}
                 canManage={canManage}
+                canDelete={view.canDelete ?? canManage}
                 onRename={() => rename(view)}
                 onDuplicate={() => duplicate(view)}
                 onDelete={() => remove(view)}
@@ -119,7 +132,7 @@ export function SettingsViews({ workspaceId, workspaceSlug, canManage }: { works
   );
 }
 
-function ViewSettingsRow({ view, href, canManage, onRename, onDuplicate, onDelete }: { view: ViewRow; href: string; canManage: boolean; onRename: () => void; onDuplicate: () => void; onDelete: () => void }) {
+function ViewSettingsRow({ view, href, canManage, canDelete, onRename, onDuplicate, onDelete }: { view: ViewRow; href: string; canManage: boolean; canDelete: boolean; onRename: () => void; onDuplicate: () => void; onDelete: () => void }) {
   const { t } = useT();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: view.id, disabled: !canManage });
   const Icon = VIEW_ICONS[view.type] ?? Sheet;
@@ -137,18 +150,18 @@ function ViewSettingsRow({ view, href, canManage, onRename, onDuplicate, onDelet
         <Link href={href} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title={t("sv.open")}>
           <ExternalLink size={13} />
         </Link>
-        {canManage && (
-          <>
+        {canManage && <>
         <button onClick={onRename} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title={t("common.rename")}>
           <Pencil size={13} />
         </button>
         <button onClick={onDuplicate} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title={t("common.duplicate")}>
           <Copy size={13} />
         </button>
+        </>}
+        {canDelete && (
         <button onClick={onDelete} className="text-neutral-400 hover:text-red-600 shrink-0" title={t("common.delete")}>
           <Trash2 size={13} />
         </button>
-          </>
         )}
       </div>
     </div>

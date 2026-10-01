@@ -25,7 +25,8 @@ export type EntityType =
   | "desktop_release"
   | "decision"
   | "journal"
-  | "wiki_page";
+  | "wiki_page"
+  | "agent_run";
 
 export type ActivityAction =
   | "created"

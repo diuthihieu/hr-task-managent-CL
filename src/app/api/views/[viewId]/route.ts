@@ -2,17 +2,19 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfView, badRequest } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, roleAtLeast, route, readJson, workspaceOfView, badRequest, forbidden } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { serializeView } from "@/lib/serializers";
+import { canDeleteView } from "@/lib/view-permissions";
 
 type P = { viewId: string };
 
 export const GET = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { viewId } = await params;
-  await requireWorkspaceRole(user, await workspaceOfView(viewId), "viewer");
-  return NextResponse.json(serializeView(await prisma.view.findUniqueOrThrow({ where: { id: viewId } })));
+  const ctx = await requireWorkspaceRole(user, await workspaceOfView(viewId), "viewer");
+  const view = await prisma.view.findUniqueOrThrow({ where: { id: viewId }, include: { project: { select: { createdById: true } } } });
+  return NextResponse.json(serializeView(view, { canEdit: roleAtLeast(ctx.role, "editor"), canDelete: canDeleteView({ workspaceRole: ctx.role, userId: user.id, projectCreatedById: view.project.createdById, viewCreatedById: view.createdById, isBase: view.isBase }) }));
 });
 
 const patchSchema = z.object({
@@ -55,12 +57,20 @@ export const PATCH = route<P>(async (req, { params }) => {
 export const DELETE = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { viewId } = await params;
-  const ctx = await requireWorkspaceRole(user, await workspaceOfView(viewId), "editor");
-  const view = await prisma.view.findUniqueOrThrow({ where: { id: viewId } });
-  if ((await prisma.view.count({ where: { projectId: view.projectId } })) <= 1) throw badRequest("A project needs at least one view");
+  const ctx = await requireWorkspaceRole(user, await workspaceOfView(viewId), "viewer");
+  const view = await prisma.view.findUniqueOrThrow({ where: { id: viewId }, include: { project: { select: { createdById: true } } } });
+  if (!canDeleteView({ workspaceRole: ctx.role, userId: user.id, projectCreatedById: view.project.createdById, viewCreatedById: view.createdById, isBase: view.isBase })) {
+    throw forbidden(view.isBase ? "Only the workspace owner or project creator can delete the base view" : "Only a workspace admin, project creator or this view's creator can delete it");
+  }
   await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM projects WHERE id = ${view.projectId}::uuid FOR UPDATE`);
+    if ((await tx.view.count({ where: { projectId: view.projectId } })) <= 1) throw badRequest("A project needs at least one view");
     await tx.view.delete({ where: { id: viewId } });
-    await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "view", entityId: viewId, action: "deleted", summary: `Deleted view "${view.name}"` });
+    if (view.isBase || view.isDefault) {
+      const next = await tx.view.findFirst({ where: { projectId: view.projectId }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], select: { id: true } });
+      if (next) await tx.view.update({ where: { id: next.id }, data: { ...(view.isBase ? { isBase: true } : {}), ...(view.isDefault ? { isDefault: true } : {}), updatedById: user.id } });
+    }
+    await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "view", entityId: viewId, action: "deleted", summary: `Deleted view "${view.name}"`, changes: { projectId: { from: view.projectId, to: null } } });
   });
   return new NextResponse(null, { status: 204 });
 });

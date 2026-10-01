@@ -18,7 +18,7 @@ export function serializeProject(p: Project): ProjectRow {
   };
 }
 
-export function serializeView(v: View): ViewRow {
+export function serializeView(v: View, permissions?: { canDelete?: boolean; canEdit?: boolean }): ViewRow {
   return {
     id: v.id,
     projectId: v.projectId,
@@ -27,7 +27,9 @@ export function serializeView(v: View): ViewRow {
     config: JSON.stringify(v.config ?? {}),
     order: v.sortOrder,
     isDefault: v.isDefault,
+    isBase: v.isBase,
     isPublic: v.isPublic,
+    ...permissions,
   };
 }
 

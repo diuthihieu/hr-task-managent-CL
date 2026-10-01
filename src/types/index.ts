@@ -40,7 +40,10 @@ export interface ViewRow {
   config: string;
   order: number;
   isDefault: boolean;
+  isBase?: boolean;
   isPublic?: boolean;
+  canDelete?: boolean;
+  canEdit?: boolean;
 }
 
 export type WorkspaceRoleName = "owner" | "admin" | "editor" | "contributor" | "viewer";

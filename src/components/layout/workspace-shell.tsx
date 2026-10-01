@@ -5,6 +5,7 @@ import { NotificationBell, RecognitionCount, UnreadCount } from "@/components/no
 import { WorkspaceAvatar } from "@/components/workspaces/workspace-avatar";
 import { emitViewsChanged } from "@/lib/view-events";
 import { FocusDock } from "@/components/focus/focus-mode";
+import { AgentSuggestionPopup } from "@/components/agent-work/agent-suggestion-popup";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { signOut } from "next-auth/react";
 import {
@@ -28,6 +29,7 @@ import {
   Sheet,
   Kanban as KanbanIcon,
   Calendar as CalendarIcon,
+  Clock3,
   GanttChartSquare,
   GalleryHorizontal,
   FileInput,
@@ -48,6 +50,7 @@ import {
   Target as TargetIcon,
   BookOpen,
   Brain,
+  Bot,
   Award,
   SlidersHorizontal,
   Palette,
@@ -95,7 +98,7 @@ export const NEW_VIEW_TYPES: { type: string; label: MessageKey }[] = [
   { type: "report", label: "view.type.report" },
 ];
 
-interface ViewLite { id: string; name: string; type: string }
+interface ViewLite { id: string; name: string; type: string; canDelete: boolean }
 interface ProjectLite { id: string; name: string; color: string; icon: string | null; views: ViewLite[] }
 interface WorkspaceLite { id: string; name: string; slug: string; logoUrl?: string | null }
 
@@ -165,7 +168,7 @@ export function WorkspaceShell({
 
   const activeProjectId = pathname.match(/\/p\/([^/]+)/)?.[1];
   const activeViewId = searchParams.get("view");
-  const projectSection = pathname.match(/\/p\/[^/]+\/(objectives|wiki|settings|t)(?:\/|$)/)?.[1] ?? null;
+  const projectSection = pathname.match(/\/p\/[^/]+\/(objectives|history|wiki|settings|t)(?:\/|$)/)?.[1] ?? null;
   const isMyWork = pathname.includes("/my-work");
   const isDashboards = pathname.endsWith("/dashboards") || pathname.includes("/dash/");
   const isSettings = pathname.includes("/settings");
@@ -272,6 +275,7 @@ export function WorkspaceShell({
   const isBrain = pathname.includes(`/w/${workspace.slug}/brain`);
   const isRecognition = pathname.includes(`/w/${workspace.slug}/recognition`);
   const isAi = pathname.includes("/ai");
+  const isAgentWork = pathname.includes("/agent-work");
   const okrActive = isTeamOkrs || isMyOkrs || isOkrDashboard || isOkrDetail;
   const wikiOpenNow = wikiOpen ?? (isWikiHome || !!activeWikiId);
 
@@ -322,6 +326,7 @@ export function WorkspaceShell({
 
           <NavSection label={t("nav.group.intelligence")} compact={compact} />
           <NavLink href={`/w/${workspace.slug}/ai`} active={isAi} icon={Sparkles} label={t("nav.ai")} compact={compact} testId="nav-ai" badge={<span className="text-[9px] font-semibold tracking-wide text-indigo-500/80">AI</span>} />
+          <NavLink href={`/w/${workspace.slug}/agent-work`} active={isAgentWork} icon={Bot} label={t("nav.agentWork")} compact={compact} testId="nav-agent-work" />
           <NavLink href={`/w/${workspace.slug}/brain`} active={isBrain} icon={Brain} label={t("nav.brain")} compact={compact} testId="nav-brain" />
           <NavLink href={`/w/${workspace.slug}/dashboards`} active={isDashboards} icon={BarChart3} label={t("nav.reports")} compact={compact} />
 
@@ -417,7 +422,7 @@ export function WorkspaceShell({
                   <ProjectIcon icon={project.icon} size={14} />
                   <span className={cn("truncate text-[13px]", activeProjectId === project.id ? "text-indigo-700 dark:text-indigo-300 font-semibold" : "text-neutral-700 dark:text-neutral-300 font-medium")}>{project.name}</span>
                 </Link>
-                {canEditViews && (
+                {(
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button className="opacity-0 group-hover:opacity-100 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" title={t("nav.addView")}>
@@ -478,6 +483,7 @@ export function WorkspaceShell({
                     {(
                       [
                         ["objectives", t("nav.objectives"), TargetIcon],
+                        ["history", t("vh.title"), Clock3],
                         ["settings", t("nav.projectSettings"), SlidersHorizontal],
                       ] as const
                     ).map(([section, label, Icon]) => (
@@ -605,6 +611,7 @@ export function WorkspaceShell({
       <PreferencesDialog open={prefsOpen} onOpenChange={setPrefsOpen} />
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} workspaceId={workspace.id} workspaceSlug={workspace.slug} />
+      <AgentSuggestionPopup workspaceId={workspace.id} workspaceSlug={workspace.slug} />
     </div>
   );
 }
@@ -683,9 +690,7 @@ function ViewRow({
   const Icon = VIEW_ICONS[view.type] ?? Sheet;
   return (
     <div ref={setNodeRef} style={{ transform: CSS.Transform.toString(transform), transition }} className={cn("group/view flex items-center rounded-md", isDragging && "opacity-50 relative z-10")}>
-      <span {...attributes} {...listeners} className="text-neutral-300 dark:text-neutral-700 cursor-grab opacity-0 group-hover/view:opacity-100 shrink-0 w-3 -ml-0.5">
-        <GripVertical size={12} />
-      </span>
+      {canEdit ? <span {...attributes} {...listeners} className="text-neutral-300 dark:text-neutral-700 cursor-grab opacity-0 group-hover/view:opacity-100 shrink-0 w-3 -ml-0.5"><GripVertical size={12} /></span> : <span className="shrink-0 w-2" />}
       <Link
         href={href}
         className={cn(
@@ -696,7 +701,7 @@ function ViewRow({
         <Icon size={13} />
         <span className="truncate">{view.name}</span>
       </Link>
-      {canEdit && (
+      {(canEdit || view.canDelete) && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="opacity-0 group-hover/view:opacity-100 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0 px-0.5">
@@ -704,16 +709,16 @@ function ViewRow({
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent>
-            <DropdownMenuItem onSelect={onRename}>
+            {canEdit && <DropdownMenuItem onSelect={onRename}>
               <Pencil size={13} /> {t("common.rename")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={onDuplicate}>
+            </DropdownMenuItem>}
+            {canEdit && <DropdownMenuItem onSelect={onDuplicate}>
               <Copy size={13} /> {t("common.duplicate")}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={onDelete} className="text-red-600 dark:text-red-400">
+            </DropdownMenuItem>}
+            {canEdit && view.canDelete && <DropdownMenuSeparator />}
+            {view.canDelete && <DropdownMenuItem onSelect={onDelete} className="text-red-600 dark:text-red-400">
               <Trash2 size={13} /> {t("common.delete")}
-            </DropdownMenuItem>
+            </DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>
       )}

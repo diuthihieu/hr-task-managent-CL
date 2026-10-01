@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { route, readJson, badRequest, notFound, HttpError, requireWorkspaceRole, requireWiki, workspaceOfProject } from "@/lib/authz";
+import { route, readJson, badRequest, notFound, HttpError, requireWorkspaceRole, requireWiki, workspaceOfProject, visibleProjectWhere, visibleWikiWhere } from "@/lib/authz";
 import { generate } from "@/lib/ai/gemini";
 import { personalPromptBlock, SCOPE_GUARD } from "@/lib/ai/personal";
 import { brainContext } from "@/lib/brain/route-helpers";
@@ -29,14 +29,28 @@ const schema = z.object({
 /** Past Ask My Brain conversations of the caller (latest first), with sources on each answer. */
 export const GET = route<P>(async (req, { params }) => {
   const { workspaceId } = await params;
-  const { user } = await brainContext(workspaceId);
+  const { user, ctx } = await brainContext(workspaceId);
   const id = new URL(req.url).searchParams.get("conversationId");
   if (id) {
     const c = await prisma.aiConversation.findFirst({ where: { id, userId: user.id, workspaceId, kind: "brain" }, include: { messages: { orderBy: { createdAt: "asc" } } } });
     if (!c) throw notFound("Conversation");
+    await requireWorkspaceRole(user, { workspaceId, projectId: c.projectId, wikiId: c.wikiId }, "viewer");
     return NextResponse.json({ id: c.id, title: c.title, messages: c.messages.map((m) => ({ role: m.role, content: m.content, sources: m.sources, createdAt: m.createdAt.toISOString() })) });
   }
-  const list = await prisma.aiConversation.findMany({ where: { userId: user.id, workspaceId, kind: "brain" }, orderBy: { updatedAt: "desc" }, take: 30, select: { id: true, title: true, updatedAt: true } });
+  const list = await prisma.aiConversation.findMany({
+    where: {
+      userId: user.id,
+      workspaceId,
+      kind: "brain",
+      AND: [
+        { OR: [{ projectId: null }, { project: { deletedAt: null, ...visibleProjectWhere(user) } }] },
+        { OR: [{ wikiId: null }, { wiki: visibleWikiWhere(user, ctx.role) }] },
+      ],
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 30,
+    select: { id: true, title: true, updatedAt: true },
+  });
   return NextResponse.json(list.map((c) => ({ ...c, updatedAt: c.updatedAt.toISOString() })));
 });
 
@@ -77,6 +91,7 @@ export const POST = route<P>(async (req, { params }) => {
   if (body.conversationId) {
     const c = await prisma.aiConversation.findFirst({ where: { id: body.conversationId, userId: user.id, workspaceId, kind: "brain" } });
     if (!c) throw notFound("Conversation");
+    await requireWorkspaceRole(user, { workspaceId, projectId: c.projectId, wikiId: c.wikiId }, "viewer");
     history = (await prisma.aiMessage.findMany({ where: { conversationId: c.id }, orderBy: { createdAt: "desc" }, take: 8, select: { role: true, content: true } })).reverse();
   }
 
@@ -88,7 +103,7 @@ export const POST = route<P>(async (req, { params }) => {
   const saved = out.map(({ n, type, id, title, href, status, historical, used: u }) => ({ n, type, id, title, href, status, historical, used: u }));
 
   const conversationId =
-    body.conversationId ?? (await prisma.aiConversation.create({ data: { workspaceId, userId: user.id, kind: "brain", title: body.question.replace(/\s+/g, " ").slice(0, 120) } })).id;
+    body.conversationId ?? (await prisma.aiConversation.create({ data: { workspaceId, userId: user.id, kind: "brain", title: body.question.replace(/\s+/g, " ").slice(0, 120), originType: scope.type === "wiki" ? "wiki" : "workspace", originId: scope.type === "wiki" ? scope.wikiId : scope.type === "project" ? scope.projectId : workspaceId, projectId: scope.type === "project" ? scope.projectId : null, wikiId: scope.type === "wiki" ? scope.wikiId : null } })).id;
   await prisma.aiMessage.create({ data: { conversationId, role: "user", content: body.question } });
   await prisma.aiMessage.create({ data: { conversationId, role: "model", content: r.text, sources: saved, tokensIn: r.tokensIn, tokensOut: r.tokensOut } });
   await prisma.aiConversation.update({ where: { id: conversationId }, data: { updatedAt: new Date() } });

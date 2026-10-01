@@ -50,9 +50,12 @@ export function ViewTabs({
   onReorder,
   trailing,
   canManage = true,
+  canCreate = true,
 }: {
-  /** Editors and above rename, add, duplicate, reorder and delete views; others only switch between them. */
+  /** Editors and above rename, duplicate and reorder; delete is supplied per view by the server. */
   canManage?: boolean;
+  /** Every workspace member may create a personal/shared project view. */
+  canCreate?: boolean;
   /** Controls shown on the same row, right-aligned (one-row toolbar for some views). */
   trailing?: React.ReactNode;
   views: ViewRow[];
@@ -90,7 +93,7 @@ export function ViewTabs({
               renaming={renamingId === view.id}
               renameValue={renameValue}
               onRenameValueChange={setRenameValue}
-              canDelete={views.length > 1}
+              canDelete={views.length > 1 && (view.canDelete ?? canManage)}
               canManage={canManage}
               onSelect={() => onSelect(view.id)}
               onStartRename={() => {
@@ -110,7 +113,7 @@ export function ViewTabs({
         </SortableContext>
       </DndContext>
 
-      {canManage && (
+      {canCreate && (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button className="flex items-center gap-1 h-7 px-2 rounded-md text-sm text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-900 ml-1">
@@ -197,7 +200,7 @@ function ViewTab({
         <Icon size={13} />
         {view.name}
       </button>
-      {canManage && (
+      {(canManage || canDelete) && (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -208,15 +211,15 @@ function ViewTab({
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
-          <DropdownMenuItem onSelect={onStartRename}>
+          {canManage && <DropdownMenuItem onSelect={onStartRename}>
             <Pencil size={13} /> {t("common.rename")}
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={onDuplicate}>
+          </DropdownMenuItem>}
+          {canManage && <DropdownMenuItem onSelect={onDuplicate}>
             <Copy size={13} /> {t("common.duplicate")}
-          </DropdownMenuItem>
+          </DropdownMenuItem>}
           {canDelete && (
             <>
-              <DropdownMenuSeparator />
+              {canManage && <DropdownMenuSeparator />}
               <DropdownMenuItem onSelect={onDelete} className="text-red-600 dark:text-red-400">
                 <Trash2 size={13} /> {t("common.delete")}
               </DropdownMenuItem>

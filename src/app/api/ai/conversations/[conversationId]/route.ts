@@ -15,9 +15,9 @@ export const GET = route<P>(async (_req, { params }) => {
   const { conversationId } = await params;
   const c = await own(user.id, conversationId);
   // Still a member (and the project still visible)?
-  await requireWorkspaceRole(user, { workspaceId: c.workspaceId, wikiId: c.wikiId }, "viewer");
+  await requireWorkspaceRole(user, { workspaceId: c.workspaceId, projectId: c.projectId, wikiId: c.wikiId }, "viewer");
   const messages = await prisma.aiMessage.findMany({ where: { conversationId }, orderBy: { createdAt: "asc" }, select: { id: true, role: true, content: true, createdAt: true } });
-  return NextResponse.json({ id: c.id, title: c.title, kind: c.kind, messages: messages.map((m) => ({ ...m, createdAt: m.createdAt.toISOString() })) });
+  return NextResponse.json({ id: c.id, title: c.title, kind: c.kind, originType: c.originType, originId: c.originId, projectId: c.projectId, taskId: c.taskId, skillId: c.skillId, agentRunId: c.agentRunId, files: c.files, messages: messages.map((m) => ({ ...m, createdAt: m.createdAt.toISOString() })) });
 });
 
 export const DELETE = route<P>(async (_req, { params }) => {

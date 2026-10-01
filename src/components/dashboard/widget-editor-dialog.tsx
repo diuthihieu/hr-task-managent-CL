@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
-import { CHART_TYPES, AGGREGATION_LABELS, type DashboardBlockConfig, type ChartType, type Aggregation } from "@/lib/dashboard-engine";
+import { CHART_TYPES, AGGREGATION_LABELS, type DashboardBlockConfig, type ChartType, type Aggregation, type WidgetStyleConfig } from "@/lib/dashboard-engine";
 import type { FieldRow, ViewRow } from "@/types";
 import { useT } from "@/components/i18n-provider";
 
@@ -82,6 +82,10 @@ export function WidgetEditorDialog({
     setDraft((d) => ({ ...d, config: { ...d.config, ...patch } }));
   }
 
+  function patchStyle(patch: Partial<WidgetStyleConfig>) {
+    patchConfig({ style: { ...draft.config.style, ...patch } });
+  }
+
   const dimensionField = fields.find((f) => f.id === draft.config.dimensionFieldId);
   const showDateBucket = dimensionField && DATE_TYPES.includes(dimensionField.type);
   const needsDimension = NEEDS_DIMENSION.includes(draft.type) || NEEDS_SERIES.includes(draft.type);
@@ -89,6 +93,7 @@ export function WidgetEditorDialog({
   const needsMeasure = NEEDS_MEASURE.includes(draft.type);
   const needsMeasure2 = NEEDS_MEASURE2.includes(draft.type);
   const isTable = draft.type === "table";
+  const isNetwork = draft.type === "network";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -157,6 +162,29 @@ export function WidgetEditorDialog({
                 })}
               </div>
             </div>
+          ) : isNetwork ? (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.linkField")}</label>
+                <Select
+                  className="w-full"
+                  value={draft.config.networkLinkFieldId ?? ""}
+                  onValueChange={(v) => patchConfig({ networkLinkFieldId: v })}
+                  options={fields.filter((field) => field.type === "link").map((field) => ({ value: field.id, label: field.name }))}
+                  placeholder={t("form.chooseField")}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.nodeLabel")}</label>
+                <Select
+                  className="w-full"
+                  value={draft.config.networkLabelFieldId ?? "sys_title"}
+                  onValueChange={(v) => patchConfig({ networkLabelFieldId: v })}
+                  options={fields.map((field) => ({ value: field.id, label: field.name }))}
+                  placeholder={t("form.chooseField")}
+                />
+              </div>
+            </div>
           ) : (
             <>
               {needsDimension && (
@@ -222,6 +250,38 @@ export function WidgetEditorDialog({
                 </div>
               )}
 
+              {draft.type === "kpi" && (
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.compare")}</label>
+                    <Select
+                      className="w-full"
+                      value={draft.config.kpiCompareTo ?? "none"}
+                      onValueChange={(v) => patchConfig({ kpiCompareTo: v as DashboardBlockConfig["kpiCompareTo"] })}
+                      options={[
+                        { value: "none", label: t("db.w.compareNone") },
+                        { value: "previous_week", label: t("db.w.previousWeek") },
+                        { value: "previous_month", label: t("db.w.previousMonth") },
+                        { value: "previous_quarter", label: t("db.w.previousQuarter") },
+                        { value: "previous_year", label: t("db.w.previousYear") },
+                      ]}
+                    />
+                  </div>
+                  {draft.config.kpiCompareTo && draft.config.kpiCompareTo !== "none" && (
+                    <div>
+                      <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.dateField")}</label>
+                      <Select
+                        className="w-full"
+                        value={draft.config.kpiDateFieldId ?? ""}
+                        onValueChange={(v) => patchConfig({ kpiDateFieldId: v })}
+                        options={fields.filter((field) => DATE_TYPES.includes(field.type)).map((field) => ({ value: field.id, label: field.name }))}
+                        placeholder={t("form.chooseField")}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
               {needsMeasure2 && (
                 <div>
                   <label className="text-xs font-medium text-neutral-500 mb-1 block">{draft.type === "scatter" ? t("db.w.measureX") : t("db.w.measure2")}</label>
@@ -261,16 +321,154 @@ export function WidgetEditorDialog({
               )}
             </>
           )}
+
+          <details className="rounded-lg border border-neutral-200 dark:border-neutral-800" open>
+            <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-200">{t("db.style.title")}</summary>
+            <div className="border-t border-neutral-100 dark:border-neutral-800 p-3 space-y-3">
+              <div>
+                <label className="text-xs font-medium text-neutral-500 mb-1.5 block">{t("db.style.palette")}</label>
+                <div className="flex items-center gap-2">
+                  {(draft.config.style?.palette?.length ? draft.config.style.palette : ["#6366f1", "#0ea5e9", "#22c55e", "#f97316", "#ec4899"]).slice(0, 5).map((color, index, palette) => (
+                    <input
+                      key={index}
+                      type="color"
+                      value={color}
+                      onChange={(event) => {
+                        const next = [...palette];
+                        next[index] = event.target.value;
+                        patchStyle({ palette: next });
+                      }}
+                      className="h-8 w-10 cursor-pointer rounded border border-neutral-200 bg-transparent p-0.5"
+                      aria-label={`${t("db.style.color")} ${index + 1}`}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <ColorControl label={t("db.style.background")} value={draft.config.style?.backgroundColor ?? "#ffffff"} onChange={(backgroundColor) => patchStyle({ backgroundColor })} />
+                <ColorControl label={t("db.style.text")} value={draft.config.style?.textColor ?? "#171717"} onChange={(textColor) => patchStyle({ textColor })} />
+                <ColorControl label={t("db.style.border")} value={draft.config.style?.borderColor ?? "#e5e7eb"} onChange={(borderColor) => patchStyle({ borderColor })} />
+                <ColorControl label={t("db.style.grid")} value={draft.config.style?.gridColor ?? "#d1d5db"} onChange={(gridColor) => patchStyle({ gridColor })} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.style.font")}</label>
+                  <Select
+                    className="w-full"
+                    value={draft.config.style?.fontFamily ?? "system"}
+                    onValueChange={(fontFamily) => patchStyle({ fontFamily: fontFamily as WidgetStyleConfig["fontFamily"] })}
+                    options={[
+                      { value: "system", label: "System" },
+                      { value: "inter", label: "Inter" },
+                      { value: "georgia", label: "Georgia" },
+                      { value: "mono", label: "Monospace" },
+                    ]}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.style.titleAlign")}</label>
+                  <Select
+                    className="w-full"
+                    value={draft.config.style?.titleAlign ?? "left"}
+                    onValueChange={(titleAlign) => patchStyle({ titleAlign: titleAlign as WidgetStyleConfig["titleAlign"] })}
+                    options={[
+                      { value: "left", label: t("db.style.left") },
+                      { value: "center", label: t("db.style.center") },
+                      { value: "right", label: t("db.style.right") },
+                    ]}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2">
+                <NumberStyle label={t("db.style.fontSize")} min={9} max={20} value={draft.config.style?.fontSize ?? 11} onChange={(fontSize) => patchStyle({ fontSize })} />
+                <NumberStyle label={t("db.style.titleSize")} min={10} max={28} value={draft.config.style?.titleSize ?? 12} onChange={(titleSize) => patchStyle({ titleSize })} />
+                <NumberStyle label={t("db.style.radius")} min={0} max={32} value={draft.config.style?.borderRadius ?? 8} onChange={(borderRadius) => patchStyle({ borderRadius })} />
+                <NumberStyle label={t("db.style.borderWidth")} min={0} max={6} value={draft.config.style?.borderWidth ?? 1} onChange={(borderWidth) => patchStyle({ borderWidth })} />
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <NumberStyle label={t("db.style.lineWidth")} min={1} max={8} value={draft.config.style?.lineWidth ?? 2} onChange={(lineWidth) => patchStyle({ lineWidth })} />
+                <NumberStyle label={t("db.style.barRadius")} min={0} max={24} value={draft.config.style?.barRadius ?? 4} onChange={(barRadius) => patchStyle({ barRadius })} />
+                <NumberStyle label={t("db.style.donutHole")} min={20} max={80} value={draft.config.style?.donutInnerRadius ?? 55} onChange={(donutInnerRadius) => patchStyle({ donutInnerRadius })} />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.style.shadow")}</label>
+                  <Select
+                    className="w-full"
+                    value={draft.config.style?.shadow ?? "none"}
+                    onValueChange={(shadow) => patchStyle({ shadow: shadow as WidgetStyleConfig["shadow"] })}
+                    options={[
+                      { value: "none", label: t("common.none") },
+                      { value: "small", label: t("db.style.small") },
+                      { value: "medium", label: t("db.style.medium") },
+                      { value: "large", label: t("db.style.large") },
+                    ]}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.style.titleWeight")}</label>
+                  <Select
+                    className="w-full"
+                    value={draft.config.style?.titleWeight ?? "medium"}
+                    onValueChange={(titleWeight) => patchStyle({ titleWeight: titleWeight as WidgetStyleConfig["titleWeight"] })}
+                    options={[
+                      { value: "normal", label: t("db.style.normal") },
+                      { value: "medium", label: t("db.style.medium") },
+                      { value: "bold", label: t("db.style.bold") },
+                    ]}
+                  />
+                </div>
+              </div>
+
+              <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-neutral-600 dark:text-neutral-300">
+                <ToggleStyle label={t("db.style.legend")} checked={draft.config.style?.showLegend !== false} onChange={(showLegend) => patchStyle({ showLegend })} />
+                <ToggleStyle label={t("db.style.gridLines")} checked={draft.config.style?.showGrid !== false} onChange={(showGrid) => patchStyle({ showGrid })} />
+                <ToggleStyle label={t("db.style.dataLabels")} checked={draft.config.style?.showDataLabels === true} onChange={(showDataLabels) => patchStyle({ showDataLabels })} />
+              </div>
+            </div>
+          </details>
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={() => onSave(draft)} disabled={!projectId}>
+          <Button onClick={() => onSave(draft)} disabled={!projectId || (isNetwork && !draft.config.networkLinkFieldId)}>
             {t("common.save")}
           </Button>
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ColorControl({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="flex items-center justify-between gap-2 rounded-md border border-neutral-200 dark:border-neutral-800 px-2 py-1.5 text-xs text-neutral-500">
+      <span>{label}</span>
+      <input type="color" value={value} onChange={(event) => onChange(event.target.value)} className="h-6 w-9 cursor-pointer bg-transparent p-0" />
+    </label>
+  );
+}
+
+function NumberStyle({ label, min, max, value, onChange }: { label: string; min: number; max: number; value: number; onChange: (value: number) => void }) {
+  return (
+    <label className="text-[11px] text-neutral-500">
+      <span className="mb-1 block truncate" title={label}>{label}</span>
+      <Input type="number" min={min} max={max} value={value} onChange={(event) => onChange(Math.max(min, Math.min(max, Number(event.target.value))))} />
+    </label>
+  );
+}
+
+function ToggleStyle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <label className="inline-flex items-center gap-1.5 cursor-pointer">
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+      {label}
+    </label>
   );
 }

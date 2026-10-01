@@ -8,6 +8,7 @@ import { initials, cn } from "@/lib/utils";
 import type { FieldRow } from "@/types";
 import { useT } from "@/components/i18n-provider";
 import { AvatarImg } from "@/components/ui/avatar-img";
+import { Barcode, JsonInput, LocationInput, SignatureInput } from "@/components/fields/advanced-field-inputs";
 
 export interface FormMember {
   id: string;
@@ -171,6 +172,24 @@ export function FormFieldInput({
         </Popover>
       );
     }
+    case "team":
+      return (
+        <Select
+          className="w-full"
+          value={(value as string) ?? ""}
+          onValueChange={(v) => onChange(v || null)}
+          options={(config.teams ?? []).map((team) => ({ value: team.id, label: team.name }))}
+          placeholder={t("form.choose")}
+        />
+      );
+    case "location":
+      return <LocationInput value={value} onChange={onChange} />;
+    case "signature":
+      return <SignatureInput value={value} onChange={onChange} />;
+    case "barcode":
+      return <div className="space-y-2"><Input value={String(value ?? "")} maxLength={200} onChange={(e) => onChange(e.target.value)} /><Barcode value={value} /></div>;
+    case "json":
+      return <JsonInput value={value} onChange={onChange} />;
     case "attachment": {
       const files: { id: string; name: string; url: string }[] = Array.isArray(value) ? value : [];
       return (

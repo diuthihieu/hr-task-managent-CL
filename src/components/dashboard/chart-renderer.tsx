@@ -30,15 +30,14 @@ import {
   RadialBar,
   ComposedChart,
 } from "recharts";
-import type { SeriesPoint, StackedSeries, ScatterPoint, ChartType, Segment } from "@/lib/dashboard-engine";
+import type { SeriesPoint, StackedSeries, ScatterPoint, ChartType, Segment, WidgetStyleConfig } from "@/lib/dashboard-engine";
 
 export const CHART_COLORS = ["#6366f1", "#0ea5e9", "#22c55e", "#f97316", "#ec4899", "#8b5cf6", "#eab308", "#ef4444", "#14b8a6", "#a855f7"];
 
-function colorFor(point: { color?: string }, index: number) {
-  return point.color || CHART_COLORS[index % CHART_COLORS.length];
+function colorFor(point: { color?: string }, index: number, palette: string[], customPalette: boolean) {
+  return (customPalette ? undefined : point.color) || palette[index % palette.length];
 }
 
-const axisTick = { fontSize: 11 };
 const tooltipStyle = { fontSize: 12, borderRadius: 8 };
 
 export function ChartRenderer({
@@ -50,6 +49,8 @@ export function ChartRenderer({
   measure2Label,
   onPointClick,
   onSegmentClick,
+  style,
+  gaugeMax,
 }: {
   type: ChartType;
   series?: SeriesPoint[];
@@ -60,6 +61,8 @@ export function ChartRenderer({
   onPointClick?: (point: SeriesPoint) => void;
   /** Drill-down: called with the clicked group (and stack, on stacked charts). */
   onSegmentClick?: (segment: Segment) => void;
+  style?: WidgetStyleConfig;
+  gaugeMax?: number;
 }) {
   const clickable = !!(onPointClick || onSegmentClick);
   // Recharts hands back its own item shapes; resolve clicks by index into our series instead.
@@ -71,13 +74,24 @@ export function ChartRenderer({
   };
   const chartClick = (data: SeriesPoint[]) =>
     onSegmentClick ? (state: unknown) => pickSeries(data, (state as { activeTooltipIndex?: unknown } | null)?.activeTooltipIndex) : undefined;
+  const palette = style?.palette?.length ? style.palette : CHART_COLORS;
+  const customPalette = Boolean(style?.palette?.length);
+  const primary = palette[0] ?? CHART_COLORS[0];
+  const secondary = palette[1] ?? CHART_COLORS[3];
+  const axisTick = { fontSize: style?.fontSize ?? 11, fill: style?.textColor };
+  const gridColor = style?.gridColor ?? "#9ca3af55";
+  const showGrid = style?.showGrid !== false;
+  const showLegend = style?.showLegend !== false;
+  const showDataLabels = style?.showDataLabels === true;
+  const lineWidth = Math.max(1, Math.min(8, style?.lineWidth ?? 2));
+  const barRadius = Math.max(0, Math.min(24, style?.barRadius ?? 4));
   if (type === "column" || type === "bar") {
     const data = series ?? [];
     const horizontal = type === "bar";
     return (
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} layout={horizontal ? "vertical" : "horizontal"} margin={{ top: 4, right: 8, bottom: 4, left: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#9ca3af55" />
+          {showGrid && <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />}
           {horizontal ? (
             <>
               <XAxis type="number" tick={axisTick} />
@@ -93,13 +107,14 @@ export function ChartRenderer({
           <Bar
             dataKey="value"
             name={measureLabel ?? "Value"}
-            radius={[4, 4, 0, 0]}
+            radius={[barRadius, barRadius, 0, 0]}
             cursor={clickable ? "pointer" : undefined}
             onClick={(_: unknown, index: number) => pickSeries(data, index)}
           >
             {data.map((d, i) => (
-              <Cell key={d.key} fill={colorFor(d, i)} />
+              <Cell key={d.key} fill={colorFor(d, i, palette, customPalette)} />
             ))}
+            {showDataLabels && <LabelList dataKey="value" position={horizontal ? "right" : "top"} fill={style?.textColor} fontSize={style?.fontSize ?? 10} />}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
@@ -113,7 +128,7 @@ export function ChartRenderer({
     return (
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={rows} layout={horizontal ? "vertical" : "horizontal"} margin={{ top: 4, right: 8, bottom: 4, left: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#9ca3af55" />
+          {showGrid && <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />}
           {horizontal ? (
             <>
               <XAxis type="number" tick={axisTick} />
@@ -126,20 +141,23 @@ export function ChartRenderer({
             </>
           )}
           <Tooltip contentStyle={tooltipStyle} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
+          {showLegend && <Legend wrapperStyle={{ fontSize: style?.fontSize ?? 11 }} />}
           {keys.map((k, i) => (
             <Bar
               key={k.key}
               dataKey={k.key}
               name={k.label}
               stackId="stack"
-              fill={k.color || CHART_COLORS[i % CHART_COLORS.length]}
+              fill={(customPalette ? undefined : k.color) || palette[i % palette.length]}
+              radius={[barRadius, barRadius, 0, 0]}
               cursor={onSegmentClick ? "pointer" : undefined}
               onClick={(_: unknown, index: number) => {
                 const row = rows[index];
                 if (row && onSegmentClick) onSegmentClick({ key: String(row.__rowKey), label: String(row.label), seriesKey: k.key, seriesLabel: k.label });
               }}
-            />
+            >
+              {showDataLabels && <LabelList dataKey={k.key} position="center" fill={style?.textColor ?? "white"} fontSize={style?.fontSize ?? 10} />}
+            </Bar>
           ))}
         </BarChart>
       </ResponsiveContainer>
@@ -152,14 +170,18 @@ export function ChartRenderer({
     return (
       <ResponsiveContainer width="100%" height="100%">
         <Chart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 4 }} onClick={chartClick(data)} style={onSegmentClick ? { cursor: "pointer" } : undefined}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#9ca3af55" />
+          {showGrid && <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />}
           <XAxis dataKey="label" tick={axisTick} />
           <YAxis tick={axisTick} />
           <Tooltip contentStyle={tooltipStyle} />
           {type === "line" ? (
-            <Line type="monotone" dataKey="value" name={measureLabel ?? "Value"} stroke={CHART_COLORS[0]} strokeWidth={2} dot={{ r: 3 }} />
+            <Line type="monotone" dataKey="value" name={measureLabel ?? "Value"} stroke={primary} strokeWidth={lineWidth} dot={{ r: Math.max(2, lineWidth + 1) }}>
+              {showDataLabels && <LabelList dataKey="value" position="top" fill={style?.textColor} fontSize={style?.fontSize ?? 10} />}
+            </Line>
           ) : (
-            <Area type="monotone" dataKey="value" name={measureLabel ?? "Value"} stroke={CHART_COLORS[0]} fill={CHART_COLORS[0]} fillOpacity={0.25} />
+            <Area type="monotone" dataKey="value" name={measureLabel ?? "Value"} stroke={primary} strokeWidth={lineWidth} fill={primary} fillOpacity={0.25}>
+              {showDataLabels && <LabelList dataKey="value" position="top" fill={style?.textColor} fontSize={style?.fontSize ?? 10} />}
+            </Area>
           )}
         </Chart>
       </ResponsiveContainer>
@@ -171,13 +193,15 @@ export function ChartRenderer({
     return (
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart data={data} margin={{ top: 4, right: 8, bottom: 4, left: 4 }} onClick={chartClick(data)} style={onSegmentClick ? { cursor: "pointer" } : undefined}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#9ca3af55" />
+          {showGrid && <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />}
           <XAxis dataKey="label" tick={axisTick} />
           <YAxis tick={axisTick} />
           <Tooltip contentStyle={tooltipStyle} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
-          <Bar dataKey="value" name={measureLabel ?? "Value"} fill={CHART_COLORS[0]} radius={[4, 4, 0, 0]} />
-          <Line type="monotone" dataKey="value2" name={measure2Label ?? "Value 2"} stroke={CHART_COLORS[3]} strokeWidth={2} />
+          {showLegend && <Legend wrapperStyle={{ fontSize: style?.fontSize ?? 11 }} />}
+          <Bar dataKey="value" name={measureLabel ?? "Value"} fill={primary} radius={[barRadius, barRadius, 0, 0]}>
+            {showDataLabels && <LabelList dataKey="value" position="top" fill={style?.textColor} fontSize={style?.fontSize ?? 10} />}
+          </Bar>
+          <Line type="monotone" dataKey="value2" name={measure2Label ?? "Value 2"} stroke={secondary} strokeWidth={lineWidth} />
         </ComposedChart>
       </ResponsiveContainer>
     );
@@ -189,19 +213,20 @@ export function ChartRenderer({
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Tooltip contentStyle={tooltipStyle} />
-          <Legend wrapperStyle={{ fontSize: 11 }} />
+          {showLegend && <Legend wrapperStyle={{ fontSize: style?.fontSize ?? 11 }} />}
           <Pie
             data={data}
             dataKey="value"
             nameKey="label"
-            innerRadius={type === "donut" ? "55%" : 0}
+            innerRadius={type === "donut" ? `${Math.max(20, Math.min(80, style?.donutInnerRadius ?? 55))}%` : 0}
             outerRadius="80%"
             paddingAngle={2}
             cursor={clickable ? "pointer" : undefined}
             onClick={(_: unknown, index: number) => pickSeries(data, index)}
+            label={showDataLabels ? { fill: style?.textColor, fontSize: style?.fontSize ?? 10 } : false}
           >
             {data.map((d, i) => (
-              <Cell key={d.key} fill={colorFor(d, i)} />
+              <Cell key={d.key} fill={colorFor(d, i, palette, customPalette)} />
             ))}
           </Pie>
         </PieChart>
@@ -214,11 +239,11 @@ export function ChartRenderer({
     return (
       <ResponsiveContainer width="100%" height="100%">
         <RadarChart data={data} onClick={chartClick(data)}>
-          <PolarGrid stroke="#9ca3af55" />
+          {showGrid && <PolarGrid stroke={gridColor} />}
           <PolarAngleAxis dataKey="label" tick={axisTick} />
           <PolarRadiusAxis tick={axisTick} />
           <Tooltip contentStyle={tooltipStyle} />
-          <Radar dataKey="value" name={measureLabel ?? "Value"} stroke={CHART_COLORS[0]} fill={CHART_COLORS[0]} fillOpacity={0.35} />
+          <Radar dataKey="value" name={measureLabel ?? "Value"} stroke={primary} strokeWidth={lineWidth} fill={primary} fillOpacity={0.35} />
         </RadarChart>
       </ResponsiveContainer>
     );
@@ -229,26 +254,26 @@ export function ChartRenderer({
     return (
       <ResponsiveContainer width="100%" height="100%">
         <ScatterChart margin={{ top: 4, right: 8, bottom: 4, left: 4 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#9ca3af55" />
+          {showGrid && <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />}
           <XAxis type="number" dataKey="x" name={measure2Label ?? "X"} tick={axisTick} />
           <YAxis type="number" dataKey="y" name={measureLabel ?? "Y"} tick={axisTick} />
           <Tooltip contentStyle={tooltipStyle} cursor={{ strokeDasharray: "3 3" }} />
-          <Scatter data={points} fill={CHART_COLORS[0]} />
+          <Scatter data={points} fill={primary} />
         </ScatterChart>
       </ResponsiveContainer>
     );
   }
 
   if (type === "treemap") {
-    const data = (series ?? []).map((d, i) => ({ name: d.label, size: Math.max(d.value, 0.01), fill: colorFor(d, i) }));
+    const data = (series ?? []).map((d, i) => ({ name: d.label, size: Math.max(d.value, 0.01), fill: colorFor(d, i, palette, customPalette) }));
     return (
       <ResponsiveContainer width="100%" height="100%">
         <Treemap
           data={data}
           dataKey="size"
           nameKey="name"
-          stroke="#fff"
-          fill={CHART_COLORS[0]}
+          stroke={style?.backgroundColor ?? "#fff"}
+          fill={primary}
           onClick={(node: unknown) => pickSeries(series ?? [], (series ?? []).findIndex((d) => d.label === (node as { name?: string })?.name))}
         >
           <Tooltip contentStyle={tooltipStyle} />
@@ -258,13 +283,13 @@ export function ChartRenderer({
   }
 
   if (type === "funnel") {
-    const data = (series ?? []).map((d, i) => ({ name: d.label, value: d.value, fill: colorFor(d, i) }));
+    const data = (series ?? []).map((d, i) => ({ name: d.label, value: d.value, fill: colorFor(d, i, palette, customPalette) }));
     return (
       <ResponsiveContainer width="100%" height="100%">
         <FunnelChart>
           <Tooltip contentStyle={tooltipStyle} />
           <Funnel dataKey="value" data={data} isAnimationActive={false} cursor={clickable ? "pointer" : undefined} onClick={(_: unknown, index: number) => pickSeries(series ?? [], index)}>
-            <LabelList dataKey="name" position="right" fill="#6b7280" fontSize={11} />
+            {showDataLabels !== false && <LabelList dataKey="name" position="right" fill={style?.textColor ?? "#6b7280"} fontSize={style?.fontSize ?? 11} />}
           </Funnel>
         </FunnelChart>
       </ResponsiveContainer>
@@ -273,8 +298,8 @@ export function ChartRenderer({
 
   if (type === "gauge") {
     const value = series?.[0]?.value ?? 0;
-    const max = Math.max(value, 100);
-    const data = [{ name: "value", value, fill: CHART_COLORS[0] }];
+    const max = Math.max(value, gaugeMax ?? 100);
+    const data = [{ name: "value", value, fill: primary }];
     return (
       <ResponsiveContainer width="100%" height="100%">
         <RadialBarChart data={data} innerRadius="65%" outerRadius="100%" startAngle={180} endAngle={0} barSize={16} cx="50%" cy="85%">

@@ -121,6 +121,17 @@ enum CustomFieldType {
   email
   phone
   formula
+  team
+  location
+  signature
+  link
+  lookup
+  rollup
+  button
+  barcode
+  ai_field
+  json
+  api_result
 
   @@map("custom_field_type")
 }
@@ -379,6 +390,7 @@ model Team {
 
   workspace  Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   objectives Objective[]
+  customFieldValues TaskCustomFieldValue[] @relation("CustomValueTeam")
 
   @@unique([workspaceId, name])
   @@map("teams")
@@ -644,6 +656,11 @@ model TaskCustomFieldValue {
   valueBool      Boolean?  @map("value_bool")
   valueOptionId  String?   @map("value_option_id") @db.Uuid
   valueUserId    String?   @map("value_user_id") @db.Uuid
+  valueTeamId    String?   @map("value_team_id") @db.Uuid
+  /// link fields: ids of tasks in the configured target project.
+  valueTaskIds   String[]  @default([]) @map("value_task_ids") @db.Uuid
+  /// location/json/API-result values. Structured values stay queryable JSONB.
+  valueJson      Json?     @map("value_json") @db.JsonB
   /// multi_select only: array of custom_field_options ids.
   valueOptionIds String[]  @default([]) @map("value_option_ids") @db.Uuid
   updatedAt      DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
@@ -653,11 +670,13 @@ model TaskCustomFieldValue {
   customField CustomField        @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
   option      CustomFieldOption? @relation(fields: [valueOptionId], references: [id], onDelete: SetNull)
   user        User?              @relation("CustomValueUser", fields: [valueUserId], references: [id], onDelete: SetNull)
+  team        Team?              @relation("CustomValueTeam", fields: [valueTeamId], references: [id], onDelete: SetNull)
 
   @@id([taskId, customFieldId])
   @@index([customFieldId, valueNumber])
   @@index([customFieldId, valueDate])
   @@index([customFieldId, valueOptionId])
+  @@index([customFieldId, valueTeamId])
   @@map("task_custom_field_values")
 }
 
@@ -716,6 +735,7 @@ model Attachment {
   @@index([taskId, deletedAt])
   @@index([wikiPageId])
   @@index([wikiCommentId])
+  @@unique([storageKey])
   @@map("attachments")
 }
 
@@ -743,6 +763,37 @@ model ActivityLog {
   @@index([entityType, entityId, createdAt(sort: Desc)])
   @@index([actorId])
   @@map("activity_logs")
+}
+
+/// Cold copy of old audit events. A scheduled maintenance route moves rows
+/// here in bounded batches so the hot activity_logs indexes remain small.
+model ActivityLogArchive {
+  id          String   @id @db.Uuid
+  workspaceId String?  @map("workspace_id") @db.Uuid
+  actorId     String?  @map("actor_id") @db.Uuid
+  entityType  String   @map("entity_type") @db.VarChar(40)
+  entityId    String   @map("entity_id") @db.Uuid
+  action      String   @db.VarChar(40)
+  summary     String?
+  changes     Json?
+  createdAt   DateTime @map("created_at") @db.Timestamptz(6)
+  archivedAt  DateTime @default(now()) @map("archived_at") @db.Timestamptz(6)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([entityType, entityId, createdAt(sort: Desc)])
+  @@map("activity_log_archives")
+}
+
+/// Shared, database-backed rate-limit buckets. keyHash is an HMAC, never a
+/// raw IP/email, and UPSERT makes increments atomic across serverless workers.
+model RateLimitBucket {
+  keyHash   String   @id @map("key_hash") @db.Char(64)
+  count     Int      @default(0)
+  resetAt   DateTime @map("reset_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([resetAt])
+  @@map("rate_limit_buckets")
 }
 
 // ---------------------------------------------------------------------------

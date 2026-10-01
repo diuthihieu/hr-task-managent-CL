@@ -313,18 +313,21 @@ Enforced in route handlers through `src/lib/authz.ts`, never only in the UI:
 
 ## Risks and scalability notes
 
-1. **Grid filtering runs in the application layer.** A project's tasks are
-   loaded then filtered/sorted in the browser. Fine to low tens of thousands
-   of tasks per project; beyond that, push filters to SQL (the indexes above
-   already support the common ones) and paginate.
+1. **Large grids have a keyset API.** `GET /api/projects/:id/tasks` accepts
+   `limit`, `cursor` and `search` and uses the partial cursor index without
+   `OFFSET`. Specialized views still load their working set for client-side
+   grouping/charting, so very large analytical views should move their full
+   filter/aggregation plan to SQL next.
 2. **Custom fields are typed EAV.** Sorting/filtering by many custom fields at
    once means one join per field. Indexed per type, acceptable for tens of
    fields; don't turn custom fields into the primary data model.
 3. **`tasks.workspace_id` is denormalized** for tenant indexes. A trigger keeps
    it consistent with the project; moving a task across workspaces is not
    supported.
-4. **`activity_logs` grows without bound.** Plan partitioning by month or an
-   archival job once it reaches millions of rows.
+4. **Audit retention is bounded.** A daily authenticated cron moves old rows
+   from `activity_logs` to `activity_log_archives` in short, lock-skipping
+   batches. At very high event volume, monthly partitioning remains the next
+   step.
 5. **Soft delete + unique names.** Soft-deleted projects/custom fields don't
    block reuse because their names are not unique-constrained; statuses and
    categories are hard-deleted so their unique names stay meaningful.
@@ -334,15 +337,17 @@ Enforced in route handlers through `src/lib/authz.ts`, never only in the UI:
 7. **Attachments** are stored in a private Vercel Blob store and streamed
    through `/api/attachments/[id]/download` after an authorization check
    (always `Content-Disposition: attachment`, active content types blocked).
-   Server uploads are capped at 4 MB by the Vercel function body limit; larger
-   files need client-side uploads with signed tokens.
+   Server uploads up to 4 MB use the API route; task files up to 100 MB use a
+   short-lived, permission-checked direct-to-Blob token, avoiding the Vercel
+   function body limit. Files larger than 100 MB are rejected.
 8. **Polymorphic `activity_logs.entity_id`** has no FK by design (history must
    outlive deleted rows); integrity of that column is by convention.
-9. **No login rate limiting yet.** Credentials sign-in relies on bcrypt cost
-   and generic error messages; add IP/account throttling (e.g. an edge rate
-   limiter) before exposing the app publicly.
-10. **Public form views** accept anonymous submissions for forms explicitly
-    marked public; they are not rate-limited either.
+9. **Shared rate limits.** Credentials sign-in, registration, AI/computed
+   fields and anonymous form submissions use atomic PostgreSQL buckets keyed
+   by HMAC, so limits hold across serverless instances without storing raw IP
+   addresses. An edge firewall is still recommended for volumetric attacks.
+10. **Public form views** accept anonymous submissions only when explicitly
+    published and apply a per-form/IP rate limit.
 11. **Migrating from the previous version** drops the old dynamic
     `Base/TableDef/Field/Record` tables (migration
     `20260926140000_normalized_relational_schema`). Export anything you need

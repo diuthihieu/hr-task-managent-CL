@@ -1,8 +1,5 @@
-// Registry of every field type the product spec calls for. Types with
-// `comingSoon: true` appear (greyed out) in the "add field" picker so the
-// full information architecture is visible, but cell rendering/editing for
-// them ships in a later phase (Phase 6 relational fields, Phase 7 exotic
-// types) rather than being faked here.
+// Registry of every field type supported by the grid. System-only types are
+// present here as well, but CUSTOM_FIELD_TYPE_IDS controls what users can add.
 
 export type FieldCategory =
   | "basic"
@@ -49,17 +46,17 @@ export const FIELD_TYPES: FieldTypeDef[] = [
   // People
   { type: "person", label: "Person", category: "people", icon: "User", editable: true },
   { type: "people", label: "Multiple People", category: "people", icon: "Users", editable: true },
-  { type: "team", label: "Team / Group", category: "people", icon: "UsersRound", editable: true, comingSoon: true },
+  { type: "team", label: "Team / Group", category: "people", icon: "UsersRound", editable: true },
 
   // Contact
   { type: "email", label: "Email", category: "contact", icon: "Mail", editable: true },
   { type: "phone", label: "Phone", category: "contact", icon: "Phone", editable: true },
   { type: "url", label: "URL", category: "contact", icon: "Link", editable: true },
-  { type: "location", label: "Location", category: "contact", icon: "MapPin", editable: true, comingSoon: true },
+  { type: "location", label: "Location", category: "contact", icon: "MapPin", editable: true },
 
   // Files
   { type: "attachment", label: "Attachment", category: "files", icon: "Paperclip", editable: true },
-  { type: "signature", label: "Signature", category: "files", icon: "PenTool", editable: true, comingSoon: true },
+  { type: "signature", label: "Signature", category: "files", icon: "PenTool", editable: true },
 
   // Calculated
   { type: "formula", label: "Formula", category: "calculated", icon: "Sigma", editable: false },
@@ -68,8 +65,8 @@ export const FIELD_TYPES: FieldTypeDef[] = [
 
   // Relational
   { type: "link", label: "Link to Record", category: "relational", icon: "Link2", editable: true },
-  { type: "lookup", label: "Lookup", category: "relational", icon: "SearchCode", editable: false, comingSoon: true },
-  { type: "rollup", label: "Rollup", category: "relational", icon: "Sigma", editable: false, comingSoon: true },
+  { type: "lookup", label: "Lookup", category: "relational", icon: "SearchCode", editable: false },
+  { type: "rollup", label: "Rollup", category: "relational", icon: "Sigma", editable: false },
   { type: "okr_objective", label: "Objective", category: "relational", icon: "Target", editable: true },
   { type: "okr_key_result", label: "Key Result", category: "relational", icon: "KeySquare", editable: true },
   { type: "okr_target", label: "Objective / Key Result", category: "relational", icon: "Target", editable: true },
@@ -79,20 +76,21 @@ export const FIELD_TYPES: FieldTypeDef[] = [
   { type: "created_time", label: "Created Time", category: "system", icon: "Clock", editable: false },
   { type: "created_by", label: "Created By", category: "system", icon: "UserCircle", editable: false },
   { type: "modified_time", label: "Last Modified Time", category: "system", icon: "History", editable: false },
-  { type: "modified_by", label: "Last Modified By", category: "system", icon: "UserCircle", editable: false, comingSoon: true },
+  { type: "modified_by", label: "Last Modified By", category: "system", icon: "UserCircle", editable: false },
 
-  // Action / future-ready
-  { type: "button", label: "Button", category: "action", icon: "MousePointerClick", editable: false, comingSoon: true },
-  { type: "barcode", label: "Barcode", category: "basic", icon: "ScanLine", editable: true, comingSoon: true },
-  { type: "ai_field", label: "AI Field", category: "calculated", icon: "Sparkles", editable: false, comingSoon: true },
-  { type: "json", label: "JSON", category: "basic", icon: "Braces", editable: true, comingSoon: true },
-  { type: "api_result", label: "API Result", category: "calculated", icon: "Cloud", editable: false, comingSoon: true },
+  // Action / integration
+  { type: "button", label: "Button", category: "action", icon: "MousePointerClick", editable: false },
+  { type: "barcode", label: "Barcode", category: "basic", icon: "ScanLine", editable: true },
+  { type: "ai_field", label: "AI Field", category: "calculated", icon: "Sparkles", editable: false },
+  { type: "json", label: "JSON", category: "basic", icon: "Braces", editable: true },
+  { type: "api_result", label: "API Result", category: "calculated", icon: "Cloud", editable: false },
 ];
 
 /** Types a project custom field can have (mirrors the `custom_field_type` Postgres enum). */
 export const CUSTOM_FIELD_TYPE_IDS = [
   "text", "long_text", "number", "currency", "percent", "rating", "checkbox", "date", "datetime",
   "single_select", "multi_select", "person", "url", "email", "phone", "formula",
+  "team", "location", "signature", "link", "lookup", "rollup", "button", "barcode", "ai_field", "json", "api_result",
 ];
 
 export const FIELD_TYPE_MAP = Object.fromEntries(FIELD_TYPES.map((f) => [f.type, f]));
@@ -168,6 +166,12 @@ export interface FieldConfig {
   linkProjectId?: string; // system link fields (Depends On / Parent Task)
   maxLinks?: number;
   objectives?: OkrTargetObjective[]; // okr_target (task "Objective" field)
+  teams?: { id: string; name: string; color: string }[];
+  buttonLabel?: string;
+  buttonUrlTemplate?: string;
+  aiPrompt?: string;
+  apiUrl?: string;
+  apiJsonPath?: string;
 }
 
 export interface OkrTargetObjective {

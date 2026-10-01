@@ -24,11 +24,13 @@ export function FieldEditorDialog({
   open,
   onOpenChange,
   field,
+  availableFields = [],
   onSave,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
   field: (Pick<FieldRow, "name" | "type" | "description"> & { config: FieldConfig }) | null;
+  availableFields?: FieldRow[];
   onSave: (draft: FieldDraft) => void;
 }) {
   const { t } = useT();
@@ -54,6 +56,8 @@ export function FieldEditorDialog({
   }
 
   const options = draft.config.options ?? [];
+  const linkFields = availableFields.filter((candidate) => candidate.type === "link");
+  const valueFields = availableFields.filter((candidate) => !["lookup", "rollup", "button", "ai_field", "api_result"].includes(candidate.type));
   function updateOption(id: string, patch: Partial<SelectOption>) {
     patchConfig({ options: options.map((o) => (o.id === id ? { ...o, ...patch } : o)) });
   }
@@ -146,6 +150,50 @@ export function FieldEditorDialog({
             <div>
               <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.maxRating")}</label>
               <Input type="number" min={1} max={10} value={draft.config.maxRating ?? 5} onChange={(e) => patchConfig({ maxRating: Number(e.target.value) })} className="w-20" />
+            </div>
+          )}
+
+          {draft.type === "link" && (
+            <div>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.maxLinks")}</label>
+              <Input type="number" min={1} max={100} value={draft.config.maxLinks ?? 20} onChange={(e) => patchConfig({ maxLinks: Number(e.target.value) || 20 })} />
+            </div>
+          )}
+
+          {["lookup", "rollup"].includes(draft.type) && (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.linkField")}</label>
+                <Select className="w-full" value={draft.config.lookupLinkFieldId ?? ""} onValueChange={(v) => patchConfig({ lookupLinkFieldId: v })} options={linkFields.map((candidate) => ({ value: candidate.id, label: candidate.name }))} />
+              </div>
+              <div>
+                <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.valueField")}</label>
+                <Select className="w-full" value={draft.config.lookupFieldId ?? ""} onValueChange={(v) => patchConfig({ lookupFieldId: v })} options={valueFields.map((candidate) => ({ value: candidate.id, label: candidate.name }))} />
+              </div>
+              {draft.type === "rollup" && (
+                <div className="col-span-2">
+                  <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.rollupFn")}</label>
+                  <Select className="w-full" value={draft.config.rollupFn ?? "count"} onValueChange={(v) => patchConfig({ rollupFn: v as FieldConfig["rollupFn"] })} options={["count", "sum", "avg", "min", "max"].map((v) => ({ value: v, label: v.toUpperCase() }))} />
+                </div>
+              )}
+            </div>
+          )}
+
+          {draft.type === "button" && (
+            <div className="space-y-2">
+              <div><label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.buttonLabel")}</label><Input value={draft.config.buttonLabel ?? "Open"} onChange={(e) => patchConfig({ buttonLabel: e.target.value })} /></div>
+              <div><label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.buttonUrl")}</label><Input value={draft.config.buttonUrlTemplate ?? ""} onChange={(e) => patchConfig({ buttonUrlTemplate: e.target.value })} placeholder="https://example.com/tasks/{taskId}" /></div>
+            </div>
+          )}
+
+          {draft.type === "ai_field" && (
+            <div><label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.aiPrompt")}</label><Textarea rows={4} value={draft.config.aiPrompt ?? ""} onChange={(e) => patchConfig({ aiPrompt: e.target.value })} /></div>
+          )}
+
+          {draft.type === "api_result" && (
+            <div className="space-y-2">
+              <div><label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.apiUrl")}</label><Input value={draft.config.apiUrl ?? ""} onChange={(e) => patchConfig({ apiUrl: e.target.value })} placeholder="https://api.example.com/tasks/{taskId}" /></div>
+              <div><label className="text-xs font-medium text-neutral-500 mb-1 block">{t("fe.jsonPath")}</label><Input value={draft.config.apiJsonPath ?? ""} onChange={(e) => patchConfig({ apiJsonPath: e.target.value })} placeholder="data.result" /></div>
             </div>
           )}
 

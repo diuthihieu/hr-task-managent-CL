@@ -1,6 +1,6 @@
 "use client";
 import { useLayoutEffect, useRef, useState } from "react";
-import { Star, User as UserIcon, Link2, Check, Paperclip, Plus, X, Target, KeySquare } from "lucide-react";
+import { Star, User as UserIcon, Link2, Check, Paperclip, Plus, X, Target, KeySquare, MapPin, ExternalLink, RefreshCw, Sparkles } from "lucide-react";
 import { Checkbox } from "@/components/ui/misc";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
@@ -10,6 +10,8 @@ import { cn, initials, formatDate } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
 import { AttachmentsCell, type CellFile } from "./attachments-cell";
 import { AvatarImg } from "@/components/ui/avatar-img";
+import { Barcode, JsonInput, LocationInput, SignatureInput, SignaturePreview } from "@/components/fields/advanced-field-inputs";
+import { api } from "@/lib/api-client";
 
 export interface Member {
   id: string;
@@ -409,6 +411,43 @@ export function Cell({ field, value, record, members, linkTargets, okrOptions, w
         </Popover>
       );
     }
+    case "team": {
+      const teams = config.teams ?? [];
+      const selected = teams.find((team) => team.id === value);
+      return (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button className={cn(base, "gap-1 cursor-pointer overflow-hidden")}>
+              {selected ? <span className="rounded-full px-2 py-0.5 text-xs" style={{ color: selected.color, backgroundColor: `${selected.color}22` }}>{selected.name}</span> : <span className="text-neutral-300">—</span>}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent className="w-52 p-1">
+            {teams.map((team) => (
+              <button key={team.id} onClick={() => onChange(team.id === value ? null : team.id)} className="w-full flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: team.color }} /><span className="flex-1 text-left truncate">{team.name}</span>{team.id === value && <Check size={13} className="text-indigo-600" />}
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
+      );
+    }
+    case "location": {
+      const location = value && typeof value === "object" ? (value as { address?: string; lat?: number; lng?: number }) : {};
+      const label = location.address || (location.lat !== undefined && location.lng !== undefined ? `${location.lat}, ${location.lng}` : "");
+      return (
+        <Popover>
+          <PopoverTrigger asChild><button className={cn(base, "gap-1 cursor-pointer truncate")}>{label ? <><MapPin size={13} className="shrink-0 text-indigo-500" /><span className="truncate">{label}</span></> : <span className="text-neutral-300">—</span>}</button></PopoverTrigger>
+          <PopoverContent className="w-80 p-3"><LocationInput value={value} onChange={onChange} /></PopoverContent>
+        </Popover>
+      );
+    }
+    case "signature":
+      return (
+        <Popover>
+          <PopoverTrigger asChild><button className={cn(base, "cursor-pointer overflow-hidden")}><SignaturePreview value={value} /></button></PopoverTrigger>
+          <PopoverContent className="w-96 p-3"><SignatureInput value={value} onChange={onChange} /></PopoverContent>
+        </Popover>
+      );
     case "link": {
       const values: string[] = Array.isArray(value) ? (value as string[]) : [];
       const target = linkTargets?.[field.id];
@@ -597,11 +636,35 @@ export function Cell({ field, value, record, members, linkTargets, okrOptions, w
       );
     }
     case "formula":
+    case "lookup":
+    case "rollup":
       return <div className={cn(base, "text-neutral-500 dark:text-neutral-400 italic truncate")}>{value === null || value === undefined ? "" : String(value)}</div>;
+    case "button": {
+      const href = safeButtonUrl(config.buttonUrlTemplate, record.id);
+      return href ? <div className={base}><a href={href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 rounded-md bg-indigo-600 px-2 py-1 text-xs text-white hover:bg-indigo-700">{config.buttonLabel || "Open"}<ExternalLink size={11} /></a></div> : <div className={cn(base, "text-neutral-300")}>—</div>;
+    }
+    case "barcode":
+      return (
+        <Popover>
+          <PopoverTrigger asChild><button className={cn(base, "cursor-pointer overflow-hidden p-1")}><Barcode value={value} /></button></PopoverTrigger>
+          <PopoverContent className="w-80 p-3 space-y-2"><Barcode value={value} /><Input value={String(value ?? "")} maxLength={200} onChange={(e) => onChange(e.target.value)} /></PopoverContent>
+        </Popover>
+      );
+    case "json":
+      return (
+        <Popover>
+          <PopoverTrigger asChild><button className={cn(base, "font-mono text-xs cursor-pointer truncate text-left")}>{CellDisplayValue(field, value) || <span className="text-neutral-300">—</span>}</button></PopoverTrigger>
+          <PopoverContent className="w-[28rem] p-3"><JsonInput value={value} onChange={onChange} /></PopoverContent>
+        </Popover>
+      );
+    case "ai_field":
+    case "api_result":
+      return <ComputedFieldCell field={field} recordId={record.id} initialValue={value} base={base} />;
     case "created_time":
     case "modified_time":
       return <div className={cn(base, "text-neutral-400 tabular-nums")}>{formatDate(value as string, true)}</div>;
-    case "created_by": {
+    case "created_by":
+    case "modified_by": {
       const m = members.find((mm) => mm.id === value);
       return <div className={cn(base, "text-neutral-500")}>{m?.name ?? ""}</div>;
     }
@@ -610,6 +673,44 @@ export function Cell({ field, value, record, members, linkTargets, okrOptions, w
     default:
       return <div className={base}>{String(value ?? "")}</div>;
   }
+}
+
+function safeButtonUrl(template: string | undefined, taskId: string): string | null {
+  if (!template?.trim()) return null;
+  const rendered = template.replaceAll("{taskId}", encodeURIComponent(taskId));
+  if (rendered.startsWith("/")) return rendered;
+  try {
+    const url = new URL(rendered);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function ComputedFieldCell({ field, recordId, initialValue, base }: { field: FieldRow; recordId: string; initialValue: unknown; base: string }) {
+  const [value, setValue] = useState(initialValue);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const refresh = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api.post<{ value: unknown }>(`/api/tasks/${recordId}/computed-fields/${field.id}`);
+      setValue(result.value);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Refresh failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const display = value === null || value === undefined ? "" : typeof value === "string" ? value : JSON.stringify(value);
+  return (
+    <div className={cn(base, "gap-1 overflow-hidden")} title={error || display}>
+      {field.type === "ai_field" ? <Sparkles size={12} className="shrink-0 text-violet-500" /> : null}
+      <span className={cn("flex-1 truncate", error && "text-red-500")}>{error || display || "—"}</span>
+      <button onClick={refresh} disabled={busy} className="shrink-0 text-neutral-400 hover:text-indigo-600 disabled:opacity-50" aria-label="Refresh computed field"><RefreshCw size={12} className={busy ? "animate-spin" : ""} /></button>
+    </div>
+  );
 }
 
 function AttachmentEditor({ files, onChange }: { files: AttachmentValue[]; onChange: (v: AttachmentValue[]) => void }) {
@@ -671,6 +772,13 @@ export function CellDisplayValue(field: FieldRow, value: unknown): string {
   if (field.type === "multi_select" && Array.isArray(value)) {
     return value.map((v) => config.options?.find((o) => o.id === v)?.label ?? "").join(", ");
   }
+  if (field.type === "team") return config.teams?.find((team) => team.id === value)?.name ?? "";
+  if (field.type === "location" && value && typeof value === "object") {
+    const location = value as { address?: string; lat?: number; lng?: number };
+    return location.address || (location.lat !== undefined && location.lng !== undefined ? `${location.lat}, ${location.lng}` : "");
+  }
+  if (field.type === "signature") return value ? "Signed" : "";
+  if (field.type === "json" || field.type === "api_result") return value === null || value === undefined ? "" : JSON.stringify(value);
   if (field.type === "attachment" && Array.isArray(value)) {
     return (value as AttachmentValue[]).map((a) => a.name).join(", ");
   }

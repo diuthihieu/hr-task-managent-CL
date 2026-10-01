@@ -8,9 +8,12 @@ import type { AttachmentRow } from "@/types";
 
 type P = { taskId: string };
 
-type Row = { id: string; fileName: string; contentType: string; sizeBytes: number; createdAt: Date; uploadedBy: { id: string; name: string } | null };
-const toRow = (a: Row): AttachmentRow => ({ ...a, createdAt: a.createdAt.toISOString(), downloadUrl: `/api/attachments/${a.id}/download` });
-const select = { id: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true, uploadedBy: { select: { id: true, name: true } } } as const;
+type Row = { id: string; fileName: string; contentType: string; sizeBytes: number; storageKey: string; createdAt: Date; uploadedBy: { id: string; name: string } | null };
+const toRow = (a: Row): AttachmentRow & { uploadKey: string } => {
+  const { storageKey, ...row } = a;
+  return { ...row, uploadKey: storageKey, createdAt: a.createdAt.toISOString(), downloadUrl: `/api/attachments/${a.id}/download` };
+};
+const select = { id: true, fileName: true, contentType: true, sizeBytes: true, storageKey: true, createdAt: true, uploadedBy: { select: { id: true, name: true } } } as const;
 
 export const GET = route<P>(async (_req, { params }) => {
   const user = await requireUser();

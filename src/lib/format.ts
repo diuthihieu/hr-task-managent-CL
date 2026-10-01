@@ -37,9 +37,18 @@ export function formatDisplayValue(field: FieldRow, value: unknown, members: For
   if (field.type === "people" && Array.isArray(value)) {
     return value.map((id) => members.find((m) => m.id === id)?.name ?? String(id)).join(", ");
   }
-  if (field.type === "created_by" && typeof value === "string") {
+  if (["created_by", "modified_by"].includes(field.type) && typeof value === "string") {
     return members.find((m) => m.id === value)?.name ?? value;
   }
+  if (field.type === "team" && typeof value === "string") {
+    return config.teams?.find((team) => team.id === value)?.name ?? value;
+  }
+  if (field.type === "location" && typeof value === "object") {
+    const location = value as { address?: string; lat?: number; lng?: number };
+    return location.address || (location.lat !== undefined && location.lng !== undefined ? `${location.lat}, ${location.lng}` : "");
+  }
+  if (field.type === "signature") return "Signed";
+  if (["json", "api_result"].includes(field.type) && typeof value === "object") return JSON.stringify(value);
   if (field.type === "link" && Array.isArray(value)) {
     return `${value.length} linked`;
   }

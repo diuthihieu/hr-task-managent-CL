@@ -1,10 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
-import { MoreHorizontal, Pencil, Trash2, GripVertical } from "lucide-react";
+import { useEffect, useState, type CSSProperties } from "react";
+import { MoreHorizontal, Pencil, Trash2, GripVertical, TrendingDown, TrendingUp, Minus } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api-client";
 import { ChartRenderer, CHART_COLORS } from "./chart-renderer";
-import { AGGREGATION_LABELS, parseBlockConfig, type ChartType, type SeriesPoint, type StackedSeries, type ScatterPoint, type CrossFilter, type Segment } from "@/lib/dashboard-engine";
+import { AGGREGATION_LABELS, parseBlockConfig, type ChartType, type SeriesPoint, type StackedSeries, type ScatterPoint, type CrossFilter, type KpiTrend, type Segment, type WidgetStyleConfig } from "@/lib/dashboard-engine";
 import { cn } from "@/lib/utils";
 import { useT } from "@/components/i18n-provider";
 
@@ -17,6 +17,7 @@ export interface DashboardBlockLite {
 
 export interface DataResponse {
   kpi?: number;
+  kpiTrend?: KpiTrend | null;
   series?: SeriesPoint[];
   rows?: string[][];
   seriesKeys?: StackedSeries["seriesKeys"];
@@ -27,6 +28,7 @@ export interface DataResponse {
 
 export function WidgetCard({
   block,
+  canEdit = true,
   slicers,
   crossFilter,
   fieldNameLookup,
@@ -45,6 +47,7 @@ export function WidgetCard({
   /** Reports loaded data upward (feeds the dashboard's "AI Insight"). */
   onData?: (data: DataResponse) => void;
   block: DashboardBlockLite;
+  canEdit?: boolean;
   slicers?: CrossFilter[];
   crossFilter?: CrossFilter | null;
   fieldNameLookup: (fieldId: string | undefined) => string | undefined;
@@ -57,6 +60,7 @@ export function WidgetCard({
   const [data, setData] = useState<DataResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const config = parseBlockConfig(block.config);
+  const widgetStyle = config.style;
 
   useEffect(() => {
     let cancelled = false;
@@ -84,14 +88,45 @@ export function WidgetCard({
 
   const measureLabel = fieldNameLookup(config.measureFieldId) ?? AGGREGATION_LABELS[config.aggregation ?? "count"];
   const measure2Label = fieldNameLookup(config.measure2FieldId);
+  const fontFamily = {
+    system: "var(--font-sans), ui-sans-serif, system-ui, sans-serif",
+    inter: "Inter, ui-sans-serif, system-ui, sans-serif",
+    georgia: "Georgia, Cambria, serif",
+    mono: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  }[widgetStyle?.fontFamily ?? "system"];
+  const shadow = {
+    none: "shadow-none",
+    small: "shadow-sm",
+    medium: "shadow-md",
+    large: "shadow-xl",
+  }[widgetStyle?.shadow ?? "none"];
+  const cardStyle: CSSProperties = {
+    backgroundColor: widgetStyle?.backgroundColor,
+    color: widgetStyle?.textColor,
+    borderColor: widgetStyle?.borderColor,
+    borderWidth: widgetStyle?.borderWidth,
+    borderRadius: widgetStyle?.borderRadius,
+    fontFamily,
+    fontSize: widgetStyle?.fontSize,
+  };
+  const editable = canEdit && !readOnly;
 
   return (
-    <div className="woli-widget h-full w-full flex flex-col rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden">
-      <div className={cn("flex items-center gap-1.5 px-2.5 h-8 border-b border-neutral-100 dark:border-neutral-800 shrink-0", !readOnly && "drag-handle cursor-grab")}>
-        {!readOnly && <GripVertical size={12} className="text-neutral-300 shrink-0" />}
-        <span className="text-xs font-medium text-neutral-700 dark:text-neutral-200 truncate flex-1">{block.title || "Untitled widget"}</span>
-        {!readOnly && (
-        <DropdownMenu>
+    <div className={cn("woli-widget h-full w-full flex flex-col rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 overflow-hidden", shadow)} style={cardStyle}>
+      <div className={cn("flex items-center gap-1.5 px-2.5 h-8 border-b border-neutral-100/70 dark:border-neutral-800/70 shrink-0", editable && "drag-handle cursor-grab")} style={{ borderColor: widgetStyle?.borderColor }}>
+        {editable && <GripVertical size={12} className="text-neutral-300 shrink-0" />}
+        <span
+          className="text-xs font-medium text-neutral-700 dark:text-neutral-200 truncate flex-1"
+          style={{
+            color: widgetStyle?.textColor,
+            fontSize: widgetStyle?.titleSize,
+            fontWeight: widgetStyle?.titleWeight === "bold" ? 700 : widgetStyle?.titleWeight === "normal" ? 400 : 500,
+            textAlign: widgetStyle?.titleAlign,
+          }}
+        >
+          {block.title || "Untitled widget"}
+        </span>
+        {editable && <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 shrink-0" onMouseDown={(e) => e.stopPropagation()}>
               <MoreHorizontal size={14} />
@@ -105,8 +140,7 @@ export function WidgetCard({
               <Trash2 size={13} /> {t("db.deleteWidget")}
             </DropdownMenuItem>
           </DropdownMenuContent>
-        </DropdownMenu>
-        )}
+        </DropdownMenu>}
       </div>
       <div className="flex-1 min-h-0 p-2 relative">
         {loading && !data ? (
@@ -114,9 +148,9 @@ export function WidgetCard({
         ) : data?.error ? (
           <div className="h-full flex items-center justify-center text-xs text-red-500">{data.error}</div>
         ) : block.type === "kpi" ? (
-          <KpiDisplay value={data?.kpi ?? 0} label={measureLabel} onClick={onSegmentClick ? () => onSegmentClick({ key: "value", label: measureLabel ?? "" }) : undefined} />
+          <KpiDisplay value={data?.kpi ?? 0} label={measureLabel} trend={data?.kpiTrend} style={widgetStyle} onClick={onSegmentClick ? () => onSegmentClick({ key: "value", label: measureLabel ?? "" }) : undefined} />
         ) : block.type === "table" ? (
-          <TableDisplay columns={data?.columns ?? []} rows={data?.rows ?? []} />
+          <TableDisplay columns={data?.columns ?? []} rows={data?.rows ?? []} style={widgetStyle} />
         ) : (
           <ChartRenderer
             type={block.type as ChartType}
@@ -127,6 +161,8 @@ export function WidgetCard({
             measure2Label={measure2Label}
             onPointClick={!onSegmentClick && onCrossFilter && ["bar", "column", "pie", "donut"].includes(block.type) ? onCrossFilter : undefined}
             onSegmentClick={onSegmentClick}
+            style={widgetStyle}
+            gaugeMax={config.gaugeMax}
           />
         )}
         {crossFilterActive && (
@@ -139,27 +175,35 @@ export function WidgetCard({
   );
 }
 
-function KpiDisplay({ value, label, onClick }: { value: number; label?: string; onClick?: () => void }) {
+function KpiDisplay({ value, label, trend, style, onClick }: { value: number; label?: string; trend?: KpiTrend | null; style?: WidgetStyleConfig; onClick?: () => void }) {
+  const { t } = useT();
   const formatted = Number.isInteger(value) ? value.toLocaleString() : value.toFixed(2);
+  const TrendIcon = trend?.direction === "up" ? TrendingUp : trend?.direction === "down" ? TrendingDown : Minus;
+  const trendText = !trend ? "" : trend.percentChange === null ? `${trend.delta >= 0 ? "+" : ""}${trend.delta.toLocaleString()}` : `${trend.percentChange >= 0 ? "+" : ""}${trend.percentChange.toFixed(1)}%`;
   const Tag = onClick ? "button" : "div";
   return (
     <Tag type={onClick ? "button" : undefined} onClick={onClick} className={cn("h-full w-full flex flex-col items-center justify-center rounded-md", onClick && "hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40")} data-testid="kpi-value">
-      <div className="text-3xl font-semibold text-neutral-900 dark:text-neutral-50 tabular-nums">{formatted}</div>
-      {label && <div className="text-xs text-neutral-400 mt-1">{label}</div>}
+      <div className="text-3xl font-semibold text-neutral-900 dark:text-neutral-50 tabular-nums" style={{ color: style?.textColor }}>{formatted}</div>
+      {label && <div className="text-xs text-neutral-400 mt-1" style={{ color: style?.textColor }}>{label}</div>}
+      {trend && (
+        <div className={cn("mt-2 flex items-center gap-1 text-xs tabular-nums", trend.direction === "up" ? "text-emerald-600" : trend.direction === "down" ? "text-red-600" : "text-neutral-500")} title={`${t("db.kpi.previous")}: ${trend.previous.toLocaleString()}`}>
+          <TrendIcon size={13} /> {trendText} <span className="text-neutral-400">{t("db.kpi.vsPrevious")}</span>
+        </div>
+      )}
     </Tag>
   );
 }
 
-function TableDisplay({ columns, rows }: { columns: string[]; rows: string[][] }) {
+function TableDisplay({ columns, rows, style }: { columns: string[]; rows: string[][]; style?: WidgetStyleConfig }) {
   const { t } = useT();
   if (!columns.length) return <div className="h-full flex items-center justify-center text-xs text-neutral-400">{t("db.noColumns")}</div>;
   return (
     <div className="h-full overflow-auto thin-scroll">
       <table className="w-full text-xs border-collapse">
-        <thead className="sticky top-0 bg-white dark:bg-neutral-900">
+        <thead className="sticky top-0 bg-white dark:bg-neutral-900" style={{ backgroundColor: style?.backgroundColor }}>
           <tr>
             {columns.map((c, i) => (
-              <th key={i} className="text-left font-medium text-neutral-500 border-b border-neutral-200 dark:border-neutral-800 px-2 py-1 whitespace-nowrap">
+              <th key={i} className="text-left font-medium text-neutral-500 border-b border-neutral-200 dark:border-neutral-800 px-2 py-1 whitespace-nowrap" style={{ color: style?.textColor, borderColor: style?.borderColor }}>
                 {c}
               </th>
             ))}
@@ -169,7 +213,7 @@ function TableDisplay({ columns, rows }: { columns: string[]; rows: string[][] }
           {rows.map((row, i) => (
             <tr key={i} className={cn(i % 2 === 1 && "bg-neutral-50/60 dark:bg-neutral-800/30")}>
               {row.map((cell, j) => (
-                <td key={j} className="px-2 py-1 border-b border-neutral-100 dark:border-neutral-900 whitespace-nowrap text-neutral-700 dark:text-neutral-300">
+                <td key={j} className="px-2 py-1 border-b border-neutral-100 dark:border-neutral-900 whitespace-nowrap text-neutral-700 dark:text-neutral-300" style={{ color: style?.textColor, borderColor: style?.borderColor }}>
                   {cell}
                 </td>
               ))}

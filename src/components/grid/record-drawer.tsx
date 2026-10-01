@@ -15,6 +15,7 @@ import { initials, formatDate, cn } from "@/lib/utils";
 import type { ActivityRow, AttachmentRow, FieldRow, RecordRow } from "@/types";
 import { AvatarImg } from "@/components/ui/avatar-img";
 import { Meta } from "@/components/ui/meta";
+import { uploadTaskAttachment } from "@/lib/task-attachment-upload";
 
 interface CommentItem {
   id: string;
@@ -89,12 +90,8 @@ export function RecordDrawer({
   async function upload(file: File) {
     setUploading(true);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      const res = await fetch(`/api/tasks/${record.id}/attachments`, { method: "POST", body: form });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(body.error || `Upload failed (${res.status})`);
-      setAttachments((prev) => [body as AttachmentRow, ...prev]);
+      const attachment = await uploadTaskAttachment(record.id, file);
+      setAttachments((prev) => [attachment, ...prev.filter((item) => item.id !== attachment.id)]);
       toast.success(t("common.saved"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Upload failed");

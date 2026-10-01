@@ -12,10 +12,11 @@
 import { Prisma, type CustomFieldType } from "@prisma/client";
 import { prisma } from "./prisma";
 import { badRequest } from "./http-errors";
-import { IMPORTANCE_OPTIONS, URGENCY_OPTIONS, PRIORITY_OPTIONS_DEFAULT } from "./field-types";
+import { IMPORTANCE_OPTIONS, URGENCY_OPTIONS, PRIORITY_OPTIONS_DEFAULT, parseFieldConfig } from "./field-types";
 import type { FieldRow, RecordRow } from "@/types";
 import { makeT, type MessageKey, type TFunction } from "./i18n/core";
 import { objectiveVisibility } from "./okr-write";
+import { getCellValue } from "./query-engine";
 
 type Tx = Prisma.TransactionClient;
 
@@ -42,13 +43,14 @@ export const SYS = {
   createdAt: "sys_created_at",
   updatedAt: "sys_updated_at",
   createdBy: "sys_created_by",
+  updatedBy: "sys_updated_by",
   /** Not a grid column: { freq: "daily" | "weekly" | "monthly", interval: n } or null. */
   recurrence: "sys_recurrence",
 } as const;
 
 export const PRIORITIES = ["low", "medium", "high", "critical"] as const;
 
-const READ_ONLY_SYS = new Set<string>([SYS.createdAt, SYS.updatedAt, SYS.createdBy, SYS.attachments]);
+const READ_ONLY_SYS = new Set<string>([SYS.createdAt, SYS.updatedAt, SYS.createdBy, SYS.updatedBy, SYS.attachments]);
 
 /** Value of the "Objective" task field: `kr:<id>` (key result, objective implied) or `obj:<id>` (objective only). */
 export function okrTargetToken(task: { keyResultId: string | null; objectiveId: string | null }): string | null {
@@ -115,7 +117,7 @@ function assertUuids(ids: string[], label: string) {
 // Read side
 // ---------------------------------------------------------------------------
 
-const TASK_INCLUDE = {
+export const TASK_INCLUDE = {
   assignees: { select: { userId: true } },
   reportTo: { select: { userId: true } },
   dependencies: { select: { dependsOnTaskId: true } },
@@ -132,12 +134,13 @@ interface ProjectMeta {
   customFields: Prisma.CustomFieldGetPayload<{ include: { options: true } }>[];
   /** Objectives set up in this project; the "Objective" field only appears when there is at least one. */
   objectives: { id: string; title: string; keyResults: { id: string; title: string }[] }[];
+  teams: { id: string; name: string; color: string }[];
 }
 
 export async function loadProjectMeta(projectId: string, db: Tx | typeof prisma = prisma): Promise<ProjectMeta | null> {
   const project = await db.project.findFirst({ where: { id: projectId, deletedAt: null }, select: { id: true, workspaceId: true, name: true } });
   if (!project) return null;
-  const [statuses, categories, customFields, objectives] = await Promise.all([
+  const [statuses, categories, customFields, objectives, teams] = await Promise.all([
     db.status.findMany({ where: { workspaceId: project.workspaceId }, orderBy: { sortOrder: "asc" } }),
     db.category.findMany({ where: { projectId }, orderBy: { sortOrder: "asc" } }),
     db.customField.findMany({
@@ -150,8 +153,9 @@ export async function loadProjectMeta(projectId: string, db: Tx | typeof prisma 
       orderBy: { createdAt: "asc" },
       select: { id: true, title: true, keyResults: { where: { deletedAt: null }, orderBy: { sortOrder: "asc" }, select: { id: true, title: true } } },
     }),
+    db.team.findMany({ where: { workspaceId: project.workspaceId }, orderBy: { name: "asc" }, select: { id: true, name: true, color: true } }),
   ]);
-  return { project, statuses, categories, customFields, objectives };
+  return { project, statuses, categories, customFields, objectives, teams };
 }
 
 function sysField(projectId: string, id: string, name: string, type: string, order: number, extra: Partial<FieldRow> = {}): FieldRow {
@@ -194,6 +198,7 @@ export function buildFields(meta: ProjectMeta, t: TFunction = makeT("en")): Fiel
     if (f.type === "single_select" || f.type === "multi_select") {
       config.options = f.options.map((o) => ({ id: o.id, label: o.label, color: o.color }));
     }
+    if (f.type === "team") config.teams = meta.teams;
     return {
       id: f.id,
       projectId: pid,
@@ -212,6 +217,7 @@ export function buildFields(meta: ProjectMeta, t: TFunction = makeT("en")): Fiel
     sysField(pid, SYS.createdAt, n(SYS.createdAt), "created_time", 1000, { readOnly: true }),
     sysField(pid, SYS.updatedAt, n(SYS.updatedAt), "modified_time", 1001, { readOnly: true }),
     sysField(pid, SYS.createdBy, n(SYS.createdBy), "created_by", 1002, { readOnly: true }),
+    sysField(pid, SYS.updatedBy, n(SYS.updatedBy), "modified_by", 1003, { readOnly: true }),
   ];
   return [...sys, ...custom, ...tail];
 }
@@ -235,7 +241,18 @@ function customValueOut(type: CustomFieldType, v: TaskWithRelations["customValue
       return v.valueOptionIds;
     case "person":
       return v.valueUserId;
+    case "team":
+      return v.valueTeamId;
+    case "link":
+      return v.valueTaskIds;
+    case "location":
+    case "json":
+    case "api_result":
+      return v.valueJson;
     case "formula":
+    case "lookup":
+    case "rollup":
+    case "button":
       return null;
     default:
       return v.valueText;
@@ -265,6 +282,7 @@ export function toRecord(task: TaskWithRelations, fieldTypes: Map<string, Custom
     [SYS.createdAt]: task.createdAt.toISOString(),
     [SYS.updatedAt]: task.updatedAt.toISOString(),
     [SYS.createdBy]: task.createdById,
+    [SYS.updatedBy]: task.updatedById,
   };
   for (const v of task.customValues) {
     const type = fieldTypes.get(v.customFieldId);
@@ -281,23 +299,137 @@ export function toRecord(task: TaskWithRelations, fieldTypes: Map<string, Custom
   };
 }
 
+/** Resolve lookup/rollup values from already-authorized records in one project. */
+export function resolveComputedFields(records: RecordRow[], fields: FieldRow[]): RecordRow[] {
+  const computed = fields.filter((f) => f.type === "lookup" || f.type === "rollup");
+  if (!computed.length) return records;
+  const byRecord = new Map(records.map((r) => [r.id, r]));
+  const byField = new Map(fields.map((f) => [f.id, f]));
+
+  // Two passes allow a rollup to consume a lookup declared earlier without
+  // permitting unbounded recursive formulas.
+  for (let pass = 0; pass < 2; pass++) {
+    for (const record of records) {
+      for (const field of computed) {
+        const cfg = parseFieldConfig(field.config);
+        if (!cfg.lookupLinkFieldId) {
+          record.data[field.id] = field.type === "rollup" ? 0 : [];
+          continue;
+        }
+        const rawLinks = record.data[cfg.lookupLinkFieldId];
+        const linkedIds = Array.isArray(rawLinks) ? rawLinks.map(String) : rawLinks ? [String(rawLinks)] : [];
+        const linked = linkedIds.map((id) => byRecord.get(id)).filter((r): r is RecordRow => !!r);
+        if (field.type === "lookup") {
+          const target = cfg.lookupFieldId ? byField.get(cfg.lookupFieldId) : undefined;
+          const values = target
+            ? linked.flatMap((r) => {
+                const v = getCellValue(r, target, fields);
+                return Array.isArray(v) ? v : v === null || v === undefined || v === "" ? [] : [v];
+              })
+            : linked.map((r) => r.data[SYS.title]);
+          record.data[field.id] = [...new Map(values.map((v) => [JSON.stringify(v), v])).values()];
+          continue;
+        }
+        const target = cfg.lookupFieldId ? byField.get(cfg.lookupFieldId) : undefined;
+        const values = target
+          ? linked.flatMap((r) => {
+              const v = getCellValue(r, target, fields);
+              return Array.isArray(v) ? v : v === null || v === undefined || v === "" ? [] : [v];
+            })
+          : linked.map(() => 1);
+        const nums = values.map(Number).filter(Number.isFinite);
+        const fn = cfg.rollupFn ?? "count";
+        record.data[field.id] =
+          fn === "count" ? values.length : !nums.length ? 0 : fn === "sum" ? nums.reduce((a, b) => a + b, 0) : fn === "avg" ? nums.reduce((a, b) => a + b, 0) / nums.length : fn === "min" ? Math.min(...nums) : Math.max(...nums);
+      }
+    }
+  }
+  return records;
+}
+
 export async function loadProjectGrid(projectId: string) {
   const meta = await loadProjectMeta(projectId);
   if (!meta) return null;
   const tasks = await prisma.task.findMany({
     where: { projectId, deletedAt: null },
     include: TASK_INCLUDE,
-    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }],
   });
   const types = new Map(meta.customFields.map((f) => [f.id, f.type]));
-  return { meta, fields: buildFields(meta), records: tasks.map((t) => toRecord(t, types)) };
+  const fields = buildFields(meta);
+  return { meta, fields, records: resolveComputedFields(tasks.map((t) => toRecord(t, types)), fields) };
+}
+
+interface TaskCursor {
+  order: number;
+  createdAt: string;
+  id: string;
+}
+
+function decodeTaskCursor(raw: string | undefined): TaskCursor | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(Buffer.from(raw, "base64url").toString("utf8")) as Partial<TaskCursor>;
+    return typeof value.order === "number" && typeof value.createdAt === "string" && isUuid(value.id) ? value as TaskCursor : null;
+  } catch {
+    return null;
+  }
+}
+
+function encodeTaskCursor(task: { sortOrder: number; createdAt: Date; id: string }) {
+  return Buffer.from(JSON.stringify({ order: task.sortOrder, createdAt: task.createdAt.toISOString(), id: task.id }), "utf8").toString("base64url");
+}
+
+/** Stable keyset pagination for large grid/search requests; never uses OFFSET. */
+export async function loadProjectGridPage(projectId: string, input: { limit?: number; cursor?: string; search?: string }) {
+  const meta = await loadProjectMeta(projectId);
+  if (!meta) return null;
+  const limit = Math.max(1, Math.min(200, Math.round(input.limit ?? 100)));
+  const cursor = decodeTaskCursor(input.cursor);
+  if (input.cursor && !cursor) throw badRequest("Invalid task cursor");
+  const search = input.search?.trim().slice(0, 200);
+  const after: Prisma.TaskWhereInput | undefined = cursor ? {
+    OR: [
+      { sortOrder: { gt: cursor.order } },
+      { sortOrder: cursor.order, createdAt: { gt: new Date(cursor.createdAt) } },
+      { sortOrder: cursor.order, createdAt: new Date(cursor.createdAt), id: { gt: cursor.id } },
+    ],
+  } : undefined;
+  const where: Prisma.TaskWhereInput = {
+    projectId,
+    deletedAt: null,
+    ...(search ? { title: { contains: search, mode: "insensitive" } } : {}),
+    ...(after ?? {}),
+  };
+  const [rows, total] = await Promise.all([
+    prisma.task.findMany({ where, include: TASK_INCLUDE, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }], take: limit + 1 }),
+    prisma.task.count({ where: { projectId, deletedAt: null, ...(search ? { title: { contains: search, mode: "insensitive" } } : {}) } }),
+  ]);
+  const hasMore = rows.length > limit;
+  const pageRows = hasMore ? rows.slice(0, limit) : rows;
+  const types = new Map(meta.customFields.map((field) => [field.id, field.type]));
+  const fields = buildFields(meta);
+  let records = pageRows.map((task) => toRecord(task, types));
+  if (meta.customFields.some((field) => field.type === "lookup" || field.type === "rollup")) {
+    const linkedIds = [...new Set(records.flatMap((record) => fields.filter((field) => field.type === "link").flatMap((field) => Array.isArray(record.data[field.id]) ? record.data[field.id] as string[] : [])))];
+    const linked = linkedIds.length ? await prisma.task.findMany({ where: { id: { in: linkedIds }, projectId, deletedAt: null }, include: TASK_INCLUDE }) : [];
+    const pageIds = new Set(records.map((record) => record.id));
+    records = resolveComputedFields([...records, ...linked.map((task) => toRecord(task, types))], fields).filter((record) => pageIds.has(record.id));
+  }
+  const last = pageRows.at(-1);
+  return { items: records, total, nextCursor: hasMore && last ? encodeTaskCursor(last) : null };
 }
 
 export async function loadTaskRecord(taskId: string, db: Tx | typeof prisma = prisma): Promise<RecordRow | null> {
   const task = await db.task.findFirst({ where: { id: taskId, deletedAt: null }, include: TASK_INCLUDE });
   if (!task) return null;
-  const fields = await db.customField.findMany({ where: { projectId: task.projectId }, select: { id: true, type: true } });
-  return toRecord(task, new Map(fields.map((f) => [f.id, f.type])));
+  const meta = await loadProjectMeta(task.projectId, db);
+  if (!meta) return null;
+  const types = new Map(meta.customFields.map((f) => [f.id, f.type]));
+  const fields = buildFields(meta);
+  if (!meta.customFields.some((f) => f.type === "lookup" || f.type === "rollup")) return toRecord(task, types);
+  const tasks = await db.task.findMany({ where: { projectId: task.projectId, deletedAt: null }, include: TASK_INCLUDE, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }] });
+  return resolveComputedFields(tasks.map((t) => toRecord(t, types)), fields).find((r) => r.id === taskId) ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -647,7 +779,7 @@ async function spawnNextOccurrence(tx: Tx, taskId: string, actorId: string | nul
 
 async function writeCustomValue(
   tx: Tx,
-  opts: { taskId: string; field: { id: string; name: string; type: CustomFieldType; options: { id: string }[] }; value: unknown; actorId: string | null }
+  opts: { taskId: string; field: { id: string; name: string; type: CustomFieldType; settings: Prisma.JsonValue; options: { id: string }[] }; value: unknown; actorId: string | null }
 ): Promise<unknown> {
   const { taskId, field, value, actorId } = opts;
   const label = field.name;
@@ -660,6 +792,9 @@ async function writeCustomValue(
     valueBool: null,
     valueOptionId: null,
     valueUserId: null,
+    valueTeamId: null,
+    valueTaskIds: [],
+    valueJson: Prisma.DbNull,
     valueOptionIds: [],
     updatedById: actorId,
   };
@@ -668,6 +803,11 @@ async function writeCustomValue(
 
   switch (field.type) {
     case "formula":
+    case "lookup":
+    case "rollup":
+    case "button":
+    case "ai_field":
+    case "api_result":
       throw badRequest(`${label} is computed and cannot be edited`);
     case "text":
     case "long_text":
@@ -733,6 +873,94 @@ async function writeCustomValue(
         row = { ...empty, valueUserId: id };
       }
       out = id;
+      break;
+    }
+    case "team": {
+      const id = toIdOrNull(value, label);
+      if (id) {
+        const task = await tx.task.findUniqueOrThrow({ where: { id: taskId }, select: { workspaceId: true } });
+        const team = isUuid(id) && (await tx.team.findFirst({ where: { id, workspaceId: task.workspaceId }, select: { id: true } }));
+        if (!team) throw badRequest(`${label} must be a team in this workspace`);
+        row = { ...empty, valueTeamId: id };
+      }
+      out = id;
+      break;
+    }
+    case "link": {
+      const ids = toIdArray(value, label);
+      assertUuids(ids, label);
+      const cfg = (field.settings ?? {}) as Record<string, unknown>;
+      const max = typeof cfg.maxLinks === "number" ? Math.max(1, Math.min(100, Math.round(cfg.maxLinks))) : 20;
+      if (ids.length > max) throw badRequest(`${label} accepts at most ${max} linked tasks`);
+      if (ids.includes(taskId)) throw badRequest(`${label} cannot link a task to itself`);
+      if (ids.length) {
+        const task = await tx.task.findUniqueOrThrow({ where: { id: taskId }, select: { workspaceId: true, projectId: true } });
+        const found = await tx.task.findMany({ where: { id: { in: ids }, workspaceId: task.workspaceId, projectId: task.projectId, deletedAt: null }, select: { id: true } });
+        if (found.length !== ids.length) throw badRequest(`${label} can only link active tasks in this project`);
+        row = { ...empty, valueTaskIds: ids };
+      }
+      out = ids;
+      break;
+    }
+    case "location": {
+      if (value === null || value === undefined || value === "") {
+        out = null;
+        break;
+      }
+      const raw = typeof value === "string" ? { address: value } : value;
+      if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw badRequest(`${label} must be a location object`);
+      const input = raw as { address?: unknown; lat?: unknown; lng?: unknown };
+      const address = typeof input.address === "string" ? input.address.trim().slice(0, 500) : "";
+      const lat = input.lat === undefined || input.lat === null || input.lat === "" ? undefined : Number(input.lat);
+      const lng = input.lng === undefined || input.lng === null || input.lng === "" ? undefined : Number(input.lng);
+      if (lat !== undefined && (!Number.isFinite(lat) || lat < -90 || lat > 90)) throw badRequest(`${label}: latitude must be between -90 and 90`);
+      if (lng !== undefined && (!Number.isFinite(lng) || lng < -180 || lng > 180)) throw badRequest(`${label}: longitude must be between -180 and 180`);
+      if (!address && lat === undefined && lng === undefined) {
+        out = null;
+        break;
+      }
+      const normalized = { ...(address ? { address } : {}), ...(lat !== undefined ? { lat } : {}), ...(lng !== undefined ? { lng } : {}) };
+      row = { ...empty, valueJson: normalized };
+      out = normalized;
+      break;
+    }
+    case "signature": {
+      if (value === null || value === undefined || value === "") {
+        out = null;
+        break;
+      }
+      if (typeof value !== "string" || !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(value) || value.length > 150_000) {
+        throw badRequest(`${label} must be a PNG signature smaller than 110 KB`);
+      }
+      row = { ...empty, valueText: value };
+      out = value;
+      break;
+    }
+    case "barcode": {
+      if (value !== null && value !== undefined && typeof value !== "string") throw badRequest(`${label} must be text`);
+      const s = ((value as string | null) ?? "").trim();
+      if (s.length > 200) throw badRequest(`${label} is too long (max 200 characters)`);
+      if (s) row = { ...empty, valueText: s };
+      out = s || null;
+      break;
+    }
+    case "json": {
+      if (value === null || value === undefined || value === "") {
+        out = null;
+        break;
+      }
+      let normalized: unknown = value;
+      if (typeof value === "string") {
+        try {
+          normalized = JSON.parse(value);
+        } catch {
+          throw badRequest(`${label} must contain valid JSON`);
+        }
+      }
+      const encoded = JSON.stringify(normalized);
+      if (!encoded || encoded.length > 64 * 1024) throw badRequest(`${label} JSON must be smaller than 64 KB`);
+      row = { ...empty, valueJson: normalized as Prisma.InputJsonValue };
+      out = normalized;
       break;
     }
   }

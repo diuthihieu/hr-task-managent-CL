@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfCustomField, badRequest } from "@/lib/authz";
 import { logActivity, diff } from "@/lib/activity";
-import { customFieldPatchSchema, settingsFor, syncOptions } from "@/lib/custom-fields";
+import { customFieldPatchSchema, settingsFor, syncOptions, validateFieldConfig } from "@/lib/custom-fields";
 
 type P = { fieldId: string };
 
@@ -15,6 +15,7 @@ export const PATCH = route<P>(async (req, { params }) => {
   // Changing a field's type would reinterpret stored values; create a new field instead.
   if (body.type && body.type !== before.type) throw badRequest("A field's type can't be changed. Create a new field and copy the data.");
   const after = await prisma.$transaction(async (tx) => {
+    if (body.config) await validateFieldConfig(tx, before.projectId, before.type, body.config, fieldId);
     const f = await tx.customField.update({
       where: { id: fieldId },
       data: {

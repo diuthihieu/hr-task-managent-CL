@@ -13,6 +13,28 @@ import { parseFieldConfig } from "./field-types";
 export type Aggregation = "count" | "distinct" | "sum" | "avg" | "min" | "max";
 export type DateBucket = "day" | "week" | "month";
 
+export interface WidgetStyleConfig {
+  palette?: string[];
+  backgroundColor?: string;
+  textColor?: string;
+  borderColor?: string;
+  gridColor?: string;
+  fontFamily?: "system" | "inter" | "georgia" | "mono";
+  fontSize?: number;
+  titleSize?: number;
+  titleAlign?: "left" | "center" | "right";
+  titleWeight?: "normal" | "medium" | "bold";
+  borderWidth?: number;
+  borderRadius?: number;
+  shadow?: "none" | "small" | "medium" | "large";
+  showLegend?: boolean;
+  showGrid?: boolean;
+  showDataLabels?: boolean;
+  lineWidth?: number;
+  barRadius?: number;
+  donutInnerRadius?: number;
+}
+
 export interface DashboardBlockConfig {
   dataSource?: { projectId?: string; viewId?: string };
   dimensionFieldId?: string;
@@ -26,7 +48,13 @@ export interface DashboardBlockConfig {
   topN?: number;
   tableFieldIds?: string[]; // Table block: which fields to show
   gaugeMax?: number; // Gauge block target/max
-  kpiCompareTo?: "none"; // reserved for future trend comparison
+  kpiCompareTo?: "none" | "previous_week" | "previous_month" | "previous_quarter" | "previous_year";
+  /** Date field used to place records into the current and previous KPI periods. */
+  kpiDateFieldId?: string;
+  /** Link field and label field used by the interactive relationship graph. */
+  networkLinkFieldId?: string;
+  networkLabelFieldId?: string;
+  style?: WidgetStyleConfig;
 }
 
 export interface SeriesPoint {
@@ -278,6 +306,128 @@ export function computeKpi(
   return aggregate(values, distinct, config.aggregation ?? "count", filtered.length);
 }
 
+export interface NetworkGraphNode {
+  id: string;
+  label: string;
+}
+
+export interface NetworkGraphEdge {
+  source: string;
+  target: string;
+}
+
+export interface NetworkGraphData {
+  nodes: NetworkGraphNode[];
+  edges: NetworkGraphEdge[];
+}
+
+/** Build a permission-filtered graph from the records already loaded for a
+ * dashboard widget. Targets outside the filtered result are never exposed. */
+export function computeNetworkGraph(records: RecordRow[], fields: FieldRow[], config: DashboardBlockConfig, currentUserId?: string): NetworkGraphData {
+  const linkField = config.networkLinkFieldId ? fields.find((field) => field.id === config.networkLinkFieldId && field.type === "link") : undefined;
+  if (!linkField) return { nodes: [], edges: [] };
+  const labelField = config.networkLabelFieldId
+    ? fields.find((field) => field.id === config.networkLabelFieldId)
+    : fields.find((field) => field.id === "sys_title");
+  // Keep the graph readable and bound the amount of relationship metadata
+  // returned to the browser. Large tables should be narrowed with a view or
+  // dashboard filter before visualization.
+  const filtered = applyFilters(records, fields, config.filters, currentUserId).slice(0, 70);
+  const visibleIds = new Set(filtered.map((record) => record.id));
+  const nodes = filtered.map((record) => ({
+    id: record.id,
+    label: String(labelField ? getCellValue(record, labelField, fields) ?? "" : record.id),
+  }));
+  const seen = new Set<string>();
+  const edges: NetworkGraphEdge[] = [];
+  for (const record of filtered) {
+    const raw = getCellValue(record, linkField, fields);
+    const targets = Array.isArray(raw) ? raw.map(String) : raw ? [String(raw)] : [];
+    for (const target of targets) {
+      if (!visibleIds.has(target) || target === record.id) continue;
+      const key = [record.id, target].sort().join(":");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push({ source: record.id, target });
+    }
+  }
+  return { nodes, edges };
+}
+
+export interface KpiTrend {
+  current: number;
+  previous: number;
+  delta: number;
+  percentChange: number | null;
+  direction: "up" | "down" | "flat";
+  period: Exclude<NonNullable<DashboardBlockConfig["kpiCompareTo"]>, "none">;
+}
+
+function utcPeriodStart(now: Date, period: KpiTrend["period"]): Date {
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  if (period === "previous_week") {
+    const day = start.getUTCDay();
+    start.setUTCDate(start.getUTCDate() - (day === 0 ? 6 : day - 1));
+  } else if (period === "previous_month") {
+    start.setUTCDate(1);
+  } else if (period === "previous_quarter") {
+    start.setUTCMonth(Math.floor(start.getUTCMonth() / 3) * 3, 1);
+  } else {
+    start.setUTCMonth(0, 1);
+  }
+  return start;
+}
+
+function shiftUtcPeriod(date: Date, period: KpiTrend["period"], amount: number): Date {
+  const shifted = new Date(date);
+  if (period === "previous_week") shifted.setUTCDate(shifted.getUTCDate() + amount * 7);
+  else if (period === "previous_month") shifted.setUTCMonth(shifted.getUTCMonth() + amount);
+  else if (period === "previous_quarter") shifted.setUTCMonth(shifted.getUTCMonth() + amount * 3);
+  else shifted.setUTCFullYear(shifted.getUTCFullYear() + amount);
+  return shifted;
+}
+
+/** Compute the KPI for the current calendar period and the immediately preceding one. */
+export function computeKpiTrend(
+  records: RecordRow[],
+  fields: FieldRow[],
+  config: DashboardBlockConfig,
+  currentUserId?: string,
+  now = new Date()
+): KpiTrend | null {
+  const period = config.kpiCompareTo;
+  if (!period || period === "none" || !config.kpiDateFieldId) return null;
+  const dateField = fields.find((field) => field.id === config.kpiDateFieldId && DATE_TYPES.includes(field.type));
+  if (!dateField) return null;
+
+  // The selected comparison field defines the period. A saved date filter on
+  // that same field must not make the current/previous windows asymmetric.
+  const filters = config.filters
+    ? { ...config.filters, conditions: config.filters.conditions.filter((condition) => condition.fieldId !== dateField.id) }
+    : undefined;
+  const base = applyFilters(records, fields, filters, currentUserId);
+  const currentStart = utcPeriodStart(now, period);
+  const currentEnd = shiftUtcPeriod(currentStart, period, 1);
+  const previousStart = shiftUtcPeriod(currentStart, period, -1);
+  const inRange = (record: RecordRow, start: Date, end: Date) => {
+    const value = getCellValue(record, dateField, fields);
+    const time = value ? new Date(String(value)).getTime() : Number.NaN;
+    return Number.isFinite(time) && time >= start.getTime() && time < end.getTime();
+  };
+  const withoutFilters = { ...config, filters: undefined };
+  const current = computeKpi(base.filter((record) => inRange(record, currentStart, currentEnd)), fields, withoutFilters, currentUserId);
+  const previous = computeKpi(base.filter((record) => inRange(record, previousStart, currentStart)), fields, withoutFilters, currentUserId);
+  const delta = current - previous;
+  return {
+    current,
+    previous,
+    delta,
+    percentChange: previous === 0 ? (current === 0 ? 0 : null) : (delta / Math.abs(previous)) * 100,
+    direction: delta > 0 ? "up" : delta < 0 ? "down" : "flat",
+    period,
+  };
+}
+
 export const AGGREGATION_LABELS: Record<Aggregation, string> = {
   count: "Count",
   distinct: "Distinct Count",
@@ -300,6 +450,7 @@ export const CHART_TYPES = [
   { type: "donut", label: "Donut Chart" },
   { type: "combo", label: "Combo Chart" },
   { type: "scatter", label: "Scatter Plot" },
+  { type: "network", label: "Relationship Graph" },
   { type: "radar", label: "Radar Chart" },
   { type: "treemap", label: "Treemap" },
   { type: "funnel", label: "Funnel" },
@@ -308,10 +459,46 @@ export const CHART_TYPES = [
 
 export type ChartType = (typeof CHART_TYPES)[number]["type"];
 
+const HEX_COLOR = /^#[0-9a-f]{6}$/i;
+const clampStyleNumber = (value: unknown, min: number, max: number, fallback: number) =>
+  typeof value === "number" && Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
+
+/** Dashboard configuration is editable JSON (and can be AI-generated), so
+ * only allow bounded style primitives before sending values into CSS/SVG. */
+export function normalizeWidgetStyle(raw: unknown): WidgetStyleConfig | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const value = raw as Record<string, unknown>;
+  const color = (key: string) => typeof value[key] === "string" && HEX_COLOR.test(value[key]) ? value[key] as string : undefined;
+  const enumValue = <T extends string>(key: string, values: readonly T[], fallback: T): T =>
+    typeof value[key] === "string" && values.includes(value[key] as T) ? value[key] as T : fallback;
+  return {
+    palette: Array.isArray(value.palette) ? value.palette.filter((item): item is string => typeof item === "string" && HEX_COLOR.test(item)).slice(0, 10) : undefined,
+    backgroundColor: color("backgroundColor"),
+    textColor: color("textColor"),
+    borderColor: color("borderColor"),
+    gridColor: color("gridColor"),
+    fontFamily: enumValue("fontFamily", ["system", "inter", "georgia", "mono"] as const, "system"),
+    fontSize: clampStyleNumber(value.fontSize, 9, 20, 11),
+    titleSize: clampStyleNumber(value.titleSize, 10, 28, 12),
+    titleAlign: enumValue("titleAlign", ["left", "center", "right"] as const, "left"),
+    titleWeight: enumValue("titleWeight", ["normal", "medium", "bold"] as const, "medium"),
+    borderWidth: clampStyleNumber(value.borderWidth, 0, 6, 1),
+    borderRadius: clampStyleNumber(value.borderRadius, 0, 32, 8),
+    shadow: enumValue("shadow", ["none", "small", "medium", "large"] as const, "none"),
+    showLegend: typeof value.showLegend === "boolean" ? value.showLegend : true,
+    showGrid: typeof value.showGrid === "boolean" ? value.showGrid : true,
+    showDataLabels: typeof value.showDataLabels === "boolean" ? value.showDataLabels : false,
+    lineWidth: clampStyleNumber(value.lineWidth, 1, 8, 2),
+    barRadius: clampStyleNumber(value.barRadius, 0, 24, 4),
+    donutInnerRadius: clampStyleNumber(value.donutInnerRadius, 20, 80, 55),
+  };
+}
+
 export function parseBlockConfig(raw: string | null | undefined): DashboardBlockConfig {
   if (!raw) return {};
   try {
-    return JSON.parse(raw) as DashboardBlockConfig;
+    const parsed = JSON.parse(raw) as DashboardBlockConfig;
+    return { ...parsed, style: normalizeWidgetStyle(parsed.style) };
   } catch {
     return {};
   }

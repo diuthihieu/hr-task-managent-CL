@@ -636,6 +636,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         open={fieldDialog.open}
         onOpenChange={(v) => setFieldDialog((d) => ({ ...d, open: v }))}
         field={fieldDialog.field ? { name: fieldDialog.field.name, type: fieldDialog.field.type, description: fieldDialog.field.description, config: parseFieldConfig(fieldDialog.field.config) } : null}
+        availableFields={fields}
         onSave={handleFieldSave}
       />
 

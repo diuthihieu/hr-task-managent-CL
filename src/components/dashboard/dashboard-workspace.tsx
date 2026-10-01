@@ -18,6 +18,7 @@ import { SegmentPreview, type SegmentPreviewState } from "./segment-preview";
 import { parseBlockConfig } from "@/lib/dashboard-engine";
 import type { FieldRow } from "@/types";
 import { useT } from "@/components/i18n-provider";
+import { DashboardTabs } from "./dashboard-tabs";
 
 const GridLayout = WidthProvider(RGL);
 
@@ -33,11 +34,15 @@ type Slicer = CrossFilter & { id: string };
 
 export function DashboardWorkspace({
   dashboardId,
+  workspaceId,
   workspaceSlug,
+  canEdit,
   breadcrumb,
 }: {
   dashboardId: string;
+  workspaceId: string;
   workspaceSlug: string;
+  canEdit: boolean;
   breadcrumb: { workspace: string; dashboard: string };
 }) {
   const { t } = useT();
@@ -123,7 +128,6 @@ export function DashboardWorkspace({
     try {
       await api.delete(`/api/dashboards/${dashboardId}`);
       router.push(`/w/${workspaceSlug}/dashboards`);
-      router.refresh();
       router.refresh();
     } catch {
       toast.error(t("common.failed"));
@@ -237,8 +241,9 @@ export function DashboardWorkspace({
           />
         ) : (
           <span
-            className="font-medium text-neutral-800 dark:text-neutral-100 cursor-text"
+            className={canEdit ? "font-medium text-neutral-800 dark:text-neutral-100 cursor-text" : "font-medium text-neutral-800 dark:text-neutral-100"}
             onDoubleClick={() => {
+              if (!canEdit) return;
               setNameDraft(dashboard.name);
               setRenaming(true);
             }}
@@ -248,11 +253,11 @@ export function DashboardWorkspace({
         )}
         <div className="ml-auto flex items-center gap-1.5">
           {dashboard.blocks.length > 0 && <AiDashboardActions dashboardId={dashboardId} getData={snapshot} />}
-          <AiBuildWidgetsButton target="dashboard" dashboardId={dashboardId} onBuilt={() => load()} />
-          <Button size="sm" onClick={addWidget}>
+          {canEdit && <AiBuildWidgetsButton target="dashboard" dashboardId={dashboardId} onBuilt={() => load()} />}
+          {canEdit && <Button size="sm" onClick={addWidget}>
             <Plus size={13} /> {t("db.addWidget")}
-          </Button>
-          <DropdownMenu>
+          </Button>}
+          {canEdit && <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="p-1.5 rounded-md text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800">
                 <Pencil size={14} />
@@ -271,9 +276,11 @@ export function DashboardWorkspace({
                 <Trash2 size={13} /> {t("db.delete")}
               </DropdownMenuItem>
             </DropdownMenuContent>
-          </DropdownMenu>
+          </DropdownMenu>}
         </div>
       </div>
+
+      <DashboardTabs workspaceId={workspaceId} workspaceSlug={workspaceSlug} activeDashboardId={dashboardId} activeName={dashboard.name} canEdit={canEdit} />
 
       <div className="flex items-center justify-between gap-2 px-4 h-10 border-b border-neutral-100 dark:border-neutral-900 shrink-0 overflow-x-auto thin-scroll">
         <DashboardFilterBar fieldNames={fieldNames} slicers={slicers} onChange={persistSlicers} />
@@ -293,9 +300,9 @@ export function DashboardWorkspace({
           <div className="h-full flex flex-col items-center justify-center text-center text-neutral-400 gap-2">
             <LayoutDashboard size={32} className="opacity-40" />
             <p>{t("db.noWidgets")}</p>
-            <Button onClick={addWidget}>
+            {canEdit && <Button onClick={addWidget}>
               <Plus size={14} /> {t("db.firstWidget")}
-            </Button>
+            </Button>}
           </div>
         ) : (
           <>
@@ -308,6 +315,8 @@ export function DashboardWorkspace({
             margin={[10, 10]}
             draggableHandle=".drag-handle"
             resizeHandles={["se", "e", "s"]}
+            isDraggable={canEdit}
+            isResizable={canEdit}
             onLayoutChange={handleLayoutChange}
             onDragStop={(l) => persistLayout(l)}
             onResizeStop={(l) => persistLayout(l)}
@@ -316,6 +325,7 @@ export function DashboardWorkspace({
               <div key={block.id}>
                 <WidgetCard
                   block={block}
+                  canEdit={canEdit}
                   slicers={slicers}
                   crossFilter={crossFilter?.filter ?? null}
                   fieldNameLookup={fieldNameLookup}

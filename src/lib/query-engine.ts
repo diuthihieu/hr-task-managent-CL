@@ -223,9 +223,13 @@ export function resolveValueLabel(
     const t = resolveOkrTarget(cfg, key);
     if (t) return { label: t.kind === "kr" ? `${t.objectiveTitle} › ${t.title}` : t.title };
   }
-  if (["person", "people"].includes(field.type)) {
+  if (["person", "people", "created_by", "modified_by"].includes(field.type)) {
     const member = members.find((m) => m.id === key);
     if (member) return { label: member.name, color: member.avatarColor };
+  }
+  if (field.type === "team") {
+    const team = cfg.teams?.find((candidate) => candidate.id === key);
+    if (team) return { label: team.name, color: team.color };
   }
   if (typeof key === "boolean") return { label: key ? "Yes" : "No" };
   if (key === "true" || key === "false") return { label: key === "true" ? "Yes" : "No" };

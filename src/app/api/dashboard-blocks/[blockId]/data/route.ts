@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser, requireWorkspaceRole, route, workspaceOfWidget } from "@/lib/authz";
-import { computeSeries, computeStackedSeries, computeScatterPoints, computeKpi, type CrossFilter } from "@/lib/dashboard-engine";
+import { computeSeries, computeStackedSeries, computeScatterPoints, computeKpi, computeKpiTrend, type CrossFilter } from "@/lib/dashboard-engine";
 import { applyFilters, applySorts, getCellValue } from "@/lib/query-engine";
 import { formatDisplayValue } from "@/lib/format";
 import { loadBlockData } from "@/lib/dashboard-data";
@@ -22,7 +22,9 @@ export const POST = route<P>(async (req, { params }) => {
   const { type, config, fields, records, members: memberList } = data;
 
   if (type === "kpi") {
-    return NextResponse.json({ kpi: computeKpi(records, fields, config, userId) });
+    const trend = computeKpiTrend(records, fields, config, userId);
+    const value = trend?.current ?? computeKpi(records, fields, config, userId);
+    return NextResponse.json({ kpi: value, kpiTrend: trend });
   }
 
   if (type === "table") {

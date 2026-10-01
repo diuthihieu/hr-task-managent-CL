@@ -51,7 +51,14 @@ app ships with no pre-loaded business data.
   public link) and **Report** - a Power BI-style view where users add charts or
   pivot tables (group by any field, split by another, count tasks or
   sum/average hours and numbers). Filters of the view apply to every chart.
-- **Custom fields per project**, comments, attachments (Vercel Blob, private,
+- **Dashboard sheets** open as tabs (like Excel / Power BI), with live charts,
+  period-over-period KPI trends, cross-filtering and per-widget formatting for
+  palettes, typography, borders, backgrounds, shadows, legends, grids and
+  labels. The relationship graph keeps records on circular rings and arranges
+  linked records evenly around a node while it is dragged.
+- **Custom fields per project**, including team, location, signature, linked
+  record, lookup, rollup, action button, barcode, AI, JSON and allow-listed
+  API result fields; comments and attachments (Vercel Blob, private,
   served through an authorized download route), activity log on every change.
 - **Personalization**: 24 accent colors, light/dark mode and Vietnamese /
   English UI, saved to the user's profile (so they follow the user to the
@@ -96,6 +103,7 @@ database or in production.
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js dev server / production build / serve |
 | `npm test` | Unit tests: formula engine, query engine, OKR math |
+| `npm run test:e2e` | Playwright production smoke tests (readiness + signed-out authentication UI) |
 | `npm run test:integration` | Creates a throwaway database, applies migrations, starts the built app and runs HTTP tests for auth, roles, constraints, triggers, soft delete and activity logs (run `npm run build` first) |
 | `npm run lint` | ESLint |
 | `npm run db:migrate` | `prisma migrate deploy` |
@@ -113,15 +121,20 @@ Never alter the database by hand.
    `DIRECT_URL`, `AUTH_SECRET`, optionally `ADMIN_EMAIL` / `ADMIN_NAME` /
    `ADMIN_PASSWORD` (system admin for the support console),
    `BLOB_READ_WRITE_TOKEN` (connect a Blob store to the project - needed for
-   attachments and images in pages) and `DESKTOP_RELEASE_TOKEN`.
-   Sign-up is rate-limited per server instance only; put a Vercel Firewall
-   rule on `POST /api/register` if the app is exposed to abuse.
+   attachments and images in pages), `CRON_SECRET`, optionally
+   `API_FIELD_ALLOWED_HOSTS`, and `DESKTOP_RELEASE_TOKEN`. Authentication,
+   sign-up, public forms and computed-field refreshes use atomic PostgreSQL
+   rate limits across serverless instances; a Vercel Firewall remains useful
+   as an additional perimeter control.
 2. The `vercel-build` script runs `prisma migrate deploy` and the admin
    bootstrap on **production** builds only, then `next build`. Preview builds
    skip migrations unless `MIGRATE_ON_PREVIEW=1`, so a feature branch can't
    migrate a shared production database.
 3. After the first production deploy, sign in as the admin and remove
    `ADMIN_PASSWORD` from the environment.
+4. Configure an uptime probe for `GET /api/health`. Vercel Cron calls the
+   authenticated activity-log archive route daily; retention defaults to 365
+   days and is configurable with `ACTIVITY_LOG_RETENTION_DAYS`.
 
 ## Project structure
 

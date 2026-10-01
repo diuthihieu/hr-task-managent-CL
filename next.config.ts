@@ -20,6 +20,9 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  // Keep Turbopack inside this repository when a parent directory happens to
+  // contain an unrelated lockfile (common on developer workstations).
+  turbopack: { root: process.cwd() },
 };
 
 export default nextConfig;

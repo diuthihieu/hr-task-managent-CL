@@ -7,14 +7,13 @@ import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { AttachmentViewer } from "@/components/attachments/attachment-viewer";
+import { uploadTaskAttachment } from "@/lib/task-attachment-upload";
 
 export interface CellFile {
   id: string;
   name: string;
   type: string;
 }
-
-const MAX_BYTES = 4 * 1024 * 1024;
 
 /** Grid cell for a task's attachments: thumbnails in the cell, a popover to upload (multiple), download and remove. */
 export function AttachmentsCell({ taskId, files, className, onChange }: { taskId: string; files: CellFile[]; className?: string; onChange: (files: CellFile[]) => void }) {
@@ -30,17 +29,9 @@ export function AttachmentsCell({ taskId, files, className, onChange }: { taskId
     setBusy(true);
     let next = files;
     for (const file of items) {
-      if (file.size > MAX_BYTES) {
-        toast.error(t("att.tooLarge", { name: file.name }));
-        continue;
-      }
       try {
-        const form = new FormData();
-        form.append("file", file);
-        const res = await fetch(`/api/tasks/${taskId}/attachments`, { method: "POST", body: form });
-        const body = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(body.error || t("att.failed"));
-        next = [...next, { id: body.id, name: body.fileName, type: body.contentType }];
+        const attachment = await uploadTaskAttachment(taskId, file);
+        next = [...next, { id: attachment.id, name: attachment.fileName, type: attachment.contentType }];
         onChange(next);
       } catch (e) {
         toast.error(`${file.name}: ${e instanceof Error ? e.message : t("att.failed")}`);

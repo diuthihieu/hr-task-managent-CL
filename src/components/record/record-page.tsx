@@ -22,6 +22,7 @@ import { initials, formatDate, cn } from "@/lib/utils";
 import type { ActivityRow, AttachmentRow, FieldRow, RecordRow } from "@/types";
 import { AvatarImg } from "@/components/ui/avatar-img";
 import { Meta } from "@/components/ui/meta";
+import { uploadTaskAttachment } from "@/lib/task-attachment-upload";
 
 interface ProjectDetail {
   id: string;
@@ -124,13 +125,9 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
   }
 
   async function uploadOne(file: File): Promise<AttachmentRow> {
-    const form = new FormData();
-    form.append("file", file);
-    const res = await fetch(`/api/tasks/${taskId}/attachments`, { method: "POST", body: form });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error || `Upload failed (${res.status})`);
-    setAttachments((prev) => [body as AttachmentRow, ...prev]);
-    return body as AttachmentRow;
+    const attachment = await uploadTaskAttachment(taskId, file);
+    setAttachments((prev) => [attachment, ...prev.filter((item) => item.id !== attachment.id)]);
+    return attachment;
   }
 
   async function upload(files: FileList | File[]) {

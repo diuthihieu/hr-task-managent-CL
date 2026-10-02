@@ -805,9 +805,10 @@ model Comment {
 model Attachment {
   id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   workspaceId     String    @map("workspace_id") @db.Uuid
-  /// Exactly one owner: a task (record page / Files) or a wiki page (inline images).
+  /// Exactly one owner: a task, wiki page, or Agent Skill reference library.
   taskId          String?   @map("task_id") @db.Uuid
   wikiPageId      String?   @map("wiki_page_id") @db.Uuid
+  agentSkillId    String?   @map("agent_skill_id") @db.Uuid
   fileName        String    @map("file_name") @db.VarChar(255)
   contentType     String    @map("content_type") @db.VarChar(255)
   sizeBytes       Int       @map("size_bytes")
@@ -826,12 +827,14 @@ model Attachment {
   workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   task        Task?        @relation(fields: [taskId], references: [id], onDelete: Cascade)
   wikiPage    WikiPage?    @relation(fields: [wikiPageId], references: [id], onDelete: Cascade)
+  agentSkill  AgentSkill?  @relation(fields: [agentSkillId], references: [id], onDelete: Cascade)
   uploadedBy  User?        @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
 
   @@unique([storageKey])
   @@index([taskId, deletedAt])
   @@index([wikiPageId])
   @@index([wikiCommentId])
+  @@index([agentSkillId, deletedAt])
   @@map("attachments")
 }
 
@@ -1424,6 +1427,7 @@ model AgentSkill {
   outputs            AgentOutput[]
   conversations      AiConversation[]       @relation("AgentConversationSkill")
   sourceConversation AiConversation?        @relation("AgentSkillSourceConversation", fields: [sourceConversationId], references: [id], onDelete: SetNull)
+  attachments        Attachment[]
 
   @@unique([workspaceId, systemKey])
   @@index([workspaceId, visibility, deletedAt])

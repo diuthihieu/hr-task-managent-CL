@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { route, readJson } from "@/lib/authz";
+import { route, readJson, forbidden, badRequest } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { recoContext } from "@/lib/recognition/route-helpers";
 import { pointRules, requireRecognitionManager } from "@/lib/recognition/points";
@@ -41,6 +41,8 @@ const schema = z.object({
   membersSeePoints: z.boolean().optional(),
   pointsSince: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   rules: z.array(z.object({ action: z.enum(POINT_ACTIONS), points: z.number().int().min(-1000).max(1000), enabled: z.boolean() })).optional(),
+  memberVisibility: z.array(z.object({ userId: z.string().uuid(), canViewOthersPoints: z.boolean() })).max(1000).optional(),
+  managerIds: z.array(z.string().uuid()).max(1000).optional(),
 });
 
 export const PUT = route<P>(async (req, { params }) => {
@@ -48,6 +50,13 @@ export const PUT = route<P>(async (req, { params }) => {
   const { user, ctx } = await recoContext(workspaceId, { sync: false });
   await requireRecognitionManager(user, workspaceId, ctx.role);
   const body = schema.parse(await readJson(req));
+  const canDelegate = ctx.role === "admin" || ctx.role === "owner" || supportAccess(user);
+  if (body.managerIds && !canDelegate) throw forbidden("Only workspace admins can delegate recognition management");
+  const referencedUserIds = [...new Set([...(body.memberVisibility?.map((item) => item.userId) ?? []), ...(body.managerIds ?? [])])];
+  if (referencedUserIds.length) {
+    const memberCount = await prisma.workspaceMember.count({ where: { workspaceId, userId: { in: referencedUserIds } } });
+    if (memberCount !== referencedUserIds.length) throw badRequest("Every selected person must belong to this workspace");
+  }
   await prisma.$transaction(async (tx) => {
     await tx.recognitionSettings.update({
       where: { workspaceId },
@@ -59,6 +68,19 @@ export const PUT = route<P>(async (req, { params }) => {
       },
     });
     for (const r of body.rules ?? []) await tx.pointRule.upsert({ where: { workspaceId_action: { workspaceId, action: r.action } }, create: { workspaceId, ...r }, update: { points: r.points, enabled: r.enabled } });
+    for (const member of body.memberVisibility ?? []) {
+      await tx.recognitionMember.upsert({
+        where: { workspaceId_userId: { workspaceId, userId: member.userId } },
+        create: { workspaceId, userId: member.userId, canViewOthersPoints: member.canViewOthersPoints },
+        update: { canViewOthersPoints: member.canViewOthersPoints },
+      });
+    }
+    if (body.managerIds) {
+      await tx.recognitionManager.deleteMany({ where: { workspaceId } });
+      if (body.managerIds.length) {
+        await tx.recognitionManager.createMany({ data: body.managerIds.map((userId) => ({ workspaceId, userId })), skipDuplicates: true });
+      }
+    }
     await logActivity(tx, { workspaceId, actorId: user.id, entityType: "workspace", entityId: workspaceId, action: "updated", summary: "Updated recognition settings", changes: { recognition: { from: null, to: body } } });
   });
   return NextResponse.json({ ok: true });

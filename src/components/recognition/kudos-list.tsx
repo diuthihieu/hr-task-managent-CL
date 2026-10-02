@@ -8,6 +8,7 @@ import { cn, formatDate } from "@/lib/utils";
 import type { KudosDto } from "@/lib/recognition/kudos";
 import { Avatar, STYLE_META } from "./shared";
 import type { MessageKey } from "@/lib/i18n/core";
+import { InlineArrow } from "@/components/ui/inline-arrow";
 
 /** Kudos wall (public letters) or the caller's own letters ("received" / "sent"). */
 export function KudosList({ workspaceId, scope, refreshKey }: { workspaceId: string; scope: "wall" | "received" | "sent"; refreshKey: number }) {
@@ -43,7 +44,7 @@ export function KudosList({ workspaceId, scope, refreshKey }: { workspaceId: str
             <div className="flex items-center gap-2 text-xs">
               <Avatar p={k.from} size={24} />
               <span className="font-medium truncate">{k.from.name}</span>
-              <span className="opacity-50">→</span>
+              <InlineArrow className="opacity-60" />
               <Avatar p={k.to} size={24} />
               <span className="font-medium truncate">{k.to.name}</span>
               <span className="ml-auto text-lg">{STYLE_META[k.style]?.emoji}</span>

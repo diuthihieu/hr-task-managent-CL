@@ -10,6 +10,7 @@ import { SettingsSection } from "./settings-shell";
 import { useT } from "@/components/i18n-provider";
 import { AvatarImg } from "@/components/ui/avatar-img";
 import { Meta, MetaChip } from "@/components/ui/meta";
+import { InlineArrow } from "@/components/ui/inline-arrow";
 
 const ACTION_ICON: Record<string, React.ComponentType<{ size?: number; className?: string }>> = {
   created: Plus,
@@ -73,10 +74,8 @@ export function SettingsAuditLog({ workspaceId }: { workspaceId: string }) {
                       {r.summary && <> — <span className="text-neutral-900 dark:text-neutral-100">{r.summary}</span></>}
                     </div>
                     {r.changes && (
-                      <div className="text-xs text-neutral-500 truncate">
-                        {Object.entries(r.changes)
-                          .map(([k, v]) => `${k.replace(/^custom:/, "")}: ${JSON.stringify(v.from)} → ${JSON.stringify(v.to)}`)
-                          .join(" ")}
+                      <div className="text-xs text-neutral-500 truncate flex flex-wrap items-center gap-x-2">
+                        {Object.entries(r.changes).map(([k, v]) => <span key={k} className="inline-flex items-center gap-1">{k.replace(/^custom:/, "")}: {JSON.stringify(v.from)} <InlineArrow /> {JSON.stringify(v.to)}</span>)}
                       </div>
                     )}
                   </div>

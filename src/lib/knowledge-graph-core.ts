@@ -16,6 +16,8 @@ export interface GraphNode {
   /** Local graph only: hops from the centre node. */
   depth?: number;
   done?: boolean;
+  /** Filterable lifecycle state for Task, Project and OKR nodes. */
+  status?: string;
 }
 export type GraphLinkKind = "child" | "link" | "project" | "assignee" | "owner" | "contributor" | "tag" | "okr" | "depends" | "subtask" | "file" | "mention" | "author" | "cascade" | "source" | "decision" | "supersedes" | "involved";
 export interface GraphLink {

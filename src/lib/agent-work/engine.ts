@@ -11,6 +11,7 @@ import { readAgentTaskFiles, type AgentFileContext } from "./files";
 import { badRequest, notFound, requireWorkspaceRole, visibleProjectWhere, visibleWikiWhere, type SessionUser } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { deleteAttachmentBlob, uploadAgentArtifact } from "@/lib/storage";
+import { accessibleAgentSkillWhere } from "./access";
 
 const STARTER_SKILL_KEY = "task-brief";
 const STARTER_TOOLS = [...SIMPLE_TASK_TOOLS];
@@ -155,18 +156,11 @@ export async function ensureAgentFoundation(workspaceId: string, userId: string)
   return { settings, skill };
 }
 
-function accessibleSkillWhere(userId: string): Prisma.AgentSkillWhereInput {
-  return {
-    deletedAt: null,
-    OR: [{ ownerId: userId }, { visibility: "organization" }, { visibility: "specific_people", shares: { some: { userId } } }],
-  };
-}
-
 export async function listAgentSkills(workspaceId: string, userId: string) {
   await ensureAgentFoundation(workspaceId, userId);
   const rows = await prisma.agentSkill.findMany({
-    where: { workspaceId, ...accessibleSkillWhere(userId) },
-    include: { owner: { select: { id: true, name: true } }, activations: { where: { userId }, select: { active: true } }, shares: { select: { userId: true } } },
+    where: { workspaceId, ...accessibleAgentSkillWhere(userId) },
+    include: { owner: { select: { id: true, name: true } }, activations: { where: { userId }, select: { active: true } }, shares: { select: { userId: true } }, attachments: { where: { deletedAt: null }, orderBy: { createdAt: "asc" }, select: { id: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true } } },
     orderBy: [{ systemKey: "desc" }, { updatedAt: "desc" }],
   });
   return rows.map((skill) => ({
@@ -182,6 +176,7 @@ export async function listAgentSkills(workspaceId: string, userId: string) {
     workflow: skill.workflow,
     toolsAllowed: skill.toolsAllowed,
     referenceFiles: skill.ownerId === userId ? skill.referenceFiles : [],
+    referenceAttachments: skill.ownerId === userId ? skill.attachments.map((file) => ({ ...file, createdAt: file.createdAt.toISOString(), downloadUrl: `/api/agent-work/skill-files/${file.id}/download` })) : [],
     templates: skill.templates,
     validationRules: skill.validationRules,
     outputDefinitions: normalizeOutputDefinitions(skill.outputDefinitions),
@@ -318,7 +313,7 @@ export async function detectAgentSuggestions(user: SessionUser, workspaceId: str
   const settings = await getAgentSettings(workspaceId, user.id);
   if (!manual && (!settings.proactiveEnabled || settings.suggestionMode === "silent")) return [];
   const activeSkills = await prisma.agentSkill.findMany({
-    where: { workspaceId, ...accessibleSkillWhere(user.id), activations: { some: { userId: user.id, active: true } } },
+    where: { workspaceId, ...accessibleAgentSkillWhere(user.id), activations: { some: { userId: user.id, active: true } } },
     select: SKILL_CONFIG_SELECT,
   });
   if (!activeSkills.length) return [];
@@ -565,10 +560,17 @@ export async function executeAgentRun(user: SessionUser, runId: string, confirme
     await Promise.allSettled(uploadedUrls.map((url) => deleteAttachmentBlob(url)));
   };
   try {
+    const skillReferences = run.skill.ownerId === user.id ? await prisma.attachment.findMany({
+      where: { agentSkillId: run.skill.id, deletedAt: null },
+      orderBy: { createdAt: "asc" },
+      take: 10,
+      select: { fileName: true, contentType: true, extractedText: true },
+    }) : [];
     const context = {
       task: { title: task.title, description: task.description, content: htmlToText(task.content), project: task.project.name, status: task.status, priority: task.priority, progress: task.progress, startDate: task.startDate, dueDate: task.dueDate, assignees: task.assignees.map((row) => row.user.name) },
       recentComments: task.comments.reverse().map((comment) => ({ author: comment.author?.name ?? "Unknown", at: comment.createdAt, body: comment.body })),
       files: fileContext.map((file) => ({ fileName: file.fileName, contentType: file.contentType, sizeBytes: file.sizeBytes, text: file.text, skippedReason: file.skippedReason })),
+      skillReferences: skillReferences.map((file) => ({ fileName: file.fileName, contentType: file.contentType, text: file.extractedText?.slice(0, 40_000) ?? "" })),
     };
     const response = await generate({
       workspaceId: run.workspaceId,
@@ -675,7 +677,7 @@ export async function getAgentWorkSnapshot(user: SessionUser, workspaceId: strin
     prisma.agentRun.findMany({ where: { workspaceId, userId: user.id, status: { in: ACTIVE_AGENT_RUN_STATUSES }, ...projectVisibility }, orderBy: { updatedAt: "desc" }, take: 30, include: RUN_INCLUDE }),
     prisma.agentRun.findMany({ where: { workspaceId, userId: user.id, status: { in: ["completed", "failed", "cancelled"] }, ...projectVisibility }, orderBy: { updatedAt: "desc" }, take: 30, include: RUN_INCLUDE }),
     prisma.agentOutput.findMany({ where: { workspaceId, createdById: user.id, deletedAt: null, ...outputProjectVisibility }, orderBy: { createdAt: "desc" }, take: 50, select: { id: true, filename: true, type: true, mimeType: true, sizeBytes: true, createdAt: true, runId: true, task: { select: { id: true, title: true } }, project: { select: { id: true, name: true } }, skill: { select: { id: true, name: true } } } }),
-    prisma.aiConversation.findMany({ where: { workspaceId, userId: user.id, ...conversationVisibility }, orderBy: { updatedAt: "desc" }, take: 60, select: { id: true, title: true, kind: true, originType: true, originId: true, updatedAt: true, task: { select: { id: true, title: true } }, skill: { select: { id: true, name: true } }, agentRun: { select: { id: true, status: true } } } }),
+    prisma.aiConversation.findMany({ where: { workspaceId, userId: user.id, agentRunId: { not: null }, ...conversationVisibility }, orderBy: { updatedAt: "desc" }, take: 60, select: { id: true, title: true, kind: true, originType: true, originId: true, updatedAt: true, task: { select: { id: true, title: true } }, skill: { select: { id: true, name: true } }, agentRun: { select: { id: true, status: true } } } }),
     prisma.workspaceMember.findMany({ where: { workspaceId, user: { isActive: true, deletedAt: null } }, orderBy: { user: { name: "asc" } }, take: 500, select: { user: { select: { id: true, name: true } } } }),
   ]);
   return {

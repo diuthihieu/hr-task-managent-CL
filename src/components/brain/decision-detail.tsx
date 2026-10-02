@@ -12,6 +12,7 @@ import { DecisionDialog, type Decision } from "./decision-dialog";
 import { DECISION_TONE } from "./decisions-list";
 import type { MessageKey } from "@/lib/i18n/core";
 import { Meta, MetaChip } from "@/components/ui/meta";
+import { InlineArrow } from "@/components/ui/inline-arrow";
 
 /** One decision: what, why, alternatives, evidence, people, links and its supersede chain. */
 export function DecisionDetail({ workspaceId, workspaceSlug, decisionId }: { workspaceId: string; workspaceSlug: string; decisionId: string }) {
@@ -105,7 +106,7 @@ export function DecisionDetail({ workspaceId, workspaceSlug, decisionId }: { wor
           )}
           {row(t("brain.decision.evidence"), <p className="whitespace-pre-wrap">{d.evidence || "—"}</p>)}
           {d.sourceUrl && row(t("brain.decision.sourceUrl"), <a href={d.sourceUrl} target={d.sourceUrl.startsWith("/") ? undefined : "_blank"} rel="noreferrer" className="text-indigo-600 break-all">{d.sourceUrl}</a>)}
-          {row(t("brain.decision.date"), d.decidedAt + (d.validTo ? ` → ${d.validTo}` : ""))}
+          {row(t("brain.decision.date"), <span className="inline-flex items-center gap-1.5">{d.decidedAt}{d.validTo && <><InlineArrow />{d.validTo}</>}</span>)}
           {row(t("brain.decision.owner"), d.owner?.name ?? "—")}
           {row(t("brain.decision.reviewDate"), d.reviewDate ? <span className={d.reviewDue ? "text-amber-600 font-medium" : ""}>{d.reviewDate}</span> : "—")}
           {row(t("brain.decision.people"), d.people.map((p) => p.name).join(", ") || "—")}

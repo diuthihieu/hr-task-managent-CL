@@ -61,7 +61,7 @@ export async function buildKnowledgeGraph(user: SessionUser, workspace: { id: st
         ownerId: true,
         parentKeyResultId: true,
         contributors: { select: { userId: true } },
-        keyResults: { where: { deletedAt: null }, select: { id: true, title: true, ownerId: true } },
+        keyResults: { where: { deletedAt: null }, select: { id: true, title: true, ownerId: true, status: true } },
       },
     }),
     prisma.wikiPage.findMany({
@@ -99,7 +99,7 @@ export async function buildKnowledgeGraph(user: SessionUser, workspace: { id: st
 
   const projectName = new Map(projects.map((p) => [p.id, p.name]));
   for (const p of projects) {
-    add({ id: `project:${p.id}`, type: "project", label: p.name, sub: `Project · ${p.status}`, href: `${base}/p/${p.id}` });
+    add({ id: `project:${p.id}`, type: "project", label: p.name, sub: `Project · ${p.status}`, href: `${base}/p/${p.id}`, status: p.status });
     for (const c of p.categories) {
       add({ id: `tag:${c.id}`, type: "tag", label: c.name, sub: `Category · ${p.name}`, href: `${base}/p/${p.id}` });
       link(`tag:${c.id}`, `project:${p.id}`, "project");
@@ -111,7 +111,7 @@ export async function buildKnowledgeGraph(user: SessionUser, workspace: { id: st
   for (const t of tasks) {
     const id = `task:${t.id}`;
     const due = t.dueDate ? ` · ${t.dueDate.toISOString().slice(0, 10)}` : "";
-    add({ id, type: "task", label: t.title, sub: `${projectName.get(t.projectId) ?? ""} · ${t.status.name}${due}`, href: `${base}/p/${t.projectId}/t/${t.id}`, done: t.status.category === "done" });
+    add({ id, type: "task", label: t.title, sub: `${projectName.get(t.projectId) ?? ""} · ${t.status.name}${due}`, href: `${base}/p/${t.projectId}/t/${t.id}`, done: t.status.category === "done", status: t.status.name });
     link(id, `project:${t.projectId}`, "project");
     if (t.parentTaskId) link(id, `task:${t.parentTaskId}`, "subtask");
     if (t.categoryId) link(id, `tag:${t.categoryId}`, "tag");
@@ -128,14 +128,14 @@ export async function buildKnowledgeGraph(user: SessionUser, workspace: { id: st
 
   for (const o of objectives) {
     const id = `objective:${o.id}`;
-    add({ id, type: "objective", label: o.title, sub: `Objective · ${o.status}${o.projectId ? ` · ${projectName.get(o.projectId) ?? ""}` : ""}`, href: `${base}/okrs/${o.id}` });
+    add({ id, type: "objective", label: o.title, sub: `Objective · ${o.status}${o.projectId ? ` · ${projectName.get(o.projectId) ?? ""}` : ""}`, href: `${base}/okrs/${o.id}`, status: o.status });
     if (o.projectId) link(id, `project:${o.projectId}`, "project");
     const owner = person(o.ownerId);
     if (owner) link(id, owner, "owner");
     for (const c of o.contributors) link(id, `person:${c.userId}`, "contributor");
     if (o.parentKeyResultId) link(id, `kr:${o.parentKeyResultId}`, "cascade");
     for (const kr of o.keyResults) {
-      add({ id: `kr:${kr.id}`, type: "kr", label: kr.title, sub: `Key result · ${o.title}`, href: `${base}/okrs/${o.id}` });
+      add({ id: `kr:${kr.id}`, type: "kr", label: kr.title, sub: `Key result · ${o.title}`, href: `${base}/okrs/${o.id}`, status: kr.status });
       link(`kr:${kr.id}`, id, "okr");
       const krOwner = person(kr.ownerId);
       if (krOwner) link(`kr:${kr.id}`, krOwner, "owner");

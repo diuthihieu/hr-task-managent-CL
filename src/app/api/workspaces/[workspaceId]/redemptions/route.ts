@@ -9,9 +9,12 @@ type P = { workspaceId: string };
 export const GET = route<P>(async (req, { params }) => {
   const { workspaceId } = await params;
   const { user, canManage } = await recoContext(workspaceId, { sync: false });
-  const mine = new URL(req.url).searchParams.get("mine") === "1" || !canManage;
+  const searchParams = new URL(req.url).searchParams;
+  const mine = searchParams.get("mine") === "1" || !canManage;
+  const approvedByMe = searchParams.get("approvedByMe") === "1";
+  if (approvedByMe && !canManage) return NextResponse.json([]);
   const rows = await prisma.rewardRedemption.findMany({
-    where: { workspaceId, ...(mine ? { userId: user.id } : {}) },
+    where: { workspaceId, ...(approvedByMe ? { status: "approved", decidedById: user.id } : mine ? { userId: user.id } : {}) },
     include: { reward: { select: { id: true, name: true, quantity: true, approvedCount: true } }, user: { select: { id: true, name: true, avatarColor: true } } },
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
     take: 300,

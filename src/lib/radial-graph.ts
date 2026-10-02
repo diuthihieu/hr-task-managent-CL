@@ -3,6 +3,17 @@ export interface GraphPosition {
   y: number;
 }
 
+/** Subtle deterministic motion that preserves a node's circular ring. */
+export function circularMotionPosition(base: GraphPosition, center: GraphPosition, phase: number, elapsedMs: number, focused = false): GraphPosition {
+  const dx = base.x - center.x;
+  const dy = base.y - center.y;
+  const radius = Math.hypot(dx, dy);
+  if (radius < 1) return { x: base.x + Math.cos(elapsedMs * 0.00065 + phase) * 2, y: base.y + Math.sin(elapsedMs * 0.00065 + phase) * 2 };
+  const angle = Math.atan2(dy, dx) + Math.sin(elapsedMs * 0.00055 + phase) * (focused ? 0.016 : 0.026);
+  const movingRadius = Math.max(0, radius + Math.sin(elapsedMs * 0.00105 + phase * 1.7) * (focused ? 2.2 : 4));
+  return { x: center.x + Math.cos(angle) * movingRadius, y: center.y + Math.sin(angle) * movingRadius };
+}
+
 function ringCapacity(radius: number, spacing: number) {
   const angle = 2 * Math.asin(Math.min(1, spacing / (2 * radius)));
   return Math.max(1, Math.floor((Math.PI * 2) / angle));

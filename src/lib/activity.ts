@@ -26,6 +26,7 @@ export type EntityType =
   | "decision"
   | "journal"
   | "wiki_page"
+  | "agent_skill"
   | "agent_run";
 
 export type ActivityAction =

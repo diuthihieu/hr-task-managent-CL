@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { Avatar, fmtNumber, type PersonLite } from "./shared";
 import { NumberInput } from "@/components/ui/number-input";
 import type { MessageKey } from "@/lib/i18n/core";
+import { InlineArrow } from "@/components/ui/inline-arrow";
 
 interface Row {
   rank: number;
@@ -42,7 +43,7 @@ export function PeriodFilter({ period, setPeriod, from, setFrom, to, setTo, top,
       {period === "custom" && (
         <span className="inline-flex items-center gap-1">
           <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="h-8 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2" data-testid="reco-from" />
-          →
+          <InlineArrow />
           <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="h-8 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2" data-testid="reco-to" />
         </span>
       )}

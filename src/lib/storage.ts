@@ -57,8 +57,8 @@ const accessOf = (p: string | null | undefined): "public" | "private" => (p === 
  * store created public rejects private writes (and vice versa); that is a
  * configuration error to fix, not a reason to publish HR files at a public URL.
  */
-export async function uploadAttachment(opts: { workspaceId: string; taskId?: string; wikiPageId?: string; file: File }) {
-  const owner = opts.taskId ? `tasks/${opts.taskId}` : `wiki/${opts.wikiPageId}`;
+export async function uploadAttachment(opts: { workspaceId: string; taskId?: string; wikiPageId?: string; agentSkillId?: string; file: File }) {
+  const owner = opts.taskId ? `tasks/${opts.taskId}` : opts.wikiPageId ? `wiki/${opts.wikiPageId}` : `agent-skills/${opts.agentSkillId}`;
   const pathname = `workspaces/${opts.workspaceId}/${owner}/${safeFileName(opts.file.name)}`;
   const mode = access();
   try {

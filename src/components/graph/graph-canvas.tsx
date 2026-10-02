@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import ForceGraph2D, { type ForceGraphMethods, type LinkObject, type NodeObject } from "react-force-graph-2d";
 import { GRAPH_COLORS, type GraphLink, type GraphNode } from "@/lib/knowledge-graph-core";
-import { anchoredCircularGraphLayout, concentricCircularLayout, type GraphPosition } from "@/lib/radial-graph";
+import { anchoredCircularGraphLayout, circularMotionPosition, concentricCircularLayout, type GraphPosition } from "@/lib/radial-graph";
 
 export type CanvasNode = NodeObject<
   GraphNode & {
@@ -118,15 +118,21 @@ export default function GraphCanvas({
     return {
       data: { nodes: canvasNodes, links: links.map((link) => ({ ...link })) as CanvasLink[] },
       overlay: overlayFor(positions, { x: 0, y: 0 }),
+      positions,
     };
   }, [nodes, links, focus]);
   const data = prepared.data;
   const ringOverlay = useRef<RingOverlay>(prepared.overlay);
+  const targetPositions = useRef<Record<string, GraphPosition>>(prepared.positions);
+  const basePositions = useRef<Record<string, GraphPosition>>(prepared.positions);
+  const dragging = useRef<string | null>(null);
   const nodeById = useMemo(() => new Map(data.nodes.map((node) => [node.id as string, node])), [data.nodes]);
   const visibleNodeIds = useMemo(() => new Set(nodeById.keys()), [nodeById]);
 
   useEffect(() => {
     ringOverlay.current = prepared.overlay;
+    targetPositions.current = prepared.positions;
+    basePositions.current = prepared.positions;
   }, [prepared]);
 
   const neighbours = useMemo(() => {
@@ -143,15 +149,11 @@ export default function GraphCanvas({
     [hover, neighbours],
   );
 
-  const applyPositions = useCallback(
+  const targetArrangement = useCallback(
     (positions: Record<string, GraphPosition>) => {
-      for (const [id, position] of Object.entries(positions)) {
-        const node = nodeById.get(id);
-        if (!node) continue;
-        Object.assign(node, { x: position.x, y: position.y, fx: position.x, fy: position.y, vx: 0, vy: 0 });
-      }
+      targetPositions.current = { ...targetPositions.current, ...positions };
     },
-    [nodeById],
+    [],
   );
 
   const arrangeAround = useCallback(
@@ -165,11 +167,16 @@ export default function GraphCanvas({
         minGap: NODE_GAP,
         firstRingRadius: RING,
       });
-      applyPositions(positions);
+      targetArrangement(positions);
       ringOverlay.current = overlayFor(positions, center);
     },
-    [applyPositions, data.nodes, neighbours, visibleNodeIds],
+    [data.nodes, neighbours, targetArrangement, visibleNodeIds],
   );
+
+  const resetArrangement = useCallback(() => {
+    targetPositions.current = prepared.positions;
+    ringOverlay.current = prepared.overlay;
+  }, [prepared]);
 
   useImperativeHandle(handleRef, () => ({
     zoomToFit: () => {
@@ -189,9 +196,10 @@ export default function GraphCanvas({
       fg.current?.centerAt(node.x, node.y, 500);
       fg.current?.zoom(3, 500);
       setHover(id);
+      arrangeAround(node, true);
       return true;
     },
-  }));
+  }), [arrangeAround, data.nodes]);
 
   const drawNode = useCallback(
     (node: CanvasNode, context: CanvasRenderingContext2D, scale: number) => {
@@ -247,6 +255,29 @@ export default function GraphCanvas({
     [dark],
   );
 
+  const animateCircularMotion = useCallback((context: CanvasRenderingContext2D, scale: number) => {
+    const now = performance.now();
+    const center = ringOverlay.current.center;
+    for (const node of data.nodes) {
+      const id = node.id as string;
+      if (dragging.current === id) continue;
+      const target = targetPositions.current[id];
+      if (!target) continue;
+      const current = basePositions.current[id] ?? target;
+      const base = {
+        x: current.x + (target.x - current.x) * 0.075,
+        y: current.y + (target.y - current.y) * 0.075,
+      };
+      basePositions.current[id] = base;
+      let hash = 0;
+      for (let index = 0; index < id.length; index++) hash = (hash * 31 + id.charCodeAt(index)) >>> 0;
+      const phase = (hash % 6283) / 1000;
+      const { x, y } = circularMotionPosition(base, center, phase, now, !!hover);
+      Object.assign(node, { x, y, fx: x, fy: y, vx: 0, vy: 0 });
+    }
+    drawRings(context, scale);
+  }, [data.nodes, drawRings, hover]);
+
   const endId = (end: string | number | CanvasNode | undefined) =>
     typeof end === "object" ? (end?.id as string) : (end as string);
 
@@ -281,12 +312,31 @@ export default function GraphCanvas({
           : lit ? "rgba(115,115,115,0.4)" : "rgba(115,115,115,0.06)";
       }}
       linkWidth={(link) => hover && (endId(link.source) === hover || endId(link.target) === hover) ? 1.6 : 0.6}
-      onRenderFramePre={drawRings}
-      onNodeHover={(node) => setHover(node ? (node.id as string) : null)}
+      onRenderFramePre={animateCircularMotion}
+      onNodeHover={(node) => {
+        const id = node ? (node.id as string) : null;
+        setHover(id);
+        if (dragging.current) return;
+        if (node) arrangeAround(node, true);
+        else resetArrangement();
+      }}
       onNodeClick={(node) => onOpen(node)}
       onNodeRightClick={(node) => onFocus(node)}
-      onNodeDrag={(node) => arrangeAround(node, false)}
-      onNodeDragEnd={(node) => arrangeAround(node, true)}
+      onNodeDrag={(node) => {
+        const id = node.id as string;
+        dragging.current = id;
+        const position = { x: node.x ?? 0, y: node.y ?? 0 };
+        basePositions.current[id] = position;
+        targetPositions.current[id] = position;
+        arrangeAround(node, false);
+      }}
+      onNodeDragEnd={(node) => {
+        const id = node.id as string;
+        const position = { x: node.x ?? 0, y: node.y ?? 0 };
+        basePositions.current[id] = position;
+        dragging.current = null;
+        arrangeAround(node, true);
+      }}
       cooldownTicks={1}
       onEngineStop={() => undefined}
     />

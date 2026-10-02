@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { anchoredCircularGraphLayout, concentricCircularLayout } from "../radial-graph";
+import { anchoredCircularGraphLayout, circularMotionPosition, concentricCircularLayout } from "../radial-graph";
 
 test("Second Brain nodes stay on a circle with a guaranteed visual gap", () => {
   const ids = Array.from({ length: 8 }, (_, index) => `node-${index}`);
@@ -31,4 +31,16 @@ test("dragging a Second Brain node keeps its direct links on the inner rings", (
   assert.ok(Math.max(...linkedRadii) < Math.min(...otherRadii));
   assert.ok(Math.max(...linkedRadii) - Math.min(...linkedRadii) < 0.001);
   assert.deepEqual(positions.anchor, { x: 240, y: 180 });
+});
+
+test("Second Brain motion changes position without breaking the circular ring", () => {
+  const center = { x: 10, y: -5 };
+  const base = { x: 110, y: -5 };
+  const first = circularMotionPosition(base, center, 1.25, 0);
+  const later = circularMotionPosition(base, center, 1.25, 1800);
+  assert.notDeepEqual(first, later);
+  for (const point of [first, later]) {
+    const radius = Math.hypot(point.x - center.x, point.y - center.y);
+    assert.ok(radius >= 96 && radius <= 104, `motion must stay close to the 100px ring (received ${radius})`);
+  }
 });

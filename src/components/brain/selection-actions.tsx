@@ -43,7 +43,7 @@ export function useSelectionActions(o: { editor: Editor | null; canEdit: boolean
   function appendLink(label: string, href: string) {
     const ed = o.editor;
     if (!ed || !ed.isEditable || !range) return;
-    ed.chain().focus().setTextSelection(range.to).insertContent([{ type: "text", text: " → " }, { type: "text", text: label, marks: [{ type: "link", attrs: { href } }] }]).run();
+    ed.chain().focus().setTextSelection(range.to).insertContent([{ type: "text", text: " ➜ " }, { type: "text", text: label, marks: [{ type: "link", attrs: { href } }] }]).run();
   }
 
   return { action, setAction, sel, capture, appendLink, range };

@@ -23,6 +23,7 @@ import type { ActivityRow, AttachmentRow, FieldRow, RecordRow } from "@/types";
 import { AvatarImg } from "@/components/ui/avatar-img";
 import { Meta } from "@/components/ui/meta";
 import { uploadTaskAttachment } from "@/lib/task-attachment-upload";
+import { InlineArrow } from "@/components/ui/inline-arrow";
 
 interface ProjectDetail {
   id: string;
@@ -439,7 +440,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
                     <ul className="text-neutral-500 mt-0.5">
                       {Object.entries(a.changes).map(([k, v]) => (
                         <li key={k} className="truncate">
-                          {k.replace(/^custom:/, "")}: <span className="line-through opacity-60">{JSON.stringify(v.from)}</span> → {JSON.stringify(v.to)}
+                          {k.replace(/^custom:/, "")}: <span className="line-through opacity-60">{JSON.stringify(v.from)}</span> <InlineArrow /> {JSON.stringify(v.to)}
                         </li>
                       ))}
                     </ul>

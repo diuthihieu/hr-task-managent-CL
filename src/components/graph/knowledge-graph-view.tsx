@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
-import { AlertTriangle, Globe2, Loader2, Maximize2, Minus, Plus, Search, Target, X } from "lucide-react";
+import { AlertTriangle, ChevronDown, Globe2, Loader2, Maximize2, Minus, Plus, Search, SlidersHorizontal, Target, X } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { useTheme } from "@/components/theme-provider";
 import { api } from "@/lib/api-client";
@@ -35,6 +35,8 @@ export function KnowledgeGraphView({ workspaceId, initialFocus, initialMode, emb
   const [focus, setFocus] = useState<string | undefined>(initialFocus);
   const [depth, setDepth] = useState(2);
   const [hiddenTypes, setHiddenTypes] = useState<Set<GraphNodeType>>(new Set());
+  const [hiddenStatuses, setHiddenStatuses] = useState<Set<string>>(new Set());
+  const [statusFilterOpen, setStatusFilterOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [pickerOpen, setPickerOpen] = useState(false);
   const canvas = useRef<GraphCanvasHandle>(null);
@@ -72,10 +74,10 @@ export function KnowledgeGraphView({ workspaceId, initialFocus, initialMode, emb
   const view = useMemo(() => {
     if (!graph) return { nodes: [], links: [] };
     const base = local ? localSubgraph(graph, focus!, depth) : graph;
-    const nodes = base.nodes.filter((n) => !hiddenTypes.has(n.type) || n.id === focus);
+    const nodes = base.nodes.filter((n) => (!hiddenTypes.has(n.type) && (!n.status || !hiddenStatuses.has(`${n.type}:${n.status}`))) || n.id === focus);
     const keep = new Set(nodes.map((n) => n.id));
     return { nodes, links: base.links.filter((l) => keep.has(l.source) && keep.has(l.target)) };
-  }, [graph, local, focus, depth, hiddenTypes]);
+  }, [graph, local, focus, depth, hiddenStatuses, hiddenTypes]);
 
   const counts = useMemo(() => {
     const c = Object.fromEntries(GRAPH_NODE_TYPES.map((k) => [k, 0])) as Record<GraphNodeType, number>;
@@ -83,6 +85,18 @@ export function KnowledgeGraphView({ workspaceId, initialFocus, initialMode, emb
     for (const n of src) c[n.type]++;
     return c;
   }, [graph, local, focus, depth]);
+
+  const statusGroups = useMemo(() => {
+    const source = graph ? (local ? localSubgraph(graph, focus!, depth).nodes : graph.nodes) : [];
+    const grouped = new Map<GraphNodeType, string[]>();
+    for (const node of source) {
+      if (!node.status || !["task", "project", "objective", "kr"].includes(node.type)) continue;
+      const values = grouped.get(node.type) ?? [];
+      if (!values.includes(node.status)) values.push(node.status);
+      grouped.set(node.type, values);
+    }
+    return [...grouped.entries()].map(([type, values]) => ({ type, values: values.sort((a, b) => a.localeCompare(b)) }));
+  }, [depth, focus, graph, local]);
 
   // Re-fit whenever the visible set changes (after the simulation had a moment to spread).
   useEffect(() => {
@@ -121,6 +135,13 @@ export function KnowledgeGraphView({ workspaceId, initialFocus, initialMode, emb
       else next.add(k);
       return next;
     });
+  const toggleStatus = (key: string) => setHiddenStatuses((current) => {
+    const next = new Set(current);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    return next;
+  });
+  const statusLabel = (value: string) => value.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
 
   return (
     <div className="flex-1 min-h-0 flex flex-col">
@@ -239,6 +260,15 @@ export function KnowledgeGraphView({ workspaceId, initialFocus, initialMode, emb
               {t("graph.showAll")}
             </button>
           )}
+          {statusGroups.length > 0 && <div className="relative ml-auto">
+            <button type="button" onClick={() => setStatusFilterOpen((open) => !open)} className={cn("h-7 px-2.5 rounded-lg border text-xs inline-flex items-center gap-1.5 bg-white dark:bg-neutral-900", hiddenStatuses.size ? "border-indigo-400 text-indigo-700 dark:text-indigo-300" : "border-neutral-200 dark:border-neutral-700 text-neutral-600 dark:text-neutral-300")} aria-expanded={statusFilterOpen} data-testid="graph-status-filter">
+              <SlidersHorizontal size={12} />{t("graph.statusFilter")}{hiddenStatuses.size > 0 && <span className="rounded-full bg-indigo-100 dark:bg-indigo-950 px-1.5 tabular-nums">{hiddenStatuses.size}</span>}<ChevronDown size={11} />
+            </button>
+            {statusFilterOpen && <div className="absolute right-0 top-9 z-30 w-72 max-h-80 overflow-y-auto rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-lg p-3 space-y-3" data-testid="graph-status-menu">
+              <div className="flex items-center justify-between"><span className="text-xs font-semibold">{t("graph.statusFilter")}</span><button type="button" className="text-[11px] text-indigo-600 hover:underline" onClick={() => setHiddenStatuses(new Set())}>{t("graph.showAll")}</button></div>
+              {statusGroups.map((group) => <fieldset key={group.type}><legend className="text-[10px] font-semibold uppercase tracking-wide text-neutral-400 mb-1">{typeLabel(group.type)}</legend><div className="space-y-1">{group.values.map((value) => { const key = `${group.type}:${value}`; return <label key={key} className="flex items-center gap-2 text-xs rounded-md px-1 py-1 hover:bg-neutral-50 dark:hover:bg-neutral-800"><input type="checkbox" checked={!hiddenStatuses.has(key)} onChange={() => toggleStatus(key)} className="accent-indigo-600" /><span className="truncate">{statusLabel(value)}</span></label>; })}</div></fieldset>)}
+            </div>}
+          </div>}
         </div>
       </div>
 

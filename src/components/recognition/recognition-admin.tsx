@@ -2,7 +2,7 @@
 // Recognition management (workspace admins and the people they delegate to):
 // scoring rules, who sees points, managers, reward catalog, approvals.
 import { useEffect, useState } from "react";
-import { Check, Gift, ImagePlus, Loader2, Pencil, Plus, RefreshCcw, Save, ShieldCheck, Trash2, X } from "lucide-react";
+import { ArrowRight, Check, Gift, History, ImagePlus, Loader2, Pencil, Plus, RefreshCcw, Save, ShieldCheck, Trash2, X } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/misc";
@@ -16,6 +16,7 @@ import { Avatar, fmtNumber } from "./shared";
 import { NumberInput, formatThousands } from "@/components/ui/number-input";
 import type { MessageKey } from "@/lib/i18n/core";
 import { Meta } from "@/components/ui/meta";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 
 interface Settings {
   enabled: boolean;
@@ -26,6 +27,11 @@ interface Settings {
   members: { id: string; name: string; email: string; avatarColor: string; role: string; isManager: boolean; canViewOthersPoints: boolean | null }[];
 }
 
+const accessFingerprint = (settings: Settings) => JSON.stringify({
+  visibility: settings.members.map((member) => [member.id, member.canViewOthersPoints ?? settings.membersSeePoints]).sort(([a], [b]) => String(a).localeCompare(String(b))),
+  managers: settings.members.filter((member) => member.isManager).map((member) => member.id).sort(),
+});
+
 export function RecognitionAdmin({ workspaceId, highlightId }: { workspaceId: string; highlightId?: string | null }) {
   const { t } = useT();
   const [s, setS] = useState<Settings | null>(null);
@@ -33,8 +39,14 @@ export function RecognitionAdmin({ workspaceId, highlightId }: { workspaceId: st
   const [requests, setRequests] = useState<Redemption[]>([]);
   const [editing, setEditing] = useState<RewardDto | "new" | null>(null);
   const [busy, setBusy] = useState(false);
+  const [savedAccess, setSavedAccess] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [approvalHistory, setApprovalHistory] = useState<Redemption[] | null>(null);
   const loadAll = () => {
-    api.get<Settings>(`/api/workspaces/${workspaceId}/recognition/settings`).then(setS).catch((e) => toast.error(e.message));
+    api.get<Settings>(`/api/workspaces/${workspaceId}/recognition/settings`).then((settings) => {
+      setS(settings);
+      setSavedAccess(accessFingerprint(settings));
+    }).catch((e) => toast.error(e.message));
     api.get<RewardDto[]>(`/api/workspaces/${workspaceId}/rewards`).then(setRewards).catch(() => {});
     api.get<Redemption[]>(`/api/workspaces/${workspaceId}/redemptions`).then(setRequests).catch(() => {});
   };
@@ -66,18 +78,38 @@ export function RecognitionAdmin({ workspaceId, highlightId }: { workspaceId: st
       setBusy(false);
     }
   }
-  async function setVisibility(userId: string, v: boolean | null) {
-    await api.put(`/api/workspaces/${workspaceId}/recognition/members/${userId}`, { canViewOthersPoints: v });
-    setS((x) => (x ? { ...x, members: x.members.map((m) => (m.id === userId ? { ...m, canViewOthersPoints: v } : m)) } : x));
+  function setVisibility(userId: string, value: boolean) {
+    setS((current) => current ? { ...current, members: current.members.map((member) => member.id === userId ? { ...member, canViewOthersPoints: value } : member) } : current);
   }
-  async function toggleManager(userId: string) {
+  function toggleManager(userId: string) {
+    setS((current) => current ? { ...current, members: current.members.map((member) => member.id === userId ? { ...member, isManager: !member.isManager } : member) } : current);
+  }
+  async function confirmAccess() {
     if (!s) return;
-    const ids = s.members.filter((m) => (m.id === userId ? !m.isManager : m.isManager)).map((m) => m.id);
+    setBusy(true);
     try {
-      await api.put(`/api/workspaces/${workspaceId}/recognition/managers`, { userIds: ids });
-      setS({ ...s, members: s.members.map((m) => ({ ...m, isManager: ids.includes(m.id) })) });
+      await api.put(`/api/workspaces/${workspaceId}/recognition/settings`, {
+        memberVisibility: s.members.map((member) => ({ userId: member.id, canViewOthersPoints: member.canViewOthersPoints ?? s.membersSeePoints })),
+        ...(s.canDelegate ? { managerIds: s.members.filter((member) => member.isManager).map((member) => member.id) } : {}),
+      });
+      const committed = { ...s, members: s.members.map((member) => ({ ...member, canViewOthersPoints: member.canViewOthersPoints ?? s.membersSeePoints })) };
+      setS(committed);
+      setSavedAccess(accessFingerprint(committed));
+      toast.success(t("reco.admin.accessConfirmed"));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function openApprovalHistory() {
+    setHistoryOpen(true);
+    if (approvalHistory) return;
+    try {
+      setApprovalHistory(await api.get<Redemption[]>(`/api/workspaces/${workspaceId}/redemptions?approvedByMe=1`));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+      setApprovalHistory([]);
     }
   }
   async function patchReward(id: string, patch: Record<string, unknown>) {
@@ -93,6 +125,7 @@ export function RecognitionAdmin({ workspaceId, highlightId }: { workspaceId: st
     try {
       await api.patch(`/api/redemptions/${id}`, { action, note });
       toast.success(t(`reco.admin.${action}d` as MessageKey));
+      setApprovalHistory(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
@@ -111,15 +144,18 @@ export function RecognitionAdmin({ workspaceId, highlightId }: { workspaceId: st
     <div className="space-y-4" data-testid="reco-admin">
       {/* Approvals first: they are what needs action. */}
       <section className={card} data-testid="reco-approvals">
-        <h3 className="text-sm font-semibold mb-2">{t("reco.admin.requests", { n: pending.length })}</h3>
-        {!requests.length ? (
+        <div className="flex items-center justify-between gap-2 mb-2">
+          <h3 className="text-sm font-semibold">{t("reco.admin.requests", { n: pending.length })}</h3>
+          <Button size="sm" variant="outline" onClick={openApprovalHistory}><History size={13} />{t("reco.admin.approvalHistory")}</Button>
+        </div>
+        {!pending.length ? (
           <p className="text-xs text-neutral-500">{t("reco.admin.noRequests")}</p>
         ) : (
           <ul className="space-y-1.5 text-sm">
-            {requests.map((r) => (
+            {pending.map((r) => (
               <li key={r.id} id={`request-${r.id}`} className={cn("flex flex-wrap items-center gap-2 rounded-lg", r.id === highlightId && "ring-2 ring-indigo-400 bg-indigo-50/60 dark:bg-indigo-950/30 p-2")} data-testid="reco-request">
                 <span className="font-medium">{r.user.name}</span>
-                <span className="text-neutral-400">→</span>
+                <ArrowRight size={14} className="text-neutral-400" aria-hidden />
                 <span>{r.reward.name}</span>
                 <span className="text-xs text-neutral-500">
                   <Meta><span className="font-medium text-indigo-600 tabular-nums">{t("reco.unit.points", { n: fmtNumber(r.points) })}</span><span>{formatDate(r.createdAt)}</span><span>{t("reco.rewards.left", { n: fmtNumber(r.reward.remaining) })}</span></Meta>
@@ -182,22 +218,18 @@ export function RecognitionAdmin({ workspaceId, highlightId }: { workspaceId: st
 
         <section className={card} data-testid="reco-visibility">
           <h3 className="text-sm font-semibold">{t("reco.admin.people")}</h3>
-          <label className="mt-2 flex items-center gap-2 text-xs">
-            <Switch checked={s.membersSeePoints} onCheckedChange={(v) => setS({ ...s, membersSeePoints: v })} /> {t("reco.admin.defaultSee")}
-          </label>
-          <p className="text-[11px] text-neutral-500 mt-1 mb-2">{t("reco.admin.peopleHint")}</p>
+          <p className="text-[11px] text-neutral-500 mt-1 mb-2">{t("reco.admin.peopleConfirmHint")}</p>
           <ul className="space-y-1 max-h-80 overflow-y-auto thin-scroll">
             {s.members.map((m) => (
               <li key={m.id} className="flex items-center gap-2 text-sm" data-testid="reco-member">
                 <Avatar p={m} size={24} />
                 <span className="flex-1 truncate">{m.name}</span>
                 <select
-                  value={m.canViewOthersPoints === null ? "" : m.canViewOthersPoints ? "1" : "0"}
-                  onChange={(e) => setVisibility(m.id, e.target.value === "" ? null : e.target.value === "1")}
+                  value={(m.canViewOthersPoints ?? s.membersSeePoints) ? "1" : "0"}
+                  onChange={(e) => setVisibility(m.id, e.target.value === "1")}
                   className="h-7 rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-1 text-xs"
                   data-testid="reco-member-visibility"
                 >
-                  <option value="">{t("reco.admin.see.default")}</option>
                   <option value="1">{t("reco.admin.see.show")}</option>
                   <option value="0">{t("reco.admin.see.hide")}</option>
                 </select>
@@ -209,6 +241,11 @@ export function RecognitionAdmin({ workspaceId, highlightId }: { workspaceId: st
               </li>
             ))}
           </ul>
+          <div className="mt-3 flex justify-end">
+            <Button size="sm" onClick={confirmAccess} disabled={busy || accessFingerprint(s) === savedAccess} data-testid="reco-confirm-access">
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} {t("reco.admin.confirmAccess")}
+            </Button>
+          </div>
         </section>
       </div>
 
@@ -243,6 +280,12 @@ export function RecognitionAdmin({ workspaceId, highlightId }: { workspaceId: st
         </div>
       </section>
       {editing && <RewardDialog workspaceId={workspaceId} reward={editing === "new" ? null : editing} onClose={() => setEditing(null)} onSaved={loadAll} />}
+      <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogTitle>{t("reco.admin.approvalHistory")}</DialogTitle>
+          {approvalHistory === null ? <div className="py-8 flex justify-center"><Loader2 size={18} className="animate-spin text-neutral-400" /></div> : approvalHistory.length === 0 ? <p className="py-6 text-sm text-neutral-500">{t("reco.admin.noApprovalHistory")}</p> : <ul className="max-h-[60vh] overflow-y-auto thin-scroll divide-y divide-neutral-200 dark:divide-neutral-800">{approvalHistory.map((redemption) => <li key={redemption.id} className="py-3 flex flex-wrap items-center gap-2 text-sm"><span className="font-medium">{redemption.user.name}</span><ArrowRight size={14} className="text-neutral-400" aria-hidden /><span>{redemption.reward.name}</span><span className="ml-auto text-xs text-neutral-500">{t("reco.unit.points", { n: fmtNumber(redemption.points) })} · {formatDate(redemption.decidedAt ?? redemption.createdAt)}</span></li>)}</ul>}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

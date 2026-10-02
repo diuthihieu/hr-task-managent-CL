@@ -13,6 +13,7 @@ import { cn, formatDate } from "@/lib/utils";
 import { Markdown } from "@/components/ai/markdown";
 import type { MessageKey } from "@/lib/i18n/core";
 import { Meta } from "@/components/ui/meta";
+import { InlineArrow } from "@/components/ui/inline-arrow";
 
 export interface LayerState {
   highlights: { id: string; text: string; blockId?: string; by?: string; at: string }[];
@@ -83,7 +84,7 @@ export function LayersPanel({ pageId, canEdit, refreshKey, onJumpToBlock }: { pa
         </p>
       )}
       <div className="flex items-center gap-1 border-b border-neutral-200 dark:border-neutral-800 px-2 mt-1 overflow-x-auto thin-scroll">
-        <span className="h-8 px-2 text-xs inline-flex items-center text-neutral-400 whitespace-nowrap">{t("brain.layers.source")} →</span>
+        <span className="h-8 px-2 text-xs inline-flex items-center gap-1 text-neutral-400 whitespace-nowrap">{t("brain.layers.source")} <InlineArrow /></span>
         {TABS.map((k, i) => (
           <button key={k} onClick={() => setTab(k)} className={cn("h-8 px-2 text-xs font-medium inline-flex items-center gap-1 border-b-2 -mb-px whitespace-nowrap", tab === k ? "border-indigo-600 text-indigo-700 dark:text-indigo-300" : "border-transparent text-neutral-500")} data-testid={`layer-tab-${k}`}>
             {i + 1}. {t(`brain.layers.${k}` as MessageKey)}

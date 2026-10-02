@@ -54,7 +54,7 @@ export const PATCH = route<{ userId: string }>(async (req, { params }) => {
     const log = (action: Parameters<typeof logActivity>[1]["action"], summary: string) =>
       logActivity(tx, { workspaceId: null, actorId: admin.id, entityType: "user", entityId: userId, action, summary });
     if (body.name && body.name !== target.name) await log("updated", `Renamed ${target.name} to ${body.name}`);
-    if (body.systemRole && body.systemRole !== target.systemRole) await log("role_changed", `${target.email}: ${target.systemRole} → ${body.systemRole}`);
+    if (body.systemRole && body.systemRole !== target.systemRole) await log("role_changed", `${target.email}: ${target.systemRole} to ${body.systemRole}`);
     if (body.isActive !== undefined && body.isActive !== target.isActive) await log(body.isActive ? "activated" : "deactivated", `${body.isActive ? "Reactivated" : "Deactivated"} ${target.email}`);
     if (temporaryPassword) await log("password_reset", `Reset password for ${target.email}`);
     if (body.verifyEmail && !target.emailVerifiedAt) await log("updated", `Verified email ${target.email}`);

@@ -137,7 +137,7 @@ export function ForYou({ workspaceId }: { workspaceId: string }) {
                 <Sparkles size={13} className="text-indigo-600 mt-0.5 shrink-0" /> {x.title}
               </p>
               {x.detail && <p className="mt-1 text-xs text-neutral-600 dark:text-neutral-300">{x.detail}</p>}
-              {x.action && <p className="mt-1.5 text-xs font-medium text-indigo-700 dark:text-indigo-300">→ {x.action}</p>}
+              {x.action && <p className="mt-1.5 text-xs font-medium text-indigo-700 dark:text-indigo-300 inline-flex items-start gap-1"><ArrowRight size={13} className="mt-0.5 shrink-0" />{x.action}</p>}
             </div>
           ))}
         </section>

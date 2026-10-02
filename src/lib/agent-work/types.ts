@@ -47,6 +47,7 @@ export interface AgentSkillDto {
   inputSchema: unknown;
   workflow: unknown;
   referenceFiles: unknown;
+  referenceAttachments: Array<{ id: string; fileName: string; contentType: string; sizeBytes: number; createdAt: string; downloadUrl: string }>;
   templates: unknown;
   validationRules: unknown;
   outputDefinitions: Array<{ format: "markdown" | "text" | "json" | "docx" | "xlsx" | "pptx" | "pdf"; name: string }>;

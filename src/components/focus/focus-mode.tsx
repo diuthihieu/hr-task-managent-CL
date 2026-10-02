@@ -9,6 +9,7 @@ import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { MessageKey } from "@/lib/i18n/core";
+import { InlineArrow } from "@/components/ui/inline-arrow";
 
 interface ChecklistItem {
   text: string;
@@ -64,7 +65,7 @@ export function FocusRunLog({ runs, startedAt, endedAt, testId = "focus-runs" }:
             <span className={cn("h-1.5 w-1.5 rounded-full shrink-0", r.endedAt ? "bg-neutral-300 dark:bg-neutral-600" : "bg-emerald-500 animate-pulse")} />
             <span className="font-mono tabular-nums text-neutral-700 dark:text-neutral-200">
               {dayLabel(r.startedAt) !== dayLabel(runs[0].startedAt) && `${dayLabel(r.startedAt)} `}
-              {clock(r.startedAt)} → {r.endedAt ? clock(r.endedAt) : t("focus.log.now")}
+              {clock(r.startedAt)} <InlineArrow /> {r.endedAt ? clock(r.endedAt) : t("focus.log.now")}
             </span>
             <span className="text-neutral-400">{t(`focus.log.start.${r.startKind}` as MessageKey)}</span>
             <span className="text-neutral-500">{r.endedAt ? t(`focus.log.end.${r.endKind ?? "stopped"}` as MessageKey) : t("focus.log.running")}</span>

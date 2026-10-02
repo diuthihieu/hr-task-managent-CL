@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { signIn } from "next-auth/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,8 +19,34 @@ export function AuthCard({ initialMode = "login", callbackUrl = "/workspaces", g
   const [confirm, setConfirm] = useState("");
   const [website, setWebsite] = useState(""); // honeypot
   const [loading, setLoading] = useState(false);
+  const [googleCsrfToken, setGoogleCsrfToken] = useState("");
+  const [googleCsrfFailed, setGoogleCsrfFailed] = useState(false);
+  const [googleCsrfAttempt, setGoogleCsrfAttempt] = useState(0);
+  const [googleLoading, setGoogleLoading] = useState(false);
   // Only same-site paths are allowed as a post-login destination.
   const target = callbackUrl.startsWith("/") && !callbackUrl.startsWith("//") ? callbackUrl : "/workspaces";
+
+  useEffect(() => {
+    if (!googleEnabled) return;
+    const controller = new AbortController();
+    fetch("/api/auth/csrf", {
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not prepare Google sign-in");
+        const data = (await response.json()) as { csrfToken?: unknown };
+        if (typeof data.csrfToken !== "string" || !data.csrfToken) throw new Error("Missing OAuth CSRF token");
+        setGoogleCsrfToken(data.csrfToken);
+      })
+      .catch((requestError: unknown) => {
+        if (requestError instanceof DOMException && requestError.name === "AbortError") return;
+        setGoogleCsrfFailed(true);
+      });
+    return () => controller.abort();
+  }, [googleEnabled, googleCsrfAttempt]);
 
   async function doSignIn() {
     const result = await signIn("credentials", { email, password, redirect: false });
@@ -96,9 +122,32 @@ export function AuthCard({ initialMode = "login", callbackUrl = "/workspaces", g
           <div className="flex items-center gap-3 my-3 text-[11px] text-neutral-400">
             <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" /> {t("auth.or")} <span className="h-px flex-1 bg-neutral-200 dark:bg-neutral-800" />
           </div>
-          <Button type="button" variant="outline" className="w-full justify-center" onClick={() => signIn("google", { callbackUrl: target })} data-testid="auth-google">
-            <GoogleIcon /> {mode === "login" ? t("auth.google") : t("auth.googleSignUp")}
-          </Button>
+          <form
+            action="/api/auth/signin/google"
+            method="post"
+            onSubmit={(event) => {
+              if (!googleCsrfToken) {
+                event.preventDefault();
+                if (googleCsrfFailed) {
+                  setGoogleCsrfFailed(false);
+                  setGoogleCsrfAttempt((attempt) => attempt + 1);
+                  toast.error(t("common.failed"));
+                }
+                return;
+              }
+              if (googleLoading) {
+                event.preventDefault();
+                return;
+              }
+              setGoogleLoading(true);
+            }}
+          >
+            <input type="hidden" name="csrfToken" value={googleCsrfToken} />
+            <input type="hidden" name="callbackUrl" value={target} />
+            <Button type="submit" variant="outline" className="w-full justify-center" disabled={googleLoading || (!googleCsrfToken && !googleCsrfFailed)} data-testid="auth-google">
+              <GoogleIcon /> {googleLoading || (!googleCsrfToken && !googleCsrfFailed) ? t("common.loading") : mode === "login" ? t("auth.google") : t("auth.googleSignUp")}
+            </Button>
+          </form>
         </>
       )}
       {error && <p className="text-xs text-red-600 mt-3 text-center" data-testid="auth-error">{t(error === "account_disabled" ? "auth.err.disabled" : error === "google_unverified" ? "auth.err.googleUnverified" : "auth.err.generic")}</p>}

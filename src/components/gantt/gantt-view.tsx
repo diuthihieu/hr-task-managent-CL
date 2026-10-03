@@ -5,6 +5,11 @@ import { Cell, type Member, type LinkTarget } from "@/components/grid/cell";
 import { GanttSettings } from "./gantt-settings";
 import { getCellValue, type RecordGroup, type GanttConfig } from "@/lib/query-engine";
 import { parseFieldConfig } from "@/lib/field-types";
+import {
+  clampGanttTaskColumnWidth,
+  fitGanttTaskColumnWidth,
+  GANTT_TASK_COLUMN_DEFAULT_WIDTH,
+} from "@/lib/gantt-layout";
 import { cn, initials } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
 import { useT } from "@/components/i18n-provider";
@@ -14,7 +19,6 @@ const ZOOM_PX_PER_DAY: Record<string, number> = { day: 36, week: 14, month: 5 };
 const ZOOM_PADDING_DAYS: Record<string, number> = { day: 3, week: 7, month: 30 };
 const TASK_ROW_HEIGHT = 40;
 const GROUP_ROW_HEIGHT = 30;
-const NAME_COL_WIDTH = 240;
 
 interface GanttViewProps {
   fields: FieldRow[];
@@ -93,6 +97,15 @@ export function GanttView(props: GanttViewProps) {
     }
     return map;
   }, [flatRecords, taskField, startField, endField, progressField, statusField, dependencyField, fields, recordIds]);
+
+  const fittedTaskColumnWidth = useMemo(
+    () => fitGanttTaskColumnWidth([...tasksById.values()].map((task) => task.name)),
+    [tasksById]
+  );
+  const configuredTaskColumnWidth = clampGanttTaskColumnWidth(config.taskColumnWidth ?? GANTT_TASK_COLUMN_DEFAULT_WIDTH);
+  const [resizingTaskColumnWidth, setResizingTaskColumnWidth] = useState<number | null>(null);
+  const taskColumnWidth =
+    resizingTaskColumnWidth ?? (config.taskColumnSizing === "fit" ? fittedTaskColumnWidth : configuredTaskColumnWidth);
 
   const { rangeStart, totalDays } = useMemo(() => {
     const padding = ZOOM_PADDING_DAYS[zoom];
@@ -249,6 +262,39 @@ export function GanttView(props: GanttViewProps) {
     window.addEventListener("mouseup", onUp);
   }
 
+  function startTaskColumnResize(e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = taskColumnWidth;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    function widthAt(clientX: number) {
+      return clampGanttTaskColumnWidth(startWidth + clientX - startX);
+    }
+    function cleanup() {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    }
+    function onMove(event: MouseEvent) {
+      setResizingTaskColumnWidth(widthAt(event.clientX));
+    }
+    function onUp(event: MouseEvent) {
+      const width = widthAt(event.clientX);
+      cleanup();
+      setResizingTaskColumnWidth(null);
+      onConfigChange({ taskColumnSizing: "fixed", taskColumnWidth: width });
+    }
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
+
   const missingDates = !startField;
 
   return (
@@ -273,11 +319,20 @@ export function GanttView(props: GanttViewProps) {
       </div>
 
       <div className="flex-1 overflow-auto thin-scroll">
-        <div style={{ position: "relative", width: NAME_COL_WIDTH + timelineWidth }}>
+        <div style={{ position: "relative", width: taskColumnWidth + timelineWidth }}>
           {/* Header */}
           <div className="flex sticky top-0 z-20 bg-neutral-50 dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800">
-            <div className="sticky left-0 z-30 shrink-0 bg-neutral-50 dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex items-end px-2 pb-1 text-xs font-medium text-neutral-500" style={{ width: NAME_COL_WIDTH, height: 44 }}>
-              Task
+            <div className="sticky left-0 z-30 shrink-0 bg-neutral-50 dark:bg-neutral-900 border-r border-neutral-200 dark:border-neutral-800 flex items-end px-2 pb-1 text-xs font-medium text-neutral-500 relative" style={{ width: taskColumnWidth, height: 44 }}>
+              {t("gt.taskColumn")}
+              <button
+                type="button"
+                aria-label={t("gt.resizeTaskColumn")}
+                title={t("gt.resizeTaskColumn")}
+                onMouseDown={startTaskColumnResize}
+                className="absolute right-0 top-0 h-full w-2 cursor-col-resize group/resize touch-none"
+              >
+                <span className="absolute right-0 top-0 h-full w-px bg-transparent group-hover/resize:bg-indigo-500" />
+              </button>
             </div>
             <div style={{ width: timelineWidth }}>
               <div className="flex h-5">
@@ -305,8 +360,8 @@ export function GanttView(props: GanttViewProps) {
           <div style={{ position: "relative" }}>
             {rows.map((row, i) =>
               row.type === "group" ? (
-                <div key={`g-${i}`} className="flex sticky left-0" style={{ height: GROUP_ROW_HEIGHT, width: NAME_COL_WIDTH + timelineWidth }}>
-                  <div className="w-full bg-neutral-100 dark:bg-neutral-800/60 border-b border-neutral-200 dark:border-neutral-800 flex items-center px-2 gap-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-200 sticky left-0" style={{ width: NAME_COL_WIDTH + timelineWidth }}>
+                <div key={`g-${i}`} className="flex sticky left-0" style={{ height: GROUP_ROW_HEIGHT, width: taskColumnWidth + timelineWidth }}>
+                  <div className="w-full bg-neutral-100 dark:bg-neutral-800/60 border-b border-neutral-200 dark:border-neutral-800 flex items-center px-2 gap-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-200 sticky left-0" style={{ width: taskColumnWidth + timelineWidth }}>
                     {row.group.color && <span className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: row.group.color }} />}
                     {row.group.label}
                     <span className="text-neutral-400 font-normal">{row.group.records.length}</span>
@@ -323,6 +378,8 @@ export function GanttView(props: GanttViewProps) {
                   members={members}
                   linkTargets={linkTargets}
                   rect={barRect(tasksById.get(row.record.id)!)}
+                  taskColumnWidth={taskColumnWidth}
+                  timelineWidth={timelineWidth}
                   dragging={dragState?.recordId === row.record.id}
                   onCellChange={onCellChange}
                   onOpenRecord={onOpenRecord}
@@ -333,13 +390,13 @@ export function GanttView(props: GanttViewProps) {
 
             {/* Today marker */}
             {todayX >= 0 && todayX <= timelineWidth && (
-              <div className="absolute top-0 w-px bg-red-400 z-10 pointer-events-none" style={{ left: NAME_COL_WIDTH + todayX, height: totalHeight }} />
+              <div className="absolute top-0 w-px bg-red-400 z-10 pointer-events-none" style={{ left: taskColumnWidth + todayX, height: totalHeight }} />
             )}
 
             {/* Dependency lines */}
             <svg
               className="absolute top-0 pointer-events-none"
-              style={{ left: NAME_COL_WIDTH, width: timelineWidth, height: totalHeight }}
+              style={{ left: taskColumnWidth, width: timelineWidth, height: totalHeight }}
               width={timelineWidth}
               height={totalHeight}
             >
@@ -389,6 +446,8 @@ function GanttRow({
   members,
   linkTargets,
   rect,
+  taskColumnWidth,
+  timelineWidth,
   dragging,
   onCellChange,
   onOpenRecord,
@@ -402,6 +461,8 @@ function GanttRow({
   members: Member[];
   linkTargets: Record<string, LinkTarget>;
   rect: { left: number; width: number } | null;
+  taskColumnWidth: number;
+  timelineWidth: number;
   dragging: boolean;
   onCellChange: (recordId: string, fieldId: string, value: unknown) => void;
   onOpenRecord: (id: string) => void;
@@ -413,8 +474,8 @@ function GanttRow({
   const ownerMembers = members.filter((m) => ownerIds.includes(m.id));
 
   return (
-    <div className="flex group/gr hover:bg-neutral-50 dark:hover:bg-neutral-900/60" style={{ height: TASK_ROW_HEIGHT }}>
-      <div className="sticky left-0 z-10 bg-white dark:bg-neutral-950 border-b border-r border-neutral-100 dark:border-neutral-900 flex items-center" style={{ width: NAME_COL_WIDTH }}>
+    <div className="flex group/gr hover:bg-neutral-50 dark:hover:bg-neutral-900/60" style={{ height: TASK_ROW_HEIGHT, width: taskColumnWidth + timelineWidth }}>
+      <div className="sticky left-0 z-10 shrink-0 bg-white dark:bg-neutral-950 border-b border-r border-neutral-100 dark:border-neutral-900 flex items-center" style={{ width: taskColumnWidth }}>
         <button onClick={() => onOpenRecord(record.id)} className="opacity-0 group-hover/gr:opacity-100 shrink-0 ml-1 text-neutral-400 hover:text-indigo-600" title={t("grid.expand")}>
           <Maximize2 size={12} />
         </button>
@@ -422,7 +483,7 @@ function GanttRow({
           {taskField ? <Cell field={taskField} value={task.name} record={record} members={members} linkTargets={linkTargets} onChange={(v) => onCellChange(record.id, taskField.id, v)} /> : null}
         </div>
       </div>
-      <div className="relative border-b border-neutral-100 dark:border-neutral-900" style={{ width: "100%" }}>
+      <div className="relative shrink-0 border-b border-neutral-100 dark:border-neutral-900" style={{ width: timelineWidth }}>
         {rect ? (
           <div
             id={`gantt-bar-${record.id}`}

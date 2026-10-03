@@ -112,6 +112,8 @@ export interface ReportConfig {
 
 export interface GanttConfig {
   taskFieldId?: string;
+  taskColumnSizing?: "fixed" | "fit";
+  taskColumnWidth?: number;
   startFieldId?: string;
   endFieldId?: string;
   progressFieldId?: string;

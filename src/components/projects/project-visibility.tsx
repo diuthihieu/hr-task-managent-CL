@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
 import { AvatarImg } from "@/components/ui/avatar-img";
+import { setAllHideableMembers } from "@/lib/project-visibility-selection";
 
 interface Member {
   id: string;
@@ -34,8 +35,9 @@ export function ProjectVisibility({ projectId }: { projectId: string }) {
       const r = await api.get<{ canManage: boolean; hiddenUserIds: string[]; members: Member[] }>(`/api/projects/${projectId}/visibility`);
       setMembers(r.members);
       setCanManage(r.canManage);
-      setHidden(new Set(r.hiddenUserIds));
-      setSaved(new Set(r.hiddenUserIds));
+      const normalizedHidden = new Set(r.members.filter((member) => member.hidden && !member.lockedReason).map((member) => member.id));
+      setHidden(normalizedHidden);
+      setSaved(new Set(normalizedHidden));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
@@ -50,6 +52,10 @@ export function ProjectVisibility({ projectId }: { projectId: string }) {
     const s = q.trim().toLowerCase();
     return s ? members.filter((m) => m.name.toLowerCase().includes(s) || m.email.toLowerCase().includes(s)) : members;
   }, [members, q]);
+  const hideableMembers = useMemo(() => members.filter((member) => !member.lockedReason), [members]);
+  const hiddenHideableCount = hideableMembers.filter((member) => hidden.has(member.id)).length;
+  const allHideableHidden = hideableMembers.length > 0 && hiddenHideableCount === hideableMembers.length;
+  const someHideableHidden = hiddenHideableCount > 0 && !allHideableHidden;
   const dirty = hidden.size !== saved.size || [...hidden].some((id) => !saved.has(id));
 
   async function save() {
@@ -85,6 +91,24 @@ export function ProjectVisibility({ projectId }: { projectId: string }) {
         <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-neutral-400" />
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("vis.search")} className="pl-8" />
       </div>
+      {canManage && hideableMembers.length > 0 && (
+        <label className="mb-2 flex cursor-pointer items-start gap-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2.5 dark:border-neutral-800 dark:bg-neutral-900/60">
+          <input
+            type="checkbox"
+            className="mt-0.5 h-4 w-4 accent-indigo-600"
+            checked={allHideableHidden}
+            ref={(element) => {
+              if (element) element.indeterminate = someHideableHidden;
+            }}
+            onChange={() => setHidden((current) => setAllHideableMembers(current, members, !allHideableHidden))}
+            data-testid="vis-hide-all"
+          />
+          <span className="min-w-0">
+            <span className="block text-sm font-medium text-neutral-800 dark:text-neutral-200">{t("vis.hideAll", { count: hideableMembers.length })}</span>
+            <span className="block text-xs text-neutral-500">{t("vis.hideAllHint")}</span>
+          </span>
+        </label>
+      )}
       <div className="border border-neutral-200 dark:border-neutral-800 rounded-lg divide-y divide-neutral-100 dark:divide-neutral-900 max-h-80 overflow-y-auto thin-scroll">
         {filtered.map((m) => {
           const locked = !!m.lockedReason;

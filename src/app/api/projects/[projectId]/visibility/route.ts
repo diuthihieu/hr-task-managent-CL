@@ -48,7 +48,7 @@ function lockedReason(userId: string, role: string, project: { ownerId: string |
   return null;
 }
 
-const schema = z.object({ hiddenUserIds: z.array(uuid).max(1000) });
+const schema = z.object({ hiddenUserIds: z.array(uuid).max(10_000) });
 
 /** Replace the hidden-member list. */
 export const PUT = route<P>(async (req, { params }) => {

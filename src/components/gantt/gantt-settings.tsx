@@ -39,6 +39,18 @@ export function GanttSettings({
         <Field label={t("gt.task")}>
           <Select value={config.taskFieldId ?? ""} onValueChange={(v) => onChange({ taskFieldId: v })} options={fields.map((f) => ({ value: f.id, label: f.name }))} className="w-full" />
         </Field>
+        <Field label={t("gt.taskColumnSizing")}>
+          <Select
+            value={config.taskColumnSizing ?? "fixed"}
+            onValueChange={(value) => onChange({ taskColumnSizing: value as "fixed" | "fit" })}
+            options={[
+              { value: "fixed", label: t("gt.taskColumnFixed") },
+              { value: "fit", label: t("gt.taskColumnFit") },
+            ]}
+            className="w-full"
+          />
+          <p className="mt-1 text-[11px] text-neutral-400">{t("gt.taskColumnSizingHint")}</p>
+        </Field>
         <Field label={t("gt.start")}>
           <Select value={config.startFieldId ?? ""} onValueChange={(v) => onChange({ startFieldId: v })} options={dateFields.map((f) => ({ value: f.id, label: f.name }))} className="w-full" placeholder={t("common.none")} />
         </Field>

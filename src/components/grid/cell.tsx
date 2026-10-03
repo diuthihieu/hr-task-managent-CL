@@ -37,9 +37,8 @@ interface CellProps {
   okrOptions?: OkrOptions; // for `okr_objective` / `okr_key_result` fields
   onChange: (value: unknown) => void;
   readOnlyOverride?: boolean;
-  /** Row Height = "Auto Fit Content": wrap text instead of single-line truncating, growing the row to fit (capped by maxHeight). */
+  /** Wrap text and grow the containing row/field to show its full content. */
   wrapText?: boolean;
-  maxHeight?: number;
   columnWidth?: number;
 }
 
@@ -92,9 +91,9 @@ function DraftInput({ value, onCommit, ...rest }: DraftProps<HTMLInputElement>) 
 /**
  * With `autoGrow`, the textarea is sized to its real content height (measured,
  * not estimated): re-measured on every edit and whenever its width changes
- * (column resize, sidebar toggle), capped by `maxHeight` (then it scrolls).
+ * (column resize, sidebar toggle).
  */
-function DraftTextarea({ value, onCommit, autoGrow, maxHeight, ...rest }: DraftProps<HTMLTextAreaElement> & { autoGrow?: boolean; maxHeight?: number }) {
+function DraftTextarea({ value, onCommit, autoGrow, ...rest }: DraftProps<HTMLTextAreaElement> & { autoGrow?: boolean }) {
   const d = useDraft(value, onCommit);
   const ref = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
@@ -103,14 +102,14 @@ function DraftTextarea({ value, onCommit, autoGrow, maxHeight, ...rest }: DraftP
     const fit = () => {
       el.style.height = "auto";
       const h = el.scrollHeight;
-      el.style.height = `${maxHeight ? Math.min(h, maxHeight) : h}px`;
-      el.style.overflowY = maxHeight && h > maxHeight ? "auto" : "hidden";
+      el.style.height = `${h}px`;
+      el.style.overflowY = "hidden";
     };
     fit();
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(fit) : null;
     ro?.observe(el.parentElement ?? el);
     return () => ro?.disconnect();
-  }, [autoGrow, maxHeight, d.draft]);
+  }, [autoGrow, d.draft]);
   return (
     <textarea
       {...(rest as React.TextareaHTMLAttributes<HTMLTextAreaElement>)}
@@ -182,13 +181,14 @@ function OptionBadge({ option }: { option: SelectOption }) {
   );
 }
 
-export function Cell({ field, value, record, members, linkTargets, okrOptions, wrapText, maxHeight, onChange, readOnlyOverride }: CellProps) {
+export function Cell({ field, value, record, members, linkTargets, okrOptions, wrapText, onChange, readOnlyOverride }: CellProps) {
   const typeDef = getFieldType(field.type);
   const config = parseFieldConfig(field.config);
   const base = "h-full w-full flex items-center px-2 text-sm";
 
   if (readOnlyOverride) {
-    return <div className={cn(base, "text-neutral-700 dark:text-neutral-300 truncate")}>{CellDisplayValue(field, value) || <span className="text-neutral-300">—</span>}</div>;
+    const showFullText = wrapText && (field.type === "text" || field.type === "long_text");
+    return <div className={cn(base, "text-neutral-700 dark:text-neutral-300", showFullText ? "h-auto min-h-[32px] items-start whitespace-pre-wrap break-words py-1.5" : "truncate")}>{CellDisplayValue(field, value) || <span className="text-neutral-300">—</span>}</div>;
   }
 
   if (typeDef.comingSoon) {
@@ -202,7 +202,6 @@ export function Cell({ field, value, record, members, linkTargets, okrOptions, w
         return (
           <DraftTextarea
             autoGrow
-            maxHeight={maxHeight}
             className="block w-full bg-transparent outline-none resize-none text-sm text-neutral-800 dark:text-neutral-100 focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40 px-2 py-1.5 leading-5 break-words"
             value={(value as string) ?? ""}
             onCommit={(v) => onChange(v)}

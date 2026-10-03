@@ -172,6 +172,7 @@ export function RecordDrawer({
                       members={members}
                       linkTargets={linkTargets}
                       okrOptions={okrOptions}
+                      wrapText={field.type === "long_text"}
                       readOnlyOverride={!canEdit}
                       onChange={(v) => onChange(field.id, v)}
                     />
@@ -198,7 +199,7 @@ export function RecordDrawer({
                       <span className="font-medium text-neutral-800 dark:text-neutral-100">{c.user?.name ?? "Deleted user"}</span>{" "}
                       <span className="text-[11px] text-neutral-400">{formatDate(c.createdAt, true)}</span>
                     </div>
-                    <CommentBody body={c.body} className="text-neutral-600 dark:text-neutral-300" />
+                    <CommentBody body={c.body} markdown className="text-neutral-600 dark:text-neutral-300" />
                   </div>
                 </div>
               ))}
@@ -270,7 +271,7 @@ export function RecordDrawer({
 
         {tab === "comments" && (
           <div className="border-t border-neutral-200 dark:border-neutral-800 p-3 shrink-0 flex gap-2">
-            <MentionInput taskId={record.id} rows={1} value={draft} onChange={setDraft} onSubmit={postComment} placeholder={t("record.commentPlaceholder")} testId="drawer-comment-input" />
+            <MentionInput taskId={record.id} formatting rows={1} autoGrow value={draft} onChange={setDraft} onSubmit={postComment} placeholder={t("record.commentPlaceholder")} testId="drawer-comment-input" />
             <Button size="icon" onClick={postComment} aria-label="Post comment">
               <Send size={13} />
             </Button>

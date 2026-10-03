@@ -1,5 +1,5 @@
 "use client";
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AtSign, Bold, Italic, List, Code, Link2 } from "lucide-react";
 import { markdownToHtml } from "@/components/ai/markdown";
 import { useT } from "@/components/i18n-provider";
@@ -41,9 +41,10 @@ export const MentionInput = forwardRef<MentionInputHandle, {
   onSubmit?: () => void;
   placeholder?: string;
   rows?: number;
+  autoGrow?: boolean;
   className?: string;
   testId?: string;
-}>(function MentionInput({ taskId, mentionUrl, formatting, value, onChange, onSubmit, placeholder, rows = 2, className, testId }, ref) {
+}>(function MentionInput({ taskId, mentionUrl, formatting, value, onChange, onSubmit, placeholder, rows = 2, autoGrow, className, testId }, ref) {
   const peopleUrl = mentionUrl ?? (taskId ? `/api/tasks/${taskId}/mentionable` : "");
   const { t } = useT();
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -63,6 +64,19 @@ export const MentionInput = forwardRef<MentionInputHandle, {
     return [...m.values()].sort((a, b) => b.name.length - a.name.length);
   }, [value, picked]);
   const display = useMemo(() => value.replace(MENTION_RE, (_m, name: string) => `@${name}`), [value]);
+  useLayoutEffect(() => {
+    const element = taRef.current;
+    if (!autoGrow || !element) return;
+    const fit = () => {
+      element.style.height = "auto";
+      element.style.height = `${element.scrollHeight}px`;
+      element.style.overflowY = "hidden";
+    };
+    fit();
+    const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(fit) : null;
+    observer?.observe(element.parentElement ?? element);
+    return () => observer?.disconnect();
+  }, [autoGrow, display]);
   const encode = (text: string) => {
     let out = text;
     for (const k of known) {
@@ -199,7 +213,7 @@ export const MentionInput = forwardRef<MentionInputHandle, {
         aria-label={placeholder}
         data-testid={testId}
       />
-      <button type="button" onClick={openPicker} className="absolute right-1.5 top-1.5 rounded p-1 text-neutral-400 hover:text-indigo-600 hover:bg-neutral-100 dark:hover:bg-neutral-800" title={t("comment.mention")} data-testid={testId ? `${testId}-mention` : undefined}>
+      <button type="button" onClick={openPicker} className={cn("absolute right-1.5 rounded p-1 text-neutral-400 hover:text-indigo-600 hover:bg-neutral-100 dark:hover:bg-neutral-800", formatting ? "top-8" : "top-1.5")} title={t("comment.mention")} data-testid={testId ? `${testId}-mention` : undefined}>
         <AtSign size={14} />
       </button>
       {query !== null && matches.length > 0 && (

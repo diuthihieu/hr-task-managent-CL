@@ -29,7 +29,6 @@ import { useT } from "@/components/i18n-provider";
 const ROW_HEIGHTS: Record<string, number> = { short: 32, medium: 40, tall: 64 };
 const DEFAULT_WIDTH = 180;
 const PRIMARY_WIDTH = 220;
-const AUTO_FIT_MAX_HEIGHT = 180; // cap so one very long value can't blow up the whole table
 
 interface GridViewProps {
   fields: FieldRow[];
@@ -360,7 +359,6 @@ function Row({
                   linkTargets={props.linkTargets}
                   okrOptions={props.okrOptions}
                   wrapText={autoFit}
-                  maxHeight={autoFit ? AUTO_FIT_MAX_HEIGHT : undefined}
                   columnWidth={widthOf(field)}
                   onChange={(v) => props.onCellChange(record.id, field.id, v)}
                 />

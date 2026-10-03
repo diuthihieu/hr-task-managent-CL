@@ -230,7 +230,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
         <div className="text-xs">
           <span className="font-medium text-neutral-800 dark:text-neutral-100">{c.user?.name ?? "—"}</span> <span className="text-neutral-400">{formatDate(c.createdAt, true)}</span>
         </div>
-        <CommentBody body={c.body} className="text-sm text-neutral-700 dark:text-neutral-300" />
+        <CommentBody body={c.body} markdown className="text-sm text-neutral-700 dark:text-neutral-300" />
         <div className="flex gap-3 text-[11px] text-neutral-400 mt-0.5">
           <button onClick={() => startReply(c)} className="hover:text-indigo-600 flex items-center gap-0.5" data-testid="comment-reply">
             <Reply size={11} /> {t("record.reply")}
@@ -301,8 +301,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
                       members={project.members}
                       linkTargets={linkTargets}
                       readOnlyOverride={!canEdit || field.readOnly}
-                      wrapText={field.id === "sys_description"}
-                      maxHeight={field.id === "sys_description" ? 240 : undefined}
+                      wrapText={field.type === "long_text"}
                       onChange={(v) => change(field.id, v)}
                     />
                   </div>
@@ -475,7 +474,7 @@ function CommentBox({ taskId, draft, setDraft, replyTo, clearReply, onSend, test
         </div>
       )}
       <div className="flex gap-2">
-        <MentionInput taskId={taskId} value={draft} onChange={setDraft} onSubmit={onSend} placeholder={t("record.commentPlaceholder")} testId={`${testIdPrefix}-input`} />
+        <MentionInput taskId={taskId} formatting autoGrow value={draft} onChange={setDraft} onSubmit={onSend} placeholder={t("record.commentPlaceholder")} testId={`${testIdPrefix}-input`} />
         <Button size="icon" onClick={onSend} aria-label={t("record.send")} data-testid={`${testIdPrefix}-send`}>
           <Send size={13} />
         </Button>

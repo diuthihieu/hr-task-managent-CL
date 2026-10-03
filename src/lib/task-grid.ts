@@ -168,6 +168,7 @@ export function buildFields(meta: ProjectMeta, t: TFunction = makeT("en")): Fiel
   const opts = (o: object) => JSON.stringify(o);
   const sys: FieldRow[] = [
     sysField(pid, SYS.title, n(SYS.title), "text", 0, { isPrimary: true }),
+    sysField(pid, SYS.description, n(SYS.description), "long_text", 0.5),
     sysField(pid, SYS.status, n(SYS.status), "status", 1, {
       config: opts({ options: meta.statuses.map((s) => ({ id: s.id, label: s.name, color: s.color, category: s.category })) }),
     }),
@@ -189,7 +190,6 @@ export function buildFields(meta: ProjectMeta, t: TFunction = makeT("en")): Fiel
     sysField(pid, SYS.urgency, n(SYS.urgency), "urgency", 11, { config: opts({ options: URGENCY_OPTIONS }) }),
     sysField(pid, SYS.dependsOn, n(SYS.dependsOn), "link", 12, { config: opts({ linkProjectId: pid }), description: t("fieldHint.sys_depends_on") }),
     sysField(pid, SYS.parent, n(SYS.parent), "link", 13, { config: opts({ linkProjectId: pid, maxLinks: 1 }), description: t("fieldHint.sys_parent") }),
-    sysField(pid, SYS.description, n(SYS.description), "long_text", 14),
     sysField(pid, SYS.attachments, n(SYS.attachments), "task_attachments", 15, { readOnly: true }),
   ];
   const custom: FieldRow[] = meta.customFields.map((f, i) => {

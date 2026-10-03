@@ -6,6 +6,9 @@ import { requireUser, requireWorkspaceRole, assertCanEditTask, route, workspaceO
 import { assertClientUploadAllowed, assertUploadQuota, safeFileName } from "@/lib/storage";
 import { logActivity } from "@/lib/activity";
 import { notifyTaskDetail } from "@/lib/notifications";
+import { readTaskFiles } from "@/lib/ai/task-files";
+
+export const maxDuration = 120;
 
 interface ClientPayload {
   taskId: string;
@@ -58,6 +61,13 @@ export const POST = route(async (req) => {
       if (!blob.pathname.startsWith(prefix)) throw badRequest("Upload path does not match task");
       const existing = await prisma.attachment.findUnique({ where: { storageKey: blob.pathname }, select: { id: true } });
       if (existing) return;
+      const extractedText = payload.sizeBytes <= 4 * 1024 * 1024
+        ? (await readTaskFiles(
+            [{ id: blob.pathname, fileName: payload.fileName, contentType: payload.contentType, sizeBytes: payload.sizeBytes, storageProvider: process.env.BLOB_ACCESS === "public" ? "vercel_blob_public" : "vercel_blob", url: blob.url }],
+            payload.workspaceId,
+            { maxFiles: 1, maxChars: 300_000, logLabel: "task-upload" }
+          ))[0]?.text ?? null
+        : null;
       try {
         await prisma.$transaction(async (tx) => {
           await tx.attachment.create({ data: {
@@ -70,6 +80,7 @@ export const POST = route(async (req) => {
             storageKey: blob.pathname,
             url: blob.url,
             uploadedById: payload.uploadedById,
+            extractedText,
           } });
           await logActivity(tx, { workspaceId: payload.workspaceId, actorId: payload.uploadedById, entityType: "task", entityId: payload.taskId, action: "updated", summary: `Attached "${payload.fileName}"` });
           await notifyTaskDetail(tx, payload.taskId, payload.uploadedById, "attachments");

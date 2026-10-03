@@ -8,6 +8,7 @@ import type { MessageKey } from "@/lib/i18n/core";
 import { Markdown } from "./markdown";
 import { AiHealthCheck } from "./ai-health-check";
 import type { TaskIntake, TaskDraft, IntakeMessage } from "./use-task-intake";
+import { naturalIntakeMessage } from "@/lib/ai/intake-response";
 
 /**
  * Chat for the AI task intake: the user describes a task, the AI asks what is
@@ -83,7 +84,7 @@ export function TaskIntakeChat({
                   <Sparkles size={13} />
                 </span>
                 <div className="flex-1 min-w-0 space-y-2">
-                  <div className={cn("px-3.5 py-2.5 text-sm", compact ? "rounded-[20px] bg-neutral-100 dark:bg-neutral-800" : "rounded-2xl rounded-tl-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900")}>{m.pending ? <TypingDots /> : <Markdown text={m.content} />}</div>
+                  <div className={cn("px-3.5 py-2.5 text-sm", compact ? "rounded-[20px] bg-neutral-100 dark:bg-neutral-800" : "rounded-2xl rounded-tl-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900")}>{m.pending ? <TypingDots /> : <Markdown text={naturalIntakeMessage(m.content, t("intake.badResponse"))} />}</div>
                   {m.type === "summary" && m.draft && (
                     <DraftCard
                       draft={m.draft}

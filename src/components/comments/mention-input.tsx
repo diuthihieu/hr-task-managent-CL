@@ -1,11 +1,12 @@
 "use client";
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { AtSign, Bold, Italic, List, Code, Link2 } from "lucide-react";
+import { AtSign } from "lucide-react";
 import { markdownToHtml } from "@/components/ai/markdown";
+import { RichCommentInput } from "@/components/comments/rich-comment-input";
 import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
 import { cn, initials } from "@/lib/utils";
-import { mentionToken, MENTION_RE } from "@/lib/mentions";
+import { isRichComment, mentionToken, MENTION_RE, richCommentHtml } from "@/lib/mentions";
 import { AvatarImg } from "@/components/ui/avatar-img";
 
 interface Person {
@@ -48,12 +49,13 @@ export const MentionInput = forwardRef<MentionInputHandle, {
   const peopleUrl = mentionUrl ?? (taskId ? `/api/tasks/${taskId}/mentionable` : "");
   const { t } = useT();
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const richRef = useRef<MentionInputHandle>(null);
   const [people, setPeople] = useState<Person[]>([]);
   const [query, setQuery] = useState<string | null>(null);
   const [anchor, setAnchor] = useState(0);
   const [active, setActive] = useState(0);
 
-  useImperativeHandle(ref, () => ({ focus: () => taRef.current?.focus() }));
+  useImperativeHandle(ref, () => ({ focus: () => (formatting ? richRef.current?.focus() : taRef.current?.focus()) }));
 
   // The box shows "@Name"; the stored value keeps "@[Name](id)" so mentions stay exact.
   const [picked, setPicked] = useState<{ id: string; name: string }[]>([]);
@@ -88,38 +90,11 @@ export const MentionInput = forwardRef<MentionInputHandle, {
   const emit = (text: string) => onChange(encode(text));
   useEffect(() => {
     let alive = true;
-    if (peopleUrl) loadPeople(peopleUrl).then((p) => alive && setPeople(p));
+    if (!formatting && peopleUrl) loadPeople(peopleUrl).then((p) => alive && setPeople(p));
     return () => {
       alive = false;
     };
-  }, [peopleUrl]);
-
-  /** Wrap the selection (or insert a placeholder) with Markdown syntax. */
-  function wrap(before: string, after = before, placeholder = "text") {
-    const ta = taRef.current;
-    const a = ta?.selectionStart ?? display.length;
-    const b = ta?.selectionEnd ?? display.length;
-    const sel = display.slice(a, b) || placeholder;
-    emit(display.slice(0, a) + before + sel + after + display.slice(b));
-    requestAnimationFrame(() => {
-      ta?.focus();
-      ta?.setSelectionRange(a + before.length, a + before.length + sel.length);
-    });
-  }
-  function format(kind: "bold" | "italic" | "list" | "code" | "link") {
-    if (kind === "bold") wrap("**");
-    else if (kind === "italic") wrap("_");
-    else if (kind === "list") linePrefix("- ");
-    else if (kind === "code") wrap("`");
-    else wrap("[", "](https://)", "link");
-  }
-  function linePrefix(prefix: string) {
-    const ta = taRef.current;
-    const a = ta?.selectionStart ?? display.length;
-    const start = display.lastIndexOf("\n", a - 1) + 1;
-    emit(display.slice(0, start) + prefix + display.slice(start));
-    requestAnimationFrame(() => ta?.focus());
-  }
+  }, [formatting, peopleUrl]);
 
   const matches = useMemo(() => {
     if (query === null) return [];
@@ -171,25 +146,12 @@ export const MentionInput = forwardRef<MentionInputHandle, {
     });
   }
 
+  if (formatting) {
+    return <RichCommentInput ref={richRef} peopleUrl={peopleUrl} value={value} onChange={onChange} onSubmit={onSubmit} placeholder={placeholder} className={className} testId={testId} />;
+  }
+
   return (
     <div className={cn("relative flex-1", className)}>
-      {formatting && (
-        <div className="flex items-center gap-0.5 mb-1" data-testid={testId ? `${testId}-toolbar` : undefined}>
-          {(
-            [
-              [Bold, t("fmt.bold"), "bold"],
-              [Italic, t("fmt.italic"), "italic"],
-              [List, t("fmt.list"), "list"],
-              [Code, t("fmt.code"), "code"],
-              [Link2, t("fmt.link"), "link"],
-            ] as const
-          ).map(([Icon, label, kind]) => (
-            <button key={kind} type="button" onClick={() => format(kind)} className="rounded p-1 text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800" title={label} aria-label={label}>
-              <Icon size={13} />
-            </button>
-          ))}
-        </div>
-      )}
       <textarea
         ref={taRef}
         rows={rows}
@@ -213,7 +175,7 @@ export const MentionInput = forwardRef<MentionInputHandle, {
         aria-label={placeholder}
         data-testid={testId}
       />
-      <button type="button" onClick={openPicker} className={cn("absolute right-1.5 rounded p-1 text-neutral-400 hover:text-indigo-600 hover:bg-neutral-100 dark:hover:bg-neutral-800", formatting ? "top-8" : "top-1.5")} title={t("comment.mention")} data-testid={testId ? `${testId}-mention` : undefined}>
+      <button type="button" onClick={openPicker} className="absolute right-1.5 top-1.5 rounded p-1 text-neutral-400 hover:text-indigo-600 hover:bg-neutral-100 dark:hover:bg-neutral-800" title={t("comment.mention")} data-testid={testId ? `${testId}-mention` : undefined}>
         <AtSign size={14} />
       </button>
       {query !== null && matches.length > 0 && (
@@ -246,11 +208,15 @@ export const MentionInput = forwardRef<MentionInputHandle, {
 
 /** Renders a comment body with @mentions as highlighted chips (and sanitized Markdown when `markdown`). */
 export function CommentBody({ body, className, markdown }: { body: string; className?: string; markdown?: boolean }) {
+  if (isRichComment(body)) {
+    return <div className={cn("comment-rich-content break-words", className)} dangerouslySetInnerHTML={{ __html: richCommentHtml(body) }} />;
+  }
   if (markdown) {
     const esc = (x: string) => x.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
     // Mentions become placeholders first so Markdown never sees their brackets, then turn into chips.
     const names: string[] = [];
-    const md = body.replace(MENTION_RE, (_m, name: string) => `MENTIONTOKEN${names.push(name) - 1}ENDTOKEN`);
+    const normalizedBody = body.replace(/\*\*([^*\n]*?\S)\s+\*\*/g, "**$1** ").replace(/_([^_\n]*?\S)\s+_/g, "_$1_ ");
+    const md = normalizedBody.replace(MENTION_RE, (_m, name: string) => `MENTIONTOKEN${names.push(name) - 1}ENDTOKEN`);
     const html = markdownToHtml(md).replace(/MENTIONTOKEN(\d+)ENDTOKEN/g, (_m, i: string) => `<span class="rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-1 font-medium" data-testid="mention-chip">@${esc(names[Number(i)] ?? "")}</span>`);
     return <div className={cn("ai-md comment-md break-words", className)} dangerouslySetInnerHTML={{ __html: html }} />;
   }

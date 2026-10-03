@@ -16,7 +16,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, Info, Maximize2, Plus, ChevronDown, ChevronRight } from "lucide-react";
+import { ClipboardPaste, Copy, GripVertical, Info, Maximize2, Plus, ChevronDown, ChevronRight, Rows3 } from "lucide-react";
 import { Checkbox } from "@/components/ui/misc";
 import { Cell, CellDisplayValue, type Member, type LinkTarget, type OkrOptions } from "./cell";
 import { FieldHeaderMenu } from "./field-header-menu";
@@ -25,6 +25,16 @@ import { getCellValue, getConditionalStyle, type RecordGroup, type ConditionalFo
 import type { FieldRow, RecordRow } from "@/types";
 import { cn } from "@/lib/utils";
 import { useT } from "@/components/i18n-provider";
+import { toast } from "@/components/ui/toast";
+import {
+  clipboardEntryToField,
+  clipboardTextToField,
+  createCellClipboardPayload,
+  createRowClipboardPayload,
+  isGridFieldPasteable,
+  rowClipboardPatch,
+  type GridClipboardPayload,
+} from "@/lib/grid-clipboard";
 
 const ROW_HEIGHTS: Record<string, number> = { short: 32, medium: 40, tall: 64 };
 const DEFAULT_WIDTH = 180;
@@ -47,6 +57,7 @@ interface GridViewProps {
   onToggleSelect: (id: string) => void;
   onToggleSelectAll: (ids: string[]) => void;
   onCellChange: (recordId: string, fieldId: string, value: unknown) => void;
+  onRowChange: (recordId: string, patch: Record<string, unknown>) => void;
   onAddRecord: () => void;
   onOpenRecord: (id: string) => void;
   onAddField: (afterFieldId: string | undefined, type: string) => void;
@@ -55,6 +66,14 @@ interface GridViewProps {
   onResizeColumn: (fieldId: string, width: number) => void;
   onReorderRecords: (orderedIds: string[]) => void;
   reorderable: boolean;
+}
+
+type GridTarget = { kind: "cell"; recordId: string; fieldId: string } | { kind: "row"; recordId: string };
+type GridContextMenu = GridTarget & { x: number; y: number };
+interface GridInteractions {
+  selected: GridTarget | null;
+  select: (target: GridTarget) => void;
+  openMenu: (target: GridTarget, event: React.MouseEvent) => void;
 }
 
 export function GridView(props: GridViewProps) {
@@ -77,6 +96,9 @@ export function GridView(props: GridViewProps) {
     const extra = fields.filter((f) => !ordered.includes(f));
     return [...ordered, ...extra].filter((f) => !hiddenFieldIds.includes(f.id));
   }, [fields, columnOrder, hiddenFieldIds]);
+  const [selectedTarget, setSelectedTarget] = useState<GridTarget | null>(null);
+  const [clipboard, setClipboard] = useState<GridClipboardPayload | null>(null);
+  const [contextMenu, setContextMenu] = useState<GridContextMenu | null>(null);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 4 } }));
 
@@ -141,8 +163,128 @@ export function GridView(props: GridViewProps) {
   const recordById = new Map(flatRecords.map((r) => [r.id, r]));
   const orderedFlatRecords = rowOrder.map((id) => recordById.get(id)).filter(Boolean) as RecordRow[];
 
+  function displayClipboardValue(field: FieldRow, value: unknown): string {
+    if (field.type === "person" || field.type === "people") {
+      const ids = Array.isArray(value) ? value.map(String) : value ? [String(value)] : [];
+      return ids.map((id) => props.members.find((member) => member.id === id)?.name ?? "").filter(Boolean).join(", ");
+    }
+    if (field.type === "link") {
+      const ids = Array.isArray(value) ? value.map(String) : value ? [String(value)] : [];
+      return ids.map((id) => props.linkTargets[field.id]?.records.find((record) => record.id === id)?.label ?? "").filter(Boolean).join(", ");
+    }
+    if (field.type === "okr_objective") return props.okrOptions?.objectives.find((option) => option.id === value)?.title ?? "";
+    if (field.type === "okr_key_result") return props.okrOptions?.keyResults.find((option) => option.id === value)?.title ?? "";
+    return CellDisplayValue(field, value);
+  }
+
+  function payloadFor(target: GridTarget): GridClipboardPayload | null {
+    const record = recordById.get(target.recordId);
+    if (!record) return null;
+    if (target.kind === "cell") {
+      const field = fields.find((candidate) => candidate.id === target.fieldId);
+      if (!field) return null;
+      const value = getCellValue(record, field, fields);
+      return createCellClipboardPayload(field, value, displayClipboardValue(field, value));
+    }
+    const values = visibleFields.map((field) => getCellValue(record, field, fields));
+    return createRowClipboardPayload(visibleFields, values, visibleFields.map((field, index) => displayClipboardValue(field, values[index])).join("\t"));
+  }
+
+  async function copyTarget(target: GridTarget, event?: React.ClipboardEvent) {
+    const payload = payloadFor(target);
+    if (!payload) return;
+    setClipboard(payload);
+    if (event) event.clipboardData.setData("text/plain", payload.text);
+    else {
+      try {
+        await navigator.clipboard.writeText(payload.text);
+      } catch {
+        // The typed in-app clipboard remains available even if the browser denies system clipboard access.
+      }
+    }
+    toast.success(t(payload.kind === "cell" ? "grid.cellCopied" : "grid.rowCopied"));
+  }
+
+  function pasteCell(target: Extract<GridTarget, { kind: "cell" }>, source: GridClipboardPayload | null, text: string): boolean {
+    const field = fields.find((candidate) => candidate.id === target.fieldId);
+    if (!field || !isGridFieldPasteable(field)) return false;
+    if (source?.kind === "row") return false;
+    const result = source?.kind === "cell" ? clipboardEntryToField(source.entry, field) : clipboardTextToField(text.split("\t", 1)[0] ?? "", field);
+    if (!result.ok) return false;
+    props.onCellChange(target.recordId, field.id, result.value);
+    return true;
+  }
+
+  function pasteRow(target: Extract<GridTarget, { kind: "row" }>, source: GridClipboardPayload | null, text: string): boolean {
+    if (source?.kind === "cell") return false;
+    let patch = source ? rowClipboardPatch(source, fields) : null;
+    if (!patch) {
+      const cells = text.replace(/\r?\n[\s\S]*$/, "").split("\t");
+      const parsed: Record<string, unknown> = {};
+      for (const [index, field] of visibleFields.entries()) {
+        if (cells[index] === undefined || !isGridFieldPasteable(field)) continue;
+        const result = clipboardTextToField(cells[index], field);
+        if (result.ok) parsed[field.id] = result.value;
+      }
+      patch = Object.keys(parsed).length ? parsed : null;
+    }
+    if (!patch) return false;
+    props.onRowChange(target.recordId, patch);
+    return true;
+  }
+
+  function applyPaste(target: GridTarget, source: GridClipboardPayload | null, text: string) {
+    const pasted = target.kind === "cell" ? pasteCell(target, source, text) : pasteRow(target, source, text);
+    if (!pasted) toast.error(t("grid.pasteIncompatible"));
+  }
+
+  async function pasteTarget(target: GridTarget) {
+    let text = clipboard?.text ?? "";
+    try {
+      text = await navigator.clipboard.readText();
+    } catch {
+      // Browser clipboard permission is optional; an in-app copy still works.
+    }
+    const typedSource = clipboard?.text === text ? clipboard : null;
+    applyPaste(target, typedSource, text);
+  }
+
+  function textSelectionInside(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)) return false;
+    return target.selectionStart !== null && target.selectionEnd !== null && target.selectionStart !== target.selectionEnd;
+  }
+
+  function isTextEditor(target: EventTarget | null): boolean {
+    if (target instanceof HTMLTextAreaElement) return true;
+    if (target instanceof HTMLInputElement) return !["checkbox", "radio", "button", "date", "datetime-local"].includes(target.type);
+    return target instanceof HTMLElement && target.isContentEditable;
+  }
+
+  function handleCopy(event: React.ClipboardEvent) {
+    if (!selectedTarget || textSelectionInside(event.target)) return;
+    event.preventDefault();
+    void copyTarget(selectedTarget, event);
+  }
+
+  function handlePaste(event: React.ClipboardEvent) {
+    if (!selectedTarget || isTextEditor(event.target)) return;
+    event.preventDefault();
+    const text = event.clipboardData.getData("text/plain");
+    applyPaste(selectedTarget, clipboard?.text === text ? clipboard : null, text);
+  }
+
+  const interactions: GridInteractions = {
+    selected: selectedTarget,
+    select: setSelectedTarget,
+    openMenu: (target, event) => {
+      event.preventDefault();
+      setSelectedTarget(target);
+      setContextMenu({ ...target, x: event.clientX, y: event.clientY });
+    },
+  };
+
   return (
-    <div className="flex-1 overflow-auto thin-scroll">
+    <div className="flex-1 overflow-auto thin-scroll" onCopy={handleCopy} onPaste={handlePaste} onKeyDown={(event) => event.key === "Escape" && setContextMenu(null)}>
       {/*
         A real <table> is deliberately avoided here: dnd-kit's DndContext renders a
         hidden accessibility live-region <div>, and browsers reject a <div> as a
@@ -178,16 +320,16 @@ export function GridView(props: GridViewProps) {
         <DndContext sensors={rowSensors} collisionDetection={closestCenter} onDragEnd={handleRowDragEnd}>
           {groups ? (
             groups.map((group) => (
-              <GroupSection key={group.key} group={group} {...props} visibleFields={visibleFields} widthOf={widthOf} />
+              <GroupSection key={group.key} group={group} {...props} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />
             ))
           ) : props.reorderable ? (
             <SortableContext items={rowOrder} strategy={verticalListSortingStrategy}>
               {orderedFlatRecords.map((record) => (
-                <Row key={record.id} record={record} {...props} visibleFields={visibleFields} widthOf={widthOf} />
+                <Row key={record.id} record={record} {...props} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />
               ))}
             </SortableContext>
           ) : (
-            flatRecords.map((record) => <Row key={record.id} record={record} {...props} visibleFields={visibleFields} widthOf={widthOf} />)
+            flatRecords.map((record) => <Row key={record.id} record={record} {...props} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />)
           )}
         </DndContext>
       </div>
@@ -197,6 +339,18 @@ export function GridView(props: GridViewProps) {
       >
         <Plus size={14} /> {t("grid.addTask")}
       </button>
+      {contextMenu ? (
+        <GridClipboardMenu
+          menu={contextMenu}
+          canPasteCell={contextMenu.kind === "cell" && !!fields.find((field) => field.id === contextMenu.fieldId && isGridFieldPasteable(field))}
+          canPasteRow={fields.some(isGridFieldPasteable)}
+          close={() => setContextMenu(null)}
+          copyCell={() => contextMenu.kind === "cell" && void copyTarget(contextMenu)}
+          copyRow={() => void copyTarget({ kind: "row", recordId: contextMenu.recordId })}
+          pasteCell={() => contextMenu.kind === "cell" && void pasteTarget(contextMenu)}
+          pasteRow={() => void pasteTarget({ kind: "row", recordId: contextMenu.recordId })}
+        />
+      ) : null}
     </div>
   );
 }
@@ -260,6 +414,7 @@ function GroupSection(
     group: RecordGroup;
     visibleFields: FieldRow[];
     widthOf: (f: FieldRow) => number;
+    interactions: GridInteractions;
   } & GridViewProps
 ) {
   const [open, setOpen] = useState(true);
@@ -288,12 +443,14 @@ function Row({
   visibleFields,
   widthOf,
   frozenCount,
+  interactions,
   ...props
 }: {
   record: RecordRow;
   visibleFields: FieldRow[];
   widthOf: (f: FieldRow) => number;
   frozenCount: number;
+  interactions: GridInteractions;
 } & GridViewProps) {
   const { t } = useT();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: record.id, disabled: !props.reorderable });
@@ -301,6 +458,7 @@ function Row({
   const height = autoFit ? undefined : ROW_HEIGHTS[props.rowHeight] ?? 36;
   const minHeight = autoFit ? ROW_HEIGHTS.short : undefined;
   const selected = props.selectedIds.has(record.id);
+  const activeRow = interactions.selected?.kind === "row" && interactions.selected.recordId === record.id;
   const rowStyle = getConditionalStyle(record, props.fields, props.conditionalFormats, "__row__");
 
   return (
@@ -308,9 +466,15 @@ function Row({
       role="row"
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition, backgroundColor: rowStyle.rowColor ? `${rowStyle.rowColor}18` : undefined }}
-      className={cn("flex group/row hover:bg-neutral-50 dark:hover:bg-neutral-900/60", isDragging && "opacity-50 z-40 relative", selected && "bg-indigo-50/50 dark:bg-indigo-950/20")}
+      className={cn("flex group/row hover:bg-neutral-50 dark:hover:bg-neutral-900/60", isDragging && "opacity-50 z-40 relative", (selected || activeRow) && "bg-indigo-50/50 dark:bg-indigo-950/20")}
     >
-      <div role="cell" className="sticky left-0 z-10 flex items-center justify-center gap-0.5 bg-white dark:bg-neutral-950 border-b border-r border-neutral-100 dark:border-neutral-900 shrink-0" style={{ height, minHeight, width: 36, minWidth: 36 }}>
+      <div
+        role="cell"
+        onMouseDownCapture={() => interactions.select({ kind: "row", recordId: record.id })}
+        onContextMenu={(event) => interactions.openMenu({ kind: "row", recordId: record.id }, event)}
+        className={cn("sticky left-0 z-10 flex items-center justify-center gap-0.5 bg-white dark:bg-neutral-950 border-b border-r border-neutral-100 dark:border-neutral-900 shrink-0", activeRow && "ring-2 ring-inset ring-indigo-500")}
+        style={{ height, minHeight, width: 36, minWidth: 36 }}
+      >
         <span {...attributes} {...listeners} className={cn("text-neutral-300 shrink-0", props.reorderable ? "cursor-grab opacity-0 group-hover/row:opacity-100" : "opacity-0")}>
           <GripVertical size={12} />
         </span>
@@ -321,10 +485,14 @@ function Row({
         const style = getConditionalStyle(record, props.fields, props.conditionalFormats, field.id);
         const frozen = idx < frozenCount;
         const frozenOffset = visibleFields.slice(0, idx).reduce((s, f) => s + widthOf(f), 0) + 36;
+        const activeCell = interactions.selected?.kind === "cell" && interactions.selected.recordId === record.id && interactions.selected.fieldId === field.id;
         return (
           <div
             role="cell"
             key={field.id}
+            onMouseDownCapture={() => interactions.select({ kind: "cell", recordId: record.id, fieldId: field.id })}
+            onFocusCapture={() => interactions.select({ kind: "cell", recordId: record.id, fieldId: field.id })}
+            onContextMenu={(event) => interactions.openMenu({ kind: "cell", recordId: record.id, fieldId: field.id }, event)}
             style={{
               width: widthOf(field),
               minWidth: widthOf(field),
@@ -337,7 +505,8 @@ function Row({
             }}
             className={cn(
               "shrink-0 border-b border-r border-neutral-100 dark:border-neutral-900 relative",
-              frozen && !style.backgroundColor && "bg-white dark:bg-neutral-950"
+              frozen && !style.backgroundColor && "bg-white dark:bg-neutral-950",
+              activeCell && "ring-2 ring-inset ring-indigo-500 z-[6]"
             )}
           >
             <div className={cn("flex", autoFit ? "items-start" : "h-full items-center")}>
@@ -368,6 +537,50 @@ function Row({
         );
       })}
       <div role="cell" className="shrink-0 border-b border-neutral-100 dark:border-neutral-900" style={{ width: 40, minWidth: 40 }} />
+    </div>
+  );
+}
+
+function GridClipboardMenu({
+  menu,
+  canPasteCell,
+  canPasteRow,
+  close,
+  copyCell,
+  copyRow,
+  pasteCell,
+  pasteRow,
+}: {
+  menu: GridContextMenu;
+  canPasteCell: boolean;
+  canPasteRow: boolean;
+  close: () => void;
+  copyCell: () => void;
+  copyRow: () => void;
+  pasteCell: () => void;
+  pasteRow: () => void;
+}) {
+  const { t } = useT();
+  const left = typeof window === "undefined" ? menu.x : Math.min(menu.x, window.innerWidth - 210);
+  const top = typeof window === "undefined" ? menu.y : Math.min(menu.y, window.innerHeight - 190);
+  const action = (handler: () => void) => () => {
+    close();
+    handler();
+  };
+  const item = "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm text-neutral-700 hover:bg-neutral-100 disabled:pointer-events-none disabled:opacity-40 dark:text-neutral-200 dark:hover:bg-neutral-800";
+  return (
+    <div className="fixed inset-0 z-[80]" onMouseDown={close} onContextMenu={(event) => { event.preventDefault(); close(); }}>
+      <div role="menu" aria-label={t("grid.clipboardMenu")} className="fixed w-52 rounded-md border border-neutral-200 bg-white p-1 shadow-xl dark:border-neutral-800 dark:bg-neutral-900" style={{ left, top }} onMouseDown={(event) => event.stopPropagation()}>
+        {menu.kind === "cell" ? (
+          <>
+            <button type="button" role="menuitem" className={item} onClick={action(copyCell)}><Copy size={14} />{t("grid.copyCell")}<span className="ml-auto text-[10px] text-neutral-400">Ctrl+C</span></button>
+            <button type="button" role="menuitem" className={item} disabled={!canPasteCell} onClick={action(pasteCell)}><ClipboardPaste size={14} />{t("grid.pasteCell")}<span className="ml-auto text-[10px] text-neutral-400">Ctrl+V</span></button>
+            <div className="my-1 h-px bg-neutral-100 dark:bg-neutral-800" />
+          </>
+        ) : null}
+        <button type="button" role="menuitem" className={item} onClick={action(copyRow)}><Rows3 size={14} />{t("grid.copyRow")}</button>
+        <button type="button" role="menuitem" className={item} disabled={!canPasteRow} onClick={action(pasteRow)}><ClipboardPaste size={14} />{t("grid.pasteRow")}</button>
+      </div>
     </div>
   );
 }

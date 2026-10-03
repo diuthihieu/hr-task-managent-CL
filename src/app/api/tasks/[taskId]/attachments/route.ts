@@ -5,6 +5,7 @@ import { logActivity } from "@/lib/activity";
 import { notifyTaskDetail } from "@/lib/notifications";
 import { assertUploadAllowed, assertUploadQuota, safeContentType, uploadAttachment, deleteAttachmentBlob, safeFileName } from "@/lib/storage";
 import type { AttachmentRow } from "@/types";
+import { extractDocText, isExtractable } from "@/lib/ai/extract";
 
 type P = { taskId: string };
 
@@ -35,7 +36,15 @@ export const POST = route<P>(async (req, { params }) => {
   assertUploadAllowed(file);
   await assertUploadQuota(user.id);
 
-  const blob = await uploadAttachment({ workspaceId: ctx.workspaceId, taskId, file });
+  const [blob, extractedText] = await Promise.all([
+    uploadAttachment({ workspaceId: ctx.workspaceId, taskId, file }),
+    isExtractable(file.name)
+      ? extractDocText(file, ctx.workspaceId).catch((error) => {
+          console.warn("[task-upload] file extraction failed", file.name, error instanceof Error ? error.message : error);
+          return null;
+        })
+      : Promise.resolve(null),
+  ]);
   try {
     const row = await prisma.$transaction(async (tx) => {
       const a = await tx.attachment.create({
@@ -49,6 +58,7 @@ export const POST = route<P>(async (req, { params }) => {
           storageKey: blob.pathname,
           url: blob.url,
           uploadedById: user.id,
+          extractedText,
         },
         select,
       });

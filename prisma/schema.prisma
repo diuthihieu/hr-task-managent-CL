@@ -347,6 +347,7 @@ model User {
   wikisCreated          Wiki[]                 @relation("WikiCreatedByUser")
   wikiMemberships       WikiMember[]
   commentMentions       CommentMention[]
+  commentReactions      CommentReaction[]
   wikiComments          WikiComment[]          @relation("WikiCommentAuthor")
   approvalsRequested    TaskApproval[]         @relation("ApprovalRequester")
   approvalsToDecide     TaskApproval[]         @relation("ApprovalApprover")
@@ -790,12 +791,13 @@ model Comment {
   /// Present for the single completion comment written back by an Agent Run.
   agentRunId      String?   @unique @map("agent_run_id") @db.Uuid
 
-  task     Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  author   User?            @relation(fields: [authorId], references: [id], onDelete: SetNull)
-  parent   Comment?         @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
-  replies  Comment[]        @relation("CommentReplies")
-  mentions CommentMention[]
-  agentRun AgentRun?        @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
+  task      Task              @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author    User?             @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  parent    Comment?          @relation("CommentReplies", fields: [parentCommentId], references: [id], onDelete: Cascade)
+  replies   Comment[]         @relation("CommentReplies")
+  mentions  CommentMention[]
+  reactions CommentReaction[]
+  agentRun  AgentRun?         @relation(fields: [agentRunId], references: [id], onDelete: SetNull)
 
   @@index([taskId, createdAt])
   @@map("comments")
@@ -818,7 +820,7 @@ model Attachment {
   uploadedById    String?   @map("uploaded_by") @db.Uuid
   /// Set when the file was attached to a wiki page comment (wikiPageId is then that page).
   wikiCommentId   String?   @map("wiki_comment_id") @db.Uuid
-  /// Text extracted from the file for the wiki's AI (comment files); omitted from queries by default.
+  /// Permission-scoped AI-readable text cache for Task, Wiki and Skill files; omitted from queries by default.
   extractedText   String?   @map("extracted_text")
   createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
   deletedAt       DateTime? @map("deleted_at") @db.Timestamptz(6)
@@ -1702,6 +1704,21 @@ model CommentMention {
   @@id([commentId, userId])
   @@index([userId])
   @@map("comment_mentions")
+}
+
+/// Basic Teams-style emoji reactions; each person may use an emoji once per comment.
+model CommentReaction {
+  commentId String   @map("comment_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  emoji     String   @db.VarChar(16)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  comment Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([commentId, userId, emoji])
+  @@index([userId])
+  @@map("comment_reactions")
 }
 
 enum FocusStatus {

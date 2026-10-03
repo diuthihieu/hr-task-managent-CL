@@ -9,18 +9,18 @@ import { RichEditor, type SaveState } from "@/components/editor/rich-editor";
 import { Button } from "@/components/ui/button";
 import { AttachmentViewer } from "@/components/attachments/attachment-viewer";
 import { TaskApprovals } from "@/components/approvals/task-approvals";
-import { MentionInput, CommentBody } from "@/components/comments/mention-input";
+import { MentionInput } from "@/components/comments/mention-input";
+import { TaskCommentThread, type TaskCommentItem } from "@/components/comments/task-comment-thread";
 import { StartFocusButton, TaskFocusHistory } from "@/components/focus/focus-mode";
 import { RetroButton } from "@/components/brain/retro-dialog";
 import { AiTaskActions } from "@/components/ai/ai-actions";
-import { stripMentions, mentionToken } from "@/lib/mentions";
+import { prependMention, stripMentions } from "@/lib/mentions";
 import { toast } from "@/components/ui/toast";
 import { useT } from "@/components/i18n-provider";
 import { getCellValue } from "@/lib/query-engine";
 import { api } from "@/lib/api-client";
-import { initials, formatDate, cn } from "@/lib/utils";
+import { formatDate, cn } from "@/lib/utils";
 import type { ActivityRow, AttachmentRow, FieldRow, RecordRow } from "@/types";
-import { AvatarImg } from "@/components/ui/avatar-img";
 import { Meta } from "@/components/ui/meta";
 import { uploadTaskAttachment } from "@/lib/task-attachment-upload";
 import { InlineArrow } from "@/components/ui/inline-arrow";
@@ -31,13 +31,6 @@ interface ProjectDetail {
   fields: FieldRow[];
   members: Member[];
   myRole: string;
-}
-interface CommentItem {
-  id: string;
-  body: string;
-  parentCommentId: string | null;
-  createdAt: string;
-  user: { id: string; name: string; avatarColor: string } | null;
 }
 
 const ROLE_RANK: Record<string, number> = { viewer: 0, contributor: 1, editor: 2, admin: 3, owner: 4 };
@@ -61,7 +54,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
   const [content, setContent] = useState<string | null | undefined>(undefined);
   const [attachments, setAttachments] = useState<AttachmentRow[]>([]);
   const [viewing, setViewing] = useState<number | null>(null);
-  const [comments, setComments] = useState<CommentItem[]>([]);
+  const [comments, setComments] = useState<TaskCommentItem[]>([]);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [siblings, setSiblings] = useState<{ id: string; label: string }[]>([]);
   const [notFound, setNotFound] = useState(false);
@@ -69,7 +62,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [uploading, setUploading] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const [replyTo, setReplyTo] = useState<CommentItem | null>(null);
+  const [replyTo, setReplyTo] = useState<TaskCommentItem | null>(null);
   const [side, setSide] = useState<"comments" | "activity">("comments");
   const fileRef = useRef<HTMLInputElement>(null);
   const tasksHref = `/w/${workspaceSlug}/p/${projectId}`;
@@ -89,7 +82,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
       })
       .catch(() => !cancelled && setNotFound(true));
     api.get<AttachmentRow[]>(`/api/tasks/${taskId}/attachments`).then((a) => !cancelled && setAttachments(a)).catch(() => {});
-    api.get<CommentItem[]>(`/api/tasks/${taskId}/comments`).then((c) => !cancelled && setComments(c)).catch(() => {});
+    api.get<TaskCommentItem[]>(`/api/tasks/${taskId}/comments`).then((c) => !cancelled && setComments(c)).catch(() => {});
     api
       .get<RecordRow[]>(`/api/projects/${projectId}/tasks`)
       .then((rows) => !cancelled && setSiblings(rows.map((r) => ({ id: r.id, label: String(r.data.sys_title ?? "") }))))
@@ -163,7 +156,10 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
   async function postComment() {
     if (!draft.trim()) return;
     try {
-      const c = await api.post<CommentItem>(`/api/tasks/${taskId}/comments`, { body: draft, parentCommentId: replyTo?.id ?? null });
+      const c = await api.post<TaskCommentItem>(`/api/tasks/${taskId}/comments`, {
+        body: draft,
+        parentCommentId: replyTo?.parentCommentId ?? replyTo?.id ?? null,
+      });
       setComments((prev) => [...prev, c]);
       setDraft("");
       setReplyTo(null);
@@ -172,7 +168,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
     }
   }
 
-  async function deleteComment(c: CommentItem) {
+  async function deleteComment(c: TaskCommentItem) {
     if (!confirm(t("record.deleteComment"))) return;
     try {
       await api.delete(`/api/comments/${c.id}`);
@@ -210,41 +206,13 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
   const rest = pageFields.filter((f) => !PRIMARY_FIELDS.includes(f.id));
   const shown = showAll ? [...primary, ...rest] : primary;
   /** Reply to a comment or to a reply: replies join the thread and tag the person you answer. */
-  function startReply(c: CommentItem) {
+  function startReply(c: TaskCommentItem) {
     setReplyTo(c);
     const u = c.user;
-    if (c.parentCommentId && u && u.id !== currentUserId && !draft.includes(`](${u.id})`)) setDraft(`${mentionToken(u.name, u.id)} ${draft}`);
+    if (u && u.id !== currentUserId) setDraft((current) => prependMention(current, u.name, u.id));
   }
-  const rootComments = comments.filter((c) => !c.parentCommentId);
-  const repliesOf = (id: string) => comments.filter((c) => c.parentCommentId === id);
   const idx = siblings.findIndex((s) => s.id === taskId);
   const canModerate = (ROLE_RANK[role] ?? -1) >= ROLE_RANK.admin;
-
-  const commentView = (c: CommentItem, nested = false): React.ReactNode => (
-    <div key={c.id} className={cn("flex gap-2", nested && "ml-8 mt-2")}>
-      <span className="relative overflow-hidden h-7 w-7 rounded-full flex items-center justify-center text-white text-[10px] shrink-0" style={{ backgroundColor: c.user?.avatarColor ?? "#94a3b8" }}>
-        {initials(c.user?.name ?? "?")}
-        <AvatarImg id={c.user?.id} />
-      </span>
-      <div className="min-w-0 flex-1">
-        <div className="text-xs">
-          <span className="font-medium text-neutral-800 dark:text-neutral-100">{c.user?.name ?? "—"}</span> <span className="text-neutral-400">{formatDate(c.createdAt, true)}</span>
-        </div>
-        <CommentBody body={c.body} markdown className="text-sm text-neutral-700 dark:text-neutral-300" />
-        <div className="flex gap-3 text-[11px] text-neutral-400 mt-0.5">
-          <button onClick={() => startReply(c)} className="hover:text-indigo-600 flex items-center gap-0.5" data-testid="comment-reply">
-            <Reply size={11} /> {t("record.reply")}
-          </button>
-          {(c.user?.id === currentUserId || canModerate) && (
-            <button onClick={() => deleteComment(c)} className="hover:text-red-600">
-              {t("common.delete")}
-            </button>
-          )}
-        </div>
-        {!nested && repliesOf(c.id).map((r) => commentView(r, true))}
-      </div>
-    </div>
-  );
 
   return (
     <div className="flex-1 flex overflow-hidden">
@@ -402,7 +370,14 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
           {/* Comments inline on narrow screens (the side panel is hidden there). */}
           <section className="mt-8 lg:hidden">
             <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100 mb-2">{t("record.comments")}</h2>
-            <div className="space-y-3">{rootComments.length ? rootComments.map((c) => commentView(c)) : <p className="text-xs text-neutral-400">{t("record.noComments")}</p>}</div>
+            <TaskCommentThread
+              comments={comments}
+              onReply={startReply}
+              onDelete={deleteComment}
+              canDelete={(comment) => comment.user?.id === currentUserId || canModerate}
+              onReactionsChange={(commentId, reactions) => setComments((current) => current.map((comment) => (comment.id === commentId ? { ...comment, reactions } : comment)))}
+              empty={<p className="text-xs text-neutral-400">{t("record.noComments")}</p>}
+            />
             <CommentBox taskId={taskId} draft={draft} setDraft={setDraft} replyTo={replyTo} clearReply={() => setReplyTo(null)} onSend={postComment} testIdPrefix="record-comment-inline" />
           </section>
         </div>
@@ -426,7 +401,16 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
           ))}
         </div>
         <div className="flex-1 overflow-y-auto thin-scroll p-3 space-y-3">
-          {side === "comments" && (rootComments.length ? rootComments.map((c) => commentView(c)) : <p className="text-xs text-neutral-400">{t("record.noComments")}</p>)}
+          {side === "comments" ? (
+            <TaskCommentThread
+              comments={comments}
+              onReply={startReply}
+              onDelete={deleteComment}
+              canDelete={(comment) => comment.user?.id === currentUserId || canModerate}
+              onReactionsChange={(commentId, reactions) => setComments((current) => current.map((comment) => (comment.id === commentId ? { ...comment, reactions } : comment)))}
+              empty={<p className="text-xs text-neutral-400">{t("record.noComments")}</p>}
+            />
+          ) : null}
           {side === "activity" &&
             (activity.length ? (
               activity.map((a) => (
@@ -461,7 +445,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
   );
 }
 
-function CommentBox({ taskId, draft, setDraft, replyTo, clearReply, onSend, testIdPrefix = "record-comment" }: { taskId: string; draft: string; setDraft: (v: string) => void; replyTo: CommentItem | null; clearReply: () => void; onSend: () => void; testIdPrefix?: string }) {
+function CommentBox({ taskId, draft, setDraft, replyTo, clearReply, onSend, testIdPrefix = "record-comment" }: { taskId: string; draft: string; setDraft: (v: string) => void; replyTo: TaskCommentItem | null; clearReply: () => void; onSend: () => void; testIdPrefix?: string }) {
   const { t } = useT();
   return (
     <div className="mt-2">

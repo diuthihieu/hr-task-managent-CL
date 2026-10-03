@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { X, Trash2, Send, Paperclip, Download, History, MessageSquare, ListChecks, Maximize2 } from "lucide-react";
+import { X, Trash2, Send, Paperclip, Download, History, MessageSquare, ListChecks, Maximize2, Reply } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { Cell } from "./cell";
 import type { Member, LinkTarget, OkrOptions } from "./cell";
@@ -10,20 +10,14 @@ import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { AttachmentViewer } from "@/components/attachments/attachment-viewer";
-import { MentionInput, CommentBody } from "@/components/comments/mention-input";
-import { initials, formatDate, cn } from "@/lib/utils";
+import { MentionInput } from "@/components/comments/mention-input";
+import { TaskCommentThread, type TaskCommentItem } from "@/components/comments/task-comment-thread";
+import { formatDate, cn } from "@/lib/utils";
 import type { ActivityRow, AttachmentRow, FieldRow, RecordRow } from "@/types";
-import { AvatarImg } from "@/components/ui/avatar-img";
 import { Meta } from "@/components/ui/meta";
 import { uploadTaskAttachment } from "@/lib/task-attachment-upload";
 import { InlineArrow } from "@/components/ui/inline-arrow";
-
-interface CommentItem {
-  id: string;
-  body: string;
-  createdAt: string;
-  user: { id: string; name: string; avatarColor: string } | null;
-}
+import { prependMention, stripMentions } from "@/lib/mentions";
 
 type Tab = "details" | "comments" | "files" | "activity";
 
@@ -44,6 +38,7 @@ export function RecordDrawer({
   onChange,
   onDelete,
   pageHref,
+  currentUserId,
 }: {
   pageHref?: string;
   record: RecordRow;
@@ -55,20 +50,22 @@ export function RecordDrawer({
   onClose: () => void;
   onChange: (fieldId: string, value: unknown) => void;
   onDelete: () => void;
+  currentUserId?: string;
 }) {
   const { t } = useT();
   const [tab, setTab] = useState<Tab>("details");
-  const [comments, setComments] = useState<CommentItem[]>([]);
+  const [comments, setComments] = useState<TaskCommentItem[]>([]);
   const [attachments, setAttachments] = useState<AttachmentRow[]>([]);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [draft, setDraft] = useState("");
+  const [replyTo, setReplyTo] = useState<TaskCommentItem | null>(null);
   const [uploading, setUploading] = useState(false);
   const [viewing, setViewing] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const primary = fields.find((f) => f.isPrimary);
 
   const loadSide = useCallback(() => {
-    api.get<CommentItem[]>(`/api/tasks/${record.id}/comments`).then(setComments).catch(() => {});
+    api.get<TaskCommentItem[]>(`/api/tasks/${record.id}/comments`).then(setComments).catch(() => {});
     api.get<AttachmentRow[]>(`/api/tasks/${record.id}/attachments`).then(setAttachments).catch(() => {});
     api.get<ActivityRow[]>(`/api/tasks/${record.id}/activity`).then(setActivity).catch(() => {});
   }, [record.id]);
@@ -80,12 +77,22 @@ export function RecordDrawer({
   async function postComment() {
     if (!draft.trim()) return;
     try {
-      const c = await api.post<CommentItem>(`/api/tasks/${record.id}/comments`, { body: draft });
+      const c = await api.post<TaskCommentItem>(`/api/tasks/${record.id}/comments`, {
+        body: draft,
+        parentCommentId: replyTo?.parentCommentId ?? replyTo?.id ?? null,
+      });
       setComments((prev) => [...prev, c]);
       setDraft("");
+      setReplyTo(null);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
+  }
+
+  function startReply(comment: TaskCommentItem) {
+    setReplyTo(comment);
+    const author = comment.user;
+    if (author && currentUserId && author.id !== currentUserId) setDraft((current) => prependMention(current, author.name, author.id));
   }
 
   async function upload(file: File) {
@@ -187,24 +194,12 @@ export function RecordDrawer({
           )}
 
           {tab === "comments" && (
-            <div className="space-y-3">
-              {comments.map((c) => (
-                <div key={c.id} className="flex gap-2">
-                  <span className="relative overflow-hidden h-6 w-6 rounded-full flex items-center justify-center text-white text-[10px] shrink-0" style={{ backgroundColor: c.user?.avatarColor ?? "#94a3b8" }}>
-                    {initials(c.user?.name ?? "?")}
-                    <AvatarImg id={c.user?.id} />
-                  </span>
-                  <div className="text-sm min-w-0">
-                    <div>
-                      <span className="font-medium text-neutral-800 dark:text-neutral-100">{c.user?.name ?? "Deleted user"}</span>{" "}
-                      <span className="text-[11px] text-neutral-400">{formatDate(c.createdAt, true)}</span>
-                    </div>
-                    <CommentBody body={c.body} markdown className="text-neutral-600 dark:text-neutral-300" />
-                  </div>
-                </div>
-              ))}
-              {comments.length === 0 && <p className="text-xs text-neutral-400">{t("record.noComments")}</p>}
-            </div>
+            <TaskCommentThread
+              comments={comments}
+              onReply={startReply}
+              onReactionsChange={(commentId, reactions) => setComments((current) => current.map((comment) => (comment.id === commentId ? { ...comment, reactions } : comment)))}
+              empty={<p className="text-xs text-neutral-400">{t("record.noComments")}</p>}
+            />
           )}
 
           {tab === "files" && (
@@ -270,11 +265,21 @@ export function RecordDrawer({
         </div>
 
         {tab === "comments" && (
-          <div className="border-t border-neutral-200 dark:border-neutral-800 p-3 shrink-0 flex gap-2">
-            <MentionInput taskId={record.id} formatting rows={1} autoGrow value={draft} onChange={setDraft} onSubmit={postComment} placeholder={t("record.commentPlaceholder")} testId="drawer-comment-input" />
-            <Button size="icon" onClick={postComment} aria-label="Post comment">
-              <Send size={13} />
-            </Button>
+          <div className="shrink-0 border-t border-neutral-200 p-3 dark:border-neutral-800">
+            {replyTo ? (
+              <div className="mb-1 flex items-center gap-1 text-[11px] text-neutral-500" data-testid="drawer-comment-replying">
+                <Reply size={11} /> {replyTo.user?.name}: <span className="truncate">{stripMentions(replyTo.body)}</span>
+                <button type="button" onClick={() => setReplyTo(null)} className="ml-auto text-neutral-400 hover:text-neutral-700" aria-label={t("common.cancel")}>
+                  ×
+                </button>
+              </div>
+            ) : null}
+            <div className="flex gap-2">
+              <MentionInput taskId={record.id} formatting rows={1} autoGrow value={draft} onChange={setDraft} onSubmit={postComment} placeholder={t("record.commentPlaceholder")} testId="drawer-comment-input" />
+              <Button size="icon" onClick={postComment} aria-label={t("record.send")}>
+                <Send size={13} />
+              </Button>
+            </div>
           </div>
         )}
       </div>

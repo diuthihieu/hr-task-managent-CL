@@ -10,6 +10,7 @@ import { wikiReaders, WIKI_COMMENT_SELECT } from "@/lib/wiki-comments";
 import { extractBufferText, isExtractable, MAX_DOC_CHARS } from "@/lib/ai/extract";
 import { openAttachment } from "@/lib/storage";
 import { logActivity } from "@/lib/activity";
+import { sanitizeCommentBody } from "@/lib/comment-rich-text-server";
 
 type P = { pageId: string };
 
@@ -48,13 +49,14 @@ export const POST = route<P>(async (req, { params }) => {
   const { pageId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfWikiPage(pageId), "viewer");
   const body = schema.parse(await readJson(req));
+  const commentBody = sanitizeCommentBody(body.body);
   const page = await prisma.wikiPage.findUniqueOrThrow({ where: { id: pageId }, select: { title: true, wikiId: true, workspace: { select: { slug: true } } } });
 
   // The page's sources as they will be once this comment is saved (the comment itself may quote a project).
   const current = (await workspaceOfWikiPage(pageId))?.sourceProjectIds ?? [];
-  const quoted = await detectSourceProjects(prisma, ctx.workspaceId, stripMentions(body.body));
+  const quoted = await detectSourceProjects(prisma, ctx.workspaceId, stripMentions(commentBody));
   const readers = new Set((await wikiReaders(page.wikiId, ctx.workspaceId, [...new Set([...current, ...quoted])])).map((r) => r.id));
-  const mentioned = mentionedUserIds(body.body).filter((id) => readers.has(id) && id !== user.id);
+  const mentioned = mentionedUserIds(commentBody).filter((id) => readers.has(id) && id !== user.id);
   const parent = body.parentCommentId ? await prisma.wikiComment.findFirst({ where: { id: body.parentCommentId, wikiPageId: pageId, deletedAt: null }, select: { id: true, parentCommentId: true } }) : null;
   // Replying to a reply joins the same thread (one level).
   const parentCommentId = parent ? (parent.parentCommentId ?? parent.id) : null;
@@ -66,10 +68,10 @@ export const POST = route<P>(async (req, { params }) => {
   if (files.length !== (body.attachmentIds?.length ?? 0)) throw badRequest("Some files are missing - upload them again");
 
   const comment = await prisma.$transaction(async (tx) => {
-    const c = await tx.wikiComment.create({ data: { workspaceId: ctx.workspaceId, wikiPageId: pageId, authorId: user.id, parentCommentId, body: body.body }, select: { id: true } });
+    const c = await tx.wikiComment.create({ data: { workspaceId: ctx.workspaceId, wikiPageId: pageId, authorId: user.id, parentCommentId, body: commentBody }, select: { id: true } });
     if (mentioned.length) await tx.wikiCommentMention.createMany({ data: mentioned.map((userId) => ({ commentId: c.id, userId })), skipDuplicates: true });
     if (files.length) await tx.attachment.updateMany({ where: { id: { in: files.map((f) => f.id) } }, data: { wikiCommentId: c.id } });
-    const excerpt = stripMentions(body.body).slice(0, 180);
+    const excerpt = stripMentions(commentBody).slice(0, 180);
     const link = `/w/${page.workspace.slug}/wiki/${page.wikiId}/${pageId}#comments`;
     if (mentioned.length)
       await tx.notification.createMany({

@@ -1,5 +1,5 @@
 "use client";
-import { mentionToken } from "@/lib/mentions";
+import { prependMention } from "@/lib/mentions";
 import { useEffect, useRef, useState } from "react";
 import { MessageSquare, Paperclip, Send, Trash2, X, CornerDownRight, Loader2, FileText } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
@@ -108,7 +108,7 @@ export function WikiComments({ pageId, currentUserId, canManage }: { pageId: str
   function startReply(c: WikiCommentRow) {
     setReplyTo(c);
     const a = c.author;
-    if (c.parentCommentId && a && a.id !== currentUserId && !draft.includes(`](${a.id})`)) setDraft(`${mentionToken(a.name, a.id)} ${draft}`);
+    if (c.parentCommentId && a && a.id !== currentUserId) setDraft(prependMention(draft, a.name, a.id));
   }
 
   const view = (c: WikiCommentRow, nested = false) => (

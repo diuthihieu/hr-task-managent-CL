@@ -178,6 +178,95 @@ body {
   height: 0;
 }
 
+/* WYSIWYG task/wiki comments (compact Teams-style composer and rendered body). */
+.comment-editor-content {
+  min-height: 3.25rem;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.comment-editor-content p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  color: var(--color-neutral-400);
+  pointer-events: none;
+}
+.comment-editor-content > * + *,
+.comment-rich-content > * + * {
+  margin-top: 0.4em;
+}
+.comment-editor-content ul,
+.comment-rich-content ul {
+  list-style: disc;
+  padding-left: 1.35em;
+}
+.comment-editor-content ol,
+.comment-rich-content ol {
+  list-style: decimal;
+  padding-left: 1.35em;
+}
+.comment-editor-content blockquote,
+.comment-rich-content blockquote {
+  border-left: 3px solid var(--color-indigo-300);
+  padding-left: 0.7em;
+  color: var(--color-neutral-500);
+}
+.comment-editor-content pre,
+.comment-rich-content pre {
+  overflow-x: auto;
+  border-radius: 0.4rem;
+  background: var(--color-neutral-100);
+  padding: 0.55em 0.7em;
+  font-size: 0.85em;
+}
+.dark .comment-editor-content pre,
+.dark .comment-rich-content pre {
+  background: var(--color-neutral-800);
+}
+.comment-editor-content code,
+.comment-rich-content code {
+  border-radius: 0.2rem;
+  background: var(--color-neutral-100);
+  padding: 0.08em 0.25em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+}
+.dark .comment-editor-content code,
+.dark .comment-rich-content code {
+  background: var(--color-neutral-800);
+}
+.comment-editor-content pre code,
+.comment-rich-content pre code {
+  background: transparent;
+  padding: 0;
+}
+.comment-editor-content a,
+.comment-rich-content a {
+  color: var(--color-indigo-600);
+  text-decoration: underline;
+}
+.comment-editor-content [data-woli-mention],
+.comment-rich-content [data-woli-mention] {
+  border-radius: 0.25rem;
+  background: var(--color-indigo-50);
+  padding: 0 0.25rem;
+  color: var(--color-indigo-700);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.dark .comment-editor-content [data-woli-mention],
+.dark .comment-rich-content [data-woli-mention] {
+  background: color-mix(in srgb, var(--color-indigo-950) 65%, transparent);
+  color: var(--color-indigo-300);
+}
+.comment-rich-content {
+  white-space: normal;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 /* Progress slider in grid cells: filled track up to --pct in the accent colour. */
 .progress-range {
   -webkit-appearance: none;

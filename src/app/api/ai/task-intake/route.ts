@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject, badRequest, HttpError } from "@/lib/authz";
-import { aiConfigured, generate, parseJsonAnswer, type GeminiContent } from "@/lib/ai/gemini";
+import { aiConfigured, generate, type GeminiContent } from "@/lib/ai/gemini";
 import { draftSchema, intakeScope, sanitizeDraft, intakeSystemPrompt, projectData, localNow } from "@/lib/ai/task-intake";
+import { naturalIntakeMessage, parseIntakeModelResponse } from "@/lib/ai/intake-response";
 import { personalPromptBlock } from "@/lib/ai/personal";
 import { rateLimit } from "@/lib/rate-limit";
 import { uuid } from "@/lib/validation";
@@ -56,9 +57,10 @@ export const POST = route(async (req) => {
   const contents: GeminiContent[] = body.messages.map((m) => ({ role: m.role, parts: [{ text: m.content }] }));
 
   const r = await generate({ workspaceId, system, contents, temperature: 0.2, json: true, maxOutputTokens: 2048 });
-  const parsed = parseJsonAnswer<{ type?: unknown; message?: unknown; draft?: unknown }>(r.text);
+  const parsed = parseIntakeModelResponse(r.text);
   const type = parsed?.type === "question" || parsed?.type === "summary" || parsed?.type === "answer" ? parsed.type : "answer";
-  const message = typeof parsed?.message === "string" && parsed.message.trim() ? parsed.message.trim().slice(0, 8000) : parsed ? "…" : r.text.trim().slice(0, 8000) || "…";
+  const fallback = locale === "en" ? "I couldn't format that answer clearly. Please try asking again." : "Mình chưa thể trình bày câu trả lời rõ ràng. Bạn vui lòng hỏi lại giúp mình.";
+  const message = naturalIntakeMessage(typeof parsed?.message === "string" ? parsed.message : r.text, fallback).slice(0, 8000);
   const rawDraft = draftSchema.safeParse(parsed?.draft);
   // Viewers never get a draft, whatever the model says; answers keep the draft in progress.
   const draft = !scope.canCreate ? null : rawDraft.success && parsed?.draft ? sanitizeDraft(rawDraft.data, scope) : current;

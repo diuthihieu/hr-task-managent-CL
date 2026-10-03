@@ -604,6 +604,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}
           onCellChange={handleCellChange}
+          onRowChange={handleCellChangeMultiple}
           onAddRecord={handleAddRecord}
           onOpenRecord={setOpenRecordId}
           onAddField={canEdit ? handleAddField : () => toast.info(t("pw2.editorsOnly"))}
@@ -624,6 +625,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           linkTargets={linkTargets}
           okrOptions={okrOptions}
           pageHref={`/w/${table.workspace.slug}/p/${projectId}/t/${openRecord.id}`}
+          currentUserId={currentUserId}
           onClose={() => setOpenRecordId(null)}
           onChange={(fieldId, value) => handleCellChange(openRecord.id, fieldId, value)}
           onDelete={() => {

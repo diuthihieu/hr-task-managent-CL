@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, roleAtLeast, route, readJson, workspaceOfComment, forbidden } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
+import { sanitizeCommentBody } from "@/lib/comment-rich-text-server";
 
 type P = { commentId: string };
 
@@ -11,7 +12,8 @@ export const PATCH = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { commentId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfComment(commentId), "viewer");
-  const { body } = z.object({ body: z.string().trim().min(1).max(10000) }).parse(await readJson(req));
+  const input = z.object({ body: z.string().trim().min(1).max(10000) }).parse(await readJson(req));
+  const body = sanitizeCommentBody(input.body);
   const existing = await prisma.comment.findUniqueOrThrow({ where: { id: commentId } });
   if (existing.authorId !== user.id) throw forbidden("You can only edit your own comments");
   const updated = await prisma.$transaction(async (tx) => {

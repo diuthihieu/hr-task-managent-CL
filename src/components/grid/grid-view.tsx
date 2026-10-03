@@ -87,6 +87,7 @@ export function GridView(props: GridViewProps) {
     const ids = visibleFields.map((f) => f.id);
     const oldIndex = ids.indexOf(String(active.id));
     const newIndex = ids.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
     onReorderFields(arrayMove(ids, oldIndex, newIndex));
   }
 
@@ -133,6 +134,7 @@ export function GridView(props: GridViewProps) {
     if (!over || active.id === over.id) return;
     const oldIndex = rowOrder.indexOf(String(active.id));
     const newIndex = rowOrder.indexOf(String(over.id));
+    if (oldIndex < 0 || newIndex < 0) return;
     const next = arrayMove(rowOrder, oldIndex, newIndex);
     setRowOrder(next);
     props.onReorderRecords(next);
@@ -150,46 +152,46 @@ export function GridView(props: GridViewProps) {
         identically for layout/styling but impose no HTML content-model
         restrictions on what a drag-and-drop library can render alongside them.
       */}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleColumnDragEnd}>
-        <DndContext sensors={rowSensors} collisionDetection={closestCenter} onDragEnd={handleRowDragEnd}>
-          <div role="table" className="text-sm inline-flex flex-col" style={{ width: "max-content", minWidth: "100%" }}>
-            <div role="row" className="flex sticky top-0 z-20 bg-neutral-50 dark:bg-neutral-900">
-              <div role="columnheader" className="sticky left-0 z-30 flex items-center justify-center bg-neutral-50 dark:bg-neutral-900 border-b border-r border-neutral-200 dark:border-neutral-800" style={{ width: 36, minWidth: 36, height: 32 }}>
-                <Checkbox checked={allSelected} onCheckedChange={() => props.onToggleSelectAll(allIds)} />
-              </div>
-              <SortableContext items={visibleFields.map((f) => f.id)} strategy={horizontalListSortingStrategy}>
-                {visibleFields.map((field, idx) => (
-                  <HeaderCell
-                    key={field.id}
-                    field={field}
-                    width={widthOf(field)}
-                    frozen={idx < frozenCount}
-                    frozenOffset={visibleFields.slice(0, idx).reduce((s, f) => s + widthOf(f), 0) + 36}
-                    onAction={(action) => props.onFieldAction(field.id, action)}
-                    onResizeStart={(e) => startResize(field.id, e)}
-                  />
-                ))}
-              </SortableContext>
-              <div role="columnheader" className="flex items-center border-b border-neutral-200 dark:border-neutral-800" style={{ width: 40, minWidth: 40 }}>
-                <AddFieldButton onSelect={(type) => props.onAddField(visibleFields[visibleFields.length - 1]?.id, type)} />
-              </div>
+      <div role="table" className="text-sm inline-flex flex-col" style={{ width: "max-content", minWidth: "100%" }}>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleColumnDragEnd}>
+          <div role="row" className="flex sticky top-0 z-20 bg-neutral-50 dark:bg-neutral-900">
+            <div role="columnheader" className="sticky left-0 z-30 flex items-center justify-center bg-neutral-50 dark:bg-neutral-900 border-b border-r border-neutral-200 dark:border-neutral-800" style={{ width: 36, minWidth: 36, height: 32 }}>
+              <Checkbox checked={allSelected} onCheckedChange={() => props.onToggleSelectAll(allIds)} />
             </div>
-            {groups ? (
-              groups.map((group) => (
-                <GroupSection key={group.key} group={group} {...props} visibleFields={visibleFields} widthOf={widthOf} />
-              ))
-            ) : props.reorderable ? (
-              <SortableContext items={rowOrder} strategy={verticalListSortingStrategy}>
-                {orderedFlatRecords.map((record) => (
-                  <Row key={record.id} record={record} {...props} visibleFields={visibleFields} widthOf={widthOf} />
-                ))}
-              </SortableContext>
-            ) : (
-              flatRecords.map((record) => <Row key={record.id} record={record} {...props} visibleFields={visibleFields} widthOf={widthOf} />)
-            )}
+            <SortableContext items={visibleFields.map((f) => f.id)} strategy={horizontalListSortingStrategy}>
+              {visibleFields.map((field, idx) => (
+                <HeaderCell
+                  key={field.id}
+                  field={field}
+                  width={widthOf(field)}
+                  frozen={idx < frozenCount}
+                  frozenOffset={visibleFields.slice(0, idx).reduce((s, f) => s + widthOf(f), 0) + 36}
+                  onAction={(action) => props.onFieldAction(field.id, action)}
+                  onResizeStart={(e) => startResize(field.id, e)}
+                />
+              ))}
+            </SortableContext>
+            <div role="columnheader" className="flex items-center border-b border-neutral-200 dark:border-neutral-800" style={{ width: 40, minWidth: 40 }}>
+              <AddFieldButton onSelect={(type) => props.onAddField(visibleFields[visibleFields.length - 1]?.id, type)} />
+            </div>
           </div>
         </DndContext>
-      </DndContext>
+        <DndContext sensors={rowSensors} collisionDetection={closestCenter} onDragEnd={handleRowDragEnd}>
+          {groups ? (
+            groups.map((group) => (
+              <GroupSection key={group.key} group={group} {...props} visibleFields={visibleFields} widthOf={widthOf} />
+            ))
+          ) : props.reorderable ? (
+            <SortableContext items={rowOrder} strategy={verticalListSortingStrategy}>
+              {orderedFlatRecords.map((record) => (
+                <Row key={record.id} record={record} {...props} visibleFields={visibleFields} widthOf={widthOf} />
+              ))}
+            </SortableContext>
+          ) : (
+            flatRecords.map((record) => <Row key={record.id} record={record} {...props} visibleFields={visibleFields} widthOf={widthOf} />)
+          )}
+        </DndContext>
+      </div>
       <button
         onClick={() => props.onAddRecord()}
         className="flex items-center gap-2 px-3 py-2 text-sm text-neutral-500 hover:bg-neutral-50 dark:hover:bg-neutral-900 w-full text-left border-b border-neutral-100 dark:border-neutral-900"

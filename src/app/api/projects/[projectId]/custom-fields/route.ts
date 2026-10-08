@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
+import { badRequest } from "@/lib/http-errors";
 import { customFieldCreateSchema, syncOptions, settingsFor, validateFieldConfig } from "@/lib/custom-fields";
 
 type P = { projectId: string };
@@ -11,6 +12,8 @@ export const POST = route<P>(async (req, { params }) => {
   const { projectId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "editor");
   const body = customFieldCreateSchema.parse(await readJson(req));
+  // Teams were retired: existing team fields keep working, new ones cannot be made.
+  if (body.type === "team") throw badRequest("Team fields are no longer available");
   const last = await prisma.customField.aggregate({ where: { projectId, deletedAt: null }, _max: { sortOrder: true } });
   const field = await prisma.$transaction(async (tx) => {
     const config = { ...(body.config ?? {}), ...(body.type === "link" ? { linkProjectId: projectId } : {}) };

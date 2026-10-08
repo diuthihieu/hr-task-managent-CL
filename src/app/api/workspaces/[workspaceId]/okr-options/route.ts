@@ -12,13 +12,13 @@ export const GET = route<P>(async (_req, { params }) => {
   const [objectives, keyResults] = await Promise.all([
     prisma.objective.findMany({
       where: { workspaceId, deletedAt: null, OR: [{ projectId: null }, { project: { deletedAt: null, ...visibleProjectWhere(user) } }] },
-      select: { id: true, title: true, teamId: true, projectId: true, project: { select: { name: true } } },
+      select: { id: true, title: true, projectId: true, project: { select: { name: true } } },
       orderBy: { title: "asc" },
     }),
     prisma.keyResult.findMany({ where: { deletedAt: null, objective: { workspaceId, deletedAt: null, OR: [{ projectId: null }, { project: { deletedAt: null, ...visibleProjectWhere(user) } }] } }, select: { id: true, title: true, objectiveId: true }, orderBy: { title: "asc" } }),
   ]);
   return NextResponse.json({
-    objectives: objectives.map((o) => ({ id: o.id, title: o.title, teamId: o.teamId, projectId: o.projectId, projectName: o.project?.name ?? null })),
+    objectives: objectives.map((o) => ({ id: o.id, title: o.title, projectId: o.projectId, projectName: o.project?.name ?? null })),
     keyResults,
   });
 });

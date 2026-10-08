@@ -6,7 +6,7 @@ import { Input, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
 import type { MessageKey } from "@/lib/i18n/core";
-import { FIELD_TYPES, CUSTOM_FIELD_TYPE_IDS, getFieldType, type FieldCategory, type FieldConfig, type SelectOption } from "@/lib/field-types";
+import { FIELD_TYPES, CUSTOM_FIELD_TYPE_IDS, CREATABLE_CUSTOM_FIELD_TYPE_IDS, getFieldType, type FieldCategory, type FieldConfig, type SelectOption } from "@/lib/field-types";
 import type { FieldRow } from "@/types";
 import { useT } from "@/components/i18n-provider";
 
@@ -89,7 +89,7 @@ export function FieldEditorDialog({
                 value={draft.type}
                 onValueChange={(v) => setDraft((d) => ({ ...d, type: v, config: {} }))}
                 options={CATEGORIES.flatMap((cat) =>
-                  FIELD_TYPES.filter((f) => f.category === cat && CUSTOM_FIELD_TYPE_IDS.includes(f.type)).map((f) => ({ value: f.type, label: `${t(`fc.${cat}` as MessageKey)} ${t(`ft.${f.type}` as MessageKey)}` }))
+                  FIELD_TYPES.filter((f) => f.category === cat && CREATABLE_CUSTOM_FIELD_TYPE_IDS.includes(f.type)).map((f) => ({ value: f.type, label: `${t(`fc.${cat}` as MessageKey)} ${t(`ft.${f.type}` as MessageKey)}` }))
                 )}
                 className="w-full"
               />

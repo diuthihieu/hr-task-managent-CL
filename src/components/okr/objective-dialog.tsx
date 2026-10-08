@@ -7,12 +7,12 @@ import { Select } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
 import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
-import type { ObjectiveRow, OkrCycleType, ObjectiveStatus, OkrPriority, TeamRow } from "@/types";
+import type { ObjectiveRow, OkrCycleType, ObjectiveStatus, OkrPriority } from "@/types";
+import { parseQuarterLabel, parseYearLabel, quarterLabel, quarterOf, quarterPeriod, yearPeriod } from "@/lib/okr-period";
 
 export interface ObjectiveDraft {
   title: string;
   description: string;
-  teamId: string;
   ownerId: string;
   contributorIds: string[];
   cycleType: OkrCycleType;
@@ -33,11 +33,46 @@ interface OkrOptionsPayload {
   keyResults: { id: string; title: string; objectiveId: string }[];
 }
 
+const todayIso = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+
+/** The quarter / year a draft points at: its label, else its start date, else today. */
+function cyclePick(d: Pick<ObjectiveDraft, "cycleLabel" | "startDate">): { quarter: number; year: number } {
+  const fromDate = quarterOf(d.startDate || todayIso());
+  const q = parseQuarterLabel(d.cycleLabel);
+  if (q) return q;
+  const y = parseYearLabel(d.cycleLabel);
+  return y ? { quarter: fromDate.quarter, year: y } : fromDate;
+}
+
+/** Quarter and year cycles carry their own label and dates; custom keeps what the user typed. */
+function withCycle(d: ObjectiveDraft, pick?: { quarter: number; year: number }): ObjectiveDraft {
+  const { quarter, year } = pick ?? cyclePick(d);
+  if (d.cycleType === "quarter") {
+    const p = quarterPeriod(quarter, year);
+    return { ...d, cycleLabel: quarterLabel(quarter, year), startDate: p.start, endDate: p.end };
+  }
+  if (d.cycleType === "year") {
+    const p = yearPeriod(year);
+    return { ...d, cycleLabel: String(year), startDate: p.start, endDate: p.end };
+  }
+  return d;
+}
+
+/** Changing the cycle type: quarter / year refill label + dates; custom drops the auto label (keeps the dates to edit). */
+function switchCycle(d: ObjectiveDraft, cycleType: OkrCycleType): ObjectiveDraft {
+  const pick = cyclePick(d);
+  if (cycleType !== "custom") return withCycle({ ...d, cycleType }, pick);
+  const auto = d.cycleLabel === quarterLabel(pick.quarter, pick.year) || d.cycleLabel === String(pick.year);
+  return { ...d, cycleType, cycleLabel: auto ? "" : d.cycleLabel };
+}
+
 function toDraft(o: ObjectiveRow | null, projectId: string | null): ObjectiveDraft {
-  return {
+  const draft: ObjectiveDraft = {
     title: o?.title ?? "",
     description: o?.description ?? "",
-    teamId: o?.teamId ?? "",
     ownerId: o?.owner?.id ?? "",
     contributorIds: o?.contributors.map((c) => c.id) ?? [],
     cycleType: o?.cycleType ?? "quarter",
@@ -51,14 +86,18 @@ function toDraft(o: ObjectiveRow | null, projectId: string | null): ObjectiveDra
     parentKeyResultId: o?.parentKeyResult?.id ?? "",
     keyResults: o ? [] : [""],
   };
+  // New objectives start on the current quarter. Existing ones keep their
+  // saved dates; only a quarter / year cycle with no dates yet gets them filled.
+  return !o || ((draft.cycleType === "quarter" || draft.cycleType === "year") && !(draft.startDate && draft.endDate)) ? withCycle(draft) : draft;
 }
+
+const fmtDate = (iso: string) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "");
 
 /** Payload for POST/PATCH objective from a draft. */
 export function objectivePayload(draft: ObjectiveDraft, isNew: boolean) {
   return {
     title: draft.title,
     description: draft.description || null,
-    teamId: draft.teamId || null,
     ownerId: draft.ownerId || null,
     contributorIds: draft.contributorIds,
     cycleType: draft.cycleType,
@@ -78,7 +117,6 @@ export function ObjectiveDialog({
   open,
   onOpenChange,
   objective,
-  teams,
   members,
   onSave,
   workspaceId,
@@ -88,7 +126,6 @@ export function ObjectiveDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
   objective: ObjectiveRow | null;
-  teams: TeamRow[];
   members: { id: string; name: string }[];
   onSave: (draft: ObjectiveDraft) => void;
   workspaceId?: string;
@@ -119,6 +156,12 @@ export function ObjectiveDialog({
   const statusOptions = (["not_started", "on_track", "at_risk", "off_track", "completed"] as const).map((v) => ({ value: v, label: t(`okr.status.${v}`) }));
   const priorityOptions = (["low", "medium", "high", "critical"] as const).map((v) => ({ value: v, label: t(`okr.priority.${v}`) }));
   const cycleOptions = (["quarter", "year", "custom"] as const).map((v) => ({ value: v, label: t(`okr.cycle.${v}`) }));
+  const pick = cyclePick(draft);
+  const thisYear = new Date().getFullYear();
+  const yearOptions = [...new Set([thisYear - 2, thisYear - 1, thisYear, thisYear + 1, thisYear + 2, thisYear + 3, pick.year])]
+    .sort((a, b) => a - b)
+    .map((y) => ({ value: String(y), label: String(y) }));
+  const badRange = !!draft.startDate && !!draft.endDate && draft.endDate < draft.startDate;
   // A key result of any *other* objective can be the parent of this one.
   const parentOptions = options.objectives
     .filter((o) => o.id !== objective?.id)
@@ -177,15 +220,9 @@ export function ObjectiveDialog({
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.team")}</label>
-              <Select className="w-full" value={draft.teamId} onValueChange={(v) => patch({ teamId: v })} options={[{ value: "", label: t("okr.noTeam") }, ...teams.map((tm) => ({ value: tm.id, label: tm.name }))]} />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.owner")}</label>
-              <Select className="w-full" value={draft.ownerId} onValueChange={(v) => patch({ ownerId: v })} options={[{ value: "", label: t("okr.unassigned") }, ...members.map((m) => ({ value: m.id, label: m.name }))]} />
-            </div>
+          <div>
+            <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.owner")}</label>
+            <Select className="w-full" value={draft.ownerId} onValueChange={(v) => patch({ ownerId: v })} options={[{ value: "", label: t("okr.unassigned") }, ...members.map((m) => ({ value: m.id, label: m.name }))]} />
           </div>
           <div>
             <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.contributors")}</label>
@@ -208,23 +245,44 @@ export function ObjectiveDialog({
           <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.cycle")}</label>
-              <Select className="w-full" value={draft.cycleType} onValueChange={(v) => patch({ cycleType: v as OkrCycleType })} options={cycleOptions} />
+              <Select className="w-full" value={draft.cycleType} onValueChange={(v) => setDraft((d) => switchCycle(d, v as OkrCycleType))} options={cycleOptions} data-testid="objective-cycle" />
             </div>
-            <div className="col-span-2">
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.cycleLabel")}</label>
-              <Input value={draft.cycleLabel} onChange={(e) => patch({ cycleLabel: e.target.value })} placeholder="Q1 2026" />
-            </div>
+            {draft.cycleType === "quarter" && (
+              <div>
+                <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.quarter")}</label>
+                <Select className="w-full" value={String(pick.quarter)} onValueChange={(v) => setDraft((d) => withCycle(d, { quarter: Number(v), year: pick.year }))} options={[1, 2, 3, 4].map((q) => ({ value: String(q), label: `Q${q}` }))} />
+              </div>
+            )}
+            {draft.cycleType !== "custom" && (
+              <div>
+                <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.year")}</label>
+                <Select className="w-full" value={String(pick.year)} onValueChange={(v) => setDraft((d) => withCycle(d, { quarter: pick.quarter, year: Number(v) }))} options={yearOptions} />
+              </div>
+            )}
+            {draft.cycleType === "custom" && (
+              <div className="col-span-2">
+                <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.cycleLabel")}</label>
+                <Input value={draft.cycleLabel} onChange={(e) => patch({ cycleLabel: e.target.value })} placeholder="H1 2026, Sprint 12…" />
+              </div>
+            )}
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          {draft.cycleType === "custom" ? (
             <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.start")}</label>
-              <Input type="date" value={draft.startDate} onChange={(e) => patch({ startDate: e.target.value })} />
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.start")}</label>
+                  <Input type="date" value={draft.startDate} max={draft.endDate || undefined} onChange={(e) => patch({ startDate: e.target.value })} data-testid="objective-start" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.end")}</label>
+                  <Input type="date" value={draft.endDate} min={draft.startDate || undefined} onChange={(e) => patch({ endDate: e.target.value })} data-testid="objective-end" />
+                </div>
+              </div>
+              <p className={`text-[11px] mt-1 ${badRange ? "text-red-600" : "text-neutral-400"}`}>{badRange ? t("okr.f.endBeforeStart") : t("okr.f.customHint")}</p>
             </div>
-            <div>
-              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.end")}</label>
-              <Input type="date" value={draft.endDate} onChange={(e) => patch({ endDate: e.target.value })} />
-            </div>
-          </div>
+          ) : (
+            <p className="text-[11px] text-neutral-400 -mt-1" data-testid="objective-period">{t("okr.f.period", { start: fmtDate(draft.startDate), end: fmtDate(draft.endDate) })}</p>
+          )}
           <div className="grid grid-cols-3 gap-2">
             <div>
               <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("okr.f.status")}</label>
@@ -242,7 +300,7 @@ export function ObjectiveDialog({
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="secondary" onClick={() => onOpenChange(false)}>{t("common.cancel")}</Button>
-          <Button onClick={() => onSave(draft)} disabled={!draft.title.trim()} data-testid="objective-save">{t("common.save")}</Button>
+          <Button onClick={() => onSave(draft)} disabled={!draft.title.trim() || badRange} data-testid="objective-save">{t("common.save")}</Button>
         </div>
       </DialogContent>
     </Dialog>

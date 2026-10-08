@@ -12,7 +12,8 @@ import { useT } from "@/components/i18n-provider";
 import { ObjectiveDialog, objectivePayload, type ObjectiveDraft } from "./objective-dialog";
 import { KeyResultDialog, type KeyResultDraft } from "./key-result-dialog";
 import { ProgressBar, StatusBadge, PriorityBadge, ConfidenceDot, PctLabel, UserChip, UserStack, DeadlineLabel, CycleLabel } from "./okr-ui";
-import type { KeyResultTaskRow, ObjectiveRow, TeamRow } from "@/types";
+import type { KeyResultTaskRow, ObjectiveRow } from "@/types";
+import { CycleFilter, EMPTY_CYCLE_FILTER, applyCycleParams, type CycleFilterValue } from "./cycle-filter";
 import { MetaChip, MetaItem } from "@/components/ui/meta";
 import { UserRound } from "lucide-react";
 
@@ -45,12 +46,11 @@ export function OkrListWorkspace({
 }) {
   const { t } = useT();
   const [objectives, setObjectives] = useState<ObjectiveRow[]>([]);
-  const [teams, setTeams] = useState<TeamRow[]>([]);
   const [members, setMembers] = useState<MemberLite[]>([]);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ teamId: "", ownerId: "", status: "", cycleType: "", projectId: "" });
-  const [groupBy, setGroupBy] = useState<"project" | "team">("project");
+  const [filters, setFilters] = useState({ ownerId: "", status: "", projectId: "" });
+  const [cycle, setCycle] = useState<CycleFilterValue>(EMPTY_CYCLE_FILTER);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const searchParams = useSearchParams();
   // ?new=1 (Ctrl+K "Create objective") opens the new-objective dialog.
@@ -64,10 +64,9 @@ export function OkrListWorkspace({
       if (scope === "mine") params.set("mine", "1");
       const pid = scope === "project" ? projectId : filters.projectId;
       if (pid) params.set("projectId", pid);
-      if (filters.teamId) params.set("teamId", filters.teamId);
       if (filters.ownerId) params.set("ownerId", filters.ownerId);
       if (filters.status) params.set("status", filters.status);
-      if (filters.cycleType) params.set("cycleType", filters.cycleType);
+      applyCycleParams(params, cycle);
       const rows = await api.get<ObjectiveRow[]>(`/api/workspaces/${workspaceId}/objectives?${params}`);
       setObjectives(rows);
       if (scope === "project") setExpanded(new Set(rows.map((r) => r.id)));
@@ -82,10 +81,9 @@ export function OkrListWorkspace({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching objectives on mount / filter change is exactly what this effect is for
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, projectId, filters.teamId, filters.ownerId, filters.status, filters.cycleType, filters.projectId]);
+  }, [scope, projectId, filters.ownerId, filters.status, filters.projectId, cycle.cycle, cycle.from, cycle.to]);
 
   useEffect(() => {
-    api.get<TeamRow[]>(`/api/workspaces/${workspaceId}/teams`).then(setTeams).catch(() => {});
     api.get<MemberLite[]>(`/api/workspaces/${workspaceId}/members`).then(setMembers).catch(() => {});
     api.get<{ id: string; name: string }[]>(`/api/workspaces/${workspaceId}/projects`).then(setProjects).catch(() => {});
   }, [workspaceId]);
@@ -158,14 +156,14 @@ export function OkrListWorkspace({
     if (scope !== "team") return [{ key: "__all__", name: "", color: null as string | null, objectives }];
     const map = new Map<string, { key: string; name: string; color: string | null; objectives: ObjectiveRow[] }>();
     for (const o of objectives) {
-      const key = groupBy === "project" ? (o.project?.id ?? "__ws__") : (o.team?.id ?? "__none__");
-      const name = groupBy === "project" ? (o.project?.name ?? t("okr.workspaceLevel")) : (o.team?.name ?? t("okr.noTeam"));
-      const color = groupBy === "project" ? (o.project?.color ?? null) : (o.team?.color ?? null);
+      const key = o.project?.id ?? "__ws__";
+      const name = o.project?.name ?? t("okr.workspaceLevel");
+      const color = o.project?.color ?? null;
       if (!map.has(key)) map.set(key, { key, name, color, objectives: [] });
       map.get(key)!.objectives.push(o);
     }
     return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
-  }, [objectives, scope, groupBy, t]);
+  }, [objectives, scope, t]);
 
   const title = scope === "mine" ? t("nav.myOkrs") : scope === "project" ? t("okr.projectTitle", { project: projectName ?? "" }) : t("nav.teamOkrs");
   const taskHref = (task: KeyResultTaskRow) => `/w/${workspaceSlug}/p/${task.projectId}/t/${task.taskId}`;
@@ -175,13 +173,9 @@ export function OkrListWorkspace({
       <div className="flex flex-wrap items-center gap-2 px-4 py-2 min-h-12 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
         <h1 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">{title}</h1>
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
-          {scope === "team" && (
-            <Select className="w-32" value={groupBy} onValueChange={(v) => setGroupBy(v as "project" | "team")} options={[{ value: "project", label: `${t("okr.groupBy")}: ${t("okr.groupProject")}` }, { value: "team", label: `${t("okr.groupBy")}: ${t("okr.groupTeam")}` }]} />
-          )}
           {scope !== "project" && (
             <Select className="w-32" value={filters.projectId} onValueChange={(v) => setFilters((f) => ({ ...f, projectId: v }))} options={[{ value: "", label: t("okr.allProjects") }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
           )}
-          <Select className="w-28" value={filters.teamId} onValueChange={(v) => setFilters((f) => ({ ...f, teamId: v }))} options={[{ value: "", label: t("okr.allTeams") }, ...teams.map((tm) => ({ value: tm.id, label: tm.name }))]} />
           <Select className="w-28" value={filters.ownerId} onValueChange={(v) => setFilters((f) => ({ ...f, ownerId: v }))} options={[{ value: "", label: t("okr.allOwners") }, ...members.map((m) => ({ value: m.id, label: m.name }))]} />
           <Select
             className="w-28"
@@ -189,7 +183,7 @@ export function OkrListWorkspace({
             onValueChange={(v) => setFilters((f) => ({ ...f, status: v }))}
             options={[{ value: "", label: t("okr.allStatus") }, ...(["not_started", "on_track", "at_risk", "off_track", "completed"] as const).map((v) => ({ value: v, label: t(`okr.status.${v}`) }))]}
           />
-          <Select className="w-28" value={filters.cycleType} onValueChange={(v) => setFilters((f) => ({ ...f, cycleType: v }))} options={[{ value: "", label: t("okr.allCycles") }, ...(["quarter", "year", "custom"] as const).map((v) => ({ value: v, label: t(`okr.cycle.${v}`) }))]} />
+          <CycleFilter value={cycle} onChange={setCycle} />
           {canEdit && (
             <Button size="sm" onClick={() => setObjectiveDialog({ open: true, objective: null })} data-testid="okr-new-objective">
               <Plus size={13} /> {t("okr.newObjective")}
@@ -211,7 +205,7 @@ export function OkrListWorkspace({
           <div key={group.key}>
             {scope === "team" && (
               <div className="flex items-center gap-1.5 text-xs font-semibold text-neutral-500 uppercase tracking-wide mb-2 px-1">
-                {groupBy === "project" && <FolderKanban size={12} style={{ color: group.color ?? undefined }} />}
+                <FolderKanban size={12} style={{ color: group.color ?? undefined }} />
                 {group.name} <span className="ml-1 rounded-full bg-neutral-100 dark:bg-neutral-800 px-1.5 text-[10px] text-neutral-500 tabular-nums">{group.objectives.length}</span>
               </div>
             )}
@@ -238,7 +232,7 @@ export function OkrListWorkspace({
                       {scope !== "project" && o.project && <div className="text-[11px] text-neutral-400 truncate">{o.project.name}</div>}
                     </div>
                     <PriorityBadge priority={o.priority} />
-                    <CycleLabel cycleType={o.cycleType} cycleLabel={o.cycleLabel} />
+                    <CycleLabel cycleType={o.cycleType} cycleLabel={o.cycleLabel} startDate={o.startDate} endDate={o.endDate} />
                     <div className="flex items-center gap-2 flex-1 min-w-[100px]">
                       <ProgressBar value={o.progress} />
                       <PctLabel label={t("okr.progressShort")} value={o.progress} className="text-xs" strong />
@@ -341,7 +335,6 @@ export function OkrListWorkspace({
         open={objectiveDialog.open}
         onOpenChange={(v) => setObjectiveDialog((d) => ({ ...d, open: v }))}
         objective={objectiveDialog.objective}
-        teams={teams}
         members={members}
         onSave={saveObjective}
         workspaceId={workspaceId}

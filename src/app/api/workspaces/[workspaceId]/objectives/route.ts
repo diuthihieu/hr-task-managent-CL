@@ -6,6 +6,7 @@ import { logActivity } from "@/lib/activity";
 import { resolveObjectives, getMyObjectiveRows, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 import { assertObjectiveRefs, parentObjectiveFor } from "@/lib/okr-write";
 import { objectiveSchema, dateOnlyToDate, lenientDateOnly } from "@/lib/validation";
+import { objectivePeriod, overlaps, rangeParams } from "@/lib/okr-period";
 
 type P = { workspaceId: string };
 
@@ -14,11 +15,12 @@ export const GET = route<P>(async (req, { params }) => {
   const { workspaceId } = await params;
   await requireWorkspaceRole(user, workspaceId, "viewer");
   const url = new URL(req.url);
-  const teamId = url.searchParams.get("teamId");
   const ownerId = url.searchParams.get("ownerId");
   const status = url.searchParams.get("status") as Prisma.ObjectiveWhereInput["status"] | null;
   const cycleType = url.searchParams.get("cycleType") as Prisma.ObjectiveWhereInput["cycleType"] | null;
   const projectId = url.searchParams.get("projectId");
+  // Custom range: objectives whose period (own dates, else their cycle label) overlaps it.
+  const { from, to } = rangeParams(url);
 
   const hidden = await hiddenProjectIds(user);
   let rows = url.searchParams.get("mine") === "1"
@@ -29,7 +31,6 @@ export const GET = route<P>(async (req, { params }) => {
             workspaceId,
             deletedAt: null,
             OR: [{ projectId: null }, { project: { deletedAt: null, ...visibleProjectWhere(user) } }],
-            ...(teamId ? { teamId } : {}),
             ...(ownerId ? { ownerId } : {}),
             ...(status ? { status } : {}),
             ...(cycleType ? { cycleType } : {}),
@@ -41,11 +42,11 @@ export const GET = route<P>(async (req, { params }) => {
         hidden
       );
   if (url.searchParams.get("mine") === "1") {
-    if (teamId) rows = rows.filter((o) => o.teamId === teamId);
     if (status) rows = rows.filter((o) => o.status === status);
     if (cycleType) rows = rows.filter((o) => o.cycleType === cycleType);
     if (projectId) rows = rows.filter((o) => o.projectId === projectId);
   }
+  if (from || to) rows = rows.filter((o) => overlaps(objectivePeriod(o), from, to));
   return NextResponse.json(rows);
 });
 
@@ -64,7 +65,6 @@ export const POST = route<P>(async (req, { params }) => {
         workspaceId,
         title: body.title,
         description: body.description ?? null,
-        teamId: body.teamId ?? null,
         parentObjectiveId: (await parentObjectiveFor(tx, body.parentKeyResultId)) ?? body.parentObjectiveId ?? null,
         parentKeyResultId: body.parentKeyResultId ?? null,
         projectId: body.projectId ?? null,

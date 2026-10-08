@@ -1,7 +1,7 @@
 "use client";
 import { Plus } from "lucide-react";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
-import { FIELD_TYPES, CUSTOM_FIELD_TYPE_IDS, type FieldCategory } from "@/lib/field-types";
+import { FIELD_TYPES, CREATABLE_CUSTOM_FIELD_TYPE_IDS, type FieldCategory } from "@/lib/field-types";
 import type { MessageKey } from "@/lib/i18n/core";
 import { useT } from "@/components/i18n-provider";
 
@@ -18,7 +18,7 @@ export function AddFieldButton({ onSelect }: { onSelect: (type: string) => void 
       </DropdownMenuTrigger>
       <DropdownMenuContent className="max-h-96 overflow-y-auto thin-scroll">
         {CATEGORIES.map((cat, i) => {
-          const items = FIELD_TYPES.filter((f) => f.category === cat && CUSTOM_FIELD_TYPE_IDS.includes(f.type));
+          const items = FIELD_TYPES.filter((f) => f.category === cat && CREATABLE_CUSTOM_FIELD_TYPE_IDS.includes(f.type));
           if (!items.length) return null;
           return (
             <div key={cat}>

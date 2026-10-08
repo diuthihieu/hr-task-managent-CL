@@ -17,7 +17,6 @@ const TASK_INCLUDE = {
 } satisfies Prisma.TaskInclude;
 
 export const OBJECTIVE_INCLUDE = {
-  team: true,
   project: { select: { id: true, name: true, color: true } },
   parentKeyResult: { select: { id: true, title: true, objectiveId: true, objective: { select: { title: true } } } },
   tasks: {
@@ -125,8 +124,6 @@ export function resolveObjectives(objectives: ObjectiveWithIncludes[], hidden: S
         : null,
       tasks: shown(directTasks, o.tasks),
       childObjectives: o.keyResults.flatMap((kr) => kr.childObjectives.map((c) => ({ id: c.id, title: c.title, parentKeyResultId: kr.id, owner: lite(c.owner) }))),
-      teamId: o.teamId,
-      team: o.team ? { id: o.team.id, workspaceId: o.team.workspaceId, name: o.team.name, color: o.team.color } : null,
       title: o.title,
       description: o.description,
       owner: lite(o.owner),

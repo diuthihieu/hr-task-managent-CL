@@ -126,7 +126,11 @@ export function DeadlineLabel({ endDate }: { endDate: string | null }) {
   );
 }
 
-export function CycleLabel({ cycleType, cycleLabel }: { cycleType: string; cycleLabel: string | null }) {
+const dm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+
+/** The cycle's label; an unlabeled custom cycle shows its dates (01/11 – 15/01/2027). */
+export function CycleLabel({ cycleType, cycleLabel, startDate, endDate }: { cycleType: string; cycleLabel: string | null; startDate?: string | null; endDate?: string | null }) {
   const { t } = useT();
-  return <span className="text-[11px] text-neutral-400 uppercase tracking-wide shrink-0">{cycleLabel || t(`okr.cycle.${cycleType}` as MessageKey)}</span>;
+  const range = !cycleLabel && cycleType === "custom" && startDate && endDate ? `${dm(startDate)} – ${dm(endDate)}/${endDate.slice(0, 4)}` : null;
+  return <span className="text-[11px] text-neutral-400 uppercase tracking-wide shrink-0">{cycleLabel || range || t(`okr.cycle.${cycleType}` as MessageKey)}</span>;
 }

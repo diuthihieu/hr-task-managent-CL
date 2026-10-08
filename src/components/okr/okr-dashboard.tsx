@@ -6,7 +6,7 @@ import { api } from "@/lib/api-client";
 import { Select } from "@/components/ui/misc";
 import { ChartRenderer, CHART_COLORS } from "@/components/dashboard/chart-renderer";
 import { DeadlineLabel, ProgressBar, StatusBadge } from "./okr-ui";
-import type { TeamRow } from "@/types";
+import { CycleFilter, EMPTY_CYCLE_FILTER, applyCycleParams, type CycleFilterValue } from "./cycle-filter";
 import { useT } from "@/components/i18n-provider";
 
 interface DashboardStats {
@@ -18,12 +18,12 @@ interface DashboardStats {
   notStarted: number;
   avgProgress: number;
   objectivesByStatus: { status: string; count: number }[];
-  progressByTeam: { id: string; name: string; avgProgress: number; count: number }[];
+  progressByProject: { id: string; name: string; avgProgress: number; count: number }[];
   progressByOwner: { id: string; name: string; avgProgress: number; count: number }[];
   keyResultTotal: number;
   keyResultCompleted: number;
   tasksContributing: number;
-  upcomingDeadlines: { id: string; title: string; endDate: string; progress: number; status: string; teamName: string | null }[];
+  upcomingDeadlines: { id: string; title: string; endDate: string; progress: number; status: string; projectName: string | null }[];
 }
 
 interface MemberLite {
@@ -34,21 +34,19 @@ interface MemberLite {
 export function OkrDashboard({ workspaceId, workspaceSlug }: { workspaceId: string; workspaceSlug: string }) {
   const { t } = useT();
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [teams, setTeams] = useState<TeamRow[]>([]);
   const [members, setMembers] = useState<MemberLite[]>([]);
-  const [filters, setFilters] = useState({ teamId: "", ownerId: "", status: "", cycleType: "" });
+  const [filters, setFilters] = useState({ ownerId: "", status: "" });
+  const [cycle, setCycle] = useState<CycleFilterValue>(EMPTY_CYCLE_FILTER);
 
   useEffect(() => {
     const params = new URLSearchParams();
-    if (filters.teamId) params.set("teamId", filters.teamId);
     if (filters.ownerId) params.set("ownerId", filters.ownerId);
     if (filters.status) params.set("status", filters.status);
-    if (filters.cycleType) params.set("cycleType", filters.cycleType);
+    applyCycleParams(params, cycle);
     api.get<DashboardStats>(`/api/workspaces/${workspaceId}/okr-dashboard?${params}`).then(setStats);
-  }, [workspaceId, filters]);
+  }, [workspaceId, filters, cycle]);
 
   useEffect(() => {
-    api.get<TeamRow[]>(`/api/workspaces/${workspaceId}/teams`).then(setTeams).catch(() => {});
     api.get<MemberLite[]>(`/api/workspaces/${workspaceId}/members`).then(setMembers).catch(() => {});
   }, [workspaceId]);
 
@@ -62,10 +60,9 @@ export function OkrDashboard({ workspaceId, workspaceSlug }: { workspaceId: stri
       <div className="flex items-center gap-2 px-4 h-12 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
         <h1 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">{t("nav.okrDashboard")}</h1>
         <div className="ml-auto flex items-center gap-1.5">
-          <Select className="w-32" value={filters.teamId} onValueChange={(v) => setFilters((f) => ({ ...f, teamId: v }))} options={[{ value: "", label: t("okr.allTeams") }, ...teams.map((tm) => ({ value: tm.id, label: tm.name }))]} />
           <Select className="w-32" value={filters.ownerId} onValueChange={(v) => setFilters((f) => ({ ...f, ownerId: v }))} options={[{ value: "", label: t("okr.allOwners") }, ...members.map((m) => ({ value: m.id, label: m.name }))]} />
           <Select className="w-28" value={filters.status} onValueChange={(v) => setFilters((f) => ({ ...f, status: v }))} options={[{ value: "", label: t("okr.allStatus") }, ...Object.entries(statusLabels).map(([value, label]) => ({ value, label }))]} />
-          <Select className="w-28" value={filters.cycleType} onValueChange={(v) => setFilters((f) => ({ ...f, cycleType: v }))} options={[{ value: "", label: t("okr.allCycles") }, { value: "quarter", label: t("okr.cycle.quarter") }, { value: "year", label: t("okr.cycle.year") }, { value: "custom", label: t("okr.cycle.custom") }]} />
+          <CycleFilter value={cycle} onChange={setCycle} />
         </div>
       </div>
 
@@ -90,9 +87,9 @@ export function OkrDashboard({ workspaceId, workspaceSlug }: { workspaceId: stri
             </div>
           </div>
           <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3">
-            <h3 className="text-xs font-semibold text-neutral-500 mb-2">{t("od.byTeam")}</h3>
+            <h3 className="text-xs font-semibold text-neutral-500 mb-2">{t("od.byProject")}</h3>
             <div style={{ height: 200 }}>
-              <ChartRenderer type="column" series={stats.progressByTeam.map((t, i) => ({ key: t.id, label: t.name, value: Math.round(t.avgProgress), color: CHART_COLORS[i % CHART_COLORS.length] }))} measureLabel="Avg %" />
+              <ChartRenderer type="column" series={stats.progressByProject.map((p, i) => ({ key: p.id, label: p.name || t("okr.workspaceLevel"), value: Math.round(p.avgProgress), color: CHART_COLORS[i % CHART_COLORS.length] }))} measureLabel="Avg %" />
             </div>
           </div>
           <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3">

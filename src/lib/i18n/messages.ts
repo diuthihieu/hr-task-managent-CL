@@ -49,6 +49,11 @@ export const MESSAGES = {
 
   // --- landing
   "landing.nav.guide": ["How it works", "Hướng dẫn"],
+  "landing.nav.video": ["Video", "Video"],
+  "landing.video.badge": ["Watch the intro", "Video giới thiệu"],
+  "landing.video.title": ["Meet woli in a few minutes", "Làm quen woli trong vài phút"],
+  "landing.video.subtitle": ["A quick tour of tasks, OKRs, the knowledge base and AI working together in one workspace.", "Một vòng nhanh qua task, OKR, kho tri thức và AI cùng làm việc trong một workspace."],
+  "landing.video.open": ["Video not playing? Open it on Google Drive", "Video không phát? Mở trên Google Drive"],
   "landing.nav.benefits": ["Benefits", "Lợi ích"],
   "landing.nav.desktop": ["Desktop app", "Ứng dụng máy tính"],
   "landing.hero.title": ["Plan projects, track OKRs and share knowledge - in one place", "Quản lý dự án, theo dõi OKR và chia sẻ kiến thức - tất cả ở một nơi"],

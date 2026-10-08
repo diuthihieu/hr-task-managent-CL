@@ -400,6 +400,24 @@ test("project objectives: tasks link to an objective or a key result and roll up
   assert.ok(team.body.some((x) => x.id === s.projObjective && x.project?.id === s.project));
   const onlyProject = await viewer.get<{ id: string }[]>(`/api/workspaces/${s.ws}/objectives?projectId=${s.project}`);
   assert.deepEqual(onlyProject.body.map((x) => x.id), [s.projObjective]);
+
+  // Custom range: objectives whose period (own dates, else the cycle label) overlaps from..to.
+  const q3 = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/objectives`, { title: "Q3 by label", cycleType: "quarter", cycleLabel: "Q3 2031" });
+  const spring = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/objectives`, { title: "Spring push", cycleType: "custom", startDate: "2031-03-10", endDate: "2031-05-20" });
+  const ids = async (qs: string) => (await viewer.get<{ id: string }[]>(`/api/workspaces/${s.ws}/objectives?${qs}`)).body.map((x) => x.id);
+  assert.deepEqual(await ids("from=2031-09-30&to=2031-10-31"), [q3.body.id], "inclusive on the quarter's last day");
+  assert.deepEqual(await ids("from=2031-05-20&to=2031-05-20"), [spring.body.id]);
+  assert.deepEqual((await ids("from=2031-12-31&to=2031-01-01")).sort(), [q3.body.id, spring.body.id].sort(), "a reversed range is swapped");
+  assert.ok((await ids("from=nope&to=2031-02-31")).length >= 3, "junk dates are ignored, not an error");
+  const dash = await viewer.get<{ total: number; progressByProject: unknown[] }>(`/api/workspaces/${s.ws}/okr-dashboard?from=2031-03-01&to=2031-03-31`);
+  assert.equal(dash.body.total, 1);
+  // Teams are retired: the endpoint is gone and a team id is no longer stored.
+  assert.equal((await admin.get(`/api/workspaces/${s.ws}/teams`)).status, 404);
+  const withTeam = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/objectives`, { title: "Old client", teamId: "00000000-0000-0000-0000-000000000000" });
+  assert.equal(withTeam.status, 201, "old clients sending teamId still work");
+  assert.equal((await prisma.objective.findUniqueOrThrow({ where: { id: withTeam.body.id } })).teamId, null);
+  assert.equal((await admin.post(`/api/projects/${s.project}/custom-fields`, { name: "Owning team", type: "team" })).status, 400, "no new team fields");
+  await prisma.objective.deleteMany({ where: { id: { in: [q3.body.id, spring.body.id, withTeam.body.id] } } });
   // My OKRs: the viewer owns it, the contributor owns a key result.
   const viewerMine = await viewer.get<{ id: string }[]>(`/api/workspaces/${s.ws}/objectives?mine=1`);
   assert.ok(viewerMine.body.some((x) => x.id === s.projObjective));

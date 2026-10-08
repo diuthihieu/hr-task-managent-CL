@@ -15,14 +15,13 @@ export async function objectiveVisibility(tx: Tx, actorId: string | null | undef
  * Owner, contributors and team must belong to the objective's workspace; the
  * parent objective / key result and the project must be ones the actor can see.
  */
-export async function assertObjectiveRefs(tx: Tx, workspaceId: string, refs: { ownerId?: string | null; contributorIds?: string[]; teamId?: string | null; parentObjectiveId?: string | null; parentKeyResultId?: string | null; projectId?: string | null }, selfId?: string, actorId?: string) {
+export async function assertObjectiveRefs(tx: Tx, workspaceId: string, refs: { ownerId?: string | null; contributorIds?: string[]; parentObjectiveId?: string | null; parentKeyResultId?: string | null; projectId?: string | null }, selfId?: string, actorId?: string) {
   const visible = await objectiveVisibility(tx, actorId);
   const userIds = [...new Set([...(refs.ownerId ? [refs.ownerId] : []), ...(refs.contributorIds ?? [])])];
   if (userIds.length) {
     const n = await tx.workspaceMember.count({ where: { workspaceId, userId: { in: userIds } } });
     if (n !== userIds.length) throw badRequest("Owner and contributors must be workspace members");
   }
-  if (refs.teamId && !(await tx.team.findFirst({ where: { id: refs.teamId, workspaceId } }))) throw badRequest("Unknown team");
   if (refs.parentObjectiveId) {
     if (refs.parentObjectiveId === selfId) throw badRequest("An objective cannot be its own parent");
     if (!(await tx.objective.findFirst({ where: { id: refs.parentObjectiveId, workspaceId, deletedAt: null, ...visible } }))) throw badRequest("Unknown parent objective");

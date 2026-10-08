@@ -40,7 +40,6 @@ export const PATCH = route<P>(async (req, { params }) => {
       data: {
         title: body.title,
         description: body.description,
-        teamId: body.teamId,
         parentObjectiveId: body.parentKeyResultId !== undefined ? await parentObjectiveFor(tx, body.parentKeyResultId) : body.parentObjectiveId,
         parentKeyResultId: body.parentKeyResultId,
         projectId: body.projectId,
@@ -56,7 +55,7 @@ export const PATCH = route<P>(async (req, { params }) => {
       },
       include: OBJECTIVE_INCLUDE,
     });
-    const changes = diff(before, after, ["title", "description", "teamId", "ownerId", "projectId", "parentKeyResultId", "cycleType", "cycleLabel", "startDate", "endDate", "status", "confidence", "priority"]);
+    const changes = diff(before, after, ["title", "description", "ownerId", "projectId", "parentKeyResultId", "cycleType", "cycleLabel", "startDate", "endDate", "status", "confidence", "priority"]);
     if (changes) await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "objective", entityId: objectiveId, action: "updated", changes });
     return after;
   });

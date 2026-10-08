@@ -49,7 +49,6 @@ export const categorySchema = z.object({ name: z.string().trim().min(1).max(80),
 export const objectiveSchema = z.object({
   title: z.string().trim().min(1).max(300),
   description: z.string().max(5000).nullable().optional(),
-  teamId: uuid.nullable().optional(),
   parentObjectiveId: uuid.nullable().optional(),
   parentKeyResultId: uuid.nullable().optional(),
   projectId: uuid.nullable().optional(),

@@ -4,7 +4,7 @@ import type { MessageKey } from "@/lib/i18n/core";
 type T = (key: MessageKey, vars?: Record<string, string | number>) => string;
 
 /** The woli introduction video (a Google Drive file shared with "anyone with the link"). */
-const DRIVE_FILE_ID = "1jEdRaX2rmitPI_kbNuNET06Gcag8S432";
+const DRIVE_FILE_ID = "1c1nYbnKe-I2hlWBu6Jk5nnwBC-4_PPhq";
 
 // Drive's /preview player is the embeddable one; /view refuses to be framed.
 export function IntroVideo({ t }: { t: T }) {

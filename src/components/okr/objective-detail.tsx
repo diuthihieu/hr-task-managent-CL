@@ -15,7 +15,7 @@ import { KeyResultDialog, type KeyResultDraft } from "./key-result-dialog";
 import { ProgressBar, StatusBadge, PriorityBadge, ConfidenceDot, PctLabel, UserChip, UserStack, DeadlineLabel, CycleLabel } from "./okr-ui";
 import { AiObjectiveActions } from "@/components/ai/ai-actions";
 import { formatDate } from "@/lib/utils";
-import type { ObjectiveRow, KeyResultRow, TeamRow } from "@/types";
+import type { ObjectiveRow, KeyResultRow } from "@/types";
 
 interface MemberLite {
   id: string;
@@ -32,7 +32,6 @@ export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug, mine 
   const router = useRouter();
   const { t } = useT();
   const [objective, setObjective] = useState<ObjectiveRow | null>(null);
-  const [teams, setTeams] = useState<TeamRow[]>([]);
   const [members, setMembers] = useState<MemberLite[]>([]);
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -56,7 +55,6 @@ export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug, mine 
   }, [objectiveId]);
 
   useEffect(() => {
-    api.get<TeamRow[]>(`/api/workspaces/${workspaceId}/teams`).then(setTeams).catch(() => {});
     api.get<MemberLite[]>(`/api/workspaces/${workspaceId}/members`).then(setMembers).catch(() => {});
     api.get<{ id: string; name: string }[]>(`/api/workspaces/${workspaceId}/projects`).then(setProjects).catch(() => {});
   }, [workspaceId]);
@@ -147,7 +145,7 @@ export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug, mine 
         <button onClick={() => router.push(`/w/${workspaceSlug}/okrs`)} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
           <ArrowLeft size={16} />
         </button>
-        <span className="text-sm font-medium text-neutral-500 truncate">{objective.project?.name ?? objective.team?.name ?? t("okr.workspaceLevel")}</span>
+        <span className="text-sm font-medium text-neutral-500 truncate">{objective.project?.name ?? t("okr.workspaceLevel")}</span>
         <ChevronRight size={13} className="text-neutral-300" />
         <span className="text-sm font-semibold text-neutral-900 dark:text-neutral-50 truncate">{objective.title}</span>
         <div className="ml-auto" />
@@ -179,7 +177,7 @@ export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug, mine 
             <StatusBadge status={objective.status} />
             <PriorityBadge priority={objective.priority} />
             <ConfidenceDot confidence={objective.confidence} />
-            <CycleLabel cycleType={objective.cycleType} cycleLabel={objective.cycleLabel} />
+            <CycleLabel cycleType={objective.cycleType} cycleLabel={objective.cycleLabel} startDate={objective.startDate} endDate={objective.endDate} />
             <DeadlineLabel endDate={objective.endDate} />
             <UserChip user={objective.owner} />
             <UserStack users={objective.contributors} />
@@ -296,7 +294,7 @@ export function ObjectiveDetail({ objectiveId, workspaceId, workspaceSlug, mine 
         )}
       </div>
 
-      <ObjectiveDialog open={editOpen} onOpenChange={setEditOpen} objective={objective} teams={teams} members={members} onSave={saveObjective} workspaceId={workspaceId} projects={projects} />
+      <ObjectiveDialog open={editOpen} onOpenChange={setEditOpen} objective={objective} members={members} onSave={saveObjective} workspaceId={workspaceId} projects={projects} />
       <KeyResultDialog open={krDialog.open} onOpenChange={(v) => setKrDialog((d) => ({ ...d, open: v }))} keyResult={krDialog.kr} members={members} onSave={saveKeyResult} />
     </div>
   );

@@ -93,6 +93,12 @@ export const CUSTOM_FIELD_TYPE_IDS = [
   "team", "location", "signature", "link", "lookup", "rollup", "button", "barcode", "ai_field", "json", "api_result",
 ];
 
+/**
+ * Types offered when adding a new field. "team" is retired (workspaces have no
+ * way to manage teams); existing team fields keep working but no new ones.
+ */
+export const CREATABLE_CUSTOM_FIELD_TYPE_IDS = CUSTOM_FIELD_TYPE_IDS.filter((type) => type !== "team");
+
 export const FIELD_TYPE_MAP = Object.fromEntries(FIELD_TYPES.map((f) => [f.type, f]));
 
 export const FIELD_CATEGORY_LABELS: Record<FieldCategory, string> = {

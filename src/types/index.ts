@@ -136,13 +136,6 @@ export type ObjectiveStatus = "not_started" | "on_track" | "at_risk" | "off_trac
 export type OkrPriority = "low" | "medium" | "high" | "critical";
 export type KeyResultType = "task_based" | "numeric" | "percentage" | "manual";
 
-export interface TeamRow {
-  id: string;
-  workspaceId: string;
-  name: string;
-  color: string;
-}
-
 export interface OkrUserLite {
   id: string;
   name: string;
@@ -224,8 +217,6 @@ export interface CapturedThoughtRow {
 export interface ObjectiveRow {
   id: string;
   workspaceId: string;
-  teamId: string | null;
-  team: TeamRow | null;
   title: string;
   description: string | null;
   owner: OkrUserLite | null;

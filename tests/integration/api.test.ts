@@ -188,8 +188,8 @@ test("contributor creates a task; values land in typed columns and join tables",
       sys_title: "Prepare laptop for new hire",
       sys_category: s.category,
       sys_assignees: [s.contributorId],
-      sys_start_date: "2026-10-01",
-      sys_due_date: "2026-10-05",
+      sys_start_date: "2036-10-01",
+      sys_due_date: "2036-10-05",
       sys_priority: "high",
       sys_estimate: 1.5,
     },
@@ -202,14 +202,14 @@ test("contributor creates a task; values land in typed columns and join tables",
   assert.equal(row.statusId, s.statusTodo, "default status applied");
   assert.equal(row.estimateMinutes, 90);
   assert.equal(row.priority, "high");
-  assert.equal(row.dueDate?.toISOString().slice(0, 10), "2026-10-05");
+  assert.equal(row.dueDate?.toISOString().slice(0, 10), "2036-10-05");
   assert.deepEqual(row.assignees.map((a) => a.userId), [s.contributorId]);
   assert.equal(row.createdById, s.contributorId);
   assert.match(row.id, /^[0-9a-f-]{36}$/, "uuid primary key");
 });
 
 test("validation and database constraints reject bad data", async () => {
-  const badRange = await contributor.patch<{ error: string }>(`/api/tasks/${s.task1}`, { data: { sys_due_date: "2026-09-01" } });
+  const badRange = await contributor.patch<{ error: string }>(`/api/tasks/${s.task1}`, { data: { sys_due_date: "2036-09-01" } });
   assert.equal(badRange.status, 400, "due date before start date (CHECK constraint)");
   assert.equal(badRange.body.error, "Due date must be on or after the start date", "raw database errors are not leaked");
   assert.equal((await contributor.patch(`/api/tasks/${s.task1}`, { data: { sys_progress: 150 } })).status, 400);
@@ -221,7 +221,7 @@ test("validation and database constraints reject bad data", async () => {
   await assert.rejects(prisma.task.update({ where: { id: s.task1 }, data: { categoryId: s.otherCategory } }), /category must belong to the task project/, "trigger backs it up");
   // Nothing partially applied.
   const row = await prisma.task.findUniqueOrThrow({ where: { id: s.task1 } });
-  assert.equal(row.dueDate?.toISOString().slice(0, 10), "2026-10-05");
+  assert.equal(row.dueDate?.toISOString().slice(0, 10), "2036-10-05");
 });
 
 test("status change to a done-category status completes the task", async () => {
@@ -312,7 +312,7 @@ test("important changes are written to the activity log in the same transaction"
   assert.ok(statusLog, "status change logged");
   assert.deepEqual((statusLog!.changes as Record<string, { to: string }>).status.to, s.statusDone);
   // Failed (400) updates left no log rows behind.
-  assert.ok(!logs.some((l) => JSON.stringify(l.changes ?? {}).includes("2026-09-01")));
+  assert.ok(!logs.some((l) => JSON.stringify(l.changes ?? {}).includes("2036-09-01")));
   // Append-only: the database refuses updates.
   await assert.rejects(prisma.activityLog.update({ where: { id: logs[0].id }, data: { summary: "tampered" } }));
   const api = await admin.get<unknown[]>(`/api/workspaces/${s.ws}/activity`);

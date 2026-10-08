@@ -16,6 +16,7 @@ import { getServerT } from "@/lib/prefs";
 import { getLatestRelease, DEFAULT_PLATFORM } from "@/lib/desktop-releases";
 import { AuthCard } from "@/components/landing/auth-card";
 import { LocaleSwitch } from "@/components/landing/locale-switch";
+import { IntroVideo } from "@/components/landing/intro-video";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +69,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
             <Brand size={32} textClassName="text-xl" />
           </Link>
           <nav className="hidden md:flex items-center gap-6 text-sm text-neutral-600 dark:text-neutral-400 ml-6">
+            <a href="#video" className="hover:text-neutral-900 dark:hover:text-white">{t("landing.nav.video")}</a>
             <a href="#features" className="hover:text-neutral-900 dark:hover:text-white">{t("landing.nav.features")}</a>
             <a href="#guide" className="hover:text-neutral-900 dark:hover:text-white">{t("landing.nav.guide")}</a>
             <a href="#ai" className="hover:text-neutral-900 dark:hover:text-white">{t("landing.nav.ai")}</a>
@@ -101,7 +103,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
               <a href="?auth=register#auth" className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 text-white font-semibold px-5 py-3 hover:bg-indigo-500 shadow-sm shadow-indigo-600/20 transition-colors">
                 {t("landing.hero.cta")} <ArrowRight size={17} />
               </a>
-              <a href="#guide" className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 font-semibold px-5 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800">
+              <a href="#video" className="inline-flex items-center gap-2 rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 font-semibold px-5 py-3 hover:bg-neutral-50 dark:hover:bg-neutral-800">
                 <PlayCircle size={17} className="text-indigo-600" /> {t("landing.hero.cta2")}
               </a>
             </div>
@@ -147,6 +149,8 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           />
         </div>
       </section>
+
+      <IntroVideo t={t} />
 
       <section id="features" className="scroll-mt-16 pb-16">
         <div className="max-w-6xl mx-auto px-4 grid gap-8 lg:grid-cols-[1.35fr_1fr] items-center">

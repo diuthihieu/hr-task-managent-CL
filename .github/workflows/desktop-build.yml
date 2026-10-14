@@ -95,7 +95,7 @@ jobs:
 
       - name: Create GitHub Release
         if: inputs.publish
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: desktop-v${{ inputs.version }}
           name: Basework Desktop v${{ inputs.version }}

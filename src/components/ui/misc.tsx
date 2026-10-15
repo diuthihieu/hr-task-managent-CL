@@ -1,4 +1,5 @@
 "use client";
+import { useId } from "react";
 import { cn } from "@/lib/utils";
 import * as RCheckbox from "@radix-ui/react-checkbox";
 import * as RSwitch from "@radix-ui/react-switch";
@@ -90,7 +91,8 @@ export function Select({
 }: {
   value: string;
   onValueChange: (v: string) => void;
-  options: { value: string; label: string }[];
+  /** `description` (optional) is shown under the label in the list only - e.g. what a role may do. */
+  options: { value: string; label: string; description?: string }[];
   placeholder?: string;
   className?: string;
   disabled?: boolean;
@@ -99,6 +101,8 @@ export function Select({
   // Radix treats "" as "no value" (shows the placeholder), but our option
   // lists use "" for "All ..." / "None" - map it to a sentinel internally.
   const EMPTY = "__empty__";
+  const described = options.some((o) => o.description);
+  const descId = useId();
   return (
     <RSelect.Root value={value === "" ? EMPTY : value} onValueChange={(v) => onValueChange(v === EMPTY ? "" : v)} disabled={disabled}>
       <RSelect.Trigger
@@ -114,15 +118,20 @@ export function Select({
         </RSelect.Icon>
       </RSelect.Trigger>
       <RSelect.Portal>
-        <RSelect.Content className="z-50 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-lg">
+        <RSelect.Content
+          {...(described ? { position: "popper" as const, sideOffset: 4 } : {})}
+          className={cn("z-50 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 shadow-lg", described && "min-w-[var(--radix-select-trigger-width)] max-w-[22rem]")}
+        >
           <RSelect.Viewport className="p-1">
-            {options.map((o) => (
+            {options.map((o, i) => (
               <RSelect.Item
                 key={o.value || EMPTY}
                 value={o.value || EMPTY}
-                className="flex items-center rounded-sm px-2 py-1.5 text-sm text-neutral-700 dark:text-neutral-200 outline-none cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 data-[state=checked]:font-medium"
+                aria-describedby={o.description ? `${descId}-${i}` : undefined}
+                className="flex flex-col items-start rounded-sm px-2 py-1.5 text-sm text-neutral-700 dark:text-neutral-200 outline-none cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800 data-[highlighted]:bg-neutral-100 dark:data-[highlighted]:bg-neutral-800 data-[state=checked]:font-medium"
               >
                 <RSelect.ItemText>{o.label}</RSelect.ItemText>
+                {o.description && <span id={`${descId}-${i}`} className="text-xs font-normal text-neutral-500 dark:text-neutral-400 whitespace-normal leading-snug mt-0.5">{o.description}</span>}
               </RSelect.Item>
             ))}
           </RSelect.Viewport>

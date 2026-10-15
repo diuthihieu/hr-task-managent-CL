@@ -5,6 +5,7 @@ import { entityHref } from "@/lib/brain/links-core";
 import { brainContext } from "@/lib/brain/route-helpers";
 import { conflictCandidates } from "@/lib/brain/health";
 import { assertAi, brainSystem, generateJson, str } from "@/lib/brain/ai";
+import { personalPromptBlock } from "@/lib/ai/personal";
 
 type P = { workspaceId: string };
 
@@ -27,6 +28,7 @@ export const POST = route<P>(async (_req, { params }) => {
     task: "For each PAIR, decide whether A and B state conflicting facts (different numbers, rules, owners, dates or steps for the same thing). Report ONLY real conflicts, quoting both statements briefly, and suggest how a person could resolve it (which page looks newer / which to update). Do not rewrite the pages.",
     schema: '{"conflicts":[{"pair":1,"issue":"...","quoteA":"...","quoteB":"...","suggestion":"..."}]}',
     locale: user.locale ?? "vi",
+    personal: await personalPromptBlock(user.id),
     data,
     responseName: "conflicts",
   });

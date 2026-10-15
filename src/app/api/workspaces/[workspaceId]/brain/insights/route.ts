@@ -4,6 +4,7 @@ import { route } from "@/lib/authz";
 import { brainContext } from "@/lib/brain/route-helpers";
 import { forYou } from "@/lib/brain/resurface";
 import { assertAi, brainSystem, generateJson, str } from "@/lib/brain/ai";
+import { personalPromptBlock } from "@/lib/ai/personal";
 
 type P = { workspaceId: string };
 
@@ -34,6 +35,7 @@ export const POST = route<P>(async (_req, { params }) => {
     task: "Give the user 3 short, specific insights for today that connect their open work with the team's knowledge and decisions (e.g. a page to read before a task, knowledge that looks outdated, a decision that affects a task, missing documentation). Each has a title (max 10 words), one sentence of detail, and a concrete next action. Only from the DATA; skip generic advice.",
     schema: '{"insights":[{"title":"...","detail":"...","action":"..."}]}',
     locale: user.locale ?? "vi",
+    personal: await personalPromptBlock(user.id),
     data,
     responseName: "insights",
   });

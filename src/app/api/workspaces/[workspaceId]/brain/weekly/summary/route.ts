@@ -5,6 +5,7 @@ import { makeT } from "@/lib/i18n/core";
 import { brainContext } from "@/lib/brain/route-helpers";
 import { weeklyReview, weekStartOf } from "@/lib/brain/resurface";
 import { assertAi, brainSystem, generateJson, str, strList } from "@/lib/brain/ai";
+import { personalPromptBlock } from "@/lib/ai/personal";
 
 type P = { workspaceId: string };
 
@@ -34,6 +35,7 @@ export const POST = route<P>(async (req, { params }) => {
     task: "Write the user's weekly reflection from the DATA. wins: 2-5 concrete achievements; knowledge: 2-5 things learned or documented (cite page / decision titles in quotes); openLoops: what still needs closing and the next step; automation: work that could be automated or made a template / recurring task, and how; nextWeek: 3-5 focused priorities. Short, specific sentences; only from the DATA.",
     schema: '{"headline":"...","wins":["..."],"knowledge":["..."],"openLoops":["..."],"automation":["..."],"nextWeek":["..."]}',
     locale: user.locale ?? "vi",
+    personal: await personalPromptBlock(user.id),
     data,
     responseName: "weekly",
   });

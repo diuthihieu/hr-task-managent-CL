@@ -7,6 +7,7 @@ import { visiblePageWhere } from "../wiki-sources";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "../okr-resolver";
 import { htmlToText } from "./extract";
 import { isCurrentKnowledge } from "../wiki";
+import { taskCommentsSection } from "./task-comments";
 
 // Grounding context for the AI. Everything given to the model is read with
 // the same permission filters as the rest of the app, so the model can only
@@ -141,6 +142,10 @@ export async function workspaceData(user: SessionUser, workspaceId: string, role
           )
           .join("\n")
     );
+
+  // What people said on the tasks (same visibility as the task list). Added before the task list,
+  // which can fill the rest of the budget, and capped so it never crowds the tasks out.
+  b.add(await taskCommentsSection({ task: { workspaceId, deletedAt: null, project: { deletedAt: null, ...visible } } }, { maxTotalChars: Math.min(60_000, Math.floor(budget * 0.15)) }));
 
   const now = new Date();
   b.add(

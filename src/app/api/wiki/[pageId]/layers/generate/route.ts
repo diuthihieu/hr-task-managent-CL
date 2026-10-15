@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, workspaceOfWikiPage } from "@/lib/authz";
 import { htmlToText } from "@/lib/ai/extract";
 import { assertAi, brainSystem, generateJson, str, strList } from "@/lib/brain/ai";
+import { personalPromptBlock } from "@/lib/ai/personal";
 
 type P = { pageId: string };
 
@@ -32,6 +33,7 @@ export const POST = route<P>(async (_req, { params }) => {
     task: "Progressive summarization. Distil the SOURCE in layers, giving extra weight to the HIGHLIGHTS: key points (5-10 bullet sentences, each traceable to the source), a summary (one short paragraph), and key insights (2-5 non-obvious takeaways or implications for the team's work). Do not rewrite or correct the source.",
     schema: '{"keyPoints":["..."],"summary":"...","insights":["..."]}',
     locale: user.locale ?? "vi",
+    personal: await personalPromptBlock(user.id),
     data,
     responseName: "layers",
   });

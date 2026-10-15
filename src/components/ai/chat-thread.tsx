@@ -8,6 +8,7 @@ import { Markdown } from "./markdown";
 import { AiHealthCheck } from "./ai-health-check";
 import type { ChatMessage } from "./use-ai-chat";
 import { useAutosize } from "./use-autosize";
+import { AttachButton, MessageFiles, PendingFiles, dropRing, useChatFiles, useFileDrop } from "./chat-attachments";
 
 /** Message list + composer shared by the wiki assistant panel and the AI Assistant page. */
 export function ChatThread({
@@ -35,7 +36,7 @@ export function ChatThread({
   failedText?: string | null;
   onRetry?: () => void;
   configured: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string, files?: File[]) => void;
   onStop: () => void;
   onExportPdf?: (m: ChatMessage) => void;
   onConvertToWiki?: (m: ChatMessage) => void;
@@ -50,15 +51,18 @@ export function ChatThread({
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   useAutosize(inputRef, draft, 192);
+  const attach = useChatFiles();
+  const drop = useFileDrop(attach, configured);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
 
   function submit() {
-    if (!draft.trim() || busy) return;
-    onSend(draft);
+    if ((!draft.trim() && !attach.files.length) || busy) return;
+    onSend(draft.trim() || t("ai.attach.defaultPrompt"), attach.files);
     setDraft("");
+    attach.clear();
   }
 
   return (
@@ -91,8 +95,11 @@ export function ChatThread({
           {messages.map((m) =>
             m.role === "user" ? (
               <div key={m.id} className="flex justify-end">
-                <div className="max-w-[85%] rounded-2xl rounded-br-md bg-indigo-600 text-white px-3.5 py-2 text-sm whitespace-pre-wrap" data-testid="ai-user-msg">
-                  {m.content}
+                <div className="max-w-[85%] flex flex-col items-end">
+                  <MessageFiles files={m.files} />
+                  <div className="rounded-2xl rounded-br-md bg-indigo-600 text-white px-3.5 py-2 text-sm whitespace-pre-wrap" data-testid="ai-user-msg">
+                    {m.content}
+                  </div>
                 </div>
               </div>
             ) : (
@@ -158,8 +165,13 @@ export function ChatThread({
         </div>
       </div>
       <div className={cn("border-t border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900", compact ? "p-2.5" : "p-4")}>
-        <div className={cn("mx-auto flex items-end gap-2 rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-950", !compact && "max-w-3xl")}>
+        <div className={cn("mx-auto", !compact && "max-w-3xl")}>
+          <PendingFiles chat={attach} />
+        </div>
+        <div {...drop.zone} className={cn("mx-auto flex items-end gap-2 rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-950", !compact && "max-w-3xl", dropRing(drop.over))}>
+          <AttachButton onPick={attach.add} disabled={!configured || busy} />
           <textarea
+            onPaste={drop.onPaste}
             ref={inputRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -180,7 +192,7 @@ export function ChatThread({
               <Square size={12} />
             </button>
           ) : (
-            <button onClick={submit} disabled={!draft.trim() || !configured} className="h-8 w-8 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0 disabled:opacity-40" title={t("ai.send")} data-testid="ai-send">
+            <button onClick={submit} disabled={(!draft.trim() && !attach.files.length) || !configured} className="h-8 w-8 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0 disabled:opacity-40" title={t("ai.send")} data-testid="ai-send">
               <ArrowUp size={15} />
             </button>
           )}

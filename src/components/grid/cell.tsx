@@ -1,5 +1,6 @@
 "use client";
 import { useLayoutEffect, useRef, useState } from "react";
+import { DateInput } from "@/components/ui/date-input";
 import { Star, User as UserIcon, Link2, Check, Paperclip, Plus, X, Target, KeySquare, MapPin, ExternalLink, RefreshCw, Sparkles } from "lucide-react";
 import { Checkbox } from "@/components/ui/misc";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -290,20 +291,19 @@ export function Cell({ field, value, record, members, linkTargets, okrOptions, w
       );
     case "date":
       return (
-        <input
-          type="date"
+        <DateInput
           className={cn(base, "bg-transparent outline-none text-neutral-800 dark:text-neutral-100 focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40")}
           value={value ? String(value).slice(0, 10) : ""}
-          onChange={(e) => onChange(e.target.value || null)}
+          onCommit={onChange}
         />
       );
     case "datetime":
       return (
-        <input
+        <DateInput
           type="datetime-local"
           className={cn(base, "bg-transparent outline-none text-neutral-800 dark:text-neutral-100 focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40")}
           value={value ? String(value).slice(0, 16) : ""}
-          onChange={(e) => onChange(e.target.value ? new Date(e.target.value).toISOString() : null)}
+          onCommit={(v) => onChange(v ? new Date(v).toISOString() : null)}
         />
       );
     case "single_select":

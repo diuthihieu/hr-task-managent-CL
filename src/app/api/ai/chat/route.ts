@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, requireWiki, route, readJson, notFound, badRequest, HttpError, hiddenProjectIds } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, requireWiki, route, notFound, badRequest, HttpError, hiddenProjectIds } from "@/lib/authz";
 import { aiConfigured, streamGenerate, type GeminiContent, type Usage } from "@/lib/ai/gemini";
 import { wikiKnowledge, workspaceData } from "@/lib/ai/context";
 import { wikiSystemPrompt, assistantSystemPrompt } from "@/lib/ai/prompts";
 import { personalPromptBlock } from "@/lib/ai/personal";
+import { readChatRequest, chatFileParts, historyFileParts, historyBudget, savedNotes } from "@/lib/ai/chat-files";
 import { uuid } from "@/lib/validation";
 
 export const maxDuration = 120;
@@ -24,11 +25,14 @@ const schema = z.object({
  * Ask a wiki's assistant (kind=wiki, wikiId) or the workspace AI assistant
  * (kind=assistant, workspaceId). Streams the answer as plain text; the
  * conversation id comes back in the X-Conversation-Id header. Both turns are
- * saved, so history lives in the database rather than the browser.
+ * saved, so history lives in the database rather than the browser. Files can
+ * ride along as multipart (see chat-files): images / PDFs are read by the model
+ * on that turn, a document's text is saved with the turn for follow-ups.
  */
 export const POST = route(async (req) => {
   const user = await requireUser();
-  const body = schema.parse(await readJson(req));
+  const { payload, files } = await readChatRequest(req);
+  const body = schema.parse(payload);
   if (!aiConfigured()) throw new HttpError(503, "AI is not configured on this server (GEMINI_API_KEY missing)");
 
   let workspaceId: string;
@@ -60,13 +64,18 @@ export const POST = route(async (req) => {
   if (used >= DAILY_LIMIT) throw new HttpError(429, `Daily AI limit reached (${DAILY_LIMIT} questions per 24 hours)`);
 
   let conversationId = body.conversationId;
-  let history: { role: "user" | "model"; content: string }[] = [];
+  let history: { role: "user" | "model"; content: string; attachments: unknown }[] = [];
   if (conversationId) {
     const c = await prisma.aiConversation.findFirst({ where: { id: conversationId, userId: user.id, workspaceId, kind: body.kind, wikiId } });
     if (!c) throw notFound("Conversation");
-    history = (await prisma.aiMessage.findMany({ where: { conversationId }, orderBy: { createdAt: "desc" }, take: HISTORY, select: { role: true, content: true } })).reverse();
+    history = (await prisma.aiMessage.findMany({ where: { conversationId }, orderBy: { createdAt: "desc" }, take: HISTORY, select: { role: true, content: true, attachments: true } })).reverse();
   }
-  const contents: GeminiContent[] = [...history.map((m) => ({ role: m.role, parts: [{ text: m.content }] })), { role: "user", parts: [{ text: body.message }] }];
+  const attached = await chatFileParts(files, workspaceId);
+  const budget = historyBudget();
+  const contents: GeminiContent[] = [
+    ...history.map((m) => ({ role: m.role, parts: [...historyFileParts(m.role === "user" ? savedNotes(m.attachments) : [], budget), { text: m.content }] })),
+    { role: "user", parts: [...attached.parts, { text: body.message }] },
+  ];
 
   // Ask the model first: if Gemini is unavailable nothing is saved, so a retry
   // doesn't leave empty chats or duplicate questions behind.
@@ -77,7 +86,7 @@ export const POST = route(async (req) => {
     const c = await prisma.aiConversation.create({ data: { workspaceId, wikiId, userId: user.id, kind: body.kind, title: body.message.replace(/\s+/g, " ").slice(0, 120), originType: body.kind === "wiki" ? "wiki" : "workspace", originId: body.kind === "wiki" ? wikiId : workspaceId } });
     conversationId = c.id;
   }
-  await prisma.aiMessage.create({ data: { conversationId, role: "user", content: body.message } });
+  await prisma.aiMessage.create({ data: { conversationId, role: "user", content: body.message, attachments: attached.notes.length ? (attached.notes as object[]) : undefined } });
   const encoder = new TextEncoder();
   const convId = conversationId;
   const stream = new ReadableStream<Uint8Array>({

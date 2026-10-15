@@ -1824,11 +1824,16 @@ test("second brain: Ask My Brain is scoped, grounded and traceable; layers and r
   assert.equal((await viewer.put(`/api/wiki/${s.brainPageA}/layers`, { summary: "x" })).status, 403);
 
   // Retrospective of a finished task: a draft, saved as an AI-generated draft page + proposed decisions.
+  // The user's AI personalization (e.g. "always answer in Vietnamese") applies here too.
+  await contributor.patch("/api/account/profile", { aiInstructions: "Luôn trả lời bằng tiếng Việt." });
   const retro = await contributor.post<{ draft: { title: string; decisions: unknown[] }; source: string }>(`/api/brain/retro`, { taskId: s.brainTask });
   assert.equal(retro.status, 200, JSON.stringify(retro.body));
   assert.equal(retro.body.draft.decisions.length, 1);
   const retroSystem = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
   assert.match(retroSystem, /HISTORY \(status, dates and field changes\)/);
+  assert.match(retroSystem, /USER PERSONALIZATION[\s\S]*Luôn trả lời bằng tiếng Việt\./, "personal instructions reach the retrospective");
+  assert.match(retroSystem, /unless the USER PERSONALIZATION below asks for a specific language/);
+  await contributor.patch("/api/account/profile", { aiInstructions: "" });
   const next = await prisma.task.findFirstOrThrow({ where: { recurrenceParentId: s.brainTask } });
   assert.equal((await contributor.post(`/api/brain/retro`, { taskId: next.id })).status, 400, "only finished tasks");
   const savedRetro = await contributor.post<{ pageId: string; decisionIds: string[] }>(`/api/brain/retro/save`, { wikiId: s.wiki, source: retro.body.source, draft: retro.body.draft, saveDecisions: [0] });

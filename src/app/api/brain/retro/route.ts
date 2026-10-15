@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfTask, workspaceOfProject, badRequest } from "@/lib/authz";
 import { assertAi, brainSystem, generateJson, str, strList } from "@/lib/brain/ai";
+import { personalPromptBlock } from "@/lib/ai/personal";
 import { projectRetroContext, taskRetroContext, type RetroDraft } from "@/lib/brain/retro";
 import { uuid } from "@/lib/validation";
 
@@ -36,6 +37,7 @@ export const POST = route(async (req) => {
     task: `Write a retrospective for the finished ${body.taskId ? "task" : "project"} "${label}". Base every point on the DATA (history of status/date changes, comments, files, estimate vs actual, recorded decisions). Include: a short retrospective (what happened, what went well, what didn't), lessons learned, key decisions that were made (with reason and alternatives if the data shows them), a reusable step-by-step process others can follow next time, and a concise knowledge note worth keeping.`,
     schema: '{"title":"...","retrospective":"...","lessons":["..."],"decisions":[{"title":"...","reason":"...","alternatives":["..."]}],"process":["step 1","step 2"],"knowledgeNote":"..."}',
     locale: user.locale ?? "vi",
+    personal: await personalPromptBlock(user.id),
     data,
     responseName: "retro",
   });

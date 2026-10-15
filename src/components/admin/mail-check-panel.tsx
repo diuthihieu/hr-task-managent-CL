@@ -8,6 +8,7 @@ import { api } from "@/lib/api-client";
 
 interface MailStatus {
   configured: boolean;
+  provider: "smtp" | "resend" | null;
   missing: string[];
   from: string | null;
   testSender: boolean;
@@ -29,7 +30,7 @@ export function MailCheckPanel() {
         <Mail size={15} className="text-indigo-600" />
         <span className="font-semibold">{t("mail.title")}</span>
         {status.configured ? (
-          <span className="text-xs text-emerald-700 dark:text-emerald-400">{t("mail.configured", { from: status.from ?? "" })}</span>
+          <span className="text-xs text-emerald-700 dark:text-emerald-400">{t("mail.configured", { from: status.from ?? "" })} · {status.provider === "smtp" ? "SMTP" : "Resend"}</span>
         ) : (
           <span className="text-xs text-amber-700 dark:text-amber-400">{t("mail.missing", { vars: status.missing.join(", ") })}</span>
         )}

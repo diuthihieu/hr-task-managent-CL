@@ -1065,10 +1065,10 @@ test("email setup is visible to system admins only; a missing provider is report
   const st = await admin.get<{ configured: boolean; missing: string[] }>("/api/admin/mail");
   assert.equal(st.status, 200);
   assert.equal(st.body.configured, false);
-  assert.deepEqual(st.body.missing, ["RESEND_API_KEY", "MAIL_FROM"]);
+  assert.deepEqual(st.body.missing, ["SMTP_HOST + SMTP_USER + SMTP_PASS (or RESEND_API_KEY)", "MAIL_FROM"]);
   const test = await admin.post<{ ok: boolean; error: string }>("/api/admin/mail", {});
   assert.equal(test.body.ok, false);
-  assert.match(test.body.error, /missing RESEND_API_KEY/);
+  assert.match(test.body.error, /missing SMTP_HOST \+ SMTP_USER \+ SMTP_PASS \(or RESEND_API_KEY\)/);
 });
 
 test("renames: mentions show the current name, the AI knows former names; replies to replies join the thread", async () => {

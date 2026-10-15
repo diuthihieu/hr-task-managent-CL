@@ -904,6 +904,29 @@ async function action(client: Client, body: Record<string, unknown>) {
 }
 type NotifList = { unread: number; items: { id: string; type: string; taskId: string | null; actioned: boolean; snoozedUntil: string | null }[] };
 
+test("AI agent: proposed task changes are re-checked against the project; viewers get none", async () => {
+  const r = await intake(contributor, { projectId: s.project, messages: say("#classify fill the missing categories") });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const body = r.body as unknown as { type: string; changes: { taskId: string; title: string; changes: { field: string }[]; data: Record<string, unknown> }[] };
+  assert.equal(body.type, "changes");
+  const system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+  assert.match(system, /\nT1 \| /, "task lines carry short refs");
+  assert.ok(body.changes.length >= 1);
+  const projectTaskIds = new Set((await prisma.task.findMany({ where: { projectId: s.project }, select: { id: true } })).map((t) => t.id));
+  for (const c of body.changes) {
+    assert.ok(projectTaskIds.has(c.taskId), "only tasks of this project");
+    for (const k of Object.keys(c.data)) assert.ok(["sys_category", "sys_priority"].includes(k), `unexpected field ${k}`);
+    assert.notEqual(c.data.sys_priority, "urgent!!");
+  }
+  // Applying goes through the normal task API (permissions + validation there).
+  const first = body.changes[0];
+  assert.equal((await contributor.patch(`/api/tasks/${first.taskId}`, { data: first.data })).status, 200);
+  // Viewers never get a change set, whatever the model says.
+  const v = await intake(viewer, { projectId: s.project, messages: say("#classify") });
+  assert.equal((v.body as unknown as { type: string }).type, "answer");
+  assert.deepEqual((v.body as unknown as { changes: unknown[] }).changes, []);
+});
+
 test("comments: @mentions notify only people who can see the task", async () => {
   const t = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Prepare offer letters", sys_assignees: [s.contributorId] } });
   assert.equal(t.status, 201, JSON.stringify(t.body));
@@ -1042,10 +1065,10 @@ test("email setup is visible to system admins only; a missing provider is report
   const st = await admin.get<{ configured: boolean; missing: string[] }>("/api/admin/mail");
   assert.equal(st.status, 200);
   assert.equal(st.body.configured, false);
-  assert.deepEqual(st.body.missing, ["RESEND_API_KEY", "MAIL_FROM"]);
+  assert.deepEqual(st.body.missing, ["SMTP_HOST + SMTP_USER + SMTP_PASS (or RESEND_API_KEY)", "MAIL_FROM"]);
   const test = await admin.post<{ ok: boolean; error: string }>("/api/admin/mail", {});
   assert.equal(test.body.ok, false);
-  assert.match(test.body.error, /missing RESEND_API_KEY/);
+  assert.match(test.body.error, /missing SMTP_HOST \+ SMTP_USER \+ SMTP_PASS \(or RESEND_API_KEY\)/);
 });
 
 test("renames: mentions show the current name, the AI knows former names; replies to replies join the thread", async () => {
@@ -2093,4 +2116,41 @@ test("security: stolen sessions die on reset, sign-in is throttled, public forms
   // The audit log can't be edited or deleted, even with the app's database credentials.
   const row = await prisma.activityLog.findFirstOrThrow();
   await assert.rejects(prisma.activityLog.delete({ where: { id: row.id } }), /append-only/);
+});
+
+test("forgot password: no mail → clear 503; a signed link resets once and signs other devices out", async () => {
+  const { resetToken } = await import("../../src/lib/password-reset-token");
+  const anon = new Client();
+  const unavailable = await anon.post<{ code?: string }>("/api/account/password-reset/request", { email: "contributor@integration.test" });
+  assert.equal(unavailable.status, 503, "test server has no mail provider");
+  assert.equal(unavailable.body.code, "mail_unavailable");
+
+  const reg = await anon.post<{ id: string }>("/api/register", { email: "forgetful@integration.test", password: "OldPass123", name: "Fran Forgetful" });
+  assert.equal(reg.status, 201);
+  const other = new Client();
+  assert.ok(await other.login("forgetful@integration.test", "OldPass123"));
+  const u = await prisma.user.findUniqueOrThrow({ where: { id: reg.body.id }, select: { id: true, passwordHash: true, sessionVersion: true } });
+  const token = resetToken(u);
+
+  assert.equal((await anon.post("/api/account/password-reset/confirm", { token: token + "x", password: "NewPass456" })).status, 400, "tampered");
+  assert.equal((await anon.post("/api/account/password-reset/confirm", { token, password: "short" })).status, 400, "password policy");
+  assert.equal((await anon.post("/api/account/password-reset/confirm", { token: resetToken(u, Date.now() - 2 * 3600_000), password: "NewPass456" })).status, 400, "expired");
+  // Two confirmations racing with the same token: exactly one wins.
+  const [ra, rb] = await Promise.all([
+    anon.post("/api/account/password-reset/confirm", { token, password: "NewPass456" }),
+    new Client().post("/api/account/password-reset/confirm", { token, password: "RacePass789" }),
+  ]);
+  assert.deepEqual([ra.status, rb.status].sort(), [200, 400], "single use under concurrency");
+  const ok = ra.status === 200 ? ra : rb;
+  const winner = ra.status === 200 ? "NewPass456" : "RacePass789";
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  const reused = await anon.post<{ code?: string }>("/api/account/password-reset/confirm", { token, password: "Another789" });
+  assert.equal(reused.status, 400, "works once");
+  assert.equal(reused.body.code, "invalid_token");
+
+  const after = await prisma.user.findUniqueOrThrow({ where: { id: u.id }, select: { emailVerifiedAt: true } });
+  assert.ok(after.emailVerifiedAt, "opening the emailed link proves the address");
+  assert.equal((await other.get("/api/account/profile")).status, 401, "other devices are signed out");
+  assert.equal(await new Client().login("forgetful@integration.test", "OldPass123"), false);
+  assert.ok(await new Client().login("forgetful@integration.test", winner));
 });

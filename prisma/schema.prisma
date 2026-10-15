@@ -268,6 +268,8 @@ model User {
   passwordHash       String?    @map("password_hash")
   /// Google account id ("sub") once the user has signed in with Google.
   googleSub          String?    @unique @map("google_sub") @db.VarChar(64)
+  /// Microsoft Entra ID identity: "<tenant id>:<object id>" (stable across apps, unlike the per-app sub).
+  microsoftSub       String?    @unique @map("microsoft_sub") @db.VarChar(80)
   systemRole         SystemRole @default(MEMBER) @map("system_role")
   avatarColor        String     @default("#6366f1") @map("avatar_color") @db.VarChar(9)
   isActive           Boolean    @default(true) @map("is_active")

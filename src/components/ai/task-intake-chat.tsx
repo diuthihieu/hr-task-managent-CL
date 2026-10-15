@@ -1,13 +1,14 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowUp, Square, Sparkles, AlertTriangle, RotateCw, CheckCircle2, Pencil, Folder, CalendarClock, Users, Flag, Send, Tag, Timer, ExternalLink } from "lucide-react";
+import { ArrowUp, Square, Sparkles, AlertTriangle, RotateCw, CheckCircle2, Pencil, Folder, CalendarClock, Users, Flag, Send, Tag, Timer, ExternalLink, Wand2, X, ArrowRight } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { cn } from "@/lib/utils";
 import type { MessageKey } from "@/lib/i18n/core";
 import { Markdown } from "./markdown";
 import { AiHealthCheck } from "./ai-health-check";
-import type { TaskIntake, TaskDraft, IntakeMessage } from "./use-task-intake";
+import type { TaskIntake, TaskDraft, IntakeMessage, TaskChange, ApplyResult } from "./use-task-intake";
+import { useAutosize } from "./use-autosize";
 import { naturalIntakeMessage } from "@/lib/ai/intake-response";
 
 /**
@@ -36,6 +37,7 @@ export function TaskIntakeChat({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const { messages, busy } = intake;
   const lastSummaryId = [...messages].reverse().find((m) => m.type === "summary" || m.type === "created")?.id;
+  useAutosize(inputRef, text);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -85,6 +87,15 @@ export function TaskIntakeChat({
                 </span>
                 <div className="flex-1 min-w-0 space-y-2">
                   <div className={cn("px-3.5 py-2.5 text-sm", compact ? "rounded-[20px] bg-neutral-100 dark:bg-neutral-800" : "rounded-2xl rounded-tl-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900")}>{m.pending ? <TypingDots /> : <Markdown text={naturalIntakeMessage(m.content, t("intake.badResponse"))} />}</div>
+                  {m.type === "changes" && m.changes && m.changes.length > 0 && (
+                    <ChangesCard
+                      changes={m.changes}
+                      applied={m.applied}
+                      applying={intake.applying === m.id}
+                      onApply={(ids) => intake.applyChanges(m.id, ids)}
+                      onDismiss={() => intake.dismissChanges(m.id)}
+                    />
+                  )}
                   {m.type === "summary" && m.draft && (
                     <DraftCard
                       draft={m.draft}
@@ -129,7 +140,7 @@ export function TaskIntakeChat({
                 submit();
               }
             }}
-            rows={compact ? 1 : 2}
+            rows={1}
             maxLength={4000}
             placeholder={editing ? t("intake.changePh") : t("intake.placeholder")}
             className="flex-1 resize-none bg-transparent outline-none text-sm text-neutral-800 dark:text-neutral-100 placeholder:text-neutral-400 max-h-40 py-1"
@@ -204,6 +215,92 @@ function DraftCard({ draft, active, creating, onConfirm, onChange }: { draft: Ta
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/** Agent proposal: what would change on which task; nothing is saved until Apply. */
+function ChangesCard({ changes, applied, applying, onApply, onDismiss }: { changes: TaskChange[]; applied?: ApplyResult; applying: boolean; onApply: (taskIds: string[]) => void; onDismiss: () => void }) {
+  const { t } = useT();
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(changes.map((c) => c.taskId)));
+  const done = applied !== undefined;
+  const fieldLabel = (f: TaskChange["changes"][number]["field"]) => t(`intake.cf.${f}` as MessageKey);
+  const value = (f: TaskChange["changes"][number]["field"], v: string) => (f === "priority" && ["low", "medium", "high", "critical"].includes(v) ? t(`intake.p.${v}` as MessageKey) : (f === "dueDate" || f === "startDate") && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v.split("-").reverse().join("/") : v);
+  const allOn = selected.size === changes.length;
+  return (
+    <div className="rounded-xl border border-indigo-200 dark:border-indigo-900 bg-white dark:bg-neutral-900 overflow-hidden shadow-sm" data-testid="intake-changes">
+      <div className="px-3.5 pt-3 pb-2 border-b border-neutral-100 dark:border-neutral-800 flex items-center gap-2">
+        <Wand2 size={13} className="text-indigo-600 shrink-0" />
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-600 flex-1">{t("intake.changes.title", { n: changes.length })}</div>
+        {!done && (
+          <label className="flex items-center gap-1 text-[11px] text-neutral-500 cursor-pointer">
+            <input type="checkbox" checked={allOn} onChange={() => setSelected(allOn ? new Set() : new Set(changes.map((c) => c.taskId)))} />
+            {t("intake.changes.all")}
+          </label>
+        )}
+      </div>
+      <ul className="max-h-72 overflow-y-auto thin-scroll divide-y divide-neutral-100 dark:divide-neutral-800">
+        {changes.map((c) => {
+          const failed = applied?.failed.find((f) => f.taskId === c.taskId);
+          const saved = applied?.saved.includes(c.taskId);
+          return (
+            <li key={c.taskId} className="px-3.5 py-2 text-[12.5px]" data-testid="intake-change-row">
+              <label className={cn("flex items-start gap-2", !done && "cursor-pointer")}>
+                {!done ? (
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={selected.has(c.taskId)}
+                    onChange={() =>
+                      setSelected((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(c.taskId)) next.delete(c.taskId);
+                        else next.add(c.taskId);
+                        return next;
+                      })
+                    }
+                  />
+                ) : saved ? (
+                  <CheckCircle2 size={14} className="mt-0.5 text-emerald-600 shrink-0" />
+                ) : failed ? (
+                  <AlertTriangle size={14} className="mt-0.5 text-amber-500 shrink-0" />
+                ) : (
+                  <X size={14} className="mt-0.5 text-neutral-400 shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-neutral-800 dark:text-neutral-100 break-words">{c.title}</div>
+                  {c.changes.map((f) => (
+                    <div key={f.field} className="flex flex-wrap items-center gap-1 text-neutral-600 dark:text-neutral-300">
+                      <span className="text-neutral-500">{fieldLabel(f.field)}:</span>
+                      <span className="line-through decoration-neutral-400/70">{value(f.field, f.from)}</span>
+                      <ArrowRight size={11} className="text-indigo-500" />
+                      <span className="font-medium text-indigo-700 dark:text-indigo-300">{value(f.field, f.to)}</span>
+                    </div>
+                  ))}
+                  {c.reason && <div className="text-[11px] text-neutral-400 mt-0.5">{c.reason}</div>}
+                  {failed && <div className="text-[11px] text-amber-600 mt-0.5">{failed.error}</div>}
+                </div>
+              </label>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="px-3.5 py-2.5 border-t border-neutral-100 dark:border-neutral-800">
+        {done ? (
+          <div className="text-xs text-neutral-600 dark:text-neutral-300" data-testid="intake-changes-result">
+            {applied.saved.length || applied.failed.length ? t("intake.changes.result", { saved: applied.saved.length, failed: applied.failed.length }) : t("intake.changes.dismissed")}
+          </div>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => onApply([...selected])} disabled={applying || selected.size === 0} className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-500 disabled:opacity-50" data-testid="intake-apply">
+              <CheckCircle2 size={13} /> {applying ? t("intake.changes.applying") : t("intake.changes.apply", { n: selected.size })}
+            </button>
+            <button onClick={onDismiss} disabled={applying} className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg border border-neutral-300 dark:border-neutral-700 text-xs hover:bg-neutral-50 dark:hover:bg-neutral-800">
+              <X size={12} /> {t("intake.changes.dismiss")}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

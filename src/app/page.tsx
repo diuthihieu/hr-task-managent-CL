@@ -1,4 +1,4 @@
-import { googleEnabled } from "@/lib/auth";
+import { googleEnabled, microsoftEnabled } from "@/lib/auth";
 import { HeroBackground, ScreenshotMarquee } from "@/components/landing/hero-visuals";
 import { HeroMascot, TaskMascot, KnowledgeMascot } from "@/components/landing/mascots";
 import Link from "next/link";
@@ -126,7 +126,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                 </div>
               </div>
             )}
-            <AuthCard initialMode={auth === "register" ? "register" : "login"} callbackUrl={callbackUrl} googleEnabled={googleEnabled} error={error} />
+            <AuthCard initialMode={auth === "register" ? "register" : auth === "forgot" ? "forgot" : "login"} callbackUrl={callbackUrl} googleEnabled={googleEnabled} microsoftEnabled={microsoftEnabled} error={error} />
           </div>
           ) : (
             <HeroMascot alt={t("landing.mascot.hero")} />

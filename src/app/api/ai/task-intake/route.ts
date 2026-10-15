@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject, badRequest, HttpError } from "@/lib/authz";
 import { aiConfigured, generate, type GeminiContent } from "@/lib/ai/gemini";
-import { draftSchema, intakeScope, sanitizeDraft, intakeSystemPrompt, projectData, localNow } from "@/lib/ai/task-intake";
+import { draftSchema, intakeScope, sanitizeDraft, sanitizeChanges, intakeSystemPrompt, projectData, localNow } from "@/lib/ai/task-intake";
 import { naturalIntakeMessage, parseIntakeModelResponse } from "@/lib/ai/intake-response";
 import { personalPromptBlock } from "@/lib/ai/personal";
 import { rateLimit } from "@/lib/rate-limit";
@@ -53,16 +53,20 @@ export const POST = route(async (req) => {
   ]);
   const now = localNow(body.timeZone);
   const locale = user.locale === "en" ? "en" : "vi";
-  const system = intakeSystemPrompt({ workspace: ws.name, user: { id: user.id, name: user.name }, scope, now: now.text, locale, draft: current, projectData: data, personal });
+  const system = intakeSystemPrompt({ workspace: ws.name, user: { id: user.id, name: user.name }, scope, now: now.text, locale, draft: current, projectData: data?.text ?? null, personal });
   const contents: GeminiContent[] = body.messages.map((m) => ({ role: m.role, parts: [{ text: m.content }] }));
 
-  const r = await generate({ workspaceId, system, contents, temperature: 0.2, json: true, maxOutputTokens: 2048 });
+  const r = await generate({ workspaceId, system, contents, temperature: 0.2, json: true, maxOutputTokens: 8192 });
   const parsed = parseIntakeModelResponse(r.text);
-  const type = parsed?.type === "question" || parsed?.type === "summary" || parsed?.type === "answer" ? parsed.type : "answer";
+  const known = ["question", "summary", "answer", "changes"] as const;
+  const type = known.includes(parsed?.type as (typeof known)[number]) ? (parsed!.type as (typeof known)[number]) : "answer";
+  // Agent proposals: only inside a project, only for contributors and up; every entry re-checked against this turn's task refs.
+  const changes = type === "changes" && body.projectId && data && scope.canCreate ? sanitizeChanges(parsed?.changes, data.refs, scope, body.projectId) : [];
   const fallback = locale === "en" ? "I couldn't format that answer clearly. Please try asking again." : "Mình chưa thể trình bày câu trả lời rõ ràng. Bạn vui lòng hỏi lại giúp mình.";
   const message = naturalIntakeMessage(typeof parsed?.message === "string" ? parsed.message : r.text, fallback).slice(0, 8000);
   const rawDraft = draftSchema.safeParse(parsed?.draft);
   // Viewers never get a draft, whatever the model says; answers keep the draft in progress.
   const draft = !scope.canCreate ? null : rawDraft.success && parsed?.draft ? sanitizeDraft(rawDraft.data, scope) : current;
-  return NextResponse.json({ type: type === "summary" && !draft ? "answer" : type, message, draft, canCreate: scope.canCreate, today: now.date });
+  const outType = (type === "summary" && !draft) || (type === "changes" && !changes.length) ? "answer" : type;
+  return NextResponse.json({ type: outType, message, draft, changes, canCreate: scope.canCreate, today: now.date });
 });

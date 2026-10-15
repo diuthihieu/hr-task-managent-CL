@@ -20,6 +20,8 @@ const nextConfig: NextConfig = {
     "/*": ["./node_modules/@fontsource/noto-sans/files/noto-sans-vietnamese-400-normal.woff"],
   },
   poweredByHeader: false,
+  // SMTP needs the real Node net/tls stack; bundling nodemailer breaks the handshake.
+  serverExternalPackages: ["nodemailer"],
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

@@ -10,8 +10,10 @@ const day = (d: Date) => d.toISOString().slice(0, 10);
  * the user can see), newest first, one line each, for the AI's DATA block:
  * "date | author | project › task: text". Without this the model only sees a
  * task's notes and answers "nobody commented" when people did.
+ * `maxTotalChars` bounds the whole section (newest comments are kept), so it can
+ * sit next to the task list without crowding it out of the context budget.
  */
-export async function taskCommentsSection(where: Prisma.CommentWhereInput, opts: { limit?: number; maxChars?: number } = {}): Promise<string> {
+export async function taskCommentsSection(where: Prisma.CommentWhereInput, opts: { limit?: number; maxChars?: number; maxTotalChars?: number } = {}): Promise<string> {
   const limit = opts.limit ?? 400;
   const comments = await prisma.comment.findMany({
     where: { deletedAt: null, ...where },
@@ -21,10 +23,17 @@ export async function taskCommentsSection(where: Prisma.CommentWhereInput, opts:
   });
   if (!comments.length) return "## Task comments\n(none)";
   const maxChars = opts.maxChars ?? 400;
-  const lines = comments.map((c) => {
+  const maxTotal = opts.maxTotalChars ?? 60_000;
+  const lines: string[] = [];
+  let used = 0;
+  for (const c of comments) {
     const text = stripMentions(c.body).replace(/\s+/g, " ").trim();
     const clipped = text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
-    return `- ${day(c.createdAt)} | ${c.author?.name ?? "(deleted user)"} | ${c.task.project.name} › ${c.task.title}${c.parentCommentId ? " (reply)" : ""}: ${clipped}`;
-  });
-  return `## Task comments (${comments.length}${comments.length === limit ? ", most recent" : ""}; newest first)\ndate | author | project › task: comment\n${lines.join("\n")}`;
+    const line = `- ${day(c.createdAt)} | ${c.author?.name ?? "(deleted user)"} | ${c.task.project.name} › ${c.task.title}${c.parentCommentId ? " (reply)" : ""}: ${clipped}`;
+    if (used + line.length + 1 > maxTotal) break;
+    lines.push(line);
+    used += line.length + 1;
+  }
+  const partial = lines.length < comments.length || comments.length === limit;
+  return `## Task comments (${lines.length}${partial ? ", most recent only" : ""}; newest first)\ndate | author | project › task: comment\n${lines.join("\n")}`;
 }

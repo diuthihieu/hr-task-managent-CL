@@ -189,7 +189,7 @@ export async function projectData(user: SessionUser, projectId: string, budget =
       take: 50,
       select: { id: true, fileName: true, contentType: true, sizeBytes: true, storageProvider: true, url: true, extractedText: true, task: { select: { title: true } } },
     }),
-    taskCommentsSection({ task: { projectId, deletedAt: null } }, { limit: 300 }),
+    taskCommentsSection({ task: { projectId, deletedAt: null } }, { limit: 300, maxTotalChars: Math.floor(budget * 0.2) }),
   ]);
   const fileContext = await readTaskFiles(attachments, project.workspaceId, {
     maxFiles: 50,
@@ -240,10 +240,12 @@ export async function projectData(user: SessionUser, projectId: string, budget =
   let text =
     `## Project: ${project.name}\nstatus: ${project.status} | owner: ${project.owner?.name ?? "-"} | ${day(project.startDate)} → ${day(project.endDate)}${project.description ? `\n${project.description.slice(0, 1000)}` : ""}\n\n` +
     (okrs ? `## Objectives & key results\n${okrs}\n\n` : "") +
-    `${fileSection}\n\n` +
-    `${comments}\n\n` +
+    // Tasks (with the refs the model needs for answers and change proposals) come before
+    // files and comments, so the final cut to the budget trims those instead of the tasks.
     `## Tasks (${tasks.length}${tasks.length === PROJECT_TASKS ? ", most recently updated" : ""})\nref | task | status | priority | progress | start | due | assignees | report to | category | estimate | actual | objective/KR | parent\n` +
-    lines.join("\n");
+    lines.join("\n") +
+    `\n\n${comments}\n\n` +
+    fileSection;
   if (text.length > budget) text = text.slice(0, budget) + "\n…[truncated]";
   return { text, refs };
 }

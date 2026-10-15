@@ -648,6 +648,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         onTaskCreated={(record, pid) => {
           if (pid === projectId) setRecords((prev) => (prev.some((r) => r.id === record.id) ? prev : [...prev, record]));
         }}
+        onTaskUpdated={(rec) => setRecords((prev) => prev.map((r) => (r.id === rec.id ? rec : r)))}
         onOpenTask={setOpenRecordId}
         onSidebarChange={setAiSidebar}
       />

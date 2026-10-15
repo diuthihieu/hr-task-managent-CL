@@ -44,7 +44,7 @@ export interface PendingInviteCard {
   invitedBy: string | null;
 }
 
-export function WorkspaceChooser({ user, workspaces, invites = [] }: { user: { id: string; name: string; email: string; avatarColor: string; isAdmin: boolean; emailVerified?: boolean }; workspaces: WorkspaceCard[]; invites?: PendingInviteCard[] }) {
+export function WorkspaceChooser({ user, workspaces, invites = [] }: { user: { id: string; name: string; email: string; avatarColor: string; isAdmin: boolean; emailVerified?: boolean; mailEnabled?: boolean }; workspaces: WorkspaceCard[]; invites?: PendingInviteCard[] }) {
   const { t } = useT();
   const router = useRouter();
   const desktopVersion = useDesktopVersion();
@@ -138,7 +138,7 @@ export function WorkspaceChooser({ user, workspaces, invites = [] }: { user: { i
           </div>
         </div>
       </header>
-      {user.emailVerified === false && <VerifyEmailBanner email={user.email} />}
+      {user.emailVerified === false && <VerifyEmailBanner email={user.email} mailEnabled={user.mailEnabled !== false} />}
 
       <main className="max-w-5xl mx-auto px-4 py-10">
         <div className="flex flex-wrap items-end justify-between gap-3 mb-6">
@@ -264,14 +264,14 @@ export function WorkspaceChooser({ user, workspaces, invites = [] }: { user: { i
 }
 
 /** Shown until the address is verified: email invitations need a proven owner. */
-function VerifyEmailBanner({ email }: { email: string }) {
+function VerifyEmailBanner({ email, mailEnabled }: { email: string; mailEnabled: boolean }) {
   const { t } = useT();
   const [state, setState] = useState<"idle" | "busy" | "sent">("idle");
   return (
     <div className="border-b border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/40" data-testid="verify-banner">
       <div className="max-w-5xl mx-auto px-4 py-2.5 flex flex-wrap items-center gap-3 text-sm text-amber-900 dark:text-amber-100">
-        <span className="flex-1 min-w-[14rem]">{state === "sent" ? t("verify.sent") : t("verify.banner", { email })}</span>
-        {state !== "sent" && (
+        <span className="flex-1 min-w-[14rem]">{state === "sent" ? t("verify.sent") : mailEnabled ? t("verify.banner", { email }) : t("verify.noMail", { email })}</span>
+        {state !== "sent" && mailEnabled && (
           <button
             disabled={state === "busy"}
             onClick={async () => {

@@ -2,6 +2,7 @@ export interface IntakeModelResponse {
   type?: unknown;
   message?: unknown;
   draft?: unknown;
+  changes?: unknown;
 }
 
 function objectCandidate(text: string): IntakeModelResponse | null {

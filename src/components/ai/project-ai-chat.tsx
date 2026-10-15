@@ -22,12 +22,15 @@ export function ProjectAiChat({
   projectId,
   projectName,
   onTaskCreated,
+  onTaskUpdated,
   onOpenTask,
   onSidebarChange,
 }: {
   projectId: string;
   projectName: string;
   onTaskCreated?: (record: RecordRow, projectId: string) => void;
+  /** A task changed by an applied AI proposal. */
+  onTaskUpdated?: (record: RecordRow) => void;
   onOpenTask?: (recordId: string) => void;
   /** The side panel is open: the page makes room for it instead of being covered. */
   onSidebarChange?: (open: boolean) => void;
@@ -36,7 +39,7 @@ export function ProjectAiChat({
   const [mode, setMode] = useState<Mode>("closed");
   const [layout, setLayout] = useState<Layout>("mini");
   const [unread, setUnread] = useState(false);
-  const intake = useTaskIntake({ projectId }, onTaskCreated);
+  const intake = useTaskIntake({ projectId }, onTaskCreated, onTaskUpdated);
 
   useEffect(() => {
     try {

@@ -62,6 +62,14 @@ http
         const intake = schema === "task_intake" ? (() => {
           const project = system.match(/project id: ([0-9a-f-]{36})/)?.[1] ?? null;
           const member = system.match(/member id: ([0-9a-f-]{36})/)?.[1] ?? null;
+          if (userText.includes("#classify")) {
+            const category = system.match(/\(id ([0-9a-f-]{36})\)/)?.[1] ?? null;
+            return { type: "changes", message: "I propose categories for 1 task. Review and press Apply.", changes: [
+              { ref: "T1", categoryId: category, priority: "critical", reason: "Title matches the category" },
+              { ref: "T999", categoryId: category },
+              { ref: "T2", categoryId: "00000000-0000-4000-8000-000000000000", priority: "urgent!!", statusId: "nope" },
+            ] };
+          }
           if (userText.includes("#hallucinate")) return { type: "summary", message: "Summary", draft: { projectId: "00000000-0000-4000-8000-000000000000", title: "Ghost", assigneeIds: ["00000000-0000-4000-8000-000000000001"], priority: "urgent!!" } };
           if (userText.trim().endsWith("?")) return { type: "answer", message: `Stub project answer. You asked: ${userText}` };
           if (/#summary|\bok\b|yes/i.test(userText)) return { type: "summary", message: "- Task: Monthly report\n- Due: 2026-09-30 02:00\n\nConfirm?", draft: { projectId: project, title: "Monthly report", description: "PDF for the board", dueDate: "2026-09-30", dueTime: "02:00", priority: "high", assigneeIds: member ? [member] : [], reportToIds: [], categoryId: null, estimateHours: 2 } };

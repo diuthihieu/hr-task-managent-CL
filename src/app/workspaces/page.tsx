@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { mailConfigured } from "@/lib/mail";
 import { workspaceLogoUrl } from "@/lib/workspace-logo";
 import { requirePageUser } from "@/lib/page-context";
 import { WorkspaceChooser, type WorkspaceCard } from "@/components/workspaces/workspace-chooser";
@@ -30,5 +31,5 @@ export default async function WorkspacesPage() {
   }));
   await syncInvitations(user);
   const invites = await pendingInvitationsFor(user);
-  return <WorkspaceChooser invites={invites} user={{ id: user.id, name: user.name, email: user.email, avatarColor: user.avatarColor, isAdmin: user.systemRole === "ADMIN", emailVerified: !!user.emailVerifiedAt }} workspaces={cards} />;
+  return <WorkspaceChooser invites={invites} user={{ id: user.id, name: user.name, email: user.email, avatarColor: user.avatarColor, isAdmin: user.systemRole === "ADMIN", emailVerified: !!user.emailVerifiedAt, mailEnabled: mailConfigured() }} workspaces={cards} />;
 }

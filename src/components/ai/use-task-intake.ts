@@ -19,11 +19,32 @@ export interface TaskDraft {
   missing: string[];
 }
 
+export interface FieldChange {
+  field: "category" | "priority" | "status" | "dueDate" | "startDate" | "assignees";
+  from: string;
+  to: string;
+}
+export interface TaskChange {
+  taskId: string;
+  title: string;
+  reason: string | null;
+  changes: FieldChange[];
+  data: Record<string, unknown>;
+}
+/** Outcome of applying a change set: per task, saved or the reason it failed. */
+export interface ApplyResult {
+  saved: string[];
+  failed: { taskId: string; title: string; error: string }[];
+}
+
 export interface IntakeMessage {
   id: string;
   role: "user" | "model";
   content: string;
-  type?: "question" | "summary" | "answer" | "created";
+  type?: "question" | "summary" | "answer" | "created" | "changes";
+  /** Agent proposal: changes to existing tasks, applied only when the user presses Apply. */
+  changes?: TaskChange[];
+  applied?: ApplyResult;
   /** Snapshot of the draft a summary proposed. */
   draft?: TaskDraft | null;
   created?: { title: string; href: string; projectId: string; projectName: string | null; recordId: string };
@@ -31,9 +52,10 @@ export interface IntakeMessage {
 }
 
 interface TurnResponse {
-  type: "question" | "summary" | "answer";
+  type: "question" | "summary" | "answer" | "changes";
   message: string;
   draft: TaskDraft | null;
+  changes?: TaskChange[];
   canCreate: boolean;
 }
 
@@ -51,11 +73,12 @@ const timeZone = () => {
  * is written until the user confirms a draft); the server re-checks every
  * draft against the user's permissions, both per turn and on confirm.
  */
-export function useTaskIntake(target: { workspaceId?: string; projectId?: string }, onCreated?: (record: RecordRow, projectId: string) => void) {
+export function useTaskIntake(target: { workspaceId?: string; projectId?: string }, onCreated?: (record: RecordRow, projectId: string) => void, onUpdated?: (record: RecordRow) => void) {
   const [messages, setMessages] = useState<IntakeMessage[]>([]);
   const [draft, setDraft] = useState<TaskDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [applying, setApplying] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [failedText, setFailedText] = useState<string | null>(null);
@@ -111,7 +134,7 @@ export function useTaskIntake(target: { workspaceId?: string; projectId?: string
         const r = body as TurnResponse;
         setCanCreate(r.canCreate);
         setDraft(r.draft);
-        setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, content: r.message, type: r.type, draft: r.type === "summary" ? r.draft : undefined, pending: false } : m)));
+        setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, content: r.message, type: r.type, draft: r.type === "summary" ? r.draft : undefined, changes: r.type === "changes" ? (r.changes ?? []) : undefined, pending: false } : m)));
       } catch (e) {
         if ((e as Error).name === "AbortError") {
           setMessages((prev) => prev.filter((m) => m.id !== botId));
@@ -164,6 +187,35 @@ export function useTaskIntake(target: { workspaceId?: string; projectId?: string
     [creating, onCreated]
   );
 
+  /**
+   * Applies the selected proposed changes one task at a time through the normal
+   * task API, so the user's own permissions, validation and activity log apply.
+   */
+  const applyChanges = useCallback(
+    async (messageId: string, taskIds: string[]) => {
+      const msg = messages.find((m) => m.id === messageId);
+      if (!msg?.changes || applying) return;
+      setApplying(messageId);
+      const result: ApplyResult = { saved: [], failed: [] };
+      for (const change of msg.changes.filter((c) => taskIds.includes(c.taskId))) {
+        try {
+          const record = await api.patch<RecordRow>(`/api/tasks/${change.taskId}`, { data: change.data });
+          result.saved.push(change.taskId);
+          onUpdated?.(record);
+        } catch (e) {
+          result.failed.push({ taskId: change.taskId, title: change.title, error: e instanceof Error ? e.message : "Failed" });
+        }
+      }
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, applied: result } : m)));
+      setApplying(null);
+    },
+    [messages, applying, onUpdated]
+  );
+
+  const dismissChanges = useCallback((messageId: string) => {
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, applied: { saved: [], failed: [] } } : m)));
+  }, []);
+
   const reset = useCallback(() => {
     abortRef.current?.abort();
     setMessages([]);
@@ -176,7 +228,7 @@ export function useTaskIntake(target: { workspaceId?: string; projectId?: string
     if (failedText) send(failedText);
   }, [failedText, send]);
 
-  return { messages, draft, busy, creating, error, errorStatus, failedText, canCreate, send, confirm, reset, stop, retry };
+  return { messages, draft, busy, creating, applying, error, errorStatus, failedText, canCreate, send, confirm, applyChanges, dismissChanges, reset, stop, retry };
 }
 
 export type TaskIntake = ReturnType<typeof useTaskIntake>;

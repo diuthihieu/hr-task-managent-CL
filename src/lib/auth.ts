@@ -1,10 +1,12 @@
 import NextAuth, { CredentialsSignin } from "next-auth";
 import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
+import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 import { randomAvatarColor } from "./passwords";
 import { clientIp, rateLimit, resetRateLimit } from "./rate-limit";
+import { readMicrosoftIdentity, singleTenantIssuer, type MicrosoftClaims } from "./microsoft-identity";
 
 /** Too many attempts: the sign-in form shows "try again later" instead of "wrong password". */
 class RateLimited extends CredentialsSignin {
@@ -21,6 +23,14 @@ const DUMMY_HASH = bcrypt.hashSync("not-a-real-password", 12);
 
 export const googleEnabled = Boolean(process.env.AUTH_GOOGLE_ID && process.env.AUTH_GOOGLE_SECRET);
 
+// "Sign in with Microsoft" when AUTH_MICROSOFT_ENTRA_ID_ID / _SECRET are set.
+// AUTH_MICROSOFT_ENTRA_ID_ISSUER picks who may sign in: a tenant id
+// (https://login.microsoftonline.com/<tenant id>/v2.0) for one organization,
+// or the default .../common/v2.0 for any Microsoft account.
+export const microsoftEnabled = Boolean(process.env.AUTH_MICROSOFT_ENTRA_ID_ID && process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET);
+const MICROSOFT_ISSUER = process.env.AUTH_MICROSOFT_ENTRA_ID_ISSUER || "https://login.microsoftonline.com/common/v2.0";
+const microsoftSingleTenant = singleTenantIssuer(MICROSOFT_ISSUER);
+
 /**
  * Finds or creates the account for a verified Google identity. An existing
  * account with the same email is linked; because sign-up by password does not
@@ -35,6 +45,29 @@ async function upsertGoogleUser(p: { sub: string; email: string; name: string })
   // Google proved who owns the address: drop the (possibly squatted) password and end its sessions.
   if (byEmail) return prisma.user.update({ where: { id: byEmail.id }, data: { googleSub: p.sub, passwordHash: null, mustChangePassword: false, emailVerifiedAt: new Date(), sessionVersion: { increment: 1 } } });
   return prisma.user.create({ data: { email: p.email, name: p.name.slice(0, 120) || p.email.split("@")[0], googleSub: p.sub, passwordHash: null, mustChangePassword: false, emailVerifiedAt: new Date(), avatarColor: randomAvatarColor() } });
+}
+
+/**
+ * Finds or creates the account for a Microsoft identity. An existing account
+ * with the same email is linked only when that email is trusted (see
+ * microsoft-identity.ts); otherwise the sign-in is refused rather than letting
+ * an unverified address take over someone's account.
+ */
+async function upsertMicrosoftUser(id: { key: string; email: string; name: string; emailTrusted: boolean }): Promise<{ user?: Awaited<ReturnType<typeof prisma.user.findUnique>>; error?: string }> {
+  const byKey = await prisma.user.findUnique({ where: { microsoftSub: id.key } });
+  if (byKey) return { user: byKey };
+  if (!id.email) return { error: "microsoft_no_email" };
+  const byEmail = await prisma.user.findUnique({ where: { email: id.email } });
+  if (byEmail) {
+    if (!byEmail.isActive || byEmail.deletedAt) return { user: byEmail };
+    if (!id.emailTrusted) return { error: "microsoft_unverified" };
+    return { user: await prisma.user.update({ where: { id: byEmail.id }, data: { microsoftSub: id.key, passwordHash: null, mustChangePassword: false, emailVerifiedAt: byEmail.emailVerifiedAt ?? new Date(), sessionVersion: { increment: 1 } } }) };
+  }
+  return {
+    user: await prisma.user.create({
+      data: { email: id.email, name: id.name || id.email.split("@")[0], microsoftSub: id.key, passwordHash: null, mustChangePassword: false, emailVerifiedAt: id.emailTrusted ? new Date() : null, avatarColor: randomAvatarColor() },
+    }),
+  };
 }
 
 export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
@@ -72,9 +105,31 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
       },
     }),
     ...(googleEnabled ? [Google({ clientId: process.env.AUTH_GOOGLE_ID, clientSecret: process.env.AUTH_GOOGLE_SECRET })] : []),
+    ...(microsoftEnabled
+      ? [
+          MicrosoftEntraID({
+            clientId: process.env.AUTH_MICROSOFT_ENTRA_ID_ID,
+            clientSecret: process.env.AUTH_MICROSOFT_ENTRA_ID_SECRET,
+            issuer: MICROSOFT_ISSUER,
+            // No profile photo download (an extra Graph call we don't use).
+            profilePhotoSize: 48,
+            profile: (p) => ({ id: p.sub, name: p.name, email: p.email ?? null, image: null }),
+          }),
+        ]
+      : []),
   ],
   callbacks: {
     async signIn({ account, profile }) {
+      if (account?.provider === "microsoft-entra-id") {
+        const id = readMicrosoftIdentity(profile as MicrosoftClaims, microsoftSingleTenant);
+        if (!id) return "/?auth=login&error=microsoft_no_email";
+        const r = await upsertMicrosoftUser(id);
+        if (r.error || !r.user) return `/?auth=login&error=${r.error ?? "microsoft_no_email"}`;
+        if (!r.user.isActive || r.user.deletedAt) return "/?auth=login&error=account_disabled";
+        await prisma.user.update({ where: { id: r.user.id }, data: { lastLoginAt: new Date() } });
+        await logSecurityEvent(r.user.id, "sign_in", "Signed in with Microsoft");
+        return true;
+      }
       if (account?.provider !== "google") return true;
       const email = typeof profile?.email === "string" ? profile.email.trim().toLowerCase() : "";
       if (!email || profile?.email_verified !== true || !account.providerAccountId) return "/?auth=login&error=google_unverified";
@@ -84,10 +139,17 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
       await logSecurityEvent(user.id, "sign_in", "Signed in with Google");
       return true;
     },
-    async jwt({ token, user, account, trigger }) {
+    async jwt({ token, user, account, trigger, profile }) {
       // The session version is copied into the cookie at sign-in; bumping it in the
       // database (password change / reset, deactivation) invalidates older cookies.
-      if (account?.provider === "google") {
+      if (account?.provider === "microsoft-entra-id") {
+        const id = readMicrosoftIdentity(profile as MicrosoftClaims, microsoftSingleTenant);
+        const u = id ? await prisma.user.findUnique({ where: { microsoftSub: id.key }, select: { id: true, sessionVersion: true } }) : null;
+        if (u) {
+          token.id = u.id;
+          token.sv = u.sessionVersion;
+        }
+      } else if (account?.provider === "google") {
         const u = await prisma.user.findUnique({ where: { googleSub: account.providerAccountId }, select: { id: true, sessionVersion: true } });
         if (u) {
           token.id = u.id;

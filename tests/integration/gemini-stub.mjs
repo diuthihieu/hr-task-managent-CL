@@ -39,6 +39,8 @@ http
       last = { url: req.url, apiKey: req.headers["x-goog-api-key"], body };
       const userText = body.contents?.at(-1)?.parts?.map((p) => p.text ?? "[file]").join(" ") ?? "";
       const hasFile = body.contents?.some((c) => c.parts?.some((p) => p.inlineData));
+      // A model that accepts the request and never answers.
+      if (userText.includes("#hang")) return;
       const overload = userText.includes("#overload-always") || (userText.includes("#overload-once") && !seen.has(userText));
       if (userText.includes("#overload")) seen.set(userText, (seen.get(userText) ?? 0) + 1);
       if (overload) {

@@ -121,14 +121,14 @@ export function TaskIntakeChat({
           )}
           {intake.error && (
             <div className="rounded-lg bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-sm px-3 py-2 space-y-2" data-testid="intake-error">
-              <div className="break-words">{intake.errorStatus === 503 ? t("ai.busy") : intake.errorStatus === 429 ? t("ai.quota") : intake.error}</div>
+              <div className="break-words">{intake.errorStatus === 504 ? t("ai.slow") : intake.errorStatus === 503 ? t("ai.busy") : intake.errorStatus === 429 ? t("ai.quota") : intake.error}</div>
               <div className="flex flex-wrap items-start gap-2">
                 {intake.failedText && (
                   <button onClick={intake.retry} disabled={busy} className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 text-white px-2.5 py-1 text-xs font-medium hover:bg-indigo-500 disabled:opacity-50">
                     <RotateCw size={12} /> {t("ai.retry")}
                   </button>
                 )}
-                {intake.errorStatus === 503 && <AiHealthCheck />}
+                {(intake.errorStatus === 503 || intake.errorStatus === 504) && <AiHealthCheck />}
               </div>
             </div>
           )}

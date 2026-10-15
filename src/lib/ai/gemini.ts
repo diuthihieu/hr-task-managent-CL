@@ -78,7 +78,7 @@ function endpoint(model: string, method: "generateContent" | "streamGenerateCont
 
 async function discoverModels(): Promise<string[]> {
   try {
-    const res = await fetch(`${apiBase()}/models?pageSize=1000`, { headers: { "x-goog-api-key": process.env.GEMINI_API_KEY! } });
+    const res = await fetch(`${apiBase()}/models?pageSize=1000`, { headers: { "x-goog-api-key": process.env.GEMINI_API_KEY! }, signal: AbortSignal.timeout(5000) });
     if (!res.ok) return [];
     const body = (await res.json()) as { models?: ListedModel[] };
     return rankModels(body.models ?? []);
@@ -96,6 +96,17 @@ const RETRY_DELAYS_MS = (process.env.GEMINI_RETRY_DELAYS_MS ?? "1500,4000")
   .map((n) => Number(n.trim()))
   .filter((n) => Number.isFinite(n) && n >= 0);
 const MAX_MODELS = 6;
+/**
+ * Time budget for getting an answer started, across every retry and model.
+ * Gemini sometimes accepts a request and then sits on it; without a budget the
+ * function runs into the platform limit and the user gets a bare 504. Kept
+ * under 60 s so it holds on any Vercel plan.
+ */
+const STREAM_BUDGET = { total: Number(process.env.GEMINI_DEADLINE_MS) || 55_000, attempt: Number(process.env.GEMINI_ATTEMPT_MS) || 40_000 };
+/** One-shot calls only answer once the whole text is written, so they get longer (still inside the routes' 120 s maxDuration). */
+const ONE_SHOT_BUDGET = { total: 100_000, attempt: 90_000 };
+/** Not worth starting an attempt (or a retry pause) with less time than this left. */
+const minAttempt = (total: number) => Math.min(5_000, total / 5);
 
 const sleep = (ms: number, signal?: AbortSignal | null) =>
   new Promise<void>((resolve, reject) => {
@@ -113,14 +124,26 @@ const sleep = (ms: number, signal?: AbortSignal | null) =>
  * tried too. Google sheds load per model, so another model often answers.
  */
 async function callWithFallback(method: "generateContent" | "streamGenerateContent", init: RequestInit): Promise<{ res: Response; model: string }> {
+  const budget = method === "streamGenerateContent" ? STREAM_BUDGET : ONE_SHOT_BUDGET;
   const tried: { model: string; status: number | string; error: HttpError }[] = [];
+  const deadline = Date.now() + budget.total;
+  const left = () => deadline - Date.now();
+  const MIN_ATTEMPT_MS = minAttempt(budget.total);
   const attempt = async (model: string, retries: number[]): Promise<Response | null> => {
     for (let i = 0; ; i++) {
+      if (left() < MIN_ATTEMPT_MS) return null;
       let res: Response;
+      const timeout = AbortSignal.timeout(Math.min(budget.attempt, left()));
       try {
-        res = await fetch(endpoint(model, method), init);
+        res = await fetch(endpoint(model, method), { ...init, signal: init.signal ? AbortSignal.any([init.signal, timeout]) : timeout });
       } catch (e) {
-        if ((e as Error).name === "AbortError") throw e;
+        // The caller gave up (user pressed Stop / closed the page): stop here.
+        if (init.signal?.aborted) throw Object.assign(new Error("Aborted"), { name: "AbortError" });
+        if (timeout.aborted) {
+          console.warn(`[gemini] ${model} did not answer in time`);
+          tried.push({ model, status: "timeout", error: new HttpError(504, "Gemini is taking too long to answer right now - please try again in a moment, or ask a narrower question / attach a smaller file") });
+          return null;
+        }
         console.error("[gemini] network error", model, e);
         tried.push({ model, status: "network", error: new HttpError(502, `Could not reach the Gemini API (${(e as Error).message})`) });
         return null;
@@ -129,7 +152,7 @@ async function callWithFallback(method: "generateContent" | "streamGenerateConte
         workingModel = model;
         return res;
       }
-      if (TRANSIENT.has(res.status) && i < retries.length) {
+      if (TRANSIENT.has(res.status) && i < retries.length && left() > retries[i] + MIN_ATTEMPT_MS) {
         await res.body?.cancel().catch(() => {});
         console.warn(`[gemini] ${model} -> ${res.status}; retrying in ${retries[i]} ms`);
         await sleep(retries[i], init.signal);
@@ -146,11 +169,12 @@ async function callWithFallback(method: "generateContent" | "streamGenerateConte
     const res = await attempt(model, i === 0 ? RETRY_DELAYS_MS : RETRY_DELAYS_MS.slice(0, 1));
     if (res) return { res, model };
     const last = tried[tried.length - 1];
-    if (typeof last.status === "number" && !RETRYABLE.has(last.status)) throw last.error;
+    if (last && typeof last.status === "number" && !RETRYABLE.has(last.status)) throw last.error;
+    if (left() < MIN_ATTEMPT_MS) break;
   }
   // Every configured model failed: try the other Flash models this key can use.
   const already = new Set(tried.map((t) => t.model));
-  const extra = (await discoverModels()).filter((m) => !already.has(m)).slice(0, Math.max(0, MAX_MODELS - configured.length) || 2);
+  const extra = (left() < MIN_ATTEMPT_MS ? [] : await discoverModels()).filter((m) => !already.has(m)).slice(0, Math.max(0, MAX_MODELS - configured.length) || 2);
   for (const model of extra) {
     const res = await attempt(model, RETRY_DELAYS_MS.slice(0, 1));
     if (res) {
@@ -158,7 +182,9 @@ async function callWithFallback(method: "generateContent" | "streamGenerateConte
       return { res, model };
     }
   }
-  if (workingModel && tried.some((t) => t.model === workingModel)) workingModel = null;
+  if (workingModel && tried.some((t) => t.model === workingModel && t.status !== "timeout")) workingModel = null;
+  if (!tried.length || tried.every((t) => t.status === "timeout"))
+    throw new HttpError(504, `Gemini is taking too long to answer right now (no reply within ${Math.round(budget.total / 1000)} s). Please try again in a moment, or ask a narrower question / attach a smaller file.`);
   // Report the most useful error: a quota/permission/server problem says more than "model not found".
   const best = tried.find((t) => t.status !== 404) ?? tried[tried.length - 1];
   const summary = tried.map((t) => `${t.model}: ${t.status}`).join(", ");

@@ -1436,7 +1436,7 @@ export const MESSAGES = {
   "wikis.role.editor": ["Can edit", "Được chỉnh sửa"],
   "wikis.role.manager": ["Manager", "Quản lý"],
   "wikis.role.default": ["Default", "Theo mặc định"],
-  "wikis.role.viewer.d": ["Read pages, comment, ask the wiki's AI and see its reference documents.", "Đọc trang, bình luận, hỏi AI của wiki và xem tài liệu tham khảo."],
+  "wikis.role.viewer.d": ["Read pages, comment and ask the wiki's AI (answers draw on the reference documents, but only editors can open or manage them).", "Đọc trang, bình luận và hỏi AI của wiki (AI trả lời dựa trên tài liệu tham khảo, nhưng chỉ Editor trở lên mới mở hoặc quản lý được tài liệu)."],
   "wikis.role.editor.d": ["Everything a viewer can, plus create, edit and delete pages, upload files and add reference documents for the AI.", "Mọi quyền của Chỉ xem, cộng thêm tạo, sửa, xoá trang, tải file lên và thêm tài liệu tham khảo cho AI."],
   "wikis.role.manager.d": ["Everything an editor can, plus change the name, icon and description, who has access and their roles, the AI settings, and delete the wiki.", "Mọi quyền của Được chỉnh sửa, cộng thêm đổi tên, biểu tượng, mô tả, quyết định ai được truy cập và vai trò của họ, cài đặt AI, và xoá wiki."],
   "wikis.role.default.d": ["Uses the \"Members can\" role above.", "Dùng vai trò ở mục \"Thành viên được\" phía trên."],

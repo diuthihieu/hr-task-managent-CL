@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { DateInput } from "@/components/ui/date-input";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
 import { api } from "@/lib/api-client";
@@ -136,11 +137,11 @@ export function ProjectSettings({ project, workspaceId, workspaceSlug, canManage
             </div>
             <div>
               <label className={label}>{t("ps.start")}</label>
-              <Input type="date" defaultValue={info.startDate ?? ""} disabled={!canManage} onChange={(e) => save({ startDate: e.target.value || null })} />
+              <DateInput className="h-8 w-full rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 disabled:opacity-60" value={info.startDate ?? ""} disabled={!canManage} onCommit={(v) => save({ startDate: v })} />
             </div>
             <div>
               <label className={label}>{t("ps.end")}</label>
-              <Input type="date" defaultValue={info.endDate ?? ""} disabled={!canManage} onChange={(e) => save({ endDate: e.target.value || null })} />
+              <DateInput className="h-8 w-full rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2.5 text-sm text-neutral-900 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 disabled:opacity-60" value={info.endDate ?? ""} disabled={!canManage} onCommit={(v) => save({ endDate: v })} />
             </div>
             <div className="sm:col-span-2">
               <label className={label}>{t("pi.label")}</label>

@@ -3,6 +3,7 @@
 // knowledge), version chain, source provenance, confidence, last checked and
 // the reader's spaced review. Editors change them; everyone sees them.
 import { useEffect, useState } from "react";
+import { DateInput } from "@/components/ui/date-input";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, BadgeCheck, CalendarClock, ChevronDown, ChevronRight, GitBranch, Hash, History, Link2, RefreshCcw, ShieldCheck, X } from "lucide-react";
@@ -172,16 +173,16 @@ export function PageProperties({
           {meta.kind === "meeting" && (
             <label className="flex items-center gap-2">
               <span className="w-24 text-neutral-500">{t("brain.props.eventDate")}</span>
-              <input type="date" className={sel} disabled={!canEdit} value={meta.eventDate ?? ""} onChange={(e) => save({ eventDate: e.target.value || null })} />
+              <DateInput className={sel} disabled={!canEdit} value={meta.eventDate ?? ""} onCommit={(v) => save({ eventDate: v })} />
             </label>
           )}
           <label className="flex items-center gap-2">
             <span className="w-24 text-neutral-500">{t("brain.props.validFrom")}</span>
-            <input type="date" className={sel} disabled={!canEdit} value={meta.validFrom ?? ""} onChange={(e) => save({ validFrom: e.target.value || null })} data-testid="prop-valid-from" />
+            <DateInput className={sel} disabled={!canEdit} value={meta.validFrom ?? ""} onCommit={(v) => save({ validFrom: v })} data-testid="prop-valid-from" />
           </label>
           <label className="flex items-center gap-2">
             <span className="w-24 text-neutral-500">{t("brain.props.validTo")}</span>
-            <input type="date" className={sel} disabled={!canEdit} value={meta.validTo ?? ""} onChange={(e) => save({ validTo: e.target.value || null })} data-testid="prop-valid-to" />
+            <DateInput className={sel} disabled={!canEdit} value={meta.validTo ?? ""} onCommit={(v) => save({ validTo: v })} data-testid="prop-valid-to" />
           </label>
           <div className="flex items-center gap-2 sm:col-span-2">
             <span className="w-24 text-neutral-500 shrink-0">{t("brain.props.tags")}</span>

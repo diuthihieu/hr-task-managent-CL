@@ -803,6 +803,10 @@ test("AI timeout: a model that never answers gives a clear error in time, not a 
 });
 
 test("AI assistant: answers from what the user may see, declines the rest, and enforces a daily quota", async () => {
+  // Comments on visible tasks reach the model; comments on a hidden project's tasks don't.
+  await admin.post(`/api/tasks/${s.task1}/comments`, { body: "Vendor confirmed the laptops ship on Monday" });
+  const secretTask = await admin.post<{ id: string }>(`/api/projects/${s.otherProject}/tasks`, { data: { sys_title: "Negotiate the insurer renewal" } });
+  await admin.post(`/api/tasks/${secretTask.body.id}/comments`, { body: "Insurer quoted a 12% premium increase" });
   // Hide the other project from the viewer: its tasks must not reach the model.
   await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId] });
   const r = await ask(viewer, { kind: "assistant", workspaceId: s.ws, message: "Write this week's progress report" });
@@ -812,6 +816,8 @@ test("AI assistant: answers from what the user may see, declines the rest, and e
   assert.match(system, /Payroll reconciliation/, "tasks of visible projects");
   assert.match(system, /Probation lasts 60 days/, "wiki documents of visible projects");
   assert.doesNotMatch(system, /Call the insurer|Other project/, "hidden project stays out");
+  assert.match(system, /## Task comments[\s\S]*Vendor confirmed the laptops ship on Monday/, "task comments are part of the data");
+  assert.doesNotMatch(system, /12% premium increase/, "comments on hidden projects stay out");
   assert.match(system, /decline in one or two sentences/, "out-of-scope rule");
   assert.match(system, /## Workspace members \(\d+\)[\s\S]*Casey Contributor \| [^|\n]* \| contributor/, "every member is listed, not only people with tasks");
   await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });

@@ -7,6 +7,7 @@ import { visiblePageWhere } from "../wiki-sources";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "../okr-resolver";
 import { htmlToText } from "./extract";
 import { isCurrentKnowledge } from "../wiki";
+import { taskCommentsSection } from "./task-comments";
 
 // Grounding context for the AI. Everything given to the model is read with
 // the same permission filters as the rest of the app, so the model can only
@@ -164,6 +165,8 @@ export async function workspaceData(user: SessionUser, workspaceId: string, role
         })
         .join("\n")
   );
+  // What people said on the tasks (same visibility as the tasks above).
+  b.add(await taskCommentsSection({ task: { workspaceId, deletedAt: null, project: { deletedAt: null, ...visible } } }));
 
   const wikis = await prisma.wiki.findMany({ where: { workspaceId, ...visibleWikiWhere(user, role) }, orderBy: { sortOrder: "asc" }, select: { id: true, name: true } });
   for (const w of wikis) {

@@ -9,6 +9,7 @@ import { Markdown } from "./markdown";
 import { AiHealthCheck } from "./ai-health-check";
 import type { TaskIntake, TaskDraft, IntakeMessage, TaskChange, ApplyResult } from "./use-task-intake";
 import { useAutosize } from "./use-autosize";
+import { AttachButton, MessageFiles, PendingFiles, dropRing, useChatFiles, useFileDrop } from "./chat-attachments";
 import { naturalIntakeMessage } from "@/lib/ai/intake-response";
 
 /**
@@ -38,15 +39,18 @@ export function TaskIntakeChat({
   const { messages, busy } = intake;
   const lastSummaryId = [...messages].reverse().find((m) => m.type === "summary" || m.type === "created")?.id;
   useAutosize(inputRef, text);
+  const attach = useChatFiles();
+  const drop = useFileDrop(attach);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages, intake.error]);
 
   function submit() {
-    if (!text.trim() || busy) return;
-    intake.send(text);
+    if ((!text.trim() && !attach.files.length) || busy) return;
+    intake.send(text.trim() || t("ai.attach.defaultPrompt"), attach.files);
     setText("");
+    attach.clear();
     setEditing(false);
   }
 
@@ -74,8 +78,11 @@ export function TaskIntakeChat({
           {messages.map((m) =>
             m.role === "user" ? (
               <div key={m.id} className="flex justify-end">
-                <div className={cn("max-w-[85%] bg-indigo-600 text-white px-3.5 py-2 text-sm whitespace-pre-wrap", compact ? "rounded-[20px]" : "rounded-2xl rounded-br-md")} data-testid="intake-user-msg">
-                  {m.content}
+                <div className="max-w-[85%] flex flex-col items-end">
+                  <MessageFiles files={m.files} />
+                  <div className={cn("bg-indigo-600 text-white px-3.5 py-2 text-sm whitespace-pre-wrap", compact ? "rounded-[20px]" : "rounded-2xl rounded-br-md")} data-testid="intake-user-msg">
+                    {m.content}
+                  </div>
                 </div>
               </div>
             ) : m.type === "created" && m.created ? (
@@ -129,9 +136,14 @@ export function TaskIntakeChat({
         </div>
       </div>
       <div className={cn("bg-white dark:bg-neutral-900", compact ? "p-2.5" : "p-4 border-t border-neutral-200 dark:border-neutral-800")}>
-        <div className={cn("mx-auto flex items-end gap-2 px-3 py-2", compact ? "rounded-[22px] bg-neutral-100 dark:bg-neutral-800 focus-within:ring-2 focus-within:ring-indigo-200 dark:focus-within:ring-indigo-900" : "max-w-3xl rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-950")}>
+        <div className={cn("mx-auto", !compact && "max-w-3xl")}>
+          <PendingFiles chat={attach} />
+        </div>
+        <div {...drop.zone} className={cn("mx-auto flex items-end gap-2 px-3 py-2", dropRing(drop.over), compact ? "rounded-[22px] bg-neutral-100 dark:bg-neutral-800 focus-within:ring-2 focus-within:ring-indigo-200 dark:focus-within:ring-indigo-900" : "max-w-3xl rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-950")}>
+          <AttachButton onPick={attach.add} disabled={busy} />
           <textarea
             ref={inputRef}
+            onPaste={drop.onPaste}
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
@@ -151,7 +163,7 @@ export function TaskIntakeChat({
               <Square size={12} />
             </button>
           ) : (
-            <button onClick={submit} disabled={!text.trim()} className="h-8 w-8 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0 disabled:opacity-40" title={t("ai.send")} data-testid="intake-send">
+            <button onClick={submit} disabled={!text.trim() && !attach.files.length} className="h-8 w-8 rounded-full bg-indigo-600 text-white flex items-center justify-center shrink-0 disabled:opacity-40" title={t("ai.send")} data-testid="intake-send">
               <ArrowUp size={15} />
             </button>
           )}

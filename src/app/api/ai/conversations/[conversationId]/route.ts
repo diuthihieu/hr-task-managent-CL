@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, notFound } from "@/lib/authz";
+import { savedNotes } from "@/lib/ai/chat-files";
 
 type P = { conversationId: string };
 
@@ -16,8 +17,8 @@ export const GET = route<P>(async (_req, { params }) => {
   const c = await own(user.id, conversationId);
   // Still a member (and the project still visible)?
   await requireWorkspaceRole(user, { workspaceId: c.workspaceId, projectId: c.projectId, wikiId: c.wikiId }, "viewer");
-  const messages = await prisma.aiMessage.findMany({ where: { conversationId }, orderBy: { createdAt: "asc" }, select: { id: true, role: true, content: true, createdAt: true } });
-  return NextResponse.json({ id: c.id, title: c.title, kind: c.kind, originType: c.originType, originId: c.originId, projectId: c.projectId, taskId: c.taskId, skillId: c.skillId, agentRunId: c.agentRunId, files: c.files, messages: messages.map((m) => ({ ...m, createdAt: m.createdAt.toISOString() })) });
+  const messages = await prisma.aiMessage.findMany({ where: { conversationId }, orderBy: { createdAt: "asc" }, select: { id: true, role: true, content: true, attachments: true, createdAt: true } });
+  return NextResponse.json({ id: c.id, title: c.title, kind: c.kind, originType: c.originType, originId: c.originId, projectId: c.projectId, taskId: c.taskId, skillId: c.skillId, agentRunId: c.agentRunId, files: c.files, messages: messages.map(({ attachments, ...m }) => ({ ...m, files: savedNotes(attachments).map(({ name, kind, size }) => ({ name, kind, size })), createdAt: m.createdAt.toISOString() })) });
 });
 
 export const DELETE = route<P>(async (_req, { params }) => {

@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject, badRequest, HttpError } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, workspaceOfProject, badRequest, HttpError } from "@/lib/authz";
 import { aiConfigured, generate, type GeminiContent } from "@/lib/ai/gemini";
 import { draftSchema, intakeScope, sanitizeDraft, sanitizeChanges, intakeSystemPrompt, projectData, localNow } from "@/lib/ai/task-intake";
 import { naturalIntakeMessage, parseIntakeModelResponse } from "@/lib/ai/intake-response";
 import { personalPromptBlock } from "@/lib/ai/personal";
 import { rateLimit } from "@/lib/rate-limit";
 import { uuid } from "@/lib/validation";
+import { readChatRequest, chatFileParts, historyFileParts, historyBudget, fileNoteSchema, MAX_CHAT_FILES } from "@/lib/ai/chat-files";
 
 export const maxDuration = 120;
 
@@ -18,7 +19,14 @@ const schema = z.object({
   workspaceId: uuid.optional(),
   projectId: uuid.optional(),
   messages: z
-    .array(z.object({ role: z.enum(["user", "model"]), content: z.string().trim().min(1).max(4000) }))
+    .array(
+      z.object({
+        role: z.enum(["user", "model"]),
+        content: z.string().trim().min(1).max(4000),
+        /** Files attached on an earlier turn, as this route returned them (documents carry their text). */
+        files: z.array(fileNoteSchema).max(MAX_CHAT_FILES).optional(),
+      })
+    )
     .min(1)
     .max(30)
     .refine((m) => m[m.length - 1].role === "user", "The last message must be the user's"),
@@ -33,7 +41,8 @@ const schema = z.object({
  */
 export const POST = route(async (req) => {
   const user = await requireUser();
-  const body = schema.parse(await readJson(req));
+  const { payload, files } = await readChatRequest(req);
+  const body = schema.parse(payload);
   if (!aiConfigured()) throw new HttpError(503, "AI is not configured on this server (GEMINI_API_KEY missing)");
   if (!body.workspaceId && !body.projectId) throw badRequest("workspaceId or projectId is required");
 
@@ -54,7 +63,12 @@ export const POST = route(async (req) => {
   const now = localNow(body.timeZone);
   const locale = user.locale === "en" ? "en" : "vi";
   const system = intakeSystemPrompt({ workspace: ws.name, user: { id: user.id, name: user.name }, scope, now: now.text, locale, draft: current, projectData: data?.text ?? null, personal });
-  const contents: GeminiContent[] = body.messages.map((m) => ({ role: m.role, parts: [{ text: m.content }] }));
+  const attached = await chatFileParts(files, workspaceId);
+  const budget = historyBudget();
+  const last = body.messages.length - 1;
+  const contents: GeminiContent[] = body.messages.map((m, i) =>
+    i === last ? { role: m.role, parts: [...attached.parts, { text: m.content }] } : { role: m.role, parts: [...historyFileParts(m.role === "user" ? m.files : [], budget), { text: m.content }] }
+  );
 
   const r = await generate({ workspaceId, system, contents, temperature: 0.2, json: true, maxOutputTokens: 8192 });
   const parsed = parseIntakeModelResponse(r.text);
@@ -68,5 +82,5 @@ export const POST = route(async (req) => {
   // Viewers never get a draft, whatever the model says; answers keep the draft in progress.
   const draft = !scope.canCreate ? null : rawDraft.success && parsed?.draft ? sanitizeDraft(rawDraft.data, scope) : current;
   const outType = (type === "summary" && !draft) || (type === "changes" && !changes.length) ? "answer" : type;
-  return NextResponse.json({ type: outType, message, draft, changes, canCreate: scope.canCreate, today: now.date });
+  return NextResponse.json({ type: outType, message, draft, changes, canCreate: scope.canCreate, today: now.date, files: attached.notes });
 });

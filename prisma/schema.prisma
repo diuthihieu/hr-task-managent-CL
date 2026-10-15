@@ -1363,6 +1363,8 @@ model AiMessage {
   tokensOut      Int?          @map("tokens_out")
   /// Ask My Brain: the sources the answer was grounded on ([{ n, id, type, title, href }]).
   sources        Json?
+  /// Files the user attached to this turn ([{ name, kind, size, text? }]); a document keeps its extracted text, never the bytes.
+  attachments    Json?
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
 
   conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)

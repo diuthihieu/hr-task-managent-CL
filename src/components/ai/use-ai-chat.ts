@@ -1,11 +1,14 @@
 "use client";
 import { useCallback, useRef, useState } from "react";
 import { api } from "@/lib/api-client";
+import { postChat, toMessageFiles, type MessageFile } from "./chat-attachments";
 
 export interface ChatMessage {
   id: string;
   role: "user" | "model";
   content: string;
+  /** Files the user attached to this turn. */
+  files?: MessageFile[];
   pending?: boolean;
 }
 export interface ConversationLite {
@@ -26,6 +29,7 @@ export function useAiChat(target: Target) {
   const [error, setError] = useState<string | null>(null);
   const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [failedText, setFailedText] = useState<string | null>(null);
+  const [failedFiles, setFailedFiles] = useState<File[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const qs = target.kind === "wiki" ? `kind=wiki&wikiId=${target.wikiId}` : `kind=assistant&workspaceId=${target.workspaceId}`;
 
@@ -58,25 +62,21 @@ export function useAiChat(target: Target) {
   );
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, files: File[] = []) => {
       const message = text.trim();
       if (!message || busy) return;
       setError(null);
       setErrorStatus(null);
       setFailedText(null);
+      setFailedFiles([]);
       setBusy(true);
-      const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content: message };
+      const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content: message, files: files.length ? toMessageFiles(files) : undefined };
       const botId = `m-${Date.now()}`;
       setMessages((prev) => [...prev, userMsg, { id: botId, role: "model", content: "", pending: true }]);
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       try {
-        const res = await fetch("/api/ai/chat", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ ...target, conversationId: conversationId ?? undefined, message }),
-          signal: ctrl.signal,
-        });
+        const res = await postChat("/api/ai/chat", { ...target, conversationId: conversationId ?? undefined, message }, files, ctrl.signal);
         if (!res.ok || !res.body) {
           const body = await res.json().catch(() => ({}));
           throw Object.assign(new Error(body.error || `Request failed (${res.status})`), { status: res.status });
@@ -99,6 +99,7 @@ export function useAiChat(target: Target) {
         setError(e instanceof Error ? e.message : "Failed");
         setErrorStatus((e as { status?: number }).status ?? null);
         setFailedText(message);
+        setFailedFiles(files);
         // Nothing was saved server-side: drop the unanswered question too, "Try again" re-asks it.
         setMessages((prev) => prev.filter((m) => m.id !== botId && m.id !== userMsg.id));
       } finally {
@@ -111,8 +112,8 @@ export function useAiChat(target: Target) {
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
   const retry = useCallback(() => {
-    if (failedText) send(failedText);
-  }, [failedText, send]);
+    if (failedText) send(failedText, failedFiles);
+  }, [failedText, failedFiles, send]);
 
   return { conversations, configured, conversationId, messages, busy, error, errorStatus, failedText, loadConversations, open, remove, send, stop, retry };
 }

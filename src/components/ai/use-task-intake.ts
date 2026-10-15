@@ -2,6 +2,7 @@
 import { useCallback, useRef, useState } from "react";
 import { api } from "@/lib/api-client";
 import type { RecordRow } from "@/types";
+import { postChat, toMessageFiles, type MessageFile } from "./chat-attachments";
 
 export interface TaskDraft {
   projectId: string | null;
@@ -41,6 +42,8 @@ export interface IntakeMessage {
   id: string;
   role: "user" | "model";
   content: string;
+  /** Files the user attached; documents get their extracted text back from the server for follow-ups. */
+  files?: MessageFile[];
   type?: "question" | "summary" | "answer" | "created" | "changes";
   /** Agent proposal: changes to existing tasks, applied only when the user presses Apply. */
   changes?: TaskChange[];
@@ -57,9 +60,12 @@ interface TurnResponse {
   draft: TaskDraft | null;
   changes?: TaskChange[];
   canCreate: boolean;
+  files?: MessageFile[];
 }
 
 const HISTORY = 20;
+/** Document text echoed back with the history, newest first (the server caps it again). */
+const HISTORY_FILE_CHARS = 60_000;
 const timeZone = () => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -82,31 +88,44 @@ export function useTaskIntake(target: { workspaceId?: string; projectId?: string
   const [error, setError] = useState<string | null>(null);
   const [errorStatus, setErrorStatus] = useState<number | null>(null);
   const [failedText, setFailedText] = useState<string | null>(null);
+  const [failedFiles, setFailedFiles] = useState<File[]>([]);
   const [canCreate, setCanCreate] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
   const { workspaceId, projectId } = target;
 
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, files: File[] = []) => {
       const message = text.trim();
       if (!message || busy) return;
       setError(null);
       setErrorStatus(null);
       setFailedText(null);
+      setFailedFiles([]);
       setBusy(true);
-      const userMsg: IntakeMessage = { id: `u-${Date.now()}`, role: "user", content: message };
+      const userMsg: IntakeMessage = { id: `u-${Date.now()}`, role: "user", content: message, files: files.length ? toMessageFiles(files) : undefined };
       const botId = `m-${Date.now()}`;
-      const history = [...messages.filter((m) => !m.pending && m.content), userMsg].slice(-HISTORY).map((m) => ({ role: m.role, content: m.content.slice(0, 4000) }));
+      let fileChars = HISTORY_FILE_CHARS;
+      const history = [...messages.filter((m) => !m.pending && m.content), userMsg]
+        .slice(-HISTORY)
+        .reverse()
+        .map((m) => {
+          const turnFiles = m === userMsg ? undefined : m.files?.map(({ name, kind, size, text: fileText }) => {
+            const kept = fileText && fileChars > 0 ? fileText.slice(0, fileChars) : undefined;
+            fileChars -= kept?.length ?? 0;
+            return { name, kind, size, text: kept };
+          });
+          return { role: m.role, content: m.content.slice(0, 4000), ...(turnFiles?.length ? { files: turnFiles } : {}) };
+        })
+        .reverse();
       // The model must see a user turn first.
       while (history.length && history[0].role !== "user") history.shift();
       setMessages((prev) => [...prev, userMsg, { id: botId, role: "model", content: "", pending: true }]);
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       try {
-        const res = await fetch("/api/ai/task-intake", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
+        const res = await postChat(
+          "/api/ai/task-intake",
+          {
             workspaceId,
             projectId,
             messages: history,
@@ -126,14 +145,20 @@ export function useTaskIntake(target: { workspaceId?: string; projectId?: string
                   estimateHours: draft.estimateHours,
                 }
               : null,
-          }),
-          signal: ctrl.signal,
-        });
+          },
+          files,
+          ctrl.signal
+        );
         const body = (await res.json().catch(() => ({}))) as Partial<TurnResponse> & { error?: string };
         if (!res.ok) throw Object.assign(new Error(body.error || `Request failed (${res.status})`), { status: res.status });
         const r = body as TurnResponse;
         setCanCreate(r.canCreate);
         setDraft(r.draft);
+        // Keep each document's extracted text on the user's message so later turns still see it.
+        const notes = r.files ?? [];
+        setMessages((prev) =>
+          prev.map((m) => (m.id === userMsg.id && m.files ? { ...m, files: m.files.map((f, i) => ({ ...f, text: notes[i]?.text })) } : m))
+        );
         setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, content: r.message, type: r.type, draft: r.type === "summary" ? r.draft : undefined, changes: r.type === "changes" ? (r.changes ?? []) : undefined, pending: false } : m)));
       } catch (e) {
         if ((e as Error).name === "AbortError") {
@@ -143,6 +168,7 @@ export function useTaskIntake(target: { workspaceId?: string; projectId?: string
         setError(e instanceof Error ? e.message : "Failed");
         setErrorStatus((e as { status?: number }).status ?? null);
         setFailedText(message);
+        setFailedFiles(files);
         setMessages((prev) => prev.filter((m) => m.id !== botId && m.id !== userMsg.id));
       } finally {
         setBusy(false);
@@ -225,8 +251,8 @@ export function useTaskIntake(target: { workspaceId?: string; projectId?: string
   }, []);
   const stop = useCallback(() => abortRef.current?.abort(), []);
   const retry = useCallback(() => {
-    if (failedText) send(failedText);
-  }, [failedText, send]);
+    if (failedText) send(failedText, failedFiles);
+  }, [failedText, failedFiles, send]);
 
   return { messages, draft, busy, creating, applying, error, errorStatus, failedText, canCreate, send, confirm, applyChanges, dismissChanges, reset, stop, retry };
 }

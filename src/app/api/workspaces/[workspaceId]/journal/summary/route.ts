@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson } from "@/lib/authz";
-import { generate } from "@/lib/ai/gemini";
+import { generate, ROUTE_120_BUDGET } from "@/lib/ai/gemini";
 import { htmlToText } from "@/lib/ai/extract";
 import { brainAccess } from "@/lib/brain/access";
 import { journalDay, journalText } from "@/lib/brain/journal";
@@ -35,7 +35,7 @@ export const POST = route<P>(async (req, { params }) => {
     data: journalText(j, htmlToText(j.notes)),
     personal: await personalPromptBlock(user.id),
   });
-  const r = await generate({ workspaceId, system, contents: [{ role: "user", parts: [{ text: "Summarize my day." }] }], temperature: 0.3 });
+  const r = await generate({ workspaceId, system, contents: [{ role: "user", parts: [{ text: "Summarize my day." }] }], temperature: 0.3, timeBudgetMs: ROUTE_120_BUDGET });
   const date = new Date(`${body.date}T00:00:00Z`);
   await prisma.journalEntry.upsert({
     where: { userId_workspaceId_date: { userId: user.id, workspaceId, date } },

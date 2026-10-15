@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { route, readJson, badRequest, notFound, HttpError, requireWorkspaceRole, requireWiki, workspaceOfProject, visibleProjectWhere, visibleWikiWhere } from "@/lib/authz";
-import { generate } from "@/lib/ai/gemini";
+import { generate, ROUTE_120_BUDGET } from "@/lib/ai/gemini";
 import { personalPromptBlock, SCOPE_GUARD } from "@/lib/ai/personal";
 import { brainContext } from "@/lib/brain/route-helpers";
 import { assertAi } from "@/lib/brain/ai";
@@ -97,7 +97,7 @@ export const POST = route<P>(async (req, { params }) => {
 
   const sources = await gatherSources(access, base, scope, [body.question, ...history.filter((h) => h.role === "user").map((h) => h.content)].join(" ").slice(0, 2000));
   const system = brainAskPrompt({ workspace: workspaceName, user: user.name, scopeLabel, sources, personal: await personalPromptBlock(user.id), guard: SCOPE_GUARD, now: new Date() });
-  const r = await generate({ workspaceId, system, contents: [...history.map((m) => ({ role: m.role, parts: [{ text: m.content }] })), { role: "user", parts: [{ text: body.question }] }], temperature: 0.2 });
+  const r = await generate({ workspaceId, system, contents: [...history.map((m) => ({ role: m.role, parts: [{ text: m.content }] })), { role: "user", parts: [{ text: body.question }] }], temperature: 0.2, timeBudgetMs: ROUTE_120_BUDGET });
   const cited = citedNumbers(r.text);
   const out = sources.map((s) => ({ ...s, used: cited.has(s.n) }));
   const saved = out.map(({ n, type, id, title, href, status, historical, used: u }) => ({ n, type, id, title, href, status, historical, used: u }));

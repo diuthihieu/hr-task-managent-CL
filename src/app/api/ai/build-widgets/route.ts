@@ -4,7 +4,7 @@ import { nanoid } from "nanoid";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfDashboard, workspaceOfProject, visibleProjectWhere, badRequest, HttpError } from "@/lib/authz";
-import { aiConfigured, generate, parseJsonAnswer } from "@/lib/ai/gemini";
+import { aiConfigured, generate, parseJsonAnswer, ROUTE_120_BUDGET } from "@/lib/ai/gemini";
 import { buildFields, loadProjectMeta } from "@/lib/task-grid";
 import { makeT, normalizeLocale } from "@/lib/i18n/core";
 import { rateLimit } from "@/lib/rate-limit";
@@ -84,7 +84,7 @@ Rules:
 - Titles are short, in the user's language.
 CATALOG:
 ${JSON.stringify(catalog)}`;
-  const r = await generate({ workspaceId, system, contents: [{ role: "user", parts: [{ text: body.prompt }] }], temperature: 0.1, json: true, maxOutputTokens: 4096 });
+  const r = await generate({ workspaceId, system, contents: [{ role: "user", parts: [{ text: body.prompt }] }], temperature: 0.1, json: true, maxOutputTokens: 4096, timeBudgetMs: ROUTE_120_BUDGET });
   const specs = (parseJsonAnswer<{ widgets?: Spec[] }>(r.text)?.widgets ?? []).slice(0, 6);
 
   // Validate every id against the catalog.

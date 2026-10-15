@@ -37,7 +37,7 @@ const ROLE_KEYS = ["owner", "admin", "editor", "contributor", "viewer"] as const
 
 export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }: { workspaceId: string; currentUserId: string; currentUserRole: string; isSystemAdmin?: boolean }) {
   const { t } = useT();
-  const ROLES = ROLE_KEYS.map((r) => ({ value: r, label: t(`role.${r}`) }));
+  const ROLES = ROLE_KEYS.map((r) => ({ value: r, label: t(`role.${r}`), description: t(`role.${r}.d` as MessageKey) }));
   const [members, setMembers] = useState<MemberRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);

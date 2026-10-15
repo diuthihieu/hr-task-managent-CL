@@ -13,6 +13,7 @@ import { cn, initials } from "@/lib/utils";
 import type { MessageKey } from "@/lib/i18n/core";
 import type { WikiRow } from "@/lib/wiki";
 import { AvatarImg } from "@/components/ui/avatar-img";
+import { WikiIconPicker } from "./wiki-icon-picker";
 
 type Role = "viewer" | "editor" | "manager";
 interface MemberRow {
@@ -30,6 +31,7 @@ export const WIKI_COLORS = ["#f97316", "#ef4444", "#ec4899", "#8b5cf6", "#6366f1
 /** Wiki settings + access: who can open it and with which role. Read-only for non-managers. */
 export function WikiShareDialog({ wiki, onClose }: { wiki: WikiRow; workspaceId: string; onClose: () => void }) {
   const { t } = useT();
+  const roleOption = (r: Role) => ({ value: r, label: t(`wikis.role.${r}`), description: t(`wikis.role.${r}.d`) });
   const router = useRouter();
   const canManage = wiki.myRole === "manager";
   const [name, setName] = useState(wiki.name);
@@ -111,7 +113,7 @@ export function WikiShareDialog({ wiki, onClose }: { wiki: WikiRow; workspaceId:
               </div>
               <div>
                 <label className={label}>{t("wikis.icon")}</label>
-                <Input value={icon} onChange={(e) => setIcon(e.target.value)} maxLength={4} placeholder="📘" />
+                <WikiIconPicker value={icon} onChange={setIcon} />
               </div>
               <div className="sm:col-span-2">
                 <label className={label}>{t("wikis.description")}</label>
@@ -148,13 +150,28 @@ export function WikiShareDialog({ wiki, onClose }: { wiki: WikiRow; workspaceId:
               <div className="flex items-center gap-2 mt-2 text-sm">
                 <span className="text-neutral-500">{t("wikis.defaultRole")}</span>
                 {canManage ? (
-                  <Select className="w-40" value={defaultRole} onValueChange={(v) => setDefaultRole(v as "viewer" | "editor")} options={[{ value: "viewer", label: t("wikis.role.viewer") }, { value: "editor", label: t("wikis.role.editor") }]} />
+                  <Select className="w-40" value={defaultRole} onValueChange={(v) => setDefaultRole(v as "viewer" | "editor")} options={[roleOption("viewer"), roleOption("editor")]} />
                 ) : (
                   <span className="font-medium text-neutral-800 dark:text-neutral-100">{t(`wikis.role.${defaultRole}` as MessageKey)}</span>
                 )}
               </div>
             )}
           </div>
+
+          <details className="rounded-lg border border-neutral-200 dark:border-neutral-800 px-3 py-2 text-sm group" data-testid="wiki-role-guide">
+            <summary className="cursor-pointer select-none font-medium text-neutral-700 dark:text-neutral-200 flex items-center gap-1.5">
+              <Info size={13} className="text-indigo-500" /> {t("wikis.roleGuide")}
+            </summary>
+            <dl className="mt-2 space-y-1.5">
+              {(["viewer", "editor", "manager"] as const).map((r) => (
+                <div key={r}>
+                  <dt className="font-medium text-neutral-800 dark:text-neutral-100">{t(`wikis.role.${r}`)}</dt>
+                  <dd className="text-xs text-neutral-500">{t(`wikis.role.${r}.d`)}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-2 text-[11px] text-neutral-500">{t("wikis.roleGuideNote")}</p>
+          </details>
 
           <div>
             <label className={label}>{t("wikis.people")}</label>
@@ -182,10 +199,10 @@ export function WikiShareDialog({ wiki, onClose }: { wiki: WikiRow; workspaceId:
                       value={m.role ?? ""}
                       onValueChange={(v) => setRole(m.id, (v || null) as Role | null)}
                       options={[
-                        { value: "", label: access === "workspace" ? t("wikis.role.default") : t("wikis.noAccess") },
-                        { value: "viewer", label: t("wikis.role.viewer") },
-                        { value: "editor", label: t("wikis.role.editor") },
-                        { value: "manager", label: t("wikis.role.manager") },
+                        access === "workspace" ? { value: "", label: t("wikis.role.default"), description: t("wikis.role.default.d") } : { value: "", label: t("wikis.noAccess"), description: t("wikis.noAccess.d") },
+                        roleOption("viewer"),
+                        roleOption("editor"),
+                        roleOption("manager"),
                       ]}
                       data-testid={`wiki-role-${m.email}`}
                     />

@@ -103,8 +103,8 @@ export function InviteDialog({ open, onOpenChange, workspaceId, workspaceName, o
     }
   }
 
-  const roles = ["admin", "editor", "contributor", "viewer"].map((r) => ({ value: r, label: t(`role.${r}` as MessageKey) }));
-  const linkRoles = ["editor", "contributor", "viewer"].map((r) => ({ value: r, label: t(`role.${r}` as MessageKey) }));
+  const roles = ["admin", "editor", "contributor", "viewer"].map((r) => ({ value: r, label: t(`role.${r}` as MessageKey), description: t(`role.${r}.d` as MessageKey) }));
+  const linkRoles = ["editor", "contributor", "viewer"].map((r) => ({ value: r, label: t(`role.${r}` as MessageKey), description: t(`role.${r}.d` as MessageKey) }));
 
   return (
     <Dialog
@@ -195,6 +195,7 @@ export function InviteDialog({ open, onOpenChange, workspaceId, workspaceName, o
               <div>
                 <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("common.role")}</label>
                 <Select className="w-full" value={role} onValueChange={setRole} options={roles} />
+                <p className="mt-1 text-[11px] text-neutral-500" data-testid="invite-role-hint">{t(`role.${role}.d` as MessageKey)}</p>
               </div>
               <div>
                 <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("inv.message")}</label>

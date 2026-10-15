@@ -13,6 +13,7 @@ import { cn, formatDate } from "@/lib/utils";
 import type { MessageKey } from "@/lib/i18n/core";
 import type { WikiRow } from "@/lib/wiki";
 import { Meta, MetaChip } from "@/components/ui/meta";
+import { WikiIconPicker } from "./wiki-icon-picker";
 
 /** Wiki landing: every wiki the user can open, and "New wiki". */
 export function WikiHome({ workspaceId, workspaceSlug, wikis, canCreate }: { workspaceId: string; workspaceSlug: string; wikis: WikiRow[]; canCreate: boolean }) {
@@ -78,13 +79,14 @@ export function NewWikiDialog({ workspaceId, workspaceSlug, onClose }: { workspa
   const { t } = useT();
   const router = useRouter();
   const [name, setName] = useState("");
+  const [icon, setIcon] = useState("");
   const [description, setDescription] = useState("");
   const [access, setAccess] = useState<"workspace" | "restricted">("workspace");
   const [busy, setBusy] = useState(false);
   async function create() {
     setBusy(true);
     try {
-      const w = await api.post<WikiRow>(`/api/workspaces/${workspaceId}/wikis`, { name: name.trim(), description: description.trim() || null, access });
+      const w = await api.post<WikiRow>(`/api/workspaces/${workspaceId}/wikis`, { name: name.trim(), description: description.trim() || null, access, icon: icon || null });
       router.push(`/w/${workspaceSlug}/wiki/${w.id}`);
       router.refresh();
       onClose();
@@ -98,7 +100,12 @@ export function NewWikiDialog({ workspaceId, workspaceSlug, onClose }: { workspa
       <DialogContent>
         <DialogTitle>{t("wikis.new")}</DialogTitle>
         <div className="space-y-3">
-          <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t("wikis.namePh")} maxLength={160} onKeyDown={(e) => e.key === "Enter" && name.trim() && create()} data-testid="wiki-new-name" />
+          <div className="flex gap-2">
+            <div className="w-14 shrink-0">
+              <WikiIconPicker value={icon} onChange={setIcon} />
+            </div>
+            <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder={t("wikis.namePh")} maxLength={160} onKeyDown={(e) => e.key === "Enter" && name.trim() && create()} data-testid="wiki-new-name" />
+          </div>
           <Textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} placeholder={t("wikis.description")} />
           <div className="grid grid-cols-2 gap-2">
             {(["workspace", "restricted"] as const).map((a) => (

@@ -1314,6 +1314,38 @@ test("AI dashboard builder: only valid chart specs over real fields are kept", a
   assert.equal((await viewer.post("/api/ai/build-widgets", { target: "dashboard", dashboardId: d.body.id, prompt: "a new dashboard", mode: "new" })).status, 403, "editors only");
 });
 
+test("AI PDF report: writes with chart markers; the report library is private to its creator", async () => {
+  const data = "Tasks by status: Done 3, In progress 2";
+  const gen = await admin.post<{ title: string; fileName: string; markdown: string; header: { workspace: string; author: string } }>("/api/ai/report", {
+    targetKind: "project", targetId: s.project, prompt: "Monthly report with all charts", fileName: "CB/report:10", data, charts: [{ id: "w1", title: "Tasks by status" }],
+  });
+  assert.equal(gen.status, 200, JSON.stringify(gen.body));
+  assert.match(gen.body.markdown, /\[\[chart:w1\]\]/, "the report places the chart");
+  assert.equal(gen.body.fileName, "CB report 10", "unsafe file name characters are removed");
+  assert.ok(gen.body.header.workspace && gen.body.header.author);
+  assert.equal((await outsider.post("/api/ai/report", { targetKind: "project", targetId: s.project, prompt: "report please", data, charts: [] })).status, 404);
+  assert.equal((await admin.post("/api/ai/report", { targetKind: "project", targetId: s.project, prompt: "x".repeat(4001), data, charts: [] })).status, 400);
+
+  const saved = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/saved-reports`, {
+    title: gen.body.title, fileName: gen.body.fileName, prompt: "Monthly report", content: gen.body.markdown, projectId: s.project,
+    charts: [{ id: "w1", title: "Tasks by status", svg: "<svg viewBox='0 0 10 10'><rect width='10' height='10'/></svg>" }],
+  });
+  assert.equal(saved.status, 201, JSON.stringify(saved.body));
+  const list = await admin.get<{ id: string; source: string | null }[]>(`/api/workspaces/${s.ws}/saved-reports?projectId=${s.project}`);
+  assert.ok(list.body.some((r) => r.id === saved.body.id && r.source));
+  const one = await admin.get<{ content: string; charts: { id: string }[] }>(`/api/saved-reports/${saved.body.id}`);
+  assert.equal(one.status, 200);
+  assert.equal(one.body.charts[0].id, "w1");
+  // Private: a co-member can't list, open or delete it.
+  assert.ok(!(await contributor.get<{ id: string }[]>(`/api/workspaces/${s.ws}/saved-reports`)).body.some((r) => r.id === saved.body.id));
+  assert.equal((await contributor.get(`/api/saved-reports/${saved.body.id}`)).status, 404);
+  assert.equal((await contributor.del(`/api/saved-reports/${saved.body.id}`)).status, 404);
+  assert.equal((await outsider.get(`/api/workspaces/${s.ws}/saved-reports`)).status, 404);
+  assert.equal((await admin.post(`/api/workspaces/${s.ws}/saved-reports`, { title: "x", fileName: "x", content: "x", charts: [{ id: "a", title: "a", svg: "x".repeat(400_001) }] })).status, 400, "chart size limit");
+  assert.equal((await admin.del(`/api/saved-reports/${saved.body.id}`)).status, 200);
+  assert.equal((await admin.get(`/api/saved-reports/${saved.body.id}`)).status, 404);
+});
+
 test("wiki comments: mentions, replies, delete rights, and the wiki AI reads the discussion", async () => {
   const page = await admin.post<{ id: string }>(`/api/wikis/${s.wiki}/pages`, { title: "Leave policy" });
   assert.equal(page.status, 201);
@@ -1798,6 +1830,11 @@ test("second brain: Ask My Brain is scoped, grounded and traceable; layers and r
   assert.ok(r.body.grounded && r.body.sources[0].used, "the cited source is marked");
   assert.ok(r.body.sources.some((x) => x.id === s.brainPageA), "the probation page is a source");
   assert.ok(r.body.sources.some((x) => x.type === "decision" && x.id === s.brainDecision && x.historical), "superseded decisions are flagged as history");
+  // A slow but healthy answer (longer than one model attempt) still completes: long calls are streamed and collected.
+  const slowAsk = await viewer.post<Ask>(`/api/workspaces/${s.ws}/brain/ask`, { question: "probation #slow-stream", scope: { type: "everything" } });
+  assert.equal(slowAsk.status, 200, JSON.stringify(slowAsk.body));
+  assert.equal(slowAsk.body.answer, "Slow but complete.");
+  await prisma.aiMessage.deleteMany({ where: { conversation: { userId: s.viewerId } } });
   const system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
   assert.match(system, /\[S1\] [A-Z]+:/);
   assert.match(system, /Cite every factual statement/);

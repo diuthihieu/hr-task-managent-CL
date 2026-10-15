@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { WidgetCard, type DashboardBlockLite, type DataResponse } from "./widget-card";
 import { AiDashboardActions, AiBuildWidgetsButton } from "@/components/ai/ai-actions";
+import { AiReportButton, ReportLibraryButton, captureCharts } from "@/components/ai/ai-report";
 import { WidgetEditorDialog, type BlockDraft } from "./widget-editor-dialog";
 import { DashboardFilterBar } from "./filter-bar";
 import type { CrossFilter, SeriesPoint, Segment, SegmentTask } from "@/lib/dashboard-engine";
@@ -59,6 +60,7 @@ export function DashboardWorkspace({
   const [nameDraft, setNameDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const widgetData = useRef(new Map<string, DataResponse>());
+  const gridRef = useRef<HTMLDivElement>(null);
   const [preview, setPreview] = useState<(SegmentPreviewState & { block: DashboardBlockLite }) | null>(null);
 
   async function openSegment(block: DashboardBlockLite, segment: Segment) {
@@ -253,6 +255,8 @@ export function DashboardWorkspace({
         )}
         <div className="ml-auto flex items-center gap-1.5">
           {dashboard.blocks.length > 0 && <AiDashboardActions dashboardId={dashboardId} getData={snapshot} />}
+          {dashboard.blocks.length > 0 && <AiReportButton workspaceId={workspaceId} targetKind="dashboard" targetId={dashboardId} getData={snapshot} getCharts={() => captureCharts(gridRef.current)} />}
+          <ReportLibraryButton workspaceId={workspaceId} dashboardId={dashboardId} />
           {canEdit && <AiBuildWidgetsButton
               target="dashboard"
               dashboardId={dashboardId}
@@ -313,7 +317,7 @@ export function DashboardWorkspace({
             </Button>}
           </div>
         ) : (
-          <>
+          <div ref={gridRef}>
           <p className="px-1 pb-1 text-[11px] text-neutral-400">{t("seg.hint")}</p>
           <GridLayout
             className="layout woli-grid"
@@ -330,7 +334,7 @@ export function DashboardWorkspace({
             onResizeStop={(l) => persistLayout(l)}
           >
             {dashboard.blocks.map((block) => (
-              <div key={block.id}>
+              <div key={block.id} data-report-chart data-chart-id={block.id} data-chart-title={block.title}>
                 <WidgetCard
                   block={block}
                   canEdit={canEdit}
@@ -347,7 +351,7 @@ export function DashboardWorkspace({
               </div>
             ))}
           </GridLayout>
-          </>
+          </div>
         )}
       </div>
 

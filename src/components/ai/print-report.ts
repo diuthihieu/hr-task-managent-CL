@@ -1,4 +1,5 @@
 "use client";
+import DOMPurify from "dompurify";
 import { markdownToHtml } from "./markdown";
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
@@ -8,14 +9,17 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&l
  * Printing keeps Vietnamese text, tables and fonts exact without shipping a
  * PDF engine to the client.
  */
-export function exportReportPdf(opts: { markdown: string; title: string; workspace: string; author: string; logoUrl?: string | null; locale: "vi" | "en" }) {
-  const body = markdownToHtml(opts.markdown);
-  const date = new Date().toLocaleString(opts.locale === "vi" ? "vi-VN" : "en-GB", { dateStyle: "long", timeStyle: "short" });
-  const html = `<!doctype html><html lang="${opts.locale}"><head><meta charset="utf-8"><title>${esc(opts.title)}</title>
-<style>
+export interface ReportChart {
+  id: string;
+  title: string;
+  /** Chart markup captured from the dashboard (sanitized again on render). */
+  svg: string;
+}
+
+const STYLE = `
   @page { size: A4; margin: 18mm 16mm 20mm; }
   * { box-sizing: border-box; }
-  body { font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; color: #1f2937; font-size: 11pt; line-height: 1.55; margin: 0; }
+  body { font-family: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif; color: #1f2937; font-size: 11pt; line-height: 1.55; margin: 0; padding: 0; background: #fff; }
   header { display: flex; align-items: center; gap: 10px; border-bottom: 2px solid #ea580c; padding-bottom: 10px; margin-bottom: 18px; }
   header img { width: 34px; height: 34px; border-radius: 8px; object-fit: cover; }
   header .ws { font-weight: 700; font-size: 12pt; }
@@ -30,14 +34,47 @@ export function exportReportPdf(opts: { markdown: string; title: string; workspa
   th, td { border: 1px solid #e5e7eb; padding: 5px 7px; text-align: left; vertical-align: top; }
   th { background: #fff7ed; }
   code { background: #f3f4f6; padding: 1px 4px; border-radius: 3px; }
+  pre { white-space: pre-wrap; overflow-wrap: anywhere; }
   blockquote { border-left: 3px solid #fdba74; margin: 8px 0; padding-left: 10px; color: #4b5563; }
+  figure.chart { margin: 12px 0; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 10px; page-break-inside: avoid; break-inside: avoid; }
+  figure.chart figcaption { font-weight: 600; font-size: 10.5pt; margin-bottom: 6px; color: #111827; }
+  figure.chart svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+  figure.chart ul { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; font-size: 8.5pt; color: #4b5563; }
+  figure.chart li { display: inline-flex; align-items: center; gap: 4px; }
+  figure.chart .narrative { font-size: 10.5pt; }
+  figure.chart .kpi { font-size: 30pt; font-weight: 700; color: #ea580c; }
   footer { margin-top: 28px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-size: 8pt; color: #9ca3af; }
-</style></head><body>
+`;
+
+function sanitizeChart(markup: string): string {
+  if (typeof window === "undefined") return "";
+  return DOMPurify.sanitize(markup, { USE_PROFILES: { svg: true, svgFilters: true, html: true }, FORBID_TAGS: ["script", "style", "foreignObject", "iframe", "form", "input", "button", "a", "image", "use"], FORBID_ATTR: ["style", "href", "xlink:href"] });
+}
+
+/** Markdown + chart snapshots → a complete, printable HTML document. */
+export function buildReportHtml(opts: { markdown: string; charts?: ReportChart[]; title: string; workspace: string; author: string; logoUrl?: string | null; locale: "vi" | "en"; date?: Date }) {
+  const charts = new Map((opts.charts ?? []).map((c) => [c.id, c]));
+  // Chart markers sit on their own line: [[chart:<id>]]. Swap them for placeholders
+  // that survive Markdown rendering, then for the sanitized chart.
+  // (Placeholders use a running number: ids may contain "_" which Markdown reads as emphasis.)
+  const placed: string[] = [];
+  const md = opts.markdown.replace(/^\s*\[\[chart:([A-Za-z0-9_-]{1,64})\]\]\s*$/gm, (_m, id: string) => (charts.has(id) ? `\n\nWOLICHART${placed.push(id) - 1}WOLICHART\n\n` : ""));
+  let body = markdownToHtml(md);
+  body = body.replace(/<p>WOLICHART(\d+)WOLICHART<\/p>/g, (_m, n: string) => {
+    const c = charts.get(placed[Number(n)]);
+    return c ? `<figure class="chart"><figcaption>${esc(c.title)}</figcaption>${sanitizeChart(c.svg)}</figure>` : "";
+  });
+  const date = (opts.date ?? new Date()).toLocaleString(opts.locale === "vi" ? "vi-VN" : "en-GB", { dateStyle: "long", timeStyle: "short" });
+  return `<!doctype html><html lang="${opts.locale}"><head><meta charset="utf-8"><title>${esc(opts.title)}</title><style>${STYLE}</style></head><body>
 <header>${opts.logoUrl ? `<img src="${esc(opts.logoUrl)}" alt="">` : ""}<span class="ws">${esc(opts.workspace)}</span>
 <span class="meta">${esc(opts.author)}<br>${esc(date)}</span></header>
 <main>${body}</main>
 <footer>${opts.locale === "vi" ? "Tạo bởi woli AI từ dữ liệu bạn được phép xem. Hãy kiểm tra lại các số liệu quan trọng." : "Generated by woli AI from the data you are allowed to see. Please double-check key figures."}</footer>
 </body></html>`;
+}
+
+/** Open the browser's print dialog ("Save as PDF") for a report document; the title becomes the suggested file name. */
+export function printReportHtml(html: string) {
   const frame = document.createElement("iframe");
   frame.style.position = "fixed";
   frame.style.right = "0";
@@ -51,9 +88,13 @@ export function exportReportPdf(opts: { markdown: string; title: string; workspa
   doc.open();
   doc.write(html);
   doc.close();
+  // The browser names the PDF after the top document's title in some engines.
+  const prevTitle = document.title;
   const go = () => {
+    document.title = doc.title || prevTitle;
     frame.contentWindow!.focus();
     frame.contentWindow!.print();
+    setTimeout(() => (document.title = prevTitle), 1000);
     setTimeout(() => frame.remove(), 60_000);
   };
   // Wait for the logo (if any) so it appears in the PDF.
@@ -62,4 +103,13 @@ export function exportReportPdf(opts: { markdown: string; title: string; workspa
     img.addEventListener("load", go, { once: true });
     img.addEventListener("error", go, { once: true });
   } else setTimeout(go, 50);
+}
+
+/**
+ * Export an AI report as PDF through the browser's print dialog ("Save as PDF").
+ * Printing keeps Vietnamese text, tables and fonts exact without shipping a
+ * PDF engine to the client.
+ */
+export function exportReportPdf(opts: { markdown: string; title: string; workspace: string; author: string; logoUrl?: string | null; locale: "vi" | "en" }) {
+  printReportHtml(buildReportHtml(opts));
 }

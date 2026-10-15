@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { nanoid } from "nanoid";
 import { Responsive, WidthProvider, type Layout } from "react-grid-layout";
 import "react-grid-layout/css/styles.css";
@@ -18,6 +18,7 @@ import type { MemberLite, ReportChartType, ReportConfig, ReportWidget } from "@/
 import type { TFunction } from "@/lib/i18n/core";
 import { cn } from "@/lib/utils";
 import { AiDashboardActions, AiBuildWidgetsButton } from "@/components/ai/ai-actions";
+import { AiReportButton, ReportLibraryButton, captureCharts } from "@/components/ai/ai-report";
 import type { FieldRow, RecordRow } from "@/types";
 
 const NUMERIC_TYPES = ["number", "currency", "percent", "rating", "progress", "integer"];
@@ -106,6 +107,7 @@ function reportSnapshot(widgets: ReportWidget[], fields: FieldRow[], records: Re
 }
 
 export function ReportView({
+  workspaceId,
   projectId,
   fields,
   records,
@@ -117,6 +119,7 @@ export function ReportView({
 }: {
   /** Opens a task from the drill-down preview. */
   onOpenRecord?: (recordId: string) => void;
+  workspaceId?: string;
   projectId: string;
   fields: FieldRow[];
   records: RecordRow[];
@@ -127,6 +130,7 @@ export function ReportView({
 }) {
   const { t } = useT();
   const widgets = useMemo(() => config.widgets ?? [], [config.widgets]);
+  const gridRef = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<ReportWidget | null>(null);
 
   function saveWidget(input: ReportWidget) {
@@ -165,6 +169,10 @@ export function ReportView({
         <span className="text-xs text-neutral-500">{t("report.basedOn", { count: records.length })}</span>
         <div className="ml-auto" />
         {widgets.length > 0 && <AiDashboardActions projectId={projectId} getData={() => reportSnapshot(widgets, fields, records, members)} />}
+        {workspaceId && widgets.length > 0 && (
+          <AiReportButton workspaceId={workspaceId} targetKind="project" targetId={projectId} getData={() => reportSnapshot(widgets, fields, records, members)} getCharts={() => captureCharts(gridRef.current)} />
+        )}
+        {workspaceId && <ReportLibraryButton workspaceId={workspaceId} projectId={projectId} />}
         {canEdit && (
           <AiBuildWidgetsButton
             target="report"
@@ -205,6 +213,7 @@ export function ReportView({
       )}
 
       {widgets.length > 0 && <p className="text-[11px] text-neutral-400 mb-1">{canEdit ? t("seg.hint") : t("seg.hintView")}</p>}
+      <div ref={gridRef}>
       <Grid
         className="layout woli-grid -mx-2.5"
         layouts={{ md: layout, xs: [...layout].sort((a, b) => a.y - b.y || a.x - b.x).map((l, i) => ({ ...l, x: 0, y: i * 10, w: 1 })) }}
@@ -220,7 +229,7 @@ export function ReportView({
         onResizeStop={(l) => saveLayout(l)}
       >
         {widgets.map((w) => (
-          <div key={w.id} className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col overflow-hidden" data-testid="report-widget">
+          <div key={w.id} className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 flex flex-col overflow-hidden" data-testid="report-widget" data-report-chart data-chart-id={w.id} data-chart-title={w.title || t(`report.type.${w.type}`)}>
             <div className={cn("flex items-center gap-1.5 px-4 pt-3 pb-2 shrink-0", canEdit && "report-drag cursor-grab active:cursor-grabbing")}>
               {canEdit && <GripVertical size={13} className="text-neutral-300 shrink-0 -ml-1.5" />}
               <h3 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100 truncate flex-1">{w.title || t(`report.type.${w.type}`)}</h3>
@@ -249,6 +258,7 @@ export function ReportView({
           </div>
         ))}
       </Grid>
+      </div>
 
       <SegmentPreview state={preview} onClose={() => setPreview(null)} onOpenTask={onOpenRecord ? (task) => { setPreview(null); onOpenRecord(task.id); } : undefined} />
 

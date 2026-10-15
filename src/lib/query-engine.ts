@@ -87,7 +87,7 @@ export interface ViewConfig {
   report?: ReportConfig;
 }
 
-export type ReportChartType = "kpi" | "bar" | "column" | "stacked_column" | "stacked_bar" | "line" | "area" | "pie" | "donut" | "pivot";
+export type ReportChartType = "kpi" | "bar" | "column" | "stacked_column" | "stacked_bar" | "line" | "area" | "pie" | "donut" | "pivot" | "narrative";
 
 /** One chart / pivot in a Report view. Computed client-side from the view's (filtered) tasks. */
 export interface ReportWidget {
@@ -102,6 +102,8 @@ export interface ReportWidget {
   sortDesc?: boolean;
   topN?: number;
   wide?: boolean;
+  /** AI narrative widget: optional focus for the AI. */
+  prompt?: string;
   /** Position/size on the report's 12-column grid (set by dragging / resizing). */
   layout?: { x: number; y: number; w: number; h: number };
 }

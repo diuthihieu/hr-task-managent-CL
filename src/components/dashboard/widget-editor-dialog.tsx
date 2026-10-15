@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
+import { NARRATIVE_PROMPT_MAX } from "@/lib/ai/report-limits";
 import { Select } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api-client";
@@ -114,6 +115,13 @@ export function WidgetEditorDialog({
             />
           </div>
 
+          {draft.type === "narrative" ? (
+            <div>
+              <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("narr.instruction")}</label>
+              <Textarea rows={3} value={draft.config.prompt ?? ""} maxLength={NARRATIVE_PROMPT_MAX} onChange={(e) => patchConfig({ prompt: e.target.value })} placeholder={t("narr.instructionPh")} data-testid="narrative-prompt" />
+              <p className="text-[11px] text-neutral-500 mt-1">{t("narr.hint")}</p>
+            </div>
+          ) : (<>
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.project")}</label>
@@ -297,6 +305,7 @@ export function WidgetEditorDialog({
               )}
             </>
           )}
+          </>)}
 
           <details className="rounded-lg border border-neutral-200 dark:border-neutral-800" open>
             <summary className="cursor-pointer select-none px-3 py-2 text-xs font-semibold text-neutral-700 dark:text-neutral-200">{t("db.style.title")}</summary>
@@ -413,7 +422,7 @@ export function WidgetEditorDialog({
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={() => onSave(draft)} disabled={!projectId}>
+          <Button onClick={() => onSave(draft)} disabled={!projectId && draft.type !== "narrative"}>
             {t("common.save")}
           </Button>
         </div>

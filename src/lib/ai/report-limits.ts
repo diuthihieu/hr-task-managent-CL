@@ -15,3 +15,6 @@ export function cleanFileName(v: string): string {
     .trim()
     .slice(0, REPORT_FILENAME_MAX);
 }
+
+/** Focus instruction on an AI Narrative widget. */
+export const NARRATIVE_PROMPT_MAX = 500;

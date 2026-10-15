@@ -12,6 +12,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { WidgetCard, type DashboardBlockLite, type DataResponse } from "./widget-card";
 import { AiDashboardActions, AiBuildWidgetsButton } from "@/components/ai/ai-actions";
 import { AiReportButton, ReportLibraryButton, captureCharts } from "@/components/ai/ai-report";
+import { AiNarrative } from "@/components/ai/ai-narrative";
 import { WidgetEditorDialog, type BlockDraft } from "./widget-editor-dialog";
 import { DashboardFilterBar } from "./filter-bar";
 import type { CrossFilter, SeriesPoint, Segment, SegmentTask } from "@/lib/dashboard-engine";
@@ -61,6 +62,14 @@ export function DashboardWorkspace({
   const [loading, setLoading] = useState(true);
   const widgetData = useRef(new Map<string, DataResponse>());
   const gridRef = useRef<HTMLDivElement>(null);
+  // AI narrative input: a snapshot of the other widgets, refreshed (debounced) as their data arrives.
+  const [narrativeData, setNarrativeData] = useState("");
+  const narrativeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const snapshotRef = useRef<() => string>(() => "");
+  const queueNarrative = useCallback(() => {
+    if (narrativeTimer.current) clearTimeout(narrativeTimer.current);
+    narrativeTimer.current = setTimeout(() => setNarrativeData(snapshotRef.current()), 800);
+  }, []);
   const [preview, setPreview] = useState<(SegmentPreviewState & { block: DashboardBlockLite }) | null>(null);
 
   async function openSegment(block: DashboardBlockLite, segment: Segment) {
@@ -207,6 +216,7 @@ export function DashboardWorkspace({
     if (slicers.length) lines.push(`Filters: ${slicers.map((s) => `${s.fieldName}=${s.label}`).join(", ")}`);
     if (crossFilter) lines.push(`Cross-filter: ${crossFilter.filter.fieldName}=${crossFilter.filter.label}`);
     for (const b of dashboard.blocks) {
+      if (b.type === "narrative") continue;
       const d = widgetData.current.get(b.id);
       lines.push(`\n## ${b.title || "Untitled"} (${b.type})`);
       if (!d) lines.push("(not loaded)");
@@ -218,6 +228,8 @@ export function DashboardWorkspace({
     }
     return lines.join("\n");
   }
+
+  snapshotRef.current = snapshot;
 
   if (loading && !dashboard) {
     return <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm">{t("db.loading")}</div>;
@@ -345,7 +357,11 @@ export function DashboardWorkspace({
                   onDelete={() => deleteWidget(block.id)}
                   onCrossFilter={(point) => handleCrossFilterClick(block, point)}
                   crossFilterActive={crossFilter?.sourceBlockId === block.id ? crossFilter.filter.label : null}
-                  onData={(d) => widgetData.current.set(block.id, d)}
+                  onData={(d) => {
+                    widgetData.current.set(block.id, d);
+                    queueNarrative();
+                  }}
+                  narrative={block.type === "narrative" ? <AiNarrative targetKind="dashboard" targetId={dashboardId} data={narrativeData} instruction={parseBlockConfig(block.config).prompt} /> : undefined}
                   onSegmentClick={(segment) => openSegment(block, segment)}
                 />
               </div>

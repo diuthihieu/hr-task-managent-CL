@@ -15,8 +15,8 @@ import { logActivity } from "@/lib/activity";
 
 export const maxDuration = 120;
 
-const DASH_TYPES = ["kpi", "table", "bar", "column", "stacked_column", "stacked_bar", "line", "area", "pie", "donut", "funnel", "gauge"] as const;
-const REPORT_TYPES = ["kpi", "bar", "column", "stacked_column", "stacked_bar", "line", "area", "pie", "donut", "pivot"] as const;
+const DASH_TYPES = ["kpi", "table", "bar", "column", "stacked_column", "stacked_bar", "line", "area", "pie", "donut", "funnel", "gauge", "narrative"] as const;
+const REPORT_TYPES = ["kpi", "bar", "column", "stacked_column", "stacked_bar", "line", "area", "pie", "donut", "pivot", "narrative"] as const;
 const AGGS = ["count", "sum", "avg", "min", "max"] as const;
 const NUMERIC = new Set(["number", "integer", "percent", "currency", "progress", "rating", "duration"]);
 const DATE = new Set(["date", "datetime", "created_time", "modified_time"]);
@@ -48,6 +48,7 @@ interface Spec {
   sortDesc?: boolean;
   topN?: number;
   width?: string;
+  prompt?: string;
 }
 
 /**
@@ -91,7 +92,7 @@ Answer ONLY with JSON: {"name":"<short dashboard name in the user's language>","
 Rules:
 - Layout: widgets fill a 12-column grid row by row. Use "width" to match the described layout (a KPI row of 4 cards = 4 x "quarter"; a 40%/60% split = "third" + "two_thirds"; a full-width trend = "full"). Default: kpi "quarter", other charts "half".
 - When part of the request can't be built from the catalog (e.g. data that isn't a field), skip it or use the closest available chart; never invent ids.
-- Chart types allowed: ${types.join(", ")}. "kpi" needs no dimension. ${body.target === "report" ? '"pivot" needs dimensionFieldId and dimension2FieldId.' : ""} Stacked charts need dimension2FieldId.
+- Chart types allowed: ${types.join(", ")}. "kpi" needs no dimension. "narrative" is an AI-written commentary card that re-reads the other widgets and updates itself with the data: add one when the request asks for analysis, commentary, insights or a summary text; it needs no fields, only an optional "prompt" (its focus, in the user's language). ${body.target === "report" ? '"pivot" needs dimensionFieldId and dimension2FieldId.' : ""} Stacked charts need dimension2FieldId.
 - Use ONLY project ids and field ids from the catalog. Measures must be "number" fields; count needs no measure.
 - Titles are short, in the user's language.
 CATALOG:
@@ -110,6 +111,8 @@ ${JSON.stringify(catalog)}`;
       const dim2 = field(w.dimension2FieldId);
       const measure = field(w.measureFieldId);
       const aggregation = (AGGS as readonly string[]).includes(w.aggregation ?? "") && (w.aggregation === "count" || measure?.kind === "number") ? w.aggregation! : "count";
+      if (type === "narrative")
+        return { title: String(w.title ?? "").slice(0, 120) || t("report.type.narrative"), type, projectId: project.id, dimensionFieldId: undefined, dimension2FieldId: undefined, measureFieldId: undefined, aggregation: "count" as const, dateBucket: undefined, sortDesc: true, topN: undefined, width: WIDTHS[w.width ?? ""] ?? 12, prompt: typeof w.prompt === "string" ? w.prompt.slice(0, 500) : undefined };
       if (type !== "kpi" && !dim) return null;
       if ((type === "pivot" || type.startsWith("stacked")) && !dim2) return null;
       return {

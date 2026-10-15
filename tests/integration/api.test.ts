@@ -1343,6 +1343,14 @@ test("AI PDF report: writes with chart markers; the report library is private to
   assert.equal((await outsider.get(`/api/workspaces/${s.ws}/saved-reports`)).status, 404);
   assert.equal((await admin.post(`/api/workspaces/${s.ws}/saved-reports`, { title: "x", fileName: "x", content: "x", charts: [{ id: "a", title: "a", svg: "x".repeat(400_001) }] })).status, 400, "chart size limit");
   assert.equal((await admin.del(`/api/saved-reports/${saved.body.id}`)).status, 200);
+
+  // AI narrative card: reads the dashboard snapshot, with an optional focus; same access rules.
+  const narr = await viewer.post<{ text: string; at: string }>("/api/ai/narrative", { targetKind: "project", targetId: s.project, data, instruction: "overdue risks" });
+  assert.equal(narr.status, 200, JSON.stringify(narr.body));
+  assert.ok(narr.body.text && narr.body.at);
+  assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /overdue risks[\s\S]*Done 3/, "focus and data reach the model");
+  assert.equal((await outsider.post("/api/ai/narrative", { targetKind: "project", targetId: s.project, data })).status, 404);
+  assert.equal((await viewer.post("/api/ai/narrative", { targetKind: "project", targetId: s.project, data, instruction: "x".repeat(501) })).status, 400);
   assert.equal((await admin.get(`/api/saved-reports/${saved.body.id}`)).status, 404);
 });
 

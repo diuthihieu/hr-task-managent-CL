@@ -9,7 +9,7 @@ import { ChartRenderer } from "@/components/dashboard/chart-renderer";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Input, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/misc";
 import { useT } from "@/components/i18n-provider";
 import { computeSeries, computeStackedSeries, computeKpi, recordsInSegment, summarizeSegmentTasks, type DashboardBlockConfig, type Segment } from "@/lib/dashboard-engine";
@@ -19,13 +19,15 @@ import type { TFunction } from "@/lib/i18n/core";
 import { cn } from "@/lib/utils";
 import { AiDashboardActions, AiBuildWidgetsButton } from "@/components/ai/ai-actions";
 import { AiReportButton, ReportLibraryButton, captureCharts } from "@/components/ai/ai-report";
+import { AiNarrative } from "@/components/ai/ai-narrative";
+import { NARRATIVE_PROMPT_MAX } from "@/lib/ai/report-limits";
 import type { FieldRow, RecordRow } from "@/types";
 
 const NUMERIC_TYPES = ["number", "currency", "percent", "rating", "progress", "integer"];
 const DIMENSION_TYPES = ["status", "single_select", "multi_select", "people", "person", "date", "datetime", "created_time", "modified_time", "created_by", "okr_target", "importance", "urgency", "text", "checkbox"];
 const DATE_TYPES = ["date", "datetime", "created_time", "modified_time"];
 const STACKED: ReportChartType[] = ["stacked_column", "stacked_bar", "pivot"];
-const CHART_TYPES: ReportChartType[] = ["column", "bar", "stacked_column", "stacked_bar", "line", "area", "pie", "donut", "pivot", "kpi"];
+const CHART_TYPES: ReportChartType[] = ["column", "bar", "stacked_column", "stacked_bar", "line", "area", "pie", "donut", "pivot", "kpi", "narrative"];
 
 const Grid = WidthProvider(Responsive);
 const ROW_HEIGHT = 32;
@@ -94,6 +96,7 @@ function presets(fields: FieldRow[], t: TFunction): ReportWidget[] {
 function reportSnapshot(widgets: ReportWidget[], fields: FieldRow[], records: RecordRow[], members: MemberLite[]): string {
   const lines = [`Tasks in view: ${records.length}`];
   for (const w of widgets) {
+    if (w.type === "narrative") continue;
     const block = toBlock(w);
     lines.push(`\n## ${w.title || w.type} (${w.type})`);
     if (w.type === "kpi") lines.push(`Value: ${computeKpi(records, fields, block)}`);
@@ -131,6 +134,9 @@ export function ReportView({
   const { t } = useT();
   const widgets = useMemo(() => config.widgets ?? [], [config.widgets]);
   const gridRef = useRef<HTMLDivElement>(null);
+  // What the AI narrative reads: every other widget's numbers for the tasks in view.
+  const hasNarrative = widgets.some((w) => w.type === "narrative");
+  const narrativeData = useMemo(() => (hasNarrative && widgets.some((w) => w.type !== "narrative") ? reportSnapshot(widgets, fields, records, members) : ""), [hasNarrative, widgets, fields, records, members]);
   const [editing, setEditing] = useState<ReportWidget | null>(null);
 
   function saveWidget(input: ReportWidget) {
@@ -253,7 +259,11 @@ export function ReportView({
               )}
             </div>
             <div className="flex-1 min-h-0 px-4 pb-3 flex flex-col">
-              <WidgetBody widget={w} fields={fields} records={records} members={members} onSegment={(seg) => openSegment(w, seg)} />
+              {w.type === "narrative" ? (
+                <AiNarrative targetKind="project" targetId={projectId} data={narrativeData} instruction={w.prompt} />
+              ) : (
+                <WidgetBody widget={w} fields={fields} records={records} members={members} onSegment={(seg) => openSegment(w, seg)} />
+              )}
             </div>
           </div>
         ))}
@@ -396,6 +406,14 @@ function WidgetEditor({ widget, fields, onClose, onSave }: { widget: ReportWidge
               ))}
             </div>
           </div>
+          {draft.type === "narrative" && (
+            <div>
+              <label className={label}>{t("narr.instruction")}</label>
+              <Textarea rows={3} value={draft.prompt ?? ""} maxLength={NARRATIVE_PROMPT_MAX} onChange={(e) => patch({ prompt: e.target.value })} placeholder={t("narr.instructionPh")} data-testid="narrative-prompt" />
+              <p className="text-[11px] text-neutral-500 mt-1">{t("narr.hint")}</p>
+            </div>
+          )}
+          {draft.type !== "narrative" && (<>
           {draft.type !== "kpi" && (
             <div>
               <label className={label}>{t("report.f.groupBy")}</label>
@@ -442,10 +460,11 @@ function WidgetEditor({ widget, fields, onClose, onSave }: { widget: ReportWidge
               </label>
             </div>
           )}
+          </>)}
         </div>
         <div className="flex justify-end gap-2 mt-4">
           <Button variant="secondary" onClick={onClose}>{t("common.cancel")}</Button>
-          <Button onClick={() => onSave({ ...draft, title: draft.title.trim() })} disabled={draft.type !== "kpi" && !draft.dimensionFieldId} data-testid="report-save">
+          <Button onClick={() => onSave({ ...draft, title: draft.title.trim() })} disabled={draft.type !== "kpi" && draft.type !== "narrative" && !draft.dimensionFieldId} data-testid="report-save">
             {t("common.save")}
           </Button>
         </div>

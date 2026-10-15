@@ -161,6 +161,7 @@ export function AskBrain({ workspaceId }: { workspaceId: string }) {
             <Textarea
               rows={2}
               value={question}
+              maxLength={4000}
               onChange={(e) => setQuestion(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {

@@ -253,7 +253,15 @@ export function DashboardWorkspace({
         )}
         <div className="ml-auto flex items-center gap-1.5">
           {dashboard.blocks.length > 0 && <AiDashboardActions dashboardId={dashboardId} getData={snapshot} />}
-          {canEdit && <AiBuildWidgetsButton target="dashboard" dashboardId={dashboardId} onBuilt={() => load()} />}
+          {canEdit && <AiBuildWidgetsButton
+              target="dashboard"
+              dashboardId={dashboardId}
+              onBuilt={() => load()}
+              onCreatedDashboard={(id) => {
+                router.push(`/w/${workspaceSlug}/dash/${id}`);
+                router.refresh();
+              }}
+            />}
           {canEdit && <Button size="sm" onClick={addWidget}>
             <Plus size={13} /> {t("db.addWidget")}
           </Button>}

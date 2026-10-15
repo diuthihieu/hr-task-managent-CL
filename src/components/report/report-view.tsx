@@ -169,7 +169,12 @@ export function ReportView({
           <AiBuildWidgetsButton
             target="report"
             projectId={projectId}
-            onBuilt={(ws) => onConfigChange({ ...config, widgets: [...widgets, ...(ws as unknown as ReportWidget[])] })}
+            onBuilt={(ws) => {
+              // AI lays its widgets out from y=0; put them below what's already there.
+              const bottom = layout.reduce((m, l) => Math.max(m, l.y + l.h), 0);
+              const added = (ws as unknown as ReportWidget[]).map((w) => (w.layout ? { ...w, layout: { ...w.layout, y: w.layout.y + bottom } } : w));
+              onConfigChange({ ...config, widgets: [...widgets, ...added] });
+            }}
           />
         )}
         {canEdit && (

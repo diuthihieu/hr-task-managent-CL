@@ -83,9 +83,10 @@ http
           : brain
           ? brain
           : catalog
-          ? { widgets: [
-              { title: "Tasks by status", type: "pie", projectId, dimensionFieldId: "sys_status", aggregation: "count" },
-              { title: "Hours by assignee", type: "bar", projectId, dimensionFieldId: "sys_assignees", measureFieldId: "sys_estimate", aggregation: "sum" },
+          ? { name: "HR ops (AI)", widgets: [
+              { title: "Total tasks", type: "kpi", projectId, aggregation: "count", width: "quarter" },
+              { title: "Tasks by status", type: "pie", projectId, dimensionFieldId: "sys_status", aggregation: "count", width: "half" },
+              { title: "Hours by assignee", type: "bar", projectId, dimensionFieldId: "sys_assignees", measureFieldId: "sys_estimate", aggregation: "sum", width: "full" },
               { title: "Made-up field", type: "bar", projectId, dimensionFieldId: "sys_nope", aggregation: "count" },
             ] }
           : { items: [{ title: "Draft the checklist", estimateHours: 2, note: "" }, { title: "Review with the manager", estimateHours: 1, note: "30 min" }] };

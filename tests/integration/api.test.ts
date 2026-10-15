@@ -1287,14 +1287,31 @@ test("embedded AI actions: grounded in the target, personalized, and never outsi
 });
 
 test("AI dashboard builder: only valid chart specs over real fields are kept", async () => {
-  const rep = await admin.post<{ widgets: { id: string; dimensionFieldId: string }[] }>("/api/ai/build-widgets", { target: "report", projectId: s.project, prompt: "status overview and workload" });
+  const rep = await admin.post<{ widgets: { id: string; type: string; dimensionFieldId?: string; layout: { x: number; y: number; w: number; h: number } }[] }>("/api/ai/build-widgets", { target: "report", projectId: s.project, prompt: "status overview and workload" });
   assert.equal(rep.status, 200, JSON.stringify(rep.body));
-  assert.deepEqual(rep.body.widgets.map((w) => w.dimensionFieldId), ["sys_status", "sys_assignees"], "the made-up field is dropped");
+  assert.deepEqual(rep.body.widgets.map((w) => w.dimensionFieldId ?? w.type), ["kpi", "sys_status", "sys_assignees"], "the made-up field is dropped");
+  assert.deepEqual(rep.body.widgets.map((w) => [w.layout.x, w.layout.y, w.layout.w]), [[0, 0, 3], [3, 0, 6], [0, 10, 12]], "width hints become a row-by-row layout");
+  assert.equal((await admin.post("/api/ai/build-widgets", { target: "report", projectId: s.project, prompt: "x".repeat(6001) })).status, 400, "prompt limit");
   assert.equal((await viewer.post("/api/ai/build-widgets", { target: "report", projectId: s.project, prompt: "status overview" })).status, 403, "editors only");
   const d = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/dashboards`, { name: "AI built" });
   const built = await admin.post<{ widgets: unknown[] }>("/api/ai/build-widgets", { target: "dashboard", dashboardId: d.body.id, prompt: "status overview" });
   assert.equal(built.status, 201, JSON.stringify(built.body));
-  assert.equal(await prisma.dashboardWidget.count({ where: { dashboardId: d.body.id } }), 2);
+  assert.equal(await prisma.dashboardWidget.count({ where: { dashboardId: d.body.id } }), 3);
+  // Append stacks below; replace swaps the whole set; new builds a separate dashboard.
+  await admin.post("/api/ai/build-widgets", { target: "dashboard", dashboardId: d.body.id, prompt: "status overview", mode: "append" });
+  const stacked = await prisma.dashboardWidget.findMany({ where: { dashboardId: d.body.id }, orderBy: { sortOrder: "asc" } });
+  assert.equal(stacked.length, 6);
+  assert.ok(stacked[3].y >= stacked[2].y + stacked[2].h, "appended widgets go below the existing ones");
+  await admin.post("/api/ai/build-widgets", { target: "dashboard", dashboardId: d.body.id, prompt: "status overview", mode: "replace" });
+  assert.equal(await prisma.dashboardWidget.count({ where: { dashboardId: d.body.id } }), 3, "replace keeps only the new layout");
+  const fresh = await admin.post<{ dashboardId: string; widgets: unknown[] }>("/api/ai/build-widgets", { target: "dashboard", dashboardId: d.body.id, prompt: "a full HR dashboard", mode: "new" });
+  assert.equal(fresh.status, 201, JSON.stringify(fresh.body));
+  assert.notEqual(fresh.body.dashboardId, d.body.id);
+  const dash = await prisma.dashboard.findUniqueOrThrow({ where: { id: fresh.body.dashboardId }, include: { _count: { select: { widgets: true } } } });
+  assert.equal(dash.name, "HR ops (AI)");
+  assert.equal(dash._count.widgets, 3);
+  assert.equal(await prisma.dashboardWidget.count({ where: { dashboardId: d.body.id } }), 3, "the original dashboard is untouched");
+  assert.equal((await viewer.post("/api/ai/build-widgets", { target: "dashboard", dashboardId: d.body.id, prompt: "a new dashboard", mode: "new" })).status, 403, "editors only");
 });
 
 test("wiki comments: mentions, replies, delete rights, and the wiki AI reads the discussion", async () => {

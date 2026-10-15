@@ -19,8 +19,14 @@ export const POST = route(async (req) => {
   if (!user) throw new HttpError(400, "This reset link is invalid, already used or expired - ask for a new one", "invalid_token");
   const passwordHash = await hashPassword(password);
   await prisma.$transaction(async (tx) => {
+    // Single use even under concurrent requests: only the row still carrying the
+    // password + session version the token was checked against is updated.
     // Opening the emailed link proves the address, so it also counts as verification.
-    await tx.user.update({ where: { id: user.id }, data: { passwordHash, mustChangePassword: false, sessionVersion: { increment: 1 }, ...(user.emailVerifiedAt ? {} : { emailVerifiedAt: new Date() }) } });
+    const r = await tx.user.updateMany({
+      where: { id: user.id, passwordHash: user.passwordHash, sessionVersion: user.sessionVersion },
+      data: { passwordHash, mustChangePassword: false, sessionVersion: { increment: 1 }, ...(user.emailVerifiedAt ? {} : { emailVerifiedAt: new Date() }) },
+    });
+    if (r.count !== 1) throw new HttpError(400, "This reset link is invalid, already used or expired - ask for a new one", "invalid_token");
     await logActivity(tx, { workspaceId: null, actorId: user.id, entityType: "user", entityId: user.id, action: "password_reset", summary: "Reset password from emailed link" });
   });
   await logSecurityEvent(user.id, "password_reset", "Password reset from emailed link", req);

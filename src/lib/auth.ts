@@ -48,24 +48,25 @@ async function upsertGoogleUser(p: { sub: string; email: string; name: string })
 }
 
 /**
- * Finds or creates the account for a Microsoft identity. An existing account
- * with the same email is linked only when that email is trusted (see
- * microsoft-identity.ts); otherwise the sign-in is refused rather than letting
- * an unverified address take over someone's account.
+ * Finds or creates the account for a Microsoft identity. The email must be
+ * trusted (see microsoft-identity.ts) to create or link an account; otherwise
+ * the sign-in is refused rather than letting an unverified address claim one.
  */
 async function upsertMicrosoftUser(id: { key: string; email: string; name: string; emailTrusted: boolean }): Promise<{ user?: Awaited<ReturnType<typeof prisma.user.findUnique>>; error?: string }> {
   const byKey = await prisma.user.findUnique({ where: { microsoftSub: id.key } });
   if (byKey) return { user: byKey };
   if (!id.email) return { error: "microsoft_no_email" };
+  // An unverified email is never bound to a local account, new or existing:
+  // otherwise any tenant admin could pre-register someone else's address.
+  if (!id.emailTrusted) return { error: "microsoft_unverified" };
   const byEmail = await prisma.user.findUnique({ where: { email: id.email } });
   if (byEmail) {
     if (!byEmail.isActive || byEmail.deletedAt) return { user: byEmail };
-    if (!id.emailTrusted) return { error: "microsoft_unverified" };
     return { user: await prisma.user.update({ where: { id: byEmail.id }, data: { microsoftSub: id.key, passwordHash: null, mustChangePassword: false, emailVerifiedAt: byEmail.emailVerifiedAt ?? new Date(), sessionVersion: { increment: 1 } } }) };
   }
   return {
     user: await prisma.user.create({
-      data: { email: id.email, name: id.name || id.email.split("@")[0], microsoftSub: id.key, passwordHash: null, mustChangePassword: false, emailVerifiedAt: id.emailTrusted ? new Date() : null, avatarColor: randomAvatarColor() },
+      data: { email: id.email, name: id.name || id.email.split("@")[0], microsoftSub: id.key, passwordHash: null, mustChangePassword: false, emailVerifiedAt: new Date(), avatarColor: randomAvatarColor() },
     }),
   };
 }

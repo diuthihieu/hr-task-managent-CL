@@ -7,6 +7,7 @@ import { mailConfigured } from "@/lib/mail";
 import { sendResetEmail } from "@/lib/password-reset";
 import { logSecurityEvent } from "@/lib/auth";
 import { emailSchema } from "@/lib/validation";
+import { appOrigin } from "@/lib/app-origin";
 
 const schema = z.object({ email: emailSchema });
 
@@ -21,7 +22,7 @@ export const POST = route(async (req) => {
   if (!(await rateLimit(`pw-reset-email:${email}`, 3, 3600_000))) return NextResponse.json({ sent: true });
   const user = await prisma.user.findFirst({ where: { email, isActive: true, deletedAt: null }, select: { id: true, email: true, name: true, locale: true, passwordHash: true, sessionVersion: true } });
   if (user) {
-    const r = await sendResetEmail(user, new URL(req.url).origin);
+    const r = await sendResetEmail(user, appOrigin(req));
     await logSecurityEvent(user.id, r.ok ? "password_reset_requested" : "password_reset_mail_failed", r.ok ? "Password reset link sent" : `Password reset email failed: ${r.error ?? "unknown"}`, req);
   }
   return NextResponse.json({ sent: true });

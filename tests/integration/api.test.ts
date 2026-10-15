@@ -2135,7 +2135,14 @@ test("forgot password: no mail → clear 503; a signed link resets once and sign
   assert.equal((await anon.post("/api/account/password-reset/confirm", { token: token + "x", password: "NewPass456" })).status, 400, "tampered");
   assert.equal((await anon.post("/api/account/password-reset/confirm", { token, password: "short" })).status, 400, "password policy");
   assert.equal((await anon.post("/api/account/password-reset/confirm", { token: resetToken(u, Date.now() - 2 * 3600_000), password: "NewPass456" })).status, 400, "expired");
-  const ok = await anon.post("/api/account/password-reset/confirm", { token, password: "NewPass456" });
+  // Two confirmations racing with the same token: exactly one wins.
+  const [ra, rb] = await Promise.all([
+    anon.post("/api/account/password-reset/confirm", { token, password: "NewPass456" }),
+    new Client().post("/api/account/password-reset/confirm", { token, password: "RacePass789" }),
+  ]);
+  assert.deepEqual([ra.status, rb.status].sort(), [200, 400], "single use under concurrency");
+  const ok = ra.status === 200 ? ra : rb;
+  const winner = ra.status === 200 ? "NewPass456" : "RacePass789";
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
   const reused = await anon.post<{ code?: string }>("/api/account/password-reset/confirm", { token, password: "Another789" });
   assert.equal(reused.status, 400, "works once");
@@ -2145,5 +2152,5 @@ test("forgot password: no mail → clear 503; a signed link resets once and sign
   assert.ok(after.emailVerifiedAt, "opening the emailed link proves the address");
   assert.equal((await other.get("/api/account/profile")).status, 401, "other devices are signed out");
   assert.equal(await new Client().login("forgetful@integration.test", "OldPass123"), false);
-  assert.ok(await new Client().login("forgetful@integration.test", "NewPass456"));
+  assert.ok(await new Client().login("forgetful@integration.test", winner));
 });

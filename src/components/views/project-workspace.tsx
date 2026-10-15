@@ -447,6 +447,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
   }
 
   const openRecord = records.find((r) => r.id === openRecordId);
+  const openPage = (id: string) => table && router.push(`/w/${table.workspace.slug}/p/${projectId}/t/${id}`);
 
   if (loading && !table) {
     return (
@@ -524,6 +525,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onConfigChange={(patch) => updateConfig({ kanban: { ...(config.kanban ?? {}), ...patch } })}
           onCellChange={handleCellChange}
           onOpenRecord={setOpenRecordId}
+          onOpenPage={openPage}
           onAddRecord={handleAddRecord}
         />
       ) : activeView?.type === "calendar" ? (
@@ -544,7 +546,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           config={config.gallery ?? {}}
           canEdit={canEdit}
           onOpenRecord={setOpenRecordId}
-          onOpenPage={(id) => router.push(`/w/${table.workspace.slug}/p/${projectId}/t/${id}`)}
+          onOpenPage={openPage}
           onRecordUpdated={(rec) => setRecords((prev) => prev.map((r) => (r.id === rec.id ? rec : r)))}
           onDeleteRecord={(id) => confirm(t("record.deleteConfirm")) && handleDeleteRecord(id)}
         />
@@ -571,6 +573,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onConfigChange={(patch) => updateConfig({ ganttConfig: { ...(config.ganttConfig ?? {}), ...patch } })}
           onCellChange={handleCellChange}
           onOpenRecord={setOpenRecordId}
+          onOpenPage={openPage}
         />
       ) : activeView?.type === "report" ? (
         <ReportView projectId={projectId} fields={fields} records={sorted} members={members} config={config.report ?? {}} canEdit={canEdit} onConfigChange={(next) => updateConfig({ report: next })} onOpenRecord={setOpenRecordId} />
@@ -584,6 +587,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onCellChange={handleCellChange}
           onCellChangeMultiple={handleCellChangeMultiple}
           onOpenRecord={setOpenRecordId}
+          onOpenPage={openPage}
           okrOptions={okrOptions}
         />
       ) : (
@@ -607,6 +611,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onRowChange={handleCellChangeMultiple}
           onAddRecord={handleAddRecord}
           onOpenRecord={setOpenRecordId}
+          onOpenPage={openPage}
           onAddField={canEdit ? handleAddField : () => toast.info(t("pw2.editorsOnly"))}
           onFieldAction={handleFieldAction}
           onReorderFields={handleReorderFields}

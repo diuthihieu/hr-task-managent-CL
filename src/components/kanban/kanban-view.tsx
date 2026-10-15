@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { DndContext, PointerSensor, useSensor, useSensors, useDraggable, useDroppable, type DragEndEvent } from "@dnd-kit/core";
-import { Plus, Maximize2, Settings2 } from "lucide-react";
+import { Plus, Settings2 } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Select } from "@/components/ui/misc";
 import { getCellValue } from "@/lib/query-engine";
@@ -11,6 +11,7 @@ import { formatDisplayValue } from "@/lib/format";
 import { cn, initials } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
 import type { Member } from "@/components/grid/cell";
+import { RecordOpenButtons, revealOn } from "@/components/grid/record-open-buttons";
 import { useT } from "@/components/i18n-provider";
 import { AvatarImg } from "@/components/ui/avatar-img";
 
@@ -31,6 +32,7 @@ export function KanbanView({
   onConfigChange,
   onCellChange,
   onOpenRecord,
+  onOpenPage,
   onAddRecord,
 }: {
   fields: FieldRow[];
@@ -40,6 +42,7 @@ export function KanbanView({
   onConfigChange: (patch: Partial<KanbanConfig>) => void;
   onCellChange: (recordId: string, fieldId: string, value: unknown) => void;
   onOpenRecord: (id: string) => void;
+  onOpenPage?: (id: string) => void;
   onAddRecord: (initialData?: Record<string, unknown>) => void;
 }) {
   const groupableFields = fields.filter((f) => GROUPABLE_TYPES.includes(f.type));
@@ -131,6 +134,7 @@ export function KanbanView({
                 members={members}
                 activeId={activeId}
                 onOpenRecord={onOpenRecord}
+                onOpenPage={onOpenPage}
                 onAddCard={() => onAddRecord(groupField ? { [groupField.id]: col.key === "__empty__" ? undefined : isMulti ? [col.key] : col.key } : undefined)}
               />
             ))}
@@ -149,6 +153,7 @@ function KanbanColumn({
   members,
   activeId,
   onOpenRecord,
+  onOpenPage,
   onAddCard,
 }: {
   column: Column;
@@ -158,6 +163,7 @@ function KanbanColumn({
   members: Member[];
   activeId: string | null;
   onOpenRecord: (id: string) => void;
+  onOpenPage?: (id: string) => void;
   onAddCard: () => void;
 }) {
   const { t } = useT();
@@ -189,6 +195,7 @@ function KanbanColumn({
             members={members}
             dragging={activeId === record.id}
             onOpen={() => onOpenRecord(record.id)}
+            onOpenPage={onOpenPage ? () => onOpenPage(record.id) : undefined}
           />
         ))}
       </div>
@@ -204,6 +211,7 @@ function KanbanCard({
   members,
   dragging,
   onOpen,
+  onOpenPage,
 }: {
   record: RecordRow;
   fields: FieldRow[];
@@ -212,6 +220,7 @@ function KanbanCard({
   members: Member[];
   dragging: boolean;
   onOpen: () => void;
+  onOpenPage?: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: record.id });
   const title = primaryField ? formatDisplayValue(primaryField, getCellValue(record, primaryField, fields), members) : "Untitled";
@@ -221,23 +230,17 @@ function KanbanCard({
       ref={setNodeRef}
       {...attributes}
       {...listeners}
+      onClick={onOpen}
+      onKeyDown={(e) => e.key === "Enter" && onOpen()}
+      data-testid="board-card"
       style={{ transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined }}
       className={cn(
         "group/card relative rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-2.5 shadow-sm cursor-grab active:cursor-grabbing touch-none",
         dragging && "opacity-40 z-20"
       )}
     >
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onOpen();
-        }}
-        onPointerDown={(e) => e.stopPropagation()}
-        className="absolute top-2 right-2 opacity-0 group-hover/card:opacity-100 text-neutral-400 hover:text-indigo-600"
-      >
-        <Maximize2 size={12} />
-      </button>
-      <div className="text-sm font-medium text-neutral-900 dark:text-neutral-50 pr-4 mb-1.5">{title || "(untitled)"}</div>
+      <RecordOpenButtons onOpen={onOpen} onOpenPage={onOpenPage} className={cn("absolute top-1.5 right-1.5 bg-white/90 dark:bg-neutral-900/90 rounded", revealOn.card)} />
+      <div className="text-sm font-medium text-neutral-900 dark:text-neutral-50 pr-10 mb-1.5">{title || "(untitled)"}</div>
       <div className="space-y-1">
         {cardFieldIds.map((fid) => {
           const field = fields.find((f) => f.id === fid);

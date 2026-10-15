@@ -78,9 +78,9 @@ export function TaskIntakeChat({
           {messages.map((m) =>
             m.role === "user" ? (
               <div key={m.id} className="flex justify-end">
-                <div className="max-w-[85%] flex flex-col items-end">
+                <div className="max-w-[85%] min-w-0 flex flex-col items-end">
                   <MessageFiles files={m.files} />
-                  <div className={cn("bg-indigo-600 text-white px-3.5 py-2 text-sm whitespace-pre-wrap", compact ? "rounded-[20px]" : "rounded-2xl rounded-br-md")} data-testid="intake-user-msg">
+                  <div className={cn("bg-indigo-600 text-white px-3.5 py-2 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]", compact ? "rounded-[20px]" : "rounded-2xl rounded-br-md")} data-testid="intake-user-msg">
                     {m.content}
                   </div>
                 </div>

@@ -139,9 +139,9 @@ export function ChatThread({
           )}
           {error && (
             <div className="rounded-lg bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-sm px-3 py-2 space-y-2" data-testid="ai-error">
-              {errorStatus === 503 || errorStatus === 429 ? (
+              {errorStatus === 503 || errorStatus === 429 || errorStatus === 504 ? (
                 <>
-                  <div className="font-medium">{errorStatus === 503 ? t("ai.busy") : t("ai.quota")}</div>
+                  <div className="font-medium">{errorStatus === 504 ? t("ai.slow") : errorStatus === 503 ? t("ai.busy") : t("ai.quota")}</div>
                   {failedText && <div className="text-xs opacity-80 italic truncate">“{failedText}”</div>}
                   <details className="text-xs opacity-80">
                     <summary className="cursor-pointer">{t("ai.details")}</summary>

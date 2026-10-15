@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, workspaceOfProject, badRequest, HttpError } from "@/lib/authz";
-import { aiConfigured, generate, type GeminiContent } from "@/lib/ai/gemini";
+import { aiConfigured, generate, type GeminiContent, ROUTE_120_BUDGET } from "@/lib/ai/gemini";
 import { draftSchema, intakeScope, sanitizeDraft, sanitizeChanges, intakeSystemPrompt, projectData, localNow } from "@/lib/ai/task-intake";
 import { naturalIntakeMessage, parseIntakeModelResponse } from "@/lib/ai/intake-response";
 import { personalPromptBlock } from "@/lib/ai/personal";
@@ -70,7 +70,7 @@ export const POST = route(async (req) => {
     i === last ? { role: m.role, parts: [...attached.parts, { text: m.content }] } : { role: m.role, parts: [...historyFileParts(m.role === "user" ? m.files : [], budget), { text: m.content }] }
   );
 
-  const r = await generate({ workspaceId, system, contents, temperature: 0.2, json: true, maxOutputTokens: 8192 });
+  const r = await generate({ workspaceId, system, contents, temperature: 0.2, json: true, maxOutputTokens: 8192, timeBudgetMs: ROUTE_120_BUDGET });
   const parsed = parseIntakeModelResponse(r.text);
   const known = ["question", "summary", "answer", "changes"] as const;
   const type = known.includes(parsed?.type as (typeof known)[number]) ? (parsed!.type as (typeof known)[number]) : "answer";

@@ -779,6 +779,29 @@ test("AI overload: busy models are retried; if Gemini stays busy nothing is save
   assert.equal(await prisma.aiConversation.count(), before + 1, "only the successful chat was saved");
 });
 
+test("AI timeout: a model that never answers gives a clear error in time, not a platform 504", async () => {
+  const before = await prisma.aiConversation.count();
+  const started = Date.now();
+  const r = await ask(admin, { kind: "assistant", workspaceId: s.ws, message: "report #hang" });
+  assert.equal(r.status, 504, r.text);
+  assert.match(JSON.parse(r.text).error, /taking too long/);
+  assert.match(JSON.parse(r.text).error, /gemini-9\.9-flash: timeout/, "says which model timed out");
+  assert.ok(Date.now() - started < 8000, "answers within the time budget (GEMINI_DEADLINE_MS=4000 in tests)");
+  assert.equal(await prisma.aiConversation.count(), before, "nothing is saved");
+
+  // 200 headers and then silence counts as not answering too.
+  const stalled = await ask(admin, { kind: "assistant", workspaceId: s.ws, message: "report #stall" });
+  assert.equal(stalled.status, 504, stalled.text);
+  assert.equal(await prisma.aiConversation.count(), before, "still nothing saved");
+
+  // Once the answer has started it may run longer than the start-up limit.
+  const slow = await ask(admin, { kind: "assistant", workspaceId: s.ws, message: "report #slow-stream" });
+  assert.equal(slow.status, 200, slow.text);
+  assert.equal(slow.text, "Slow but complete.", "not cut off by the start-up timer");
+  // Don't let this probe use up the admin's daily AI quota (AI_DAILY_LIMIT=6) needed by later tests.
+  await prisma.aiConversation.delete({ where: { id: slow.conversationId! } });
+});
+
 test("AI assistant: answers from what the user may see, declines the rest, and enforces a daily quota", async () => {
   // Hide the other project from the viewer: its tasks must not reach the model.
   await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId] });

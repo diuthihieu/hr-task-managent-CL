@@ -3,7 +3,7 @@ import type { AgentOriginType } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfTask, workspaceOfObjective, workspaceOfWikiPage, workspaceOfDashboard, workspaceOfProject, badRequest, HttpError } from "@/lib/authz";
-import { aiConfigured, generate, streamGenerate, parseJsonAnswer, type Usage } from "@/lib/ai/gemini";
+import { aiConfigured, generate, streamGenerate, parseJsonAnswer, type Usage, ROUTE_120_BUDGET } from "@/lib/ai/gemini";
 import { ACTION_INSTRUCTIONS, STRUCTURED_ACTIONS, actionSystemPrompt, taskContext, objectiveContext, wikiPageContext, myDayContext, type AiActionName } from "@/lib/ai/actions";
 import { rateLimit } from "@/lib/rate-limit";
 import { personalPromptBlock } from "@/lib/ai/personal";
@@ -101,7 +101,7 @@ export const POST = route(async (req) => {
   };
 
   if (STRUCTURED_ACTIONS.has(body.action)) {
-    const r = await generate({ workspaceId, system, contents, temperature: 0.2, json: true, maxOutputTokens: 4096 });
+    const r = await generate({ workspaceId, system, contents, temperature: 0.2, json: true, maxOutputTokens: 4096, timeBudgetMs: ROUTE_120_BUDGET });
     const parsed = parseJsonAnswer<{ items?: { title?: unknown; estimateHours?: unknown; note?: unknown }[] }>(r.text);
     const items = (parsed?.items ?? [])
       .filter((i) => typeof i.title === "string" && i.title.trim())

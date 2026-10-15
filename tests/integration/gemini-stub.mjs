@@ -39,6 +39,8 @@ http
       last = { url: req.url, apiKey: req.headers["x-goog-api-key"], body };
       const userText = body.contents?.at(-1)?.parts?.map((p) => p.text ?? "[file]").join(" ") ?? "";
       const hasFile = body.contents?.some((c) => c.parts?.some((p) => p.inlineData));
+      // A model that accepts the request and never answers.
+      if (userText.includes("#hang")) return;
       const overload = userText.includes("#overload-always") || (userText.includes("#overload-once") && !seen.has(userText));
       if (userText.includes("#overload")) seen.set(userText, (seen.get(userText) ?? 0) + 1);
       if (overload) {
@@ -94,6 +96,25 @@ http
       // Ask My Brain: cite the first source when there is one.
       const brainAnswer = system.includes("SOURCES:") ? (/\n\[S1\] [A-Z]+:/.test(system) ? `Answer from the brain [S1]. You asked: ${userText}` : `No source covers this. You asked: ${userText}`) : null;
       const answer = brainAnswer ?? (hasFile ? "Extracted text from the PDF: leave policy is 12 days per year." : ["# Stub report", "", `You asked: ${userText}`, "", "| a | b |", "|---|---|", "| 1 | 2 |"].join("\n"));
+      if (req.url.includes(":streamGenerateContent") && userText.includes("#stall")) {
+        // Headers first, then nothing: the answer never really starts.
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        return res.flushHeaders();
+      }
+      if (req.url.includes(":streamGenerateContent") && userText.includes("#slow-stream")) {
+        // A healthy answer that takes longer than one attempt's time limit (1.5 s in tests).
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        const parts = ["Slow ", "but ", "complete."];
+        let i = 0;
+        const tick = setInterval(() => {
+          res.write(`data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: parts[i] }] } }] })}\r\n\r\n`);
+          if (++i === parts.length) {
+            clearInterval(tick);
+            res.end();
+          }
+        }, 1000);
+        return;
+      }
       if (req.url.includes(":streamGenerateContent")) {
         res.writeHead(200, { "content-type": "text/event-stream" });
         const pieces = answer.match(/.{1,12}/gs) ?? [""];

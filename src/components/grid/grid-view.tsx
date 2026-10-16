@@ -16,7 +16,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ClipboardPaste, Copy, GripVertical, Info, Maximize2, Plus, ChevronDown, ChevronRight, Rows3 } from "lucide-react";
+import { ClipboardPaste, Copy, GripVertical, Info, Plus, ChevronDown, ChevronRight, Rows3 } from "lucide-react";
 import { Checkbox } from "@/components/ui/misc";
 import { Cell, CellDisplayValue, type Member, type LinkTarget, type OkrOptions } from "./cell";
 import { FieldHeaderMenu } from "./field-header-menu";
@@ -24,6 +24,7 @@ import { AddFieldButton } from "./add-field-menu";
 import { getCellValue, getConditionalStyle, type RecordGroup, type ConditionalFormatRule } from "@/lib/query-engine";
 import type { FieldRow, RecordRow } from "@/types";
 import { cn } from "@/lib/utils";
+import { RecordOpenButtons, revealOn } from "@/components/grid/record-open-buttons";
 import { useT } from "@/components/i18n-provider";
 import { toast } from "@/components/ui/toast";
 import {
@@ -60,6 +61,7 @@ interface GridViewProps {
   onRowChange: (recordId: string, patch: Record<string, unknown>) => void;
   onAddRecord: () => void;
   onOpenRecord: (id: string) => void;
+  onOpenPage?: (id: string) => void;
   onAddField: (afterFieldId: string | undefined, type: string) => void;
   onFieldAction: (fieldId: string, action: string) => void;
   onReorderFields: (orderedIds: string[]) => void;
@@ -452,7 +454,6 @@ function Row({
   frozenCount: number;
   interactions: GridInteractions;
 } & GridViewProps) {
-  const { t } = useT();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: record.id, disabled: !props.reorderable });
   const autoFit = props.rowHeight === "auto";
   const height = autoFit ? undefined : ROW_HEIGHTS[props.rowHeight] ?? 36;
@@ -511,13 +512,11 @@ function Row({
           >
             <div className={cn("flex", autoFit ? "items-start" : "h-full items-center")}>
               {field.isPrimary && (
-                <button
-                  onClick={() => props.onOpenRecord(record.id)}
-                  className={cn("opacity-0 group-hover/row:opacity-100 shrink-0 ml-1 text-neutral-400 hover:text-indigo-600", autoFit && "mt-2")}
-                  title={t("grid.expand")}
-                >
-                  <Maximize2 size={12} />
-                </button>
+                <RecordOpenButtons
+                  onOpen={() => props.onOpenRecord(record.id)}
+                  onOpenPage={props.onOpenPage ? () => props.onOpenPage?.(record.id) : undefined}
+                  className={cn("ml-1", autoFit && "mt-2", revealOn.row)}
+                />
               )}
               <div className={cn("flex-1 overflow-hidden", autoFit ? "" : "h-full")}>
                 <Cell

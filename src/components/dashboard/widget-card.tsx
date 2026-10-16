@@ -37,6 +37,7 @@ export function WidgetCard({
   onCrossFilter,
   crossFilterActive,
   onData,
+  narrative,
   onSegmentClick,
   readOnly,
 }: {
@@ -46,6 +47,8 @@ export function WidgetCard({
   onSegmentClick?: (segment: Segment) => void;
   /** Reports loaded data upward (feeds the dashboard's "AI Insight"). */
   onData?: (data: DataResponse) => void;
+  /** Body of an AI Narrative block (rendered instead of a chart). */
+  narrative?: React.ReactNode;
   block: DashboardBlockLite;
   canEdit?: boolean;
   slicers?: CrossFilter[];
@@ -58,11 +61,14 @@ export function WidgetCard({
 }) {
   const { t } = useT();
   const [data, setData] = useState<DataResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const isNarrative = block.type === "narrative";
+  const [loading, setLoading] = useState(!isNarrative);
   const config = parseBlockConfig(block.config);
   const widgetStyle = config.style;
 
   useEffect(() => {
+    // The AI narrative has no query of its own: it reads the other widgets.
+    if (block.type === "narrative") return;
     let cancelled = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching this widget's data on mount / config change is exactly what this effect is for
     setLoading(true);
@@ -84,7 +90,7 @@ export function WidgetCard({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- filter objects are rebuilt every render; JSON.stringify keeps the effect from refetching on identity changes alone
-  }, [block.id, block.config, JSON.stringify(slicers), JSON.stringify(crossFilter)]);
+  }, [block.id, block.type, block.config, JSON.stringify(slicers), JSON.stringify(crossFilter)]);
 
   const measureLabel = fieldNameLookup(config.measureFieldId) ?? AGGREGATION_LABELS[config.aggregation ?? "count"];
   const measure2Label = fieldNameLookup(config.measure2FieldId);
@@ -143,7 +149,9 @@ export function WidgetCard({
         </DropdownMenu>}
       </div>
       <div className="flex-1 min-h-0 p-2 relative">
-        {loading && !data ? (
+        {isNarrative ? (
+          <div className="h-full flex flex-col px-1">{narrative}</div>
+        ) : loading && !data ? (
           <div className="h-full w-full animate-pulse bg-neutral-100 dark:bg-neutral-800 rounded-md" />
         ) : data?.error ? (
           <div className="h-full flex items-center justify-center text-xs text-red-500">{data.error}</div>
@@ -183,10 +191,10 @@ function KpiDisplay({ value, label, trend, style, onClick }: { value: number; la
   const Tag = onClick ? "button" : "div";
   return (
     <Tag type={onClick ? "button" : undefined} onClick={onClick} className={cn("h-full w-full flex flex-col items-center justify-center rounded-md", onClick && "hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40")} data-testid="kpi-value">
-      <div className="text-3xl font-semibold text-neutral-900 dark:text-neutral-50 tabular-nums" style={{ color: style?.textColor }}>{formatted}</div>
-      {label && <div className="text-xs text-neutral-400 mt-1" style={{ color: style?.textColor }}>{label}</div>}
+      <div className="text-3xl font-semibold text-neutral-900 dark:text-neutral-50 tabular-nums" style={{ color: style?.textColor }} data-kpi-number>{formatted}</div>
+      {label && <div className="text-xs text-neutral-400 mt-1" style={{ color: style?.textColor }} data-kpi-label>{label}</div>}
       {trend && (
-        <div className={cn("mt-2 flex items-center gap-1 text-xs tabular-nums", trend.direction === "up" ? "text-emerald-600" : trend.direction === "down" ? "text-red-600" : "text-neutral-500")} title={`${t("db.kpi.previous")}: ${trend.previous.toLocaleString()}`}>
+        <div data-kpi-trend className={cn("mt-2 flex items-center gap-1 text-xs tabular-nums", trend.direction === "up" ? "text-emerald-600" : trend.direction === "down" ? "text-red-600" : "text-neutral-500")} title={`${t("db.kpi.previous")}: ${trend.previous.toLocaleString()}`}>
           <TrendIcon size={13} /> {trendText} <span className="text-neutral-400">{t("db.kpi.vsPrevious")}</span>
         </div>
       )}

@@ -1,4 +1,5 @@
 "use client";
+import { CharCount } from "@/components/ui/char-count";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Camera, Trash2, Sparkles, ShieldCheck, Check, Loader2 } from "lucide-react";
@@ -197,6 +198,7 @@ export function SettingsProfile() {
               className="w-full rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-indigo-400"
               data-testid="profile-ai-about"
             />
+            <CharCount value={v.aiAbout} max={3000} />
           </div>
           <div>
             <label className={label}>{t("profile.ai.instructions")}</label>
@@ -209,7 +211,7 @@ export function SettingsProfile() {
               className="w-full rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-indigo-400"
               data-testid="profile-ai-instructions"
             />
-            <div className="text-[10px] text-neutral-400 text-right">{(v.aiInstructions ?? "").length}/3000</div>
+            <CharCount value={v.aiInstructions} max={3000} />
           </div>
           <div>
             <label className={label}>{t("profile.ai.tone")}</label>

@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { WidgetCard, type DashboardBlockLite, type DataResponse } from "./widget-card";
 import { AiDashboardActions, AiBuildWidgetsButton } from "@/components/ai/ai-actions";
+import { AiReportButton, ReportLibraryButton, captureCharts } from "@/components/ai/ai-report";
+import { AiNarrative } from "@/components/ai/ai-narrative";
 import { WidgetEditorDialog, type BlockDraft } from "./widget-editor-dialog";
 import { DashboardFilterBar } from "./filter-bar";
 import type { CrossFilter, SeriesPoint, Segment, SegmentTask } from "@/lib/dashboard-engine";
@@ -59,6 +61,15 @@ export function DashboardWorkspace({
   const [nameDraft, setNameDraft] = useState("");
   const [loading, setLoading] = useState(true);
   const widgetData = useRef(new Map<string, DataResponse>());
+  const gridRef = useRef<HTMLDivElement>(null);
+  // AI narrative input: a snapshot of the other widgets, refreshed (debounced) as their data arrives.
+  const [narrativeData, setNarrativeData] = useState("");
+  const narrativeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const snapshotRef = useRef<() => string>(() => "");
+  const queueNarrative = useCallback(() => {
+    if (narrativeTimer.current) clearTimeout(narrativeTimer.current);
+    narrativeTimer.current = setTimeout(() => setNarrativeData(snapshotRef.current()), 800);
+  }, []);
   const [preview, setPreview] = useState<(SegmentPreviewState & { block: DashboardBlockLite }) | null>(null);
 
   async function openSegment(block: DashboardBlockLite, segment: Segment) {
@@ -205,6 +216,7 @@ export function DashboardWorkspace({
     if (slicers.length) lines.push(`Filters: ${slicers.map((s) => `${s.fieldName}=${s.label}`).join(", ")}`);
     if (crossFilter) lines.push(`Cross-filter: ${crossFilter.filter.fieldName}=${crossFilter.filter.label}`);
     for (const b of dashboard.blocks) {
+      if (b.type === "narrative") continue;
       const d = widgetData.current.get(b.id);
       lines.push(`\n## ${b.title || "Untitled"} (${b.type})`);
       if (!d) lines.push("(not loaded)");
@@ -216,6 +228,8 @@ export function DashboardWorkspace({
     }
     return lines.join("\n");
   }
+
+  snapshotRef.current = snapshot;
 
   if (loading && !dashboard) {
     return <div className="flex-1 flex items-center justify-center text-neutral-400 text-sm">{t("db.loading")}</div>;
@@ -253,7 +267,17 @@ export function DashboardWorkspace({
         )}
         <div className="ml-auto flex items-center gap-1.5">
           {dashboard.blocks.length > 0 && <AiDashboardActions dashboardId={dashboardId} getData={snapshot} />}
-          {canEdit && <AiBuildWidgetsButton target="dashboard" dashboardId={dashboardId} onBuilt={() => load()} />}
+          {dashboard.blocks.length > 0 && <AiReportButton workspaceId={workspaceId} targetKind="dashboard" targetId={dashboardId} getData={snapshot} getCharts={() => captureCharts(gridRef.current)} />}
+          <ReportLibraryButton workspaceId={workspaceId} dashboardId={dashboardId} />
+          {canEdit && <AiBuildWidgetsButton
+              target="dashboard"
+              dashboardId={dashboardId}
+              onBuilt={() => load()}
+              onCreatedDashboard={(id) => {
+                router.push(`/w/${workspaceSlug}/dash/${id}`);
+                router.refresh();
+              }}
+            />}
           {canEdit && <Button size="sm" onClick={addWidget}>
             <Plus size={13} /> {t("db.addWidget")}
           </Button>}
@@ -305,7 +329,7 @@ export function DashboardWorkspace({
             </Button>}
           </div>
         ) : (
-          <>
+          <div ref={gridRef}>
           <p className="px-1 pb-1 text-[11px] text-neutral-400">{t("seg.hint")}</p>
           <GridLayout
             className="layout woli-grid"
@@ -322,7 +346,7 @@ export function DashboardWorkspace({
             onResizeStop={(l) => persistLayout(l)}
           >
             {dashboard.blocks.map((block) => (
-              <div key={block.id}>
+              <div key={block.id} data-report-chart data-chart-id={block.id} data-chart-title={block.title}>
                 <WidgetCard
                   block={block}
                   canEdit={canEdit}
@@ -333,13 +357,17 @@ export function DashboardWorkspace({
                   onDelete={() => deleteWidget(block.id)}
                   onCrossFilter={(point) => handleCrossFilterClick(block, point)}
                   crossFilterActive={crossFilter?.sourceBlockId === block.id ? crossFilter.filter.label : null}
-                  onData={(d) => widgetData.current.set(block.id, d)}
+                  onData={(d) => {
+                    widgetData.current.set(block.id, d);
+                    queueNarrative();
+                  }}
+                  narrative={block.type === "narrative" ? <AiNarrative targetKind="dashboard" targetId={dashboardId} data={narrativeData} instruction={parseBlockConfig(block.config).prompt} /> : undefined}
                   onSegmentClick={(segment) => openSegment(block, segment)}
                 />
               </div>
             ))}
           </GridLayout>
-          </>
+          </div>
         )}
       </div>
 

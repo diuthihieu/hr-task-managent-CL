@@ -1,6 +1,6 @@
 "use client";
 import { useMemo, useRef, useState } from "react";
-import { Maximize2 } from "lucide-react";
+import { RecordOpenButtons, revealOn } from "@/components/grid/record-open-buttons";
 import { Cell, type Member, type LinkTarget } from "@/components/grid/cell";
 import { GanttSettings } from "./gantt-settings";
 import { getCellValue, type RecordGroup, type GanttConfig } from "@/lib/query-engine";
@@ -30,6 +30,7 @@ interface GanttViewProps {
   onConfigChange: (patch: Partial<GanttConfig>) => void;
   onCellChange: (recordId: string, fieldId: string, value: unknown) => void;
   onOpenRecord: (id: string) => void;
+  onOpenPage?: (id: string) => void;
 }
 
 interface Task {
@@ -59,7 +60,7 @@ function toDateOnly(iso: string | null) {
 
 export function GanttView(props: GanttViewProps) {
   const { t } = useT();
-  const { fields, groups, flatRecords, members, linkTargets, config, onConfigChange, onCellChange, onOpenRecord } = props;
+  const { fields, groups, flatRecords, members, linkTargets, config, onConfigChange, onCellChange, onOpenRecord, onOpenPage } = props;
 
   const primaryField = fields.find((f) => f.isPrimary);
   const taskField = fields.find((f) => f.id === config.taskFieldId) ?? primaryField ?? fields[0];
@@ -383,6 +384,7 @@ export function GanttView(props: GanttViewProps) {
                   dragging={dragState?.recordId === row.record.id}
                   onCellChange={onCellChange}
                   onOpenRecord={onOpenRecord}
+                  onOpenPage={onOpenPage}
                   onStartDrag={startDrag}
                 />
               )
@@ -451,6 +453,7 @@ function GanttRow({
   dragging,
   onCellChange,
   onOpenRecord,
+  onOpenPage,
   onStartDrag,
 }: {
   record: RecordRow;
@@ -466,6 +469,7 @@ function GanttRow({
   dragging: boolean;
   onCellChange: (recordId: string, fieldId: string, value: unknown) => void;
   onOpenRecord: (id: string) => void;
+  onOpenPage?: (id: string) => void;
   onStartDrag: (recordId: string, mode: "move" | "resize-start" | "resize-end", e: React.MouseEvent) => void;
 }) {
   const { t } = useT();
@@ -476,9 +480,7 @@ function GanttRow({
   return (
     <div className="flex group/gr hover:bg-neutral-50 dark:hover:bg-neutral-900/60" style={{ height: TASK_ROW_HEIGHT, width: taskColumnWidth + timelineWidth }}>
       <div className="sticky left-0 z-10 shrink-0 bg-white dark:bg-neutral-950 border-b border-r border-neutral-100 dark:border-neutral-900 flex items-center" style={{ width: taskColumnWidth }}>
-        <button onClick={() => onOpenRecord(record.id)} className="opacity-0 group-hover/gr:opacity-100 shrink-0 ml-1 text-neutral-400 hover:text-indigo-600" title={t("grid.expand")}>
-          <Maximize2 size={12} />
-        </button>
+        <RecordOpenButtons onOpen={() => onOpenRecord(record.id)} onOpenPage={onOpenPage ? () => onOpenPage(record.id) : undefined} className={cn("ml-1", revealOn.gr)} />
         <div className="flex-1 h-full overflow-hidden">
           {taskField ? <Cell field={taskField} value={task.name} record={record} members={members} linkTargets={linkTargets} onChange={(v) => onCellChange(record.id, taskField.id, v)} /> : null}
         </div>
@@ -490,6 +492,8 @@ function GanttRow({
             className={cn("absolute top-1.5 rounded-md shadow-sm cursor-grab active:cursor-grabbing flex items-center overflow-visible", dragging && "z-20 opacity-90")}
             style={{ left: rect.left, width: rect.width, height: TASK_ROW_HEIGHT - 12, backgroundColor: `${task.color}30`, border: `1.5px solid ${task.color}` }}
             onMouseDown={(e) => onStartDrag(record.id, "move", e)}
+            onDoubleClick={() => onOpenRecord(record.id)}
+            title={t("gantt.openHint")}
           >
             <div className="h-full rounded-l-md" style={{ width: `${Math.max(0, Math.min(100, task.progress ?? 0))}%`, backgroundColor: task.color }} />
             <span className="absolute left-1.5 text-[11px] font-medium text-neutral-800 dark:text-neutral-100 truncate max-w-[calc(100%-8px)] pointer-events-none">

@@ -14,6 +14,7 @@ import { Card, EmptyNote, ItemRow } from "./brain-hub";
 
 interface Week {
   weekStart: string;
+  end: string;
   newKnowledge: { id: string; title: string; href?: string; by: string | null }[];
   updatedKnowledge: { id: string; title: string; href?: string; by: string | null }[];
   meetings: { id: string; title: string; href?: string }[];
@@ -40,8 +41,11 @@ const LOOP_TONE: Record<string, string> = {
 };
 const shift = (date: string, days: number) => new Date(new Date(`${date}T00:00:00Z`).getTime() + days * 86400000).toISOString().slice(0, 10);
 
-export function WeeklyReview({ workspaceId }: { workspaceId: string }) {
-  const { t } = useT();
+export type ReviewPeriod = "week" | "month" | "year";
+
+/** Brain review of one week, month or year: what got done, decided and learned, and what is still open. */
+export function WeeklyReview({ workspaceId, period = "week" }: { workspaceId: string; period?: ReviewPeriod }) {
+  const { t, locale } = useT();
   const [week, setWeek] = useState<string | null>(null);
   const [data, setData] = useState<Week | null>(null);
   const [summary, setSummary] = useState<string | null>(null);
@@ -55,8 +59,8 @@ export function WeeklyReview({ workspaceId }: { workspaceId: string }) {
     setData(null);
     setSummary(null);
     setReflection(null);
-    api.get<Week>(`/api/workspaces/${workspaceId}/brain/weekly${week ? `?week=${week}` : ""}`).then(setData).catch(() => {});
-  }, [workspaceId, week]);
+    api.get<Week>(`/api/workspaces/${workspaceId}/brain/weekly?period=${period}${week ? `&week=${week}` : ""}`).then(setData).catch(() => {});
+  }, [workspaceId, week, period]);
   useEffect(() => {
     api
       .get<{ id: string; name: string; myRole: string | null }[]>(`/api/workspaces/${workspaceId}/wikis`)
@@ -71,7 +75,7 @@ export function WeeklyReview({ workspaceId }: { workspaceId: string }) {
   async function write() {
     setBusy(true);
     try {
-      const r = await api.post<{ markdown: string; reflection: Reflection }>(`/api/workspaces/${workspaceId}/brain/weekly/summary`, { week: data?.weekStart });
+      const r = await api.post<{ markdown: string; reflection: Reflection }>(`/api/workspaces/${workspaceId}/brain/weekly/summary`, { week: data?.weekStart, period });
       setSummary(r.markdown);
       setReflection(r.reflection);
     } catch (e) {
@@ -83,7 +87,7 @@ export function WeeklyReview({ workspaceId }: { workspaceId: string }) {
   async function saveToWiki() {
     if (!summary || !wikiId || !data) return;
     try {
-      const p = await api.post<{ id: string }>(`/api/wikis/${wikiId}/pages`, { title: t("brain.weekly.pageTitle", { date: data.weekStart }), content: markdownToHtml(summary) });
+      const p = await api.post<{ id: string }>(`/api/wikis/${wikiId}/pages`, { title: t("brain.weekly.pageTitle", { date: periodLabel }), content: markdownToHtml(summary) });
       await api.patch(`/api/wiki/${p.id}`, { kind: "note", status: "draft", sourceType: "ai_generated", sourceLabel: t("brain.weekly.title"), tags: ["weekly-review"] });
       toast.success(t("brain.weekly.saved"));
     } catch (e) {
@@ -91,14 +95,24 @@ export function WeeklyReview({ workspaceId }: { workspaceId: string }) {
     }
   }
 
+  const start = data ? new Date(`${data.weekStart}T00:00:00Z`) : null;
+  const periodLabel = !data || !start
+    ? "…"
+    : period === "week"
+      ? t("brain.weekly.weekOf", { date: data.weekStart })
+      : period === "month"
+        ? start.toLocaleDateString(locale === "vi" ? "vi-VN" : "en-GB", { month: "long", year: "numeric", timeZone: "UTC" })
+        : t("brain.review.yearOf", { year: start.getUTCFullYear() });
+  const nextLabel = period === "week" ? t("brain.weekly.sec.nextWeek") : period === "month" ? t("brain.review.nextMonth") : t("brain.review.nextYear");
+
   return (
     <div className="space-y-4" data-testid="weekly">
       <div className="flex flex-wrap items-center gap-2">
-        <Button size="icon" variant="outline" onClick={() => data && setWeek(shift(data.weekStart, -7))}>
+        <Button size="icon" variant="outline" onClick={() => data && setWeek(shift(data.weekStart, -1))} aria-label={t("brain.period.prev")}>
           <ChevronLeft size={14} />
         </Button>
-        <span className="text-sm font-medium">{data ? t("brain.weekly.weekOf", { date: data.weekStart }) : "…"}</span>
-        <Button size="icon" variant="outline" onClick={() => data && setWeek(shift(data.weekStart, 7))}>
+        <span className="text-sm font-medium capitalize" data-testid="review-period-label">{periodLabel}</span>
+        <Button size="icon" variant="outline" onClick={() => data && setWeek(data.end)} aria-label={t("brain.period.next")}>
           <ChevronRight size={14} />
         </Button>
       </div>
@@ -169,7 +183,7 @@ export function WeeklyReview({ workspaceId }: { workspaceId: string }) {
               )}
               {!!data.automation.length && <p className="text-[11px] text-neutral-500 px-2 mt-1">{t("brain.weekly.automationHint")}</p>}
             </Card>
-            <Section title={t("brain.weekly.sec.nextWeek")} icon={<ArrowRightCircle size={15} className="text-indigo-600" />} ai={reflection?.nextWeek} emptyText={t("brain.weekly.needAi")} extra={data.reviewsDue ? t("brain.weekly.reviewsDue", { n: data.reviewsDue }) : undefined} />
+            <Section title={nextLabel} icon={<ArrowRightCircle size={15} className="text-indigo-600" />} ai={reflection?.nextWeek} emptyText={t("brain.weekly.needAi")} extra={data.reviewsDue ? t("brain.weekly.reviewsDue", { n: data.reviewsDue }) : undefined} />
           </div>
         </>
       )}

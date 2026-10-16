@@ -1287,14 +1287,73 @@ test("embedded AI actions: grounded in the target, personalized, and never outsi
 });
 
 test("AI dashboard builder: only valid chart specs over real fields are kept", async () => {
-  const rep = await admin.post<{ widgets: { id: string; dimensionFieldId: string }[] }>("/api/ai/build-widgets", { target: "report", projectId: s.project, prompt: "status overview and workload" });
+  const rep = await admin.post<{ widgets: { id: string; type: string; dimensionFieldId?: string; layout: { x: number; y: number; w: number; h: number } }[] }>("/api/ai/build-widgets", { target: "report", projectId: s.project, prompt: "status overview and workload" });
   assert.equal(rep.status, 200, JSON.stringify(rep.body));
-  assert.deepEqual(rep.body.widgets.map((w) => w.dimensionFieldId), ["sys_status", "sys_assignees"], "the made-up field is dropped");
+  assert.deepEqual(rep.body.widgets.map((w) => w.dimensionFieldId ?? w.type), ["kpi", "sys_status", "sys_assignees"], "the made-up field is dropped");
+  assert.deepEqual(rep.body.widgets.map((w) => [w.layout.x, w.layout.y, w.layout.w]), [[0, 0, 3], [3, 0, 6], [0, 10, 12]], "width hints become a row-by-row layout");
+  assert.equal((await admin.post("/api/ai/build-widgets", { target: "report", projectId: s.project, prompt: "x".repeat(6001) })).status, 400, "prompt limit");
   assert.equal((await viewer.post("/api/ai/build-widgets", { target: "report", projectId: s.project, prompt: "status overview" })).status, 403, "editors only");
   const d = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/dashboards`, { name: "AI built" });
   const built = await admin.post<{ widgets: unknown[] }>("/api/ai/build-widgets", { target: "dashboard", dashboardId: d.body.id, prompt: "status overview" });
   assert.equal(built.status, 201, JSON.stringify(built.body));
-  assert.equal(await prisma.dashboardWidget.count({ where: { dashboardId: d.body.id } }), 2);
+  assert.equal(await prisma.dashboardWidget.count({ where: { dashboardId: d.body.id } }), 3);
+  // Append stacks below; replace swaps the whole set; new builds a separate dashboard.
+  await admin.post("/api/ai/build-widgets", { target: "dashboard", dashboardId: d.body.id, prompt: "status overview", mode: "append" });
+  const stacked = await prisma.dashboardWidget.findMany({ where: { dashboardId: d.body.id }, orderBy: { sortOrder: "asc" } });
+  assert.equal(stacked.length, 6);
+  assert.ok(stacked[3].y >= stacked[2].y + stacked[2].h, "appended widgets go below the existing ones");
+  await admin.post("/api/ai/build-widgets", { target: "dashboard", dashboardId: d.body.id, prompt: "status overview", mode: "replace" });
+  assert.equal(await prisma.dashboardWidget.count({ where: { dashboardId: d.body.id } }), 3, "replace keeps only the new layout");
+  const fresh = await admin.post<{ dashboardId: string; widgets: unknown[] }>("/api/ai/build-widgets", { target: "dashboard", dashboardId: d.body.id, prompt: "a full HR dashboard", mode: "new" });
+  assert.equal(fresh.status, 201, JSON.stringify(fresh.body));
+  assert.notEqual(fresh.body.dashboardId, d.body.id);
+  const dash = await prisma.dashboard.findUniqueOrThrow({ where: { id: fresh.body.dashboardId }, include: { _count: { select: { widgets: true } } } });
+  assert.equal(dash.name, "HR ops (AI)");
+  assert.equal(dash._count.widgets, 3);
+  assert.equal(await prisma.dashboardWidget.count({ where: { dashboardId: d.body.id } }), 3, "the original dashboard is untouched");
+  assert.equal((await viewer.post("/api/ai/build-widgets", { target: "dashboard", dashboardId: d.body.id, prompt: "a new dashboard", mode: "new" })).status, 403, "editors only");
+});
+
+test("AI PDF report: writes with chart markers; the report library is private to its creator", async () => {
+  const data = "Tasks by status: Done 3, In progress 2";
+  const gen = await admin.post<{ title: string; fileName: string; markdown: string; header: { workspace: string; author: string } }>("/api/ai/report", {
+    targetKind: "project", targetId: s.project, prompt: "Monthly report with all charts", fileName: "CB/report:10", data, charts: [{ id: "w1", title: "Tasks by status" }],
+  });
+  assert.equal(gen.status, 200, JSON.stringify(gen.body));
+  assert.match(gen.body.markdown, /\[\[chart:w1\]\]/, "the report places the chart");
+  assert.equal(gen.body.fileName, "CB report 10", "unsafe file name characters are removed");
+  assert.ok(gen.body.header.workspace && gen.body.header.author);
+  assert.equal((await outsider.post("/api/ai/report", { targetKind: "project", targetId: s.project, prompt: "report please", data, charts: [] })).status, 404);
+  assert.equal((await admin.post("/api/ai/report", { targetKind: "project", targetId: s.project, prompt: "x".repeat(4001), data, charts: [] })).status, 400);
+
+  const saved = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/saved-reports`, {
+    title: gen.body.title, fileName: gen.body.fileName, prompt: "Monthly report", content: gen.body.markdown, projectId: s.project,
+    charts: [{ id: "w1", title: "Tasks by status", svg: "<svg viewBox='0 0 10 10'><rect width='10' height='10'/></svg>" }],
+  });
+  assert.equal(saved.status, 201, JSON.stringify(saved.body));
+  const list = await admin.get<{ id: string; source: string | null }[]>(`/api/workspaces/${s.ws}/saved-reports?projectId=${s.project}`);
+  assert.ok(list.body.some((r) => r.id === saved.body.id && r.source));
+  const one = await admin.get<{ content: string; charts: { id: string }[] }>(`/api/saved-reports/${saved.body.id}`);
+  assert.equal(one.status, 200);
+  assert.equal(one.body.charts[0].id, "w1");
+  // Private: a co-member can't list, open or delete it.
+  assert.ok(!(await contributor.get<{ id: string }[]>(`/api/workspaces/${s.ws}/saved-reports`)).body.some((r) => r.id === saved.body.id));
+  assert.equal((await contributor.get(`/api/saved-reports/${saved.body.id}`)).status, 404);
+  assert.equal((await contributor.del(`/api/saved-reports/${saved.body.id}`)).status, 404);
+  assert.equal((await outsider.get(`/api/workspaces/${s.ws}/saved-reports`)).status, 404);
+  assert.equal((await admin.post(`/api/workspaces/${s.ws}/saved-reports`, { title: "x", fileName: "x", content: "x", charts: [{ id: "a", title: "a", svg: "x".repeat(400_001) }] })).status, 400, "chart size limit");
+  const big = Array.from({ length: 8 }, (_, i) => ({ id: `c${i}`, title: "c", svg: "x".repeat(399_000) }));
+  assert.equal((await admin.post(`/api/workspaces/${s.ws}/saved-reports`, { title: "x", fileName: "x", content: "x", charts: big })).status, 400, "total chart size limit (request body cap)");
+  assert.equal((await admin.del(`/api/saved-reports/${saved.body.id}`)).status, 200);
+
+  // AI narrative card: reads the dashboard snapshot, with an optional focus; same access rules.
+  const narr = await viewer.post<{ text: string; at: string }>("/api/ai/narrative", { targetKind: "project", targetId: s.project, data, instruction: "overdue risks" });
+  assert.equal(narr.status, 200, JSON.stringify(narr.body));
+  assert.ok(narr.body.text && narr.body.at);
+  assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /overdue risks[\s\S]*Done 3/, "focus and data reach the model");
+  assert.equal((await outsider.post("/api/ai/narrative", { targetKind: "project", targetId: s.project, data })).status, 404);
+  assert.equal((await viewer.post("/api/ai/narrative", { targetKind: "project", targetId: s.project, data, instruction: "x".repeat(501) })).status, 400);
+  assert.equal((await admin.get(`/api/saved-reports/${saved.body.id}`)).status, 404);
 });
 
 test("wiki comments: mentions, replies, delete rights, and the wiki AI reads the discussion", async () => {
@@ -1724,6 +1783,17 @@ test("second brain: journal, for-you resurfacing, spaced review, weekly review a
 
   const wk = await contributor.get<{ newKnowledge: { id: string }[]; decisions: { id: string }[]; completed: { id: string }[] }>(`/api/workspaces/${s.ws}/brain/weekly`);
   assert.ok(wk.body.newKnowledge.some((x) => x.id === s.brainPageA) && wk.body.completed.some((x) => x.id === s.brainTask));
+  // Second Brain Home can review a month or a year too.
+  const day = new Date().toISOString().slice(0, 10);
+  const mo = await contributor.get<{ period: string; weekStart: string; end: string; newKnowledge: { id: string }[] }>(`/api/workspaces/${s.ws}/brain/weekly?period=month&week=${day}`);
+  assert.equal(mo.status, 200, JSON.stringify(mo.body));
+  assert.equal(mo.body.period, "month");
+  assert.equal(mo.body.weekStart, `${day.slice(0, 7)}-01`);
+  assert.ok(mo.body.newKnowledge.some((x) => x.id === s.brainPageA), "this month includes this week's pages");
+  const yr = await contributor.get<{ weekStart: string; end: string }>(`/api/workspaces/${s.ws}/brain/weekly?period=year`);
+  assert.equal(yr.body.weekStart, `${day.slice(0, 4)}-01-01`);
+  assert.equal(yr.body.end, `${Number(day.slice(0, 4)) + 1}-01-01`);
+  assert.equal((await contributor.get(`/api/workspaces/${s.ws}/brain/weekly?period=decade`)).status, 400);
 
   // Knowledge health: broken links, expired validity, duplicates, missing source - suggestions only.
   await admin.patch(`/api/wiki/${s.brainPageB}`, { validFrom: "2025-01-01", validTo: "2025-12-31" });
@@ -1781,6 +1851,11 @@ test("second brain: Ask My Brain is scoped, grounded and traceable; layers and r
   assert.ok(r.body.grounded && r.body.sources[0].used, "the cited source is marked");
   assert.ok(r.body.sources.some((x) => x.id === s.brainPageA), "the probation page is a source");
   assert.ok(r.body.sources.some((x) => x.type === "decision" && x.id === s.brainDecision && x.historical), "superseded decisions are flagged as history");
+  // A slow but healthy answer (longer than one model attempt) still completes: long calls are streamed and collected.
+  const slowAsk = await viewer.post<Ask>(`/api/workspaces/${s.ws}/brain/ask`, { question: "probation #slow-stream", scope: { type: "everything" } });
+  assert.equal(slowAsk.status, 200, JSON.stringify(slowAsk.body));
+  assert.equal(slowAsk.body.answer, "Slow but complete.");
+  await prisma.aiMessage.deleteMany({ where: { conversation: { userId: s.viewerId } } });
   const system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
   assert.match(system, /\[S1\] [A-Z]+:/);
   assert.match(system, /Cite every factual statement/);

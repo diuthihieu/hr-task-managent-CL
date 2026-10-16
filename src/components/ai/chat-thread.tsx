@@ -1,4 +1,5 @@
 "use client";
+import { CharCount } from "@/components/ui/char-count";
 import { useEffect, useRef, useState } from "react";
 import { ArrowUp, Square, Sparkles, Copy, FileDown, AlertTriangle, RotateCw, BookOpen } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
@@ -11,6 +12,9 @@ import { useAutosize } from "./use-autosize";
 import { AttachButton, MessageFiles, PendingFiles, dropRing, useChatFiles, useFileDrop } from "./chat-attachments";
 
 /** Message list + composer shared by the wiki assistant panel and the AI Assistant page. */
+/** Matches the chat API's message limit. */
+const CHAT_MAX = 8000;
+
 export function ChatThread({
   messages,
   busy,
@@ -95,9 +99,9 @@ export function ChatThread({
           {messages.map((m) =>
             m.role === "user" ? (
               <div key={m.id} className="flex justify-end">
-                <div className="max-w-[85%] flex flex-col items-end">
+                <div className="max-w-[85%] min-w-0 flex flex-col items-end">
                   <MessageFiles files={m.files} />
-                  <div className="rounded-2xl rounded-br-md bg-indigo-600 text-white px-3.5 py-2 text-sm whitespace-pre-wrap" data-testid="ai-user-msg">
+                  <div className="rounded-2xl rounded-br-md bg-indigo-600 text-white px-3.5 py-2 text-sm whitespace-pre-wrap [overflow-wrap:anywhere]" data-testid="ai-user-msg">
                     {m.content}
                   </div>
                 </div>
@@ -182,6 +186,7 @@ export function ChatThread({
               }
             }}
             rows={compact ? 2 : 3}
+            maxLength={CHAT_MAX}
             placeholder={placeholder}
             disabled={!configured}
             className="flex-1 resize-none bg-transparent outline-none text-sm text-neutral-800 dark:text-neutral-100 placeholder:text-neutral-400 max-h-48"
@@ -197,6 +202,7 @@ export function ChatThread({
             </button>
           )}
         </div>
+        <CharCount value={draft} max={CHAT_MAX} className={cn("mx-auto px-3", !compact && "max-w-3xl")} />
         <p className="text-[10px] text-neutral-400 text-center mt-1.5">{t("ai.disclaimer")}</p>
       </div>
     </div>

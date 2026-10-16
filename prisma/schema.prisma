@@ -345,6 +345,7 @@ model User {
   customFieldUserValues TaskCustomFieldValue[] @relation("CustomValueUser")
   knowledgeDocs         KnowledgeDoc[]
   aiConversations       AiConversation[]
+  savedReports          SavedReport[]
   aiSettingsUpdated     WikiAiSettings[]
   wikisCreated          Wiki[]                 @relation("WikiCreatedByUser")
   wikiMemberships       WikiMember[]
@@ -427,6 +428,7 @@ model Workspace {
   notifications       Notification[]
   knowledgeDocs       KnowledgeDoc[]
   aiConversations     AiConversation[]
+  savedReports        SavedReport[]
   wikis               Wiki[]
   decisions           Decision[]
   journalEntries      JournalEntry[]
@@ -524,6 +526,7 @@ model Project {
   agentRuns        AgentRun[]
   agentOutputs     AgentOutput[]
   aiConversations  AiConversation[]
+  savedReports     SavedReport[]
 
   @@index([workspaceId, deletedAt, sortOrder])
   @@map("projects")
@@ -925,8 +928,9 @@ model Dashboard {
   createdById String?  @map("created_by") @db.Uuid
   updatedById String?  @map("updated_by") @db.Uuid
 
-  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  widgets   DashboardWidget[]
+  workspace    Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  widgets      DashboardWidget[]
+  savedReports SavedReport[]
 
   @@index([workspaceId])
   @@map("dashboards")
@@ -1347,6 +1351,32 @@ model AiConversation {
   @@index([userId, workspaceId, updatedAt(sort: Desc)])
   @@index([originType, originId])
   @@map("ai_conversations")
+}
+
+/// AI-written PDF reports a user saved to their report library (private to the creator).
+model SavedReport {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String   @map("workspace_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  projectId   String?  @map("project_id") @db.Uuid
+  dashboardId String?  @map("dashboard_id") @db.Uuid
+  title       String   @db.VarChar(200)
+  fileName    String   @map("file_name") @db.VarChar(160)
+  /// What the user asked the AI for.
+  prompt      String   @default("")
+  /// The report body (Markdown with [[chart:<id>]] placeholders).
+  content     String
+  /// Chart snapshots placed in the report: [{ id, title, svg }].
+  charts      Json     @default("[]")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  dashboard Dashboard? @relation(fields: [dashboardId], references: [id], onDelete: SetNull)
+
+  @@index([userId, workspaceId, createdAt(sort: Desc)])
+  @@map("saved_reports")
 }
 
 enum AiMessageRole {

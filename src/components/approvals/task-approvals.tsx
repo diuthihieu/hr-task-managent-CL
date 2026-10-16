@@ -1,4 +1,5 @@
 "use client";
+import { CharCount } from "@/components/ui/char-count";
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { BadgeCheck, Loader2, ThumbsDown, ThumbsUp, X } from "lucide-react";
@@ -150,6 +151,7 @@ export function TaskApprovals({ taskId, canEdit, onChanged }: { taskId: string; 
             <div>
               <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("apr.note")}</label>
               <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} maxLength={2000} placeholder={t("apr.notePh")} className="w-full rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-indigo-400" />
+              <CharCount value={note} max={2000} />
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input type="checkbox" checked={complete} onChange={(e) => setComplete(e.target.checked)} /> {t("apr.completeOnApprove")}

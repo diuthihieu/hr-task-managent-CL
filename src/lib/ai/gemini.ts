@@ -164,8 +164,8 @@ async function started(res: Response, stream: boolean, ctrl: AbortController): P
  * tried; if every configured model fails, the key's other Flash models are
  * tried too. Google sheds load per model, so another model often answers.
  */
-async function callWithFallback(method: "generateContent" | "streamGenerateContent", init: RequestInit, timeBudgetMs?: number): Promise<{ res: Response; model: string }> {
-  const budget = method === "streamGenerateContent" ? STREAM_BUDGET : oneShotBudget(timeBudgetMs);
+async function callWithFallback(method: "generateContent" | "streamGenerateContent", init: RequestInit, timeBudgetMs?: number, startBudget?: { total: number; attempt: number }): Promise<{ res: Response; model: string }> {
+  const budget = startBudget ?? (method === "streamGenerateContent" ? STREAM_BUDGET : oneShotBudget(timeBudgetMs));
   const caller = init.signal ?? null;
   const tried: { model: string; status: number | string; error: HttpError }[] = [];
   const deadline = Date.now() + budget.total;
@@ -296,9 +296,38 @@ async function failure(res: Response, model: string): Promise<HttpError> {
   return new HttpError(502, `The AI service rejected the request.${detail}`);
 }
 
-/** One-shot generation (used for document text extraction). */
+/**
+ * Long calls (routes with maxDuration 120) are streamed and collected here:
+ * only the *start* of the answer is bound by a per-model limit, so a slow but
+ * healthy model (busy periods, thinking models) can finish its answer instead
+ * of being cut off and replaced. The whole call still ends within the budget
+ * with a clear 504 rather than the platform killing the function.
+ */
+async function generateCollected(opts: GenerateOptions, total: number): Promise<{ text: string; model: string } & Usage> {
+  const deadline = Date.now() + total;
+  const start = { total: Math.min(Math.round(total * 0.6), STREAM_BUDGET.total), attempt: Math.min(STREAM_BUDGET.attempt, Math.round(total * 0.45)) };
+  const ctrl = new AbortController();
+  const { res, model } = await callWithFallback("streamGenerateContent", { ...requestInit(opts), signal: ctrl.signal }, undefined, start);
+  if (!res.body) throw new HttpError(502, "The AI service returned an empty response");
+  const timer = setTimeout(() => ctrl.abort(), Math.max(1_000, deadline - Date.now()));
+  const usage: Usage = { tokensIn: null, tokensOut: null };
+  let text = "";
+  try {
+    for await (const chunk of readStream(res.body, usage)) text += chunk;
+  } catch (e) {
+    if (ctrl.signal.aborted) throw new HttpError(504, `Gemini is taking too long to answer right now (${model} did not finish within ${Math.round(total / 1000)} s). Please try again in a moment, or ask for something shorter.`);
+    if (e instanceof HttpError) throw e;
+    throw new HttpError(502, (e as Error).message || "The AI answer was interrupted");
+  } finally {
+    clearTimeout(timer);
+  }
+  return { text, model, ...usage };
+}
+
+/** One-shot generation. Calls with a long budget (> 60 s) are streamed and collected. */
 export async function generate(opts: GenerateOptions): Promise<{ text: string; model: string } & Usage> {
   await assertWorkspaceAi(opts.workspaceId);
+  if ((opts.timeBudgetMs ?? 0) > 60_000) return generateCollected(opts, opts.timeBudgetMs!);
   const { res, model } = await callWithFallback("generateContent", requestInit(opts), opts.timeBudgetMs);
   const body = (await res.json()) as GeminiResponse;
   if (body.promptFeedback?.blockReason) throw new HttpError(400, `The AI declined this request (${body.promptFeedback.blockReason})`);
@@ -310,39 +339,41 @@ export async function streamGenerate(opts: GenerateOptions, usage: Usage, signal
   await assertWorkspaceAi(opts.workspaceId);
   const { res } = await callWithFallback("streamGenerateContent", { ...requestInit(opts), signal });
   if (!res.body) throw new HttpError(502, "The AI service returned an empty response");
-  const reader = res.body.getReader();
+  return readStream(res.body, usage);
+}
+
+/** Parse Gemini's SSE stream into text chunks; fills `usage` from the final event. */
+async function* readStream(stream: ReadableStream<Uint8Array>, usage: Usage): AsyncGenerator<string> {
+  const reader = stream.getReader();
   const decoder = new TextDecoder();
-  async function* chunks() {
-    let buffer = "";
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let idx: number;
-      while ((idx = buffer.indexOf("\n")) >= 0) {
-        const line = buffer.slice(0, idx).trim();
-        buffer = buffer.slice(idx + 1);
-        if (!line.startsWith("data:")) continue;
-        const payload = line.slice(5).trim();
-        if (!payload || payload === "[DONE]") continue;
-        let json: GeminiResponse;
-        try {
-          json = JSON.parse(payload);
-        } catch {
-          continue;
-        }
-        if (json.error) throw new Error(`Gemini stream error: ${json.error.message ?? json.error.status}`);
-        if (json.promptFeedback?.blockReason) throw new Error(`The AI declined this request (${json.promptFeedback.blockReason})`);
-        if (json.usageMetadata) {
-          usage.tokensIn = json.usageMetadata.promptTokenCount ?? usage.tokensIn;
-          usage.tokensOut = json.usageMetadata.candidatesTokenCount ?? usage.tokensOut;
-        }
-        const text = textOf(json);
-        if (text) yield text;
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buffer.indexOf("\n")) >= 0) {
+      const line = buffer.slice(0, idx).trim();
+      buffer = buffer.slice(idx + 1);
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      if (!payload || payload === "[DONE]") continue;
+      let json: GeminiResponse;
+      try {
+        json = JSON.parse(payload);
+      } catch {
+        continue;
       }
+      if (json.error) throw new Error(`Gemini stream error: ${json.error.message ?? json.error.status}`);
+      if (json.promptFeedback?.blockReason) throw new Error(`The AI declined this request (${json.promptFeedback.blockReason})`);
+      if (json.usageMetadata) {
+        usage.tokensIn = json.usageMetadata.promptTokenCount ?? usage.tokensIn;
+        usage.tokensOut = json.usageMetadata.candidatesTokenCount ?? usage.tokensOut;
+      }
+      const text = textOf(json);
+      if (text) yield text;
     }
   }
-  return chunks();
 }
 
 /** Parse a JSON answer, tolerating code fences or text around the object. */

@@ -78,19 +78,31 @@ http
           return { type: "question", message: "Which project, and who should do it?", draft: { projectId: null, title: "Monthly report", dueDate: "2026-09-30", dueTime: "02:00" } };
         })() : null;
         const projectId = catalog ? JSON.parse(catalog)[0]?.id : undefined;
-        const json = intake
+        // AI PDF report: embed the first listed chart and echo the request.
+        const pdfReport = system.includes("Write a report to export as PDF")
+          ? { title: "Stub monthly report", fileName: "stub-report", markdown: `# Stub monthly report\n\nYou asked: ${userText}\n\n${system.split("CHARTS:")[1]?.match(/\[\[chart:[A-Za-z0-9_-]+\]\]/)?.[0] ?? ""}\n\n## Analysis\n\nAll good.` }
+          : null;
+        const json = pdfReport
+          ? pdfReport
+          : intake
           ? intake
           : brain
           ? brain
           : catalog
-          ? { widgets: [
-              { title: "Tasks by status", type: "pie", projectId, dimensionFieldId: "sys_status", aggregation: "count" },
-              { title: "Hours by assignee", type: "bar", projectId, dimensionFieldId: "sys_assignees", measureFieldId: "sys_estimate", aggregation: "sum" },
+          ? { name: "HR ops (AI)", widgets: [
+              { title: "Total tasks", type: "kpi", projectId, aggregation: "count", width: "quarter" },
+              { title: "Tasks by status", type: "pie", projectId, dimensionFieldId: "sys_status", aggregation: "count", width: "half" },
+              { title: "Hours by assignee", type: "bar", projectId, dimensionFieldId: "sys_assignees", measureFieldId: "sys_estimate", aggregation: "sum", width: "full" },
               { title: "Made-up field", type: "bar", projectId, dimensionFieldId: "sys_nope", aggregation: "count" },
             ] }
           : { items: [{ title: "Draft the checklist", estimateHours: 2, note: "" }, { title: "Review with the manager", estimateHours: 1, note: "30 min" }] };
+        const reply = { candidates: [{ content: { role: "model", parts: [{ text: JSON.stringify(json) }] } }], usageMetadata: { promptTokenCount: 50, candidatesTokenCount: 10 } };
+        if (req.url.includes(":streamGenerateContent")) {
+          res.writeHead(200, { "content-type": "text/event-stream" });
+          return res.end(`data: ${JSON.stringify(reply)}\r\n\r\n`);
+        }
         res.writeHead(200, { "content-type": "application/json" });
-        return res.end(JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: JSON.stringify(json) }] } }], usageMetadata: { promptTokenCount: 50, candidatesTokenCount: 10 } }));
+        return res.end(JSON.stringify(reply));
       }
       const system = body.systemInstruction?.parts?.map((p) => p.text).join("\n") ?? "";
       // Ask My Brain: cite the first source when there is one.

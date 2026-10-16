@@ -52,6 +52,8 @@ export interface DashboardBlockConfig {
   /** Date field used to place records into the current and previous KPI periods. */
   kpiDateFieldId?: string;
   style?: WidgetStyleConfig;
+  /** AI Narrative block: optional focus for the AI. */
+  prompt?: string;
 }
 
 export interface SeriesPoint {
@@ -403,6 +405,7 @@ export const CHART_TYPES = [
   { type: "treemap", label: "Treemap" },
   { type: "funnel", label: "Funnel" },
   { type: "gauge", label: "Gauge" },
+  { type: "narrative", label: "AI Narrative" },
 ] as const;
 
 export type ChartType = (typeof CHART_TYPES)[number]["type"];

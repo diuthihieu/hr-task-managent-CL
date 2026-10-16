@@ -8,6 +8,8 @@ import { Select } from "@/components/ui/misc";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
 import { toast } from "@/components/ui/toast";
+import { CharCount } from "@/components/ui/char-count";
+import { BUILD_PROMPT_MAX } from "@/lib/ai/limits";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import type { MessageKey } from "@/lib/i18n/core";
@@ -335,31 +337,40 @@ export function AiBuildWidgetsButton({
   dashboardId,
   projectId,
   onBuilt,
+  onCreatedDashboard,
 }: {
   target: "dashboard" | "report";
   dashboardId?: string;
   projectId?: string;
   onBuilt: (widgets: Record<string, unknown>[]) => void;
+  /** dashboard target: called with the new dashboard's id when "Create a new dashboard" is chosen. */
+  onCreatedDashboard?: (dashboardId: string) => void;
 }) {
   const { t } = useT();
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
+  const [mode, setMode] = useState<"append" | "replace" | "new">("append");
   const [busy, setBusy] = useState(false);
-  const examples = [t("aiBuild.ex1"), t("aiBuild.ex2"), t("aiBuild.ex3")];
+  const examples = [t("aiBuild.ex1"), t("aiBuild.ex2"), t("aiBuild.ex3"), t("aiBuild.ex4")];
+  type Mode = "append" | "replace" | "new";
+  const modes: Mode[] = target === "dashboard" ? ["append", "replace", ...(onCreatedDashboard ? (["new"] as const) : [])] : [];
 
   async function build() {
     if (!prompt.trim()) return;
+    if (mode === "replace" && !confirm(t("aiBuild.replaceConfirm"))) return;
     setBusy(true);
     try {
-      const r = await api.post<{ widgets: Record<string, unknown>[] }>("/api/ai/build-widgets", { target, dashboardId, projectId, prompt: prompt.trim() });
+      const r = await api.post<{ widgets: Record<string, unknown>[]; dashboardId?: string }>("/api/ai/build-widgets", { target, dashboardId, projectId, prompt: prompt.trim(), ...(target === "dashboard" ? { mode } : {}) });
       if (!r.widgets.length) {
         toast.error(t("aiBuild.none"));
         return;
       }
-      onBuilt(r.widgets);
       toast.success(t("aiBuild.added", { n: r.widgets.length }));
       setOpen(false);
       setPrompt("");
+      if (mode === "new" && r.dashboardId && onCreatedDashboard) onCreatedDashboard(r.dashboardId);
+      else onBuilt(r.widgets);
+      setMode("append");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
@@ -373,30 +384,46 @@ export function AiBuildWidgetsButton({
         <Sparkles size={13} className="text-indigo-500" /> {t("aiBuild.button")}
       </Button>
       <Dialog open={open} onOpenChange={(v) => !busy && setOpen(v)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-xl">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles size={15} className="text-indigo-500" /> {t(target === "dashboard" ? "aiBuild.titleDashboard" : "aiBuild.titleReport")}
           </DialogTitle>
-          <p className="text-xs text-neutral-500 mt-1">{t("aiBuild.hint")}</p>
+          <p className="text-xs text-neutral-500 mt-1">{t("aiBuild.hint", { n: target === "dashboard" ? 16 : 12 })}</p>
           <textarea
             autoFocus
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === "Enter" && build()}
-            rows={4}
-            maxLength={2000}
+            rows={6}
+            maxLength={BUILD_PROMPT_MAX}
             placeholder={t("aiBuild.placeholder")}
             data-testid="ai-build-prompt"
-            className="mt-3 w-full rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-indigo-400"
+            className="mt-3 w-full max-h-[40vh] rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 text-sm outline-none focus:border-indigo-400"
           />
+          <CharCount value={prompt} max={BUILD_PROMPT_MAX} />
           <div className="flex flex-wrap gap-1.5 mt-2">
             {examples.map((ex) => (
-              <button key={ex} onClick={() => setPrompt(ex)} className="text-[11px] rounded-full border border-neutral-200 dark:border-neutral-700 px-2 py-0.5 text-neutral-600 dark:text-neutral-300 hover:border-indigo-400">
+              <button key={ex} onClick={() => setPrompt(ex)} title={ex} className="max-w-full truncate text-[11px] rounded-full border border-neutral-200 dark:border-neutral-700 px-2 py-0.5 text-neutral-600 dark:text-neutral-300 hover:border-indigo-400">
                 {ex}
               </button>
             ))}
           </div>
-          <div className="flex justify-end gap-2 mt-4">
+          {modes.length > 0 && (
+            <fieldset className="mt-3 space-y-1.5" data-testid="ai-build-mode">
+              <legend className="text-xs font-medium text-neutral-600 dark:text-neutral-300 mb-1">{t("aiBuild.mode")}</legend>
+              {modes.map((m) => (
+                <label key={m} className={cn("flex items-start gap-2 rounded-md border px-2.5 py-1.5 cursor-pointer text-sm", mode === m ? "border-indigo-400 bg-indigo-50/60 dark:bg-indigo-950/40" : "border-neutral-200 dark:border-neutral-700")}>
+                  <input type="radio" name="ai-build-mode" value={m} checked={mode === m} onChange={() => setMode(m)} className="mt-1" data-testid={`ai-build-mode-${m}`} />
+                  <span>
+                    <span className="block text-neutral-800 dark:text-neutral-100">{t(`aiBuild.mode.${m}`)}</span>
+                    <span className="block text-xs text-neutral-500">{t(`aiBuild.mode.${m}.d`)}</span>
+                  </span>
+                </label>
+              ))}
+            </fieldset>
+          )}
+          <div className="flex items-center justify-end gap-2 mt-4">
+            {busy && <span className="mr-auto text-xs text-neutral-500">{t("aiBuild.wait")}</span>}
             <Button variant="ghost" onClick={() => setOpen(false)} disabled={busy}>
               {t("common.cancel")}
             </Button>

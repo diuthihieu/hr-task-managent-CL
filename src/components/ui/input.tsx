@@ -1,5 +1,7 @@
+"use client";
 import { forwardRef } from "react";
 import { cn } from "@/lib/utils";
+import { CharCount } from "./char-count";
 
 export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTMLInputElement>>(
   ({ className, ...props }, ref) => (
@@ -15,8 +17,11 @@ export const Input = forwardRef<HTMLInputElement, React.InputHTMLAttributes<HTML
 );
 Input.displayName = "Input";
 
-export const Textarea = forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttributes<HTMLTextAreaElement>>(
-  ({ className, ...props }, ref) => (
+type TextareaProps = React.TextareaHTMLAttributes<HTMLTextAreaElement> & { hideCount?: boolean };
+
+/** With `maxLength` and a controlled `value`, shows "Max N characters · used/max" underneath. */
+export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(({ className, hideCount, ...props }, ref) => {
+  const el = (
     <textarea
       ref={ref}
       className={cn(
@@ -25,6 +30,13 @@ export const Textarea = forwardRef<HTMLTextAreaElement, React.TextareaHTMLAttrib
       )}
       {...props}
     />
-  )
-);
+  );
+  if (hideCount || !props.maxLength || typeof props.value !== "string") return el;
+  return (
+    <div className="w-full min-w-0">
+      {el}
+      <CharCount value={props.value} max={props.maxLength} className="mt-0.5" />
+    </div>
+  );
+});
 Textarea.displayName = "Textarea";

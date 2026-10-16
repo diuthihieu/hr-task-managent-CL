@@ -1781,6 +1781,17 @@ test("second brain: journal, for-you resurfacing, spaced review, weekly review a
 
   const wk = await contributor.get<{ newKnowledge: { id: string }[]; decisions: { id: string }[]; completed: { id: string }[] }>(`/api/workspaces/${s.ws}/brain/weekly`);
   assert.ok(wk.body.newKnowledge.some((x) => x.id === s.brainPageA) && wk.body.completed.some((x) => x.id === s.brainTask));
+  // Second Brain Home can review a month or a year too.
+  const day = new Date().toISOString().slice(0, 10);
+  const mo = await contributor.get<{ period: string; weekStart: string; end: string; newKnowledge: { id: string }[] }>(`/api/workspaces/${s.ws}/brain/weekly?period=month&week=${day}`);
+  assert.equal(mo.status, 200, JSON.stringify(mo.body));
+  assert.equal(mo.body.period, "month");
+  assert.equal(mo.body.weekStart, `${day.slice(0, 7)}-01`);
+  assert.ok(mo.body.newKnowledge.some((x) => x.id === s.brainPageA), "this month includes this week's pages");
+  const yr = await contributor.get<{ weekStart: string; end: string }>(`/api/workspaces/${s.ws}/brain/weekly?period=year`);
+  assert.equal(yr.body.weekStart, `${day.slice(0, 4)}-01-01`);
+  assert.equal(yr.body.end, `${Number(day.slice(0, 4)) + 1}-01-01`);
+  assert.equal((await contributor.get(`/api/workspaces/${s.ws}/brain/weekly?period=decade`)).status, 400);
 
   // Knowledge health: broken links, expired validity, duplicates, missing source - suggestions only.
   await admin.patch(`/api/wiki/${s.brainPageB}`, { validFrom: "2025-01-01", validTo: "2025-12-31" });

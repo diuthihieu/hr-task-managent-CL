@@ -24,7 +24,7 @@ export function DecisionDetail({ workspaceId, workspaceSlug, decisionId }: { wor
   useEffect(() => {
     api.get<Decision>(`/api/decisions/${decisionId}`).then(setD).catch(() => setMissing(true));
   }, [decisionId]);
-  const back = `/w/${workspaceSlug}/brain?tab=decisions`;
+  const back = `/w/${workspaceSlug}/brain?tab=journal&view=decisions`;
 
   async function remove() {
     if (!d || !confirm(t("common.confirmDelete", { name: d.title }))) return;

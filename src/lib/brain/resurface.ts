@@ -174,8 +174,8 @@ export async function forYou(access: BrainAccess, base: string, now = new Date()
 }
 
 /** Weekly Brain Review data: what was learned, decided and done in the week starting `weekStart` (UTC). */
-export async function weeklyReview(access: BrainAccess, base: string, weekStart: Date) {
-  const end = new Date(weekStart.getTime() + 7 * 86400000);
+export async function weeklyReview(access: BrainAccess, base: string, weekStart: Date, periodEnd?: Date) {
+  const end = periodEnd ?? new Date(weekStart.getTime() + 7 * 86400000);
   const inWeek = { gte: weekStart, lt: end };
   const me = access.userId;
   const monthAgo = new Date(end.getTime() - 30 * 86400000);
@@ -204,6 +204,7 @@ export async function weeklyReview(access: BrainAccess, base: string, weekStart:
   const page = (p: { id: string; title: string; wikiId: string }) => ({ id: p.id, title: p.title, href: entityHref(base, { type: "wiki", id: p.id, wikiId: p.wikiId }) });
   return {
     weekStart: weekStart.toISOString().slice(0, 10),
+    end: end.toISOString().slice(0, 10),
     newKnowledge: created.map((p) => ({ ...page(p), kind: p.kind, by: p.createdBy?.name ?? null })),
     updatedKnowledge: updated.map((p) => ({ ...page(p), by: p.updatedBy?.name ?? null })),
     meetings: meetings.map(page),
@@ -221,6 +222,22 @@ export async function weeklyReview(access: BrainAccess, base: string, weekStart:
 }
 
 /** Monday (UTC) of the week containing `raw` (YYYY-MM-DD) or today. */
+export type ReviewPeriod = "week" | "month" | "year";
+
+/** The week / month / year containing `raw` (YYYY-MM-DD, default today), as [start, end). */
+export function periodRange(period: ReviewPeriod, raw: string | null): { start: Date; end: Date } {
+  if (period === "week") {
+    const start = weekStartOf(raw);
+    return { start, end: new Date(start.getTime() + 7 * 86400000) };
+  }
+  if (raw && !/^\d{4}-\d{2}-\d{2}$/.test(raw)) throw badRequest("date must be YYYY-MM-DD");
+  const d = raw ? new Date(`${raw}T00:00:00Z`) : new Date();
+  const y = d.getUTCFullYear();
+  if (period === "year") return { start: new Date(Date.UTC(y, 0, 1)), end: new Date(Date.UTC(y + 1, 0, 1)) };
+  const m = d.getUTCMonth();
+  return { start: new Date(Date.UTC(y, m, 1)), end: new Date(Date.UTC(y, m + 1, 1)) };
+}
+
 export function weekStartOf(raw: string | null): Date {
   if (raw && !/^\d{4}-\d{2}-\d{2}$/.test(raw)) throw badRequest("week must be YYYY-MM-DD");
   const d = raw ? new Date(`${raw}T00:00:00Z`) : new Date(new Date().toISOString().slice(0, 10));

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { route, readJson } from "@/lib/authz";
 import { makeT } from "@/lib/i18n/core";
 import { brainContext } from "@/lib/brain/route-helpers";
-import { weeklyReview, weekStartOf } from "@/lib/brain/resurface";
+import { weeklyReview, periodRange } from "@/lib/brain/resurface";
 import { assertAi, brainSystem, generateJson, str, strList } from "@/lib/brain/ai";
 import { personalPromptBlock } from "@/lib/ai/personal";
 
@@ -16,11 +16,13 @@ export const POST = route<P>(async (req, { params }) => {
   const { workspaceId } = await params;
   const { user, access, base } = await brainContext(workspaceId);
   await assertAi(user.id);
-  const { week } = z.object({ week: z.string().nullable().optional() }).parse(await readJson(req));
-  const w = await weeklyReview(access, base, weekStartOf(week ?? null));
+  const { week, period } = z.object({ week: z.string().nullable().optional(), period: z.enum(["week", "month", "year"]).default("week") }).parse(await readJson(req));
+  const range = periodRange(period, week ?? null);
+  const w = await weeklyReview(access, base, range.start, range.end);
+  const span = { week: "week", month: "month", year: "year" }[period];
   const list = (t: string, xs: { title: string }[]) => `${t} (${xs.length}):\n${xs.map((x) => `- ${x.title}`).join("\n") || "(none)"}`;
   const data = [
-    `Week starting ${w.weekStart}`,
+    `Review period: ${span} from ${w.weekStart} to ${w.end} (exclusive)`,
     list("MY COMPLETED TASKS", w.completed),
     list("DECISIONS", w.decisions),
     list("NEW KNOWLEDGE", w.newKnowledge),
@@ -32,7 +34,7 @@ export const POST = route<P>(async (req, { params }) => {
     `JOURNAL SUMMARIES:\n${w.journalDays.map((j) => `${j.date}: ${j.aiSummary ?? "(no summary)"}`).join("\n") || "(none)"}`,
   ].join("\n\n");
   const system = brainSystem({
-    task: "Write the user's weekly reflection from the DATA. wins: 2-5 concrete achievements; knowledge: 2-5 things learned or documented (cite page / decision titles in quotes); openLoops: what still needs closing and the next step; automation: work that could be automated or made a template / recurring task, and how; nextWeek: 3-5 focused priorities. Short, specific sentences; only from the DATA.",
+    task: `Write the user's ${span}ly reflection from the DATA. wins: 2-5 concrete achievements; knowledge: 2-5 things learned or documented (cite page / decision titles in quotes); openLoops: what still needs closing and the next step; automation: work that could be automated or made a template / recurring task, and how; nextWeek: 3-5 focused priorities for the next ${span}. Short, specific sentences; only from the DATA.`,
     schema: '{"headline":"...","wins":["..."],"knowledge":["..."],"openLoops":["..."],"automation":["..."],"nextWeek":["..."]}',
     locale: user.locale ?? "vi",
     personal: await personalPromptBlock(user.id),

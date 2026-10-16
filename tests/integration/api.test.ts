@@ -2324,6 +2324,53 @@ test("project permissions: editors don't manage columns/settings unless delegate
   }
 });
 
+test("project transfer: everything of a project moves into another one (tasks, sub-tasks, comments, columns, categories, objectives)", async () => {
+  const A = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Transfer source" })).body.id;
+  const B = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Transfer target" })).body.id;
+  const catA = (await admin.post<{ id: string }>(`/api/projects/${A}/categories`, { name: "Hồ sơ", color: "#ff0000" })).body.id;
+  const typeA = await admin.post<{ id: string }>(`/api/projects/${A}/custom-fields`, { name: "Loại", type: "single_select", config: { options: [{ label: "Chính thức", color: "#00ff00" }, { label: "Thử việc", color: "#0000ff" }] } });
+  const noteA = await admin.post<{ id: string }>(`/api/projects/${A}/custom-fields`, { name: "Ghi chú HR", type: "text" });
+  const typeB = await admin.post<{ id: string }>(`/api/projects/${B}/custom-fields`, { name: "loại", type: "single_select", config: { options: [{ label: "Thử việc", color: "#999999" }] } });
+  const optA = (await prisma.customFieldOption.findFirstOrThrow({ where: { customFieldId: typeA.body.id, label: "Thử việc" } })).id;
+  const parent = await admin.post<Rec>(`/api/projects/${A}/tasks`, { data: { sys_title: "Parent", sys_category: catA, [typeA.body.id]: optA, [noteA.body.id]: "giữ nguyên" } });
+  const child = await admin.post<Rec>(`/api/projects/${A}/tasks`, { data: { sys_title: "Child", sys_parent: [parent.body.id] } });
+  await admin.post(`/api/tasks/${parent.body.id}/comments`, { body: "<p>Đã nhận hồ sơ</p>" });
+  const obj = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/objectives`, { title: "Source objective", projectId: A, cycleType: "quarter" });
+  assert.equal(obj.status, 201, JSON.stringify(obj.body));
+
+  assert.equal((await contributor.get(`/api/projects/${A}/transfer?targetProjectId=${B}`)).status, 403, "project owners / admins only");
+  const plan = await admin.get<{ tasks: number; comments: number; fields: { name: string; action: string }[]; categories: { action: string }[] }>(`/api/projects/${A}/transfer?targetProjectId=${B}`);
+  assert.equal(plan.status, 200);
+  assert.equal(plan.body.tasks, 2);
+  assert.equal(plan.body.comments, 1);
+  assert.equal(plan.body.fields.find((f) => f.name === "Loại")?.action, "reuse", "same name + type, any case");
+  assert.equal(plan.body.fields.find((f) => f.name === "Ghi chú HR")?.action, "create");
+
+  const r = await admin.post<{ tasks: number }>(`/api/projects/${A}/transfer`, { targetProjectId: B });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.tasks, 2);
+  const p2 = await prisma.task.findUniqueOrThrow({ where: { id: parent.body.id }, include: { category: true, customValues: true, comments: true } });
+  assert.equal(p2.projectId, B);
+  assert.equal(p2.category?.projectId, B, "category recreated in the target");
+  assert.equal(p2.category?.name, "Hồ sơ");
+  assert.equal(p2.comments.length, 1, "comments travel with the task");
+  const typeVal = p2.customValues.find((v) => v.customFieldId === typeB.body.id);
+  assert.ok(typeVal, "value moved onto the matching target column");
+  const opt = await prisma.customFieldOption.findUniqueOrThrow({ where: { id: typeVal!.valueOptionId! } });
+  assert.equal(opt.customFieldId, typeB.body.id);
+  assert.equal(opt.label, "Thử việc", "option matched by label");
+  const note = p2.customValues.find((v) => v.valueText === "giữ nguyên");
+  assert.ok(note && (await prisma.customField.findUniqueOrThrow({ where: { id: note.customFieldId } })).projectId === B, "new column created in the target");
+  assert.equal((await prisma.task.findUniqueOrThrow({ where: { id: child.body.id } })).parentTaskId, parent.body.id, "sub-task keeps its parent");
+  assert.equal((await prisma.objective.findUniqueOrThrow({ where: { id: obj.body.id } })).projectId, B);
+  assert.equal((await prisma.project.findUniqueOrThrow({ where: { id: A } })).status, "archived");
+  assert.equal(await prisma.task.count({ where: { projectId: A } }), 0);
+  const grid = await admin.get<{ records: Rec[] } | Rec[]>(`/api/projects/${B}/tasks`);
+  assert.equal(grid.status, 200, "target grid loads");
+  await admin.del(`/api/projects/${A}`);
+  await admin.del(`/api/projects/${B}`);
+});
+
 test("attachments require object storage; nothing is written when it's not configured", async () => {
   if (process.env.BLOB_READ_WRITE_TOKEN) return;
   const form = new FormData();

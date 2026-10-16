@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { ProjectPermissions } from "./project-permissions";
+import { ProjectTransfer } from "./project-transfer";
 import { DateInput } from "@/components/ui/date-input";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
@@ -192,6 +193,8 @@ export function ProjectSettings({ project, workspaceId, workspaceSlug, canManage
         <ProjectVisibility projectId={project.id} />
 
         {canOwn && <ProjectPermissions projectId={project.id} />}
+
+        {canOwn && <ProjectTransfer projectId={project.id} workspaceId={workspaceId} workspaceSlug={workspaceSlug} />}
 
         {canOwn && (
           <section className="rounded-lg border border-red-200 dark:border-red-900 p-4">

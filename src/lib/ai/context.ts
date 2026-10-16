@@ -8,6 +8,7 @@ import { resolveObjectives, OBJECTIVE_INCLUDE } from "../okr-resolver";
 import { htmlToText } from "./extract";
 import { isCurrentKnowledge } from "../wiki";
 import { taskCommentsSection } from "./task-comments";
+import { taskRef, type CitationTarget } from "./citations";
 
 // Grounding context for the AI. Everything given to the model is read with
 // the same permission filters as the rest of the app, so the model can only
@@ -114,13 +115,16 @@ export async function myIdeasSection(user: SessionUser, workspaceId: string) {
 
 export async function workspaceData(user: SessionUser, workspaceId: string, role: WorkspaceRole, budget = CONTEXT_CHARS) {
   const visible = visibleProjectWhere(user);
-  const [projects, tasks, objectives, hidden, members] = await Promise.all([
+  const [workspace, projects, tasks, objectives, hidden, members] = await Promise.all([
+    prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { slug: true } }),
     prisma.project.findMany({ where: { workspaceId, deletedAt: null, ...visible }, orderBy: { sortOrder: "asc" }, include: { owner: { select: { name: true } } } }),
     prisma.task.findMany({
       where: { workspaceId, deletedAt: null, project: { deletedAt: null, ...visible } },
       orderBy: { updatedAt: "desc" },
       take: 2000,
       select: {
+        id: true,
+        projectId: true,
         title: true,
         description: true,
         priority: true,
@@ -150,6 +154,14 @@ export async function workspaceData(user: SessionUser, workspaceId: string, role
       select: { role: true, createdAt: true, user: { select: { name: true, email: true, jobTitle: true, formerNames: true } } },
     }),
   ]);
+
+  // Citation refs: the model cites [T-xxxxxxxx]; the chat route turns each into a link to the task.
+  const refs = new Map<string, CitationTarget>();
+  const cite = (t: { id: string; projectId: string; title: string; project: string }) => {
+    const ref = taskRef(t.id);
+    refs.set(ref, { url: `/w/${workspace.slug}/p/${t.projectId}/t/${t.id}`, title: `${t.project} › ${t.title}` });
+    return ref;
+  };
 
   const b = new Budget(budget);
   // Everyone in the workspace (the member list is visible to every member), not only people with tasks.
@@ -181,15 +193,16 @@ export async function workspaceData(user: SessionUser, workspaceId: string, role
 
   // What people said on the tasks (same visibility as the task list). Added before the task list,
   // which can fill the rest of the budget, and capped so it never crowds the tasks out.
-  b.add(await taskCommentsSection({ task: { workspaceId, deletedAt: null, project: { deletedAt: null, ...visible } } }, { maxTotalChars: Math.min(60_000, Math.floor(budget * 0.15)) }));
+  b.add(await taskCommentsSection({ task: { workspaceId, deletedAt: null, project: { deletedAt: null, ...visible } } }, { maxChars: 1500, maxTotalChars: Math.min(80_000, Math.floor(budget * 0.2)), ref: cite }));
 
   const now = new Date();
   b.add(
-    `## Tasks (${tasks.length}${tasks.length === 2000 ? ", most recently updated" : ""})\nproject | task | status | priority | progress | start | due | assignees | report to | category | objective/KR\n` +
+    `## Tasks (${tasks.length}${tasks.length === 2000 ? ", most recently updated" : ""})\nref | project | task | status | priority | progress | start | due | assignees | report to | category | objective/KR\n` +
       tasks
         .map((t) => {
           const overdue = t.dueDate && t.dueDate < now && (t.status.category === "todo" || t.status.category === "in_progress") ? " (OVERDUE)" : "";
           return [
+            cite({ id: t.id, projectId: t.projectId, title: t.title, project: t.project.name }),
             t.project.name,
             t.title,
             `${t.status.name} [${t.status.category}]`,
@@ -201,7 +214,7 @@ export async function workspaceData(user: SessionUser, workspaceId: string, role
             t.reportTo.map((r) => r.user.name).join(", ") || "-",
             t.category?.name ?? "-",
             t.keyResult?.title ?? t.objective?.title ?? "-",
-          ].join(" | ") + (t.description ? `\n    notes: ${t.description.replace(/\s+/g, " ").slice(0, 240)}` : "");
+          ].join(" | ") + (t.description ? `\n    notes: ${t.description.replace(/\s+/g, " ").slice(0, 600)}` : "");
         })
         .join("\n")
   );
@@ -211,5 +224,5 @@ export async function workspaceData(user: SessionUser, workspaceId: string, role
     const k = await wikiKnowledge(w.id, Math.max(0, budget / 4), hidden);
     if (k.pageCount || k.docCount) if (!b.add(`## Wiki "${w.name}" (pages & documents)\n${k.text}`)) break;
   }
-  return { text: b.toString(), projectCount: projects.length, taskCount: tasks.length, objectiveCount: rows.length };
+  return { text: b.toString(), refs, projectCount: projects.length, taskCount: tasks.length, objectiveCount: rows.length };
 }

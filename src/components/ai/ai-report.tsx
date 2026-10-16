@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api-client";
 import { cn, formatDate } from "@/lib/utils";
-import { REPORT_FILENAME_MAX, REPORT_PROMPT_MAX } from "@/lib/ai/report-limits";
+import { REPORT_CHARTS_TOTAL_MAX, REPORT_FILENAME_MAX, REPORT_PROMPT_MAX } from "@/lib/ai/report-limits";
 import { buildReportHtml, printReportHtml, type ReportChart } from "./print-report";
 
 type Header = { workspace: string; logoUrl: string | null; author: string };
@@ -42,7 +42,12 @@ export function captureCharts(root: HTMLElement | null): ReportChart[] {
       }
       const legend = el.querySelector(".recharts-legend-wrapper ul");
       svg = clone.outerHTML + (legend ? legend.outerHTML : "");
-    } else if (kpi) svg = `<div class="kpi">${escapeText(kpi.textContent ?? "")}</div>`;
+    } else if (kpi) {
+      // Dashboard KPIs also show a label and a trend: keep them as separate lines, not one run-on string.
+      const num = kpi.querySelector("[data-kpi-number]") ?? kpi;
+      const sub = [kpi.querySelector("[data-kpi-label]"), kpi.querySelector("[data-kpi-trend]")].map((x) => x?.textContent?.replace(/\s+/g, " ").trim()).filter(Boolean).join(" · ");
+      svg = `<div class="kpi">${escapeText(num.textContent?.trim() ?? "")}</div>${sub ? `<div class="kpi-sub">${escapeText(sub)}</div>` : ""}`;
+    }
     else if (table) svg = table.outerHTML;
     if (svg && svg.length <= 400_000) out.push({ id, title, svg });
   });
@@ -131,7 +136,9 @@ export function AiReportButton({
     setSaving(true);
     try {
       // Only keep the charts the report actually shows.
-      const used = draft.charts.filter((c) => draft.markdown.includes(`[[chart:${c.id}]]`));
+      // Only keep the charts the report shows, within the total size a saved report may carry.
+      let total = 0;
+      const used = draft.charts.filter((c) => draft.markdown.includes(`[[chart:${c.id}]]`) && (total += c.svg.length) <= REPORT_CHARTS_TOTAL_MAX);
       await api.post(`/api/workspaces/${workspaceId}/saved-reports`, {
         title: draft.title,
         fileName: draft.fileName,

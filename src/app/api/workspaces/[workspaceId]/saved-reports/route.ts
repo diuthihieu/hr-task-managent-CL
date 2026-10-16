@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfDashboard, workspaceOfProject, badRequest } from "@/lib/authz";
 import { uuid } from "@/lib/validation";
-import { REPORT_CHARTS_MAX, REPORT_CONTENT_MAX, REPORT_FILENAME_MAX, REPORT_PROMPT_MAX, REPORT_SVG_MAX, cleanFileName } from "@/lib/ai/report-limits";
+import { REPORT_CHARTS_MAX, REPORT_CHARTS_TOTAL_MAX, REPORT_CONTENT_MAX, REPORT_FILENAME_MAX, REPORT_PROMPT_MAX, REPORT_SVG_MAX, cleanFileName } from "@/lib/ai/report-limits";
 
 type P = { workspaceId: string };
 
@@ -12,7 +12,11 @@ const schema = z.object({
   fileName: z.string().trim().min(1).max(REPORT_FILENAME_MAX),
   prompt: z.string().max(REPORT_PROMPT_MAX).default(""),
   content: z.string().min(1).max(REPORT_CONTENT_MAX),
-  charts: z.array(z.object({ id: z.string().min(1).max(64), title: z.string().max(200), svg: z.string().max(REPORT_SVG_MAX) })).max(REPORT_CHARTS_MAX).default([]),
+  charts: z
+    .array(z.object({ id: z.string().min(1).max(64), title: z.string().max(200), svg: z.string().max(REPORT_SVG_MAX) }))
+    .max(REPORT_CHARTS_MAX)
+    .refine((cs) => cs.reduce((n, c) => n + c.svg.length, 0) <= REPORT_CHARTS_TOTAL_MAX, "The charts in this report are too large to save together - remove some charts from the report")
+    .default([]),
   projectId: uuid.nullish(),
   dashboardId: uuid.nullish(),
 });

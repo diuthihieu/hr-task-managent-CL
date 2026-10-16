@@ -1342,6 +1342,8 @@ test("AI PDF report: writes with chart markers; the report library is private to
   assert.equal((await contributor.del(`/api/saved-reports/${saved.body.id}`)).status, 404);
   assert.equal((await outsider.get(`/api/workspaces/${s.ws}/saved-reports`)).status, 404);
   assert.equal((await admin.post(`/api/workspaces/${s.ws}/saved-reports`, { title: "x", fileName: "x", content: "x", charts: [{ id: "a", title: "a", svg: "x".repeat(400_001) }] })).status, 400, "chart size limit");
+  const big = Array.from({ length: 8 }, (_, i) => ({ id: `c${i}`, title: "c", svg: "x".repeat(399_000) }));
+  assert.equal((await admin.post(`/api/workspaces/${s.ws}/saved-reports`, { title: "x", fileName: "x", content: "x", charts: big })).status, 400, "total chart size limit (request body cap)");
   assert.equal((await admin.del(`/api/saved-reports/${saved.body.id}`)).status, 200);
 
   // AI narrative card: reads the dashboard snapshot, with an optional focus; same access rules.

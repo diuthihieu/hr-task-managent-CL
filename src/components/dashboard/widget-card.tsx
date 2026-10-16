@@ -191,10 +191,10 @@ function KpiDisplay({ value, label, trend, style, onClick }: { value: number; la
   const Tag = onClick ? "button" : "div";
   return (
     <Tag type={onClick ? "button" : undefined} onClick={onClick} className={cn("h-full w-full flex flex-col items-center justify-center rounded-md", onClick && "hover:bg-indigo-50/60 dark:hover:bg-indigo-950/40")} data-testid="kpi-value">
-      <div className="text-3xl font-semibold text-neutral-900 dark:text-neutral-50 tabular-nums" style={{ color: style?.textColor }}>{formatted}</div>
-      {label && <div className="text-xs text-neutral-400 mt-1" style={{ color: style?.textColor }}>{label}</div>}
+      <div className="text-3xl font-semibold text-neutral-900 dark:text-neutral-50 tabular-nums" style={{ color: style?.textColor }} data-kpi-number>{formatted}</div>
+      {label && <div className="text-xs text-neutral-400 mt-1" style={{ color: style?.textColor }} data-kpi-label>{label}</div>}
       {trend && (
-        <div className={cn("mt-2 flex items-center gap-1 text-xs tabular-nums", trend.direction === "up" ? "text-emerald-600" : trend.direction === "down" ? "text-red-600" : "text-neutral-500")} title={`${t("db.kpi.previous")}: ${trend.previous.toLocaleString()}`}>
+        <div data-kpi-trend className={cn("mt-2 flex items-center gap-1 text-xs tabular-nums", trend.direction === "up" ? "text-emerald-600" : trend.direction === "down" ? "text-red-600" : "text-neutral-500")} title={`${t("db.kpi.previous")}: ${trend.previous.toLocaleString()}`}>
           <TrendIcon size={13} /> {trendText} <span className="text-neutral-400">{t("db.kpi.vsPrevious")}</span>
         </div>
       )}

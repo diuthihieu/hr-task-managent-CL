@@ -42,6 +42,7 @@ const STYLE = `
   figure.chart ul { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; font-size: 8.5pt; color: #4b5563; }
   figure.chart li { display: inline-flex; align-items: center; gap: 4px; }
   figure.chart .narrative { font-size: 10.5pt; }
+  figure.chart .kpi-sub { font-size: 9pt; color: #6b7280; }
   figure.chart .kpi { font-size: 30pt; font-weight: 700; color: #ea580c; }
   footer { margin-top: 28px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-size: 8pt; color: #9ca3af; }
 `;

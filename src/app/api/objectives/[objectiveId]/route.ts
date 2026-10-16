@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfObjective, hiddenProjectIds } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { logActivity, diff } from "@/lib/activity";
 import { resolveObjectives, pruneToMyBranch, myTaskIdsIn, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 import { assertObjectiveRefs, parentObjectiveFor } from "@/lib/okr-write";
@@ -26,8 +27,11 @@ export const PATCH = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { objectiveId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfObjective(objectiveId), "editor");
+  if (ctx.projectId) await assertProjectCap(ctx, ctx.projectId, "okr.manage");
   const raw = await readJson<Record<string, unknown>>(req);
   const body = objectiveSchema.partial().parse({ ...raw, startDate: lenientDateOnly(raw.startDate), endDate: lenientDateOnly(raw.endDate) });
+  // Moving it into another project needs the same right there.
+  if (body.projectId && body.projectId !== ctx.projectId) await assertProjectCap(ctx, body.projectId, "okr.manage");
   const objective = await prisma.$transaction(async (tx) => {
     await assertObjectiveRefs(tx, ctx.workspaceId, body, objectiveId, user.id);
     const before = await tx.objective.findUniqueOrThrow({ where: { id: objectiveId } });
@@ -67,6 +71,7 @@ export const DELETE = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { objectiveId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfObjective(objectiveId), "editor");
+  if (ctx.projectId) await assertProjectCap(ctx, ctx.projectId, "okr.manage");
   await prisma.$transaction(async (tx) => {
     const now = new Date();
     const o = await tx.objective.update({ where: { id: objectiveId }, data: { deletedAt: now, updatedById: user.id } });

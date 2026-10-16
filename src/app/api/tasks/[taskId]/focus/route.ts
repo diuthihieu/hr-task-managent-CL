@@ -7,6 +7,8 @@ import { focusAccess, pauseOtherRuns, markInProgress, openRun } from "@/lib/focu
 
 type P = { taskId: string };
 
+const DEFAULT_FOCUS_BLOCK = 25;
+
 /** Focus history of a task: every session (stopped ones keep their time), its runs and the total focused minutes. */
 export const GET = route<P>(async (_req, { params }) => {
   const user = await requireUser();
@@ -46,11 +48,11 @@ export const POST = route<P>(async (req, { params }) => {
         include: { task: { select: FOCUS_TASK_SELECT }, runs: FOCUS_RUNS },
       });
     }
-    const task = await tx.task.findUniqueOrThrow({ where: { id: taskId }, select: { estimateMinutes: true, actualMinutes: true } });
-    // Default block: what's left of the estimate (25-minute block when there's no estimate).
-    const left = task.estimateMinutes ? Math.max(5, task.estimateMinutes - (task.actualMinutes ?? 0)) : 25;
+    // The block is only the timer's goal (a 25-minute pomodoro unless chosen). It is
+    // never derived from or written to the task's estimate, which the user types;
+    // focused time goes to the actual time only.
     return tx.focusSession.create({
-      data: { workspaceId: ctx.workspaceId, taskId, userId: user.id, status: "running", resumedAt: now, plannedMinutes: body.plannedMinutes ?? Math.min(left, 240), checklist: [], runs: { create: { startedAt: now, startKind: "started" } } },
+      data: { workspaceId: ctx.workspaceId, taskId, userId: user.id, status: "running", resumedAt: now, plannedMinutes: body.plannedMinutes ?? DEFAULT_FOCUS_BLOCK, checklist: [], runs: { create: { startedAt: now, startKind: "started" } } },
       include: { task: { select: FOCUS_TASK_SELECT }, runs: FOCUS_RUNS },
     });
   });

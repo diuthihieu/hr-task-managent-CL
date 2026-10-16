@@ -324,67 +324,68 @@ model User {
   updatedBy    User?  @relation("UserUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
   usersUpdated User[] @relation("UserUpdatedBy")
 
-  memberships           WorkspaceMember[]      @relation("MemberUser")
-  projectsOwned         Project[]              @relation("ProjectOwner")
-  taskAssignments       TaskAssignee[]         @relation("AssigneeUser")
-  tasksCreated          Task[]                 @relation("TaskCreatedBy")
-  tasksUpdated          Task[]                 @relation("TaskUpdatedBy")
+  memberships           WorkspaceMember[]         @relation("MemberUser")
+  projectsOwned         Project[]                 @relation("ProjectOwner")
+  taskAssignments       TaskAssignee[]            @relation("AssigneeUser")
+  tasksCreated          Task[]                    @relation("TaskCreatedBy")
+  tasksUpdated          Task[]                    @relation("TaskUpdatedBy")
   comments              Comment[]
   attachments           Attachment[]
   activityLogs          ActivityLog[]
-  objectivesOwned       Objective[]            @relation("ObjectiveOwner")
-  wikiPagesCreated      WikiPage[]             @relation("WikiCreatedBy")
-  reportRecipientOf     TaskReportRecipient[]  @relation("ReportRecipientUser")
-  notifications         Notification[]         @relation("NotificationUser")
-  notificationsActed    Notification[]         @relation("NotificationActor")
+  objectivesOwned       Objective[]               @relation("ObjectiveOwner")
+  wikiPagesCreated      WikiPage[]                @relation("WikiCreatedBy")
+  reportRecipientOf     TaskReportRecipient[]     @relation("ReportRecipientUser")
+  notifications         Notification[]            @relation("NotificationUser")
+  notificationsActed    Notification[]            @relation("NotificationActor")
   hiddenProjects        ProjectHiddenMember[]
-  wikiPagesUpdated      WikiPage[]             @relation("WikiUpdatedBy")
-  keyResultsOwned       KeyResult[]            @relation("KeyResultOwner")
+  projectPermissions    ProjectMemberPermission[] @relation("ProjectPermissionUser")
+  wikiPagesUpdated      WikiPage[]                @relation("WikiUpdatedBy")
+  keyResultsOwned       KeyResult[]               @relation("KeyResultOwner")
   objectiveContributes  ObjectiveContributor[]
   capturedThoughts      CapturedThought[]
-  customFieldUserValues TaskCustomFieldValue[] @relation("CustomValueUser")
+  customFieldUserValues TaskCustomFieldValue[]    @relation("CustomValueUser")
   knowledgeDocs         KnowledgeDoc[]
   aiConversations       AiConversation[]
   savedReports          SavedReport[]
   aiSettingsUpdated     WikiAiSettings[]
-  wikisCreated          Wiki[]                 @relation("WikiCreatedByUser")
+  wikisCreated          Wiki[]                    @relation("WikiCreatedByUser")
   wikiMemberships       WikiMember[]
   commentMentions       CommentMention[]
   commentReactions      CommentReaction[]
-  wikiComments          WikiComment[]          @relation("WikiCommentAuthor")
-  approvalsRequested    TaskApproval[]         @relation("ApprovalRequester")
-  approvalsToDecide     TaskApproval[]         @relation("ApprovalApprover")
-  invitationsSent       WorkspaceInvitation[]  @relation("InvitationSender")
-  invitationsReceived   WorkspaceInvitation[]  @relation("InvitationInvitee")
+  wikiComments          WikiComment[]             @relation("WikiCommentAuthor")
+  approvalsRequested    TaskApproval[]            @relation("ApprovalRequester")
+  approvalsToDecide     TaskApproval[]            @relation("ApprovalApprover")
+  invitationsSent       WorkspaceInvitation[]     @relation("InvitationSender")
+  invitationsReceived   WorkspaceInvitation[]     @relation("InvitationInvitee")
   inviteLinksCreated    WorkspaceInviteLink[]
-  wikiCommentMentions   WikiCommentMention[]   @relation("WikiCommentMentionUser")
+  wikiCommentMentions   WikiCommentMention[]      @relation("WikiCommentMentionUser")
   focusSessions         FocusSession[]
-  decisionsCreated      Decision[]             @relation("DecisionCreatedBy")
-  decisionsOwned        Decision[]             @relation("DecisionOwner")
-  decisionsInvolved     DecisionPerson[]       @relation("DecisionPeople")
-  journalEntries        JournalEntry[]         @relation("JournalUser")
-  knowledgeReviews      KnowledgeReview[]      @relation("ReviewUser")
-  pointEvents           PointEvent[]           @relation("PointEventUser")
-  recognitionManagerOf  RecognitionManager[]   @relation("RecognitionManagerUser")
-  recognitionMemberOf   RecognitionMember[]    @relation("RecognitionMemberUser")
-  kudosSent             Kudos[]                @relation("KudosFrom")
-  kudosReceived         Kudos[]                @relation("KudosTo")
-  redemptions           RewardRedemption[]     @relation("RedemptionUser")
-  kudosReactions        KudosReaction[]        @relation("KudosReactionUser")
-  journalNotes          JournalNote[]          @relation("JournalNoteUser")
-  homeLayouts           HomeLayout[]           @relation("HomeLayoutUser")
-  homeTemplates         HomeTemplate[]         @relation("HomeTemplateOwner")
-  homeTemplateShares    HomeTemplateShare[]    @relation("HomeTemplateShareUser")
+  decisionsCreated      Decision[]                @relation("DecisionCreatedBy")
+  decisionsOwned        Decision[]                @relation("DecisionOwner")
+  decisionsInvolved     DecisionPerson[]          @relation("DecisionPeople")
+  journalEntries        JournalEntry[]            @relation("JournalUser")
+  knowledgeReviews      KnowledgeReview[]         @relation("ReviewUser")
+  pointEvents           PointEvent[]              @relation("PointEventUser")
+  recognitionManagerOf  RecognitionManager[]      @relation("RecognitionManagerUser")
+  recognitionMemberOf   RecognitionMember[]       @relation("RecognitionMemberUser")
+  kudosSent             Kudos[]                   @relation("KudosFrom")
+  kudosReceived         Kudos[]                   @relation("KudosTo")
+  redemptions           RewardRedemption[]        @relation("RedemptionUser")
+  kudosReactions        KudosReaction[]           @relation("KudosReactionUser")
+  journalNotes          JournalNote[]             @relation("JournalNoteUser")
+  homeLayouts           HomeLayout[]              @relation("HomeLayoutUser")
+  homeTemplates         HomeTemplate[]            @relation("HomeTemplateOwner")
+  homeTemplateShares    HomeTemplateShare[]       @relation("HomeTemplateShareUser")
   agentSettings         AgentSettings[]
-  agentSkillsOwned      AgentSkill[]           @relation("AgentSkillOwner")
+  agentSkillsOwned      AgentSkill[]              @relation("AgentSkillOwner")
   agentSkillActivations AgentSkillActivation[]
   agentSkillShares      AgentSkillShare[]
-  agentRuns             AgentRun[]             @relation("AgentRunUser")
-  agentRunEvents        AgentRunEvent[]        @relation("AgentRunEventActor")
+  agentRuns             AgentRun[]                @relation("AgentRunUser")
+  agentRunEvents        AgentRunEvent[]           @relation("AgentRunEventActor")
   agentSuggestions      AgentSuggestion[]
-  agentApprovalsAsked   AgentApproval[]        @relation("AgentApprovalRequester")
-  agentApprovalsToAct   AgentApproval[]        @relation("AgentApprovalApprover")
-  agentOutputs          AgentOutput[]          @relation("AgentOutputCreator")
+  agentApprovalsAsked   AgentApproval[]           @relation("AgentApprovalRequester")
+  agentApprovalsToAct   AgentApproval[]           @relation("AgentApprovalApprover")
+  agentOutputs          AgentOutput[]             @relation("AgentOutputCreator")
 
   @@index([isActive, deletedAt])
   @@map("users")
@@ -511,22 +512,23 @@ model Project {
   deletedAt   DateTime?     @map("deleted_at") @db.Timestamptz(6)
   deletedById String?       @map("deleted_by") @db.Uuid
 
-  workspace        Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  owner            User?                 @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
-  tasks            Task[]
-  customFields     CustomField[]
-  views            View[]
-  capturedThoughts CapturedThought[]
-  categories       Category[]
-  hiddenMembers    ProjectHiddenMember[]
-  notifications    Notification[]
-  objectives       Objective[]
-  decisions        Decision[]
-  kudos            Kudos[]
-  agentRuns        AgentRun[]
-  agentOutputs     AgentOutput[]
-  aiConversations  AiConversation[]
-  savedReports     SavedReport[]
+  workspace         Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner             User?                     @relation("ProjectOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  tasks             Task[]
+  customFields      CustomField[]
+  views             View[]
+  capturedThoughts  CapturedThought[]
+  categories        Category[]
+  hiddenMembers     ProjectHiddenMember[]
+  memberPermissions ProjectMemberPermission[]
+  notifications     Notification[]
+  objectives        Objective[]
+  decisions         Decision[]
+  kudos             Kudos[]
+  agentRuns         AgentRun[]
+  agentOutputs      AgentOutput[]
+  aiConversations   AiConversation[]
+  savedReports      SavedReport[]
 
   @@index([workspaceId, deletedAt, sortOrder])
   @@map("projects")
@@ -1256,6 +1258,23 @@ model Notification {
 }
 
 /// A project is visible to every workspace member except the people listed here.
+/// A member's capabilities in one project, when they differ from the defaults of
+/// their workspace role. Always capped by that role (see src/lib/project-permissions.ts).
+model ProjectMemberPermission {
+  projectId   String   @map("project_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  permissions String[] @default([])
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+  updatedById String?  @map("updated_by") @db.Uuid
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation("ProjectPermissionUser", fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@index([userId])
+  @@map("project_member_permissions")
+}
+
 model ProjectHiddenMember {
   projectId   String   @map("project_id") @db.Uuid
   userId      String   @map("user_id") @db.Uuid

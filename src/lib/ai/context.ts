@@ -79,6 +79,39 @@ export async function wikiKnowledge(wikiId: string, budget = CONTEXT_CHARS, hidd
 }
 
 /** Everything this user may see in the workspace: projects, tasks, OKRs, wikis and docs. */
+/**
+ * The asker's own "Put all things on" ideas that are not tasks yet. Private to
+ * their author, so only ever the caller's own (never other people's), and only
+ * in projects they can still see.
+ */
+export async function myIdeasSection(user: SessionUser, workspaceId: string) {
+  const ideas = await prisma.capturedThought.findMany({
+    where: { workspaceId, userId: user.id, status: "captured", project: { deletedAt: null, ...visibleProjectWhere(user) } },
+    orderBy: [{ plannedAt: { sort: "asc", nulls: "first" } }, { createdAt: "asc" }],
+    take: 200,
+    select: { taskName: true, estimatedDurationMinutes: true, plannedAt: true, createdAt: true, project: { select: { name: true } }, category: { select: { name: true } } },
+  });
+  if (!ideas.length) return "## My captured ideas (Put all things on) - not tasks yet (0)\n(none)";
+  const now = new Date();
+  return (
+    `## My captured ideas (Put all things on) - not tasks yet (${ideas.length}). Only the asker sees these. NOT PLANNED = no planned date; OVERDUE = planned date passed.\n` +
+    "idea | project | category | duration | planned for | captured on | flag\n" +
+    ideas
+      .map((i) =>
+        [
+          i.taskName,
+          i.project.name,
+          i.category?.name ?? "-",
+          i.estimatedDurationMinutes ? `${i.estimatedDurationMinutes} min` : "-",
+          day(i.plannedAt),
+          day(i.createdAt),
+          !i.plannedAt ? "NOT PLANNED" : i.plannedAt < now ? "OVERDUE" : "-",
+        ].join(" | ")
+      )
+      .join("\n")
+  );
+}
+
 export async function workspaceData(user: SessionUser, workspaceId: string, role: WorkspaceRole, budget = CONTEXT_CHARS) {
   const visible = visibleProjectWhere(user);
   const [projects, tasks, objectives, hidden, members] = await Promise.all([
@@ -142,6 +175,9 @@ export async function workspaceData(user: SessionUser, workspaceId: string, role
           )
           .join("\n")
     );
+
+  // The asker's own not-yet-planned ideas: small, and the only way to answer "what haven't I planned yet?".
+  b.add(await myIdeasSection(user, workspaceId));
 
   // What people said on the tasks (same visibility as the task list). Added before the task list,
   // which can fill the rest of the budget, and capped so it never crowds the tasks out.

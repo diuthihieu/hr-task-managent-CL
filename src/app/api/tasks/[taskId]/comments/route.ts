@@ -3,6 +3,7 @@ import { withCurrentMentionNames } from "@/lib/mentions-server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfTask, badRequest } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { notifyTaskComment } from "@/lib/notifications";
 import { logActivity } from "@/lib/activity";
 import { uuid } from "@/lib/validation";
@@ -37,11 +38,12 @@ export const GET = route<P>(async (_req, { params }) => {
 
 const createSchema = z.object({ body: z.string().trim().min(1, "Comment cannot be empty").max(10000), parentCommentId: uuid.nullable().optional() });
 
-/** Everyone who can see the task (viewers included) can comment. */
+/** Everyone who can see the task (viewers included) can comment, unless the project owner turned it off for them. */
 export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { taskId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfTask(taskId), "viewer");
+  if (ctx.projectId) await assertProjectCap(ctx, ctx.projectId, "task.comment");
   const body = createSchema.parse(await readJson(req));
   const commentBody = sanitizeCommentBody(body.body);
   let parentCommentId: string | null = null;

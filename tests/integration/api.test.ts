@@ -2191,6 +2191,186 @@ test("members can leave; only owners delete a workspace", async () => {
   assert.ok((await prisma.workspace.findUniqueOrThrow({ where: { id: s.contributorWs } })).deletedAt);
 });
 
+test("focus: the session goal is a 25-minute block; the estimate is never touched, only the actual time", async () => {
+  const task = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Focus keeps estimate", sys_assignees: [s.contributorId], sys_estimate: 3 } });
+  const f = await contributor.post<{ id: string; plannedMinutes: number }>(`/api/tasks/${task.body.id}/focus`, {});
+  assert.equal(f.status, 201);
+  assert.equal(f.body.plannedMinutes, 25, "not derived from the 3 h estimate");
+  await prisma.focusSession.update({ where: { id: f.body.id }, data: { elapsedSeconds: 40 * 60, resumedAt: new Date() } });
+  await contributor.patch(`/api/focus/${f.body.id}`, { action: "pause" });
+  const row = await prisma.task.findUniqueOrThrow({ where: { id: task.body.id }, select: { estimateMinutes: true, actualMinutes: true } });
+  assert.equal(row.estimateMinutes, 180, "estimate unchanged");
+  assert.ok((row.actualMinutes ?? 0) >= 40, "focused time went to actual");
+  await contributor.patch(`/api/focus/${f.body.id}`, { action: "cancel" });
+  await admin.del(`/api/tasks/${task.body.id}`);
+});
+
+test("completed time: a built-in column after Progress, set on done, editable, cleared on reopen; done reports missing details", async () => {
+  const fields = (await admin.get<{ fields: { id: string; type: string }[] }>(`/api/projects/${s.project}`)).body.fields;
+  const ids = fields.map((f) => f.id);
+  assert.equal(ids[ids.indexOf("sys_progress") + 1], "sys_completed_at", "right after Progress");
+  assert.equal(fields.find((f) => f.id === "sys_completed_at")?.type, "datetime");
+  const doneStatus = (await prisma.status.findFirstOrThrow({ where: { workspaceId: s.ws, category: "done" } })).id;
+  const todoStatus = (await prisma.status.findFirstOrThrow({ where: { workspaceId: s.ws, category: "todo" } })).id;
+  const t = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Finish me" } });
+  assert.equal(t.body.data.sys_completed_at, null);
+  const done = await admin.patch<Rec & { doneMissing?: string[] }>(`/api/tasks/${t.body.id}`, { data: { sys_status: doneStatus } });
+  assert.equal(done.status, 200);
+  assert.ok(done.body.data.sys_completed_at, "set automatically");
+  assert.deepEqual(done.body.doneMissing, ["sys_actual", "sys_start_date", "sys_due_date"], "what is still empty");
+  const again = await admin.patch<Rec & { doneMissing?: string[] }>(`/api/tasks/${t.body.id}`, { data: { sys_actual: 2 } });
+  assert.equal(again.body.doneMissing, undefined, "only when the task becomes done");
+  const at = "2026-10-01T09:30:00.000Z";
+  const edited = await admin.patch<Rec>(`/api/tasks/${t.body.id}`, { data: { sys_completed_at: at } });
+  assert.equal(edited.body.data.sys_completed_at, at, "editable");
+  assert.equal((await admin.patch(`/api/tasks/${t.body.id}`, { data: { sys_completed_at: new Date(Date.now() + 3 * 86400_000).toISOString() } })).status, 400, "not in the future");
+  const reopened = await admin.patch<Rec>(`/api/tasks/${t.body.id}`, { data: { sys_status: todoStatus } });
+  assert.equal(reopened.body.data.sys_completed_at, null, "cleared on reopen");
+  const explicit = await admin.patch<Rec & { doneMissing?: string[] }>(`/api/tasks/${t.body.id}`, { data: { sys_status: doneStatus, sys_completed_at: at, sys_start_date: "2026-09-28", sys_due_date: "2026-09-30" } });
+  assert.equal(explicit.body.data.sys_completed_at, at, "an explicit time in the same save wins over now");
+  assert.deepEqual(explicit.body.doneMissing, [], "nothing missing");
+  const q = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Quick finish" } });
+  const quick = await admin.post<Rec & { doneMissing?: string[] }>(`/api/tasks/${q.body.id}/quick`, { action: "complete" });
+  assert.deepEqual(quick.body.doneMissing, ["sys_actual", "sys_start_date", "sys_due_date"]);
+  await admin.del(`/api/tasks/${t.body.id}`);
+  await admin.del(`/api/tasks/${q.body.id}`);
+});
+
+test("ownership: an owner transfers the workspace and steps down; admins hand over what a leaver owns", async () => {
+  const roleOf = async (userId: string) => (await prisma.workspaceMember.findUniqueOrThrow({ where: { workspaceId_userId: { workspaceId: s.ws, userId } } })).role;
+  const adminId = (await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } })).id;
+  const viewerRole = await roleOf(s.viewerId);
+  assert.equal((await contributor.post(`/api/workspaces/${s.ws}/transfer-ownership`, { toUserId: s.viewerId })).status, 403, "owners only");
+  assert.equal((await admin.post(`/api/workspaces/${s.ws}/transfer-ownership`, { toUserId: adminId })).status, 400, "not to yourself");
+  const tr = await admin.post(`/api/workspaces/${s.ws}/transfer-ownership`, { toUserId: s.viewerId, myNewRole: "admin" });
+  assert.equal(tr.status, 200, JSON.stringify(tr.body));
+  assert.equal(await roleOf(s.viewerId), "owner");
+  assert.equal(await roleOf(adminId), "admin");
+  assert.ok(await prisma.notification.findFirst({ where: { userId: s.viewerId, type: "role_changed", workspaceId: s.ws } }), "the new owner is told");
+  // ...and back, restoring the original roles.
+  assert.equal((await viewer.post(`/api/workspaces/${s.ws}/transfer-ownership`, { toUserId: adminId, myNewRole: "viewer" })).status, 200);
+  assert.equal(await roleOf(adminId), "owner");
+  await prisma.workspaceMember.update({ where: { workspaceId_userId: { workspaceId: s.ws, userId: s.viewerId } }, data: { role: viewerRole } });
+
+  // Handover: the contributor owns a project and an objective; the admin moves them to themself.
+  const p = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Leaver project" });
+  await admin.patch(`/api/projects/${p.body.id}`, { ownerId: s.contributorId });
+  const counts = await admin.get<{ projects: number; objectives: number; keyResults: number }>(`/api/workspaces/${s.ws}/members/${s.contributorId}/handover`);
+  assert.ok(counts.body.projects >= 1);
+  assert.equal((await contributor.post(`/api/workspaces/${s.ws}/members/${s.contributorId}/handover`, { toUserId: adminId })).status, 403, "admins only");
+  const h = await admin.post<{ projects: number }>(`/api/workspaces/${s.ws}/members/${s.contributorId}/handover`, { toUserId: adminId });
+  assert.equal(h.status, 200);
+  assert.equal(h.body.projects, counts.body.projects);
+  assert.equal((await prisma.project.findUniqueOrThrow({ where: { id: p.body.id } })).ownerId, adminId);
+  assert.equal(await prisma.project.count({ where: { workspaceId: s.ws, ownerId: s.contributorId, deletedAt: null } }), 0);
+  await admin.del(`/api/projects/${p.body.id}`);
+});
+
+test("AI sees the asker's own not-yet-planned ideas (Put all things on), never other people's", async () => {
+  const mine = await contributor.post<{ id: string }>(`/api/workspaces/${s.ws}/thoughts`, { taskName: "Idea only Casey has", projectId: s.project });
+  assert.equal(mine.status, 201, JSON.stringify(mine.body));
+  const theirs = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/thoughts`, { taskName: "Admin private idea", projectId: s.project });
+  assert.equal(theirs.status, 201);
+  const r = await action(contributor, { action: "home_plan", targetId: s.ws });
+  assert.equal(r.status, 200, r.text);
+  const sent = JSON.stringify((await lastModelRequest()).body);
+  assert.match(sent, /Idea only Casey has[^"]*NOT PLANNED/, "own idea, flagged as not planned");
+  assert.doesNotMatch(sent, /Admin private idea/, "never someone else's ideas");
+  await contributor.del(`/api/thoughts/${mine.body.id}`);
+  await admin.del(`/api/thoughts/${theirs.body.id}`);
+});
+
+test("project permissions: editors don't manage columns/settings unless delegated; members can be narrowed, never beyond their role", async () => {
+  const setRole = (userId: string, role: "editor" | "contributor" | "viewer") => prisma.workspaceMember.update({ where: { workspaceId_userId: { workspaceId: s.ws, userId } }, data: { role } });
+  const original = (await prisma.workspaceMember.findUniqueOrThrow({ where: { workspaceId_userId: { workspaceId: s.ws, userId: s.contributorId } } })).role;
+  try {
+    await setRole(s.contributorId, "editor");
+    const me = await contributor.get<{ myPermissions: string[] }>(`/api/projects/${s.project}`);
+    assert.ok(me.body.myPermissions.includes("task.edit_all"));
+    assert.ok(!me.body.myPermissions.includes("fields.manage"), "editors don't manage columns by default");
+    assert.equal((await contributor.post(`/api/projects/${s.project}/custom-fields`, { name: "Editor column", type: "text" })).status, 403);
+    assert.equal((await contributor.patch(`/api/projects/${s.project}`, { description: "x" })).status, 403, "settings need delegation");
+    assert.equal((await contributor.get(`/api/projects/${s.project}/permissions`)).status, 403, "only the owner / admins see the table");
+
+    // The admin delegates columns + settings to the editor.
+    const table = await admin.get<{ members: { id: string; permissions: string[]; locked: string | null; ceiling: string[] }[] }>(`/api/projects/${s.project}/permissions`);
+    assert.equal(table.status, 200);
+    const row = table.body.members.find((m) => m.id === s.contributorId)!;
+    assert.equal(row.locked, null);
+    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { userId: s.contributorId, permissions: [...row.permissions, "fields.manage", "settings.manage"] })).status, 200);
+    const col = await contributor.post<{ id: string }>(`/api/projects/${s.project}/custom-fields`, { name: "Delegated column", type: "text" });
+    assert.equal(col.status, 201, JSON.stringify(col.body));
+    assert.equal((await contributor.del(`/api/custom-fields/${col.body.id}`)).status, 204);
+
+    // Narrow: no creating, no comments.
+    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { userId: s.contributorId, permissions: ["task.edit_own"] })).status, 200);
+    assert.equal((await contributor.post(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Blocked" } })).status, 403);
+    assert.equal((await contributor.post(`/api/tasks/${s.r6task}/comments`, { body: "<p>hi</p>" })).status, 403);
+    const other = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Someone else's" } });
+    assert.equal((await contributor.patch(`/api/tasks/${other.body.id}`, { data: { sys_title: "x" } })).status, 403, "edit own only");
+
+    // Never beyond the workspace role.
+    await setRole(s.contributorId, "contributor");
+    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { userId: s.contributorId, permissions: ["task.edit_all"] })).status, 400);
+    const capped = await contributor.get<{ myPermissions: string[] }>(`/api/projects/${s.project}`);
+    assert.ok(!capped.body.myPermissions.includes("fields.manage"), "a stored grant above the role is ignored");
+    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { userId: s.contributorId, permissions: null })).status, 200, "back to defaults");
+    assert.ok((await contributor.get<{ myPermissions: string[] }>(`/api/projects/${s.project}`)).body.myPermissions.includes("task.create"));
+    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { userId: (await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } })).id, permissions: [] })).status, 400, "owners/admins always full");
+    await admin.del(`/api/tasks/${other.body.id}`);
+  } finally {
+    await prisma.projectMemberPermission.deleteMany({ where: { projectId: s.project } });
+    await setRole(s.contributorId, original as "contributor");
+  }
+});
+
+test("project transfer: everything of a project moves into another one (tasks, sub-tasks, comments, columns, categories, objectives)", async () => {
+  const A = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Transfer source" })).body.id;
+  const B = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Transfer target" })).body.id;
+  const catA = (await admin.post<{ id: string }>(`/api/projects/${A}/categories`, { name: "Hồ sơ", color: "#ff0000" })).body.id;
+  const typeA = await admin.post<{ id: string }>(`/api/projects/${A}/custom-fields`, { name: "Loại", type: "single_select", config: { options: [{ label: "Chính thức", color: "#00ff00" }, { label: "Thử việc", color: "#0000ff" }] } });
+  const noteA = await admin.post<{ id: string }>(`/api/projects/${A}/custom-fields`, { name: "Ghi chú HR", type: "text" });
+  const typeB = await admin.post<{ id: string }>(`/api/projects/${B}/custom-fields`, { name: "loại", type: "single_select", config: { options: [{ label: "Thử việc", color: "#999999" }] } });
+  const optA = (await prisma.customFieldOption.findFirstOrThrow({ where: { customFieldId: typeA.body.id, label: "Thử việc" } })).id;
+  const parent = await admin.post<Rec>(`/api/projects/${A}/tasks`, { data: { sys_title: "Parent", sys_category: catA, [typeA.body.id]: optA, [noteA.body.id]: "giữ nguyên" } });
+  const child = await admin.post<Rec>(`/api/projects/${A}/tasks`, { data: { sys_title: "Child", sys_parent: [parent.body.id] } });
+  await admin.post(`/api/tasks/${parent.body.id}/comments`, { body: "<p>Đã nhận hồ sơ</p>" });
+  const obj = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/objectives`, { title: "Source objective", projectId: A, cycleType: "quarter" });
+  assert.equal(obj.status, 201, JSON.stringify(obj.body));
+
+  assert.equal((await contributor.get(`/api/projects/${A}/transfer?targetProjectId=${B}`)).status, 403, "project owners / admins only");
+  const plan = await admin.get<{ tasks: number; comments: number; fields: { name: string; action: string }[]; categories: { action: string }[] }>(`/api/projects/${A}/transfer?targetProjectId=${B}`);
+  assert.equal(plan.status, 200);
+  assert.equal(plan.body.tasks, 2);
+  assert.equal(plan.body.comments, 1);
+  assert.equal(plan.body.fields.find((f) => f.name === "Loại")?.action, "reuse", "same name + type, any case");
+  assert.equal(plan.body.fields.find((f) => f.name === "Ghi chú HR")?.action, "create");
+
+  const r = await admin.post<{ tasks: number }>(`/api/projects/${A}/transfer`, { targetProjectId: B });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.tasks, 2);
+  const p2 = await prisma.task.findUniqueOrThrow({ where: { id: parent.body.id }, include: { category: true, customValues: true, comments: true } });
+  assert.equal(p2.projectId, B);
+  assert.equal(p2.category?.projectId, B, "category recreated in the target");
+  assert.equal(p2.category?.name, "Hồ sơ");
+  assert.equal(p2.comments.length, 1, "comments travel with the task");
+  const typeVal = p2.customValues.find((v) => v.customFieldId === typeB.body.id);
+  assert.ok(typeVal, "value moved onto the matching target column");
+  const opt = await prisma.customFieldOption.findUniqueOrThrow({ where: { id: typeVal!.valueOptionId! } });
+  assert.equal(opt.customFieldId, typeB.body.id);
+  assert.equal(opt.label, "Thử việc", "option matched by label");
+  const note = p2.customValues.find((v) => v.valueText === "giữ nguyên");
+  assert.ok(note && (await prisma.customField.findUniqueOrThrow({ where: { id: note.customFieldId } })).projectId === B, "new column created in the target");
+  assert.equal((await prisma.task.findUniqueOrThrow({ where: { id: child.body.id } })).parentTaskId, parent.body.id, "sub-task keeps its parent");
+  assert.equal((await prisma.objective.findUniqueOrThrow({ where: { id: obj.body.id } })).projectId, B);
+  assert.equal((await prisma.project.findUniqueOrThrow({ where: { id: A } })).status, "archived");
+  assert.equal(await prisma.task.count({ where: { projectId: A } }), 0);
+  const grid = await admin.get<{ records: Rec[] } | Rec[]>(`/api/projects/${B}/tasks`);
+  assert.equal(grid.status, 200, "target grid loads");
+  await admin.del(`/api/projects/${A}`);
+  await admin.del(`/api/projects/${B}`);
+});
+
 test("attachments require object storage; nothing is written when it's not configured", async () => {
   if (process.env.BLOB_READ_WRITE_TOKEN) return;
   const form = new FormData();

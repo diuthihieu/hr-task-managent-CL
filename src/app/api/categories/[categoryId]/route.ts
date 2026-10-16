@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfCategory } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { logActivity, diff } from "@/lib/activity";
 import { serializeCategory } from "@/lib/serializers";
 import { categorySchema } from "@/lib/validation";
@@ -11,6 +12,7 @@ export const PATCH = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { categoryId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfCategory(categoryId), "editor");
+  if (ctx.projectId) await assertProjectCap(ctx, ctx.projectId, "settings.manage");
   const raw = await readJson<Record<string, unknown>>(req);
   const body = categorySchema.partial().parse(raw);
   const order = typeof raw.order === "number" ? Math.round(raw.order) : undefined;
@@ -29,6 +31,7 @@ export const DELETE = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { categoryId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfCategory(categoryId), "editor");
+  if (ctx.projectId) await assertProjectCap(ctx, ctx.projectId, "settings.manage");
   await prisma.$transaction(async (tx) => {
     const c = await tx.category.delete({ where: { id: categoryId } });
     await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "category", entityId: categoryId, action: "deleted", summary: `Deleted category "${c.name}"` });

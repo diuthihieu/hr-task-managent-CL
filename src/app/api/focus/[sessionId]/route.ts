@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, route, readJson, notFound, badRequest, forbidden } from "@/lib/authz";
-import { applyTaskPatch, SYS } from "@/lib/task-grid";
+import { applyTaskPatch, loadTaskRecord, SYS } from "@/lib/task-grid";
+import { doneMissing } from "@/lib/done-check";
 import { notifyTaskPatched } from "@/lib/notifications";
 import { focusElapsed, serializeFocus, FOCUS_TASK_SELECT, FOCUS_RUNS } from "@/lib/focus";
 import { focusAccess, recordFocusTime, pauseOtherRuns, markInProgress, openRun, closeRun } from "@/lib/focus-server";
@@ -39,6 +40,7 @@ export const PATCH = route<P>(async (req, { params }) => {
   const now = new Date();
   const elapsed = focusElapsed(s, now);
 
+  let finishedTaskId: string | null = null;
   const updated = await prisma.$transaction(async (tx) => {
     const data: Record<string, unknown> = {};
     if (body.notes !== undefined) data.notes = body.notes;
@@ -71,11 +73,15 @@ export const PATCH = route<P>(async (req, { params }) => {
         const done = await tx.status.findFirst({ where: { workspaceId: task.workspaceId, category: "done" }, orderBy: { sortOrder: "asc" } });
         if (done) {
           const res = await applyTaskPatch(tx, { taskId: s.taskId, projectId: task.projectId, workspaceId: task.workspaceId, actorId: user.id, data: { [SYS.status]: done.id } });
+          if (res.becameDone) finishedTaskId = s.taskId;
           if (Object.keys(res.changes).length) await notifyTaskPatched(tx, { taskId: s.taskId, actorId: user.id, changedKeys: Object.keys(res.changes), statusChanged: res.statusChanged, newStatusName: res.newStatusName, assigned: [], reportAdded: [] });
         }
       }
     }
     return tx.focusSession.update({ where: { id: s.id }, data, include: { task: { select: FOCUS_TASK_SELECT }, runs: FOCUS_RUNS } });
   });
-  return NextResponse.json(serializeFocus(updated, now));
+  // The task was just finished: say which details are still empty so the client can ask for them.
+  const finished = finishedTaskId ? await loadTaskRecord(finishedTaskId) : null;
+  const doneMissingFields = finished ? doneMissing(finished.data) : undefined;
+  return NextResponse.json({ ...serializeFocus(updated, now), ...(doneMissingFields ? { doneMissing: doneMissingFields } : {}) });
 });

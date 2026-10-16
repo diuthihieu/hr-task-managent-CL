@@ -273,17 +273,32 @@ export async function assertCanManageProject(ctx: WorkspaceContext, projectId: s
 }
 
 /**
- * Contributors may only edit tasks they created or are assigned to; editors
- * and above may edit any task in the workspace.
+ * Editing a task follows the caller's rights in its project (see
+ * src/lib/project-permissions.ts): "edit all tasks", or "edit own tasks" for
+ * tasks they created or are assigned to. Viewers never edit. By default editors
+ * edit any task and contributors their own, as before.
  */
 export async function assertCanEditTask(ctx: WorkspaceContext, taskId: string) {
-  if (roleAtLeast(ctx.role, "editor")) return;
-  if (ctx.role !== "contributor") throw forbidden();
-  const task = await prisma.task.findFirst({
-    where: { id: taskId, deletedAt: null, OR: [{ createdById: ctx.user.id }, { assignees: { some: { userId: ctx.user.id } } }] },
-    select: { id: true },
+  if (!roleAtLeast(ctx.role, "contributor")) throw forbidden();
+  const task = await prisma.task.findUnique({
+    where: { id: taskId },
+    select: { projectId: true, createdById: true, assignees: { where: { userId: ctx.user.id }, select: { userId: true } } },
   });
-  if (!task) throw forbidden("Contributors can only edit tasks they created or are assigned to");
+  if (!task) throw notFound("Task");
+  const { projectCaps } = await import("./project-permissions");
+  const caps = await projectCaps(ctx, task.projectId);
+  if (caps.has("task.edit_all")) return;
+  const own = task.createdById === ctx.user.id || task.assignees.length > 0;
+  if (own && caps.has("task.edit_own")) return;
+  throw forbidden(own || !caps.has("task.edit_own") ? "You can't edit tasks in this project" : "You can only edit tasks you created or are assigned to in this project");
+}
+
+/** Deleting needs the edit right on the task plus "delete tasks" in its project. */
+export async function assertCanDeleteTask(ctx: WorkspaceContext, taskId: string) {
+  await assertCanEditTask(ctx, taskId);
+  const task = await prisma.task.findUniqueOrThrow({ where: { id: taskId }, select: { projectId: true } });
+  const { assertProjectCap } = await import("./project-permissions");
+  await assertProjectCap(ctx, task.projectId, "task.delete");
 }
 
 // ---------------------------------------------------------------------------

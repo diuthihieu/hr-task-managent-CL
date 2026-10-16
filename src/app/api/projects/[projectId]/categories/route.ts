@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { logActivity } from "@/lib/activity";
 import { serializeCategory } from "@/lib/serializers";
 import { categorySchema } from "@/lib/validation";
@@ -24,6 +25,7 @@ export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { projectId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "editor");
+  await assertProjectCap(ctx, projectId, "settings.manage");
   const body = categorySchema.parse(await readJson(req));
   const last = await prisma.category.aggregate({ where: { projectId }, _max: { sortOrder: true } });
   const category = await prisma.$transaction(async (tx) => {

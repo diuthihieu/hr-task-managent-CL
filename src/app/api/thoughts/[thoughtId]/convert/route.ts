@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfThought, notFound, badRequest, visibleProjectWhere } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { notifyTaskCreated } from "@/lib/notifications";
 import { logActivity } from "@/lib/activity";
 import { createTask, SYS } from "@/lib/task-grid";
@@ -40,6 +41,7 @@ export const POST = route<P>(async (req, { params }) => {
   const project = await prisma.project.findFirst({ where: { id: projectId, workspaceId: ctx.workspaceId, deletedAt: null, ...visibleProjectWhere(user) }, select: { id: true } });
   if (!project) throw badRequest("Choose a project in this workspace");
   // Keep the captured category only when it belongs to the chosen project.
+  await assertProjectCap(ctx, projectId, "task.create");
   const categoryId = body.categoryId !== undefined ? body.categoryId : projectId === thought.projectId ? thought.categoryId : null;
   if (categoryId && !(await prisma.category.findFirst({ where: { id: categoryId, projectId }, select: { id: true } }))) throw badRequest("Category does not belong to the chosen project");
 

@@ -7,6 +7,8 @@ import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api-client";
+import { promptDoneCheckFor } from "@/components/tasks/done-check-dialog";
+import type { DoneCheckField } from "@/lib/done-check";
 import { cn } from "@/lib/utils";
 import type { MessageKey } from "@/lib/i18n/core";
 import { InlineArrow } from "@/components/ui/inline-arrow";
@@ -112,7 +114,8 @@ export async function startFocus(taskId: string, plannedMinutes?: number) {
 }
 
 async function patchFocus(id: string, body: Record<string, unknown>) {
-  const s = await api.patch<FocusSessionDto>(`/api/focus/${id}`, body);
+  const s = await api.patch<FocusSessionDto & { doneMissing?: DoneCheckField[] }>(`/api/focus/${id}`, body);
+  if (s.task) promptDoneCheckFor(s.task.id, s.doneMissing, s.task.title);
   // Resuming one pauses the others: reload the whole list.
   if (body.action) await refreshFocus();
   else useFocus.getState().set({ sessions: useFocus.getState().sessions.map((x) => (x.id === s.id ? { ...x, notes: s.notes, checklist: s.checklist, plannedMinutes: s.plannedMinutes } : x)) });
@@ -355,8 +358,13 @@ export function FocusDock({ workspaceId }: { workspaceId: string }) {
                   </div>
                   <div className="flex justify-between text-[11px] text-neutral-500 mt-1">
                     <span>{t("focus.planned", { min: session.plannedMinutes ?? 0 })}</span>
-                    {session.task?.estimateMinutes ? <span>{t("focus.estimate", { h: Math.round((session.task.estimateMinutes / 60) * 10) / 10, a: Math.round(((session.task.actualMinutes ?? 0) / 60) * 10) / 10 })}</span> : null}
                   </div>
+                </div>
+              )}
+              {session.task && (
+                <div className="mt-2 flex justify-center gap-4 text-[11px] text-neutral-500" data-testid="focus-time-summary">
+                  <span title={t("focus.estimateHint")}>{t("focus.estimateLabel", { h: session.task.estimateMinutes ? String(Math.round((session.task.estimateMinutes / 60) * 10) / 10) : "-" })}</span>
+                  <span title={t("focus.actualHint")}>{t("focus.actualLabel", { h: Math.round(((session.task.actualMinutes ?? 0) / 60) * 10) / 10 })}</span>
                 </div>
               )}
             </div>

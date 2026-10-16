@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfWikiPage, workspaceOfProject, badRequest } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { createTask, SYS } from "@/lib/task-grid";
 import { notifyTaskCreated } from "@/lib/notifications";
 import { logActivity } from "@/lib/activity";
@@ -37,6 +38,7 @@ export const POST = route<P>(async (req, { params }) => {
   const pageCtx = await requireWorkspaceRole(user, await workspaceOfWikiPage(pageId), "viewer");
   const body = schema.parse(await readJson(req));
   const projectCtx = await requireWorkspaceRole(user, await workspaceOfProject(body.projectId), "contributor");
+  await assertProjectCap(projectCtx, body.projectId, "task.create");
   if (projectCtx.workspaceId !== pageCtx.workspaceId) throw badRequest("The project is in another workspace");
   const [page, ws] = await Promise.all([
     prisma.wikiPage.findUniqueOrThrow({ where: { id: pageId }, select: { id: true, title: true, wikiId: true } }),

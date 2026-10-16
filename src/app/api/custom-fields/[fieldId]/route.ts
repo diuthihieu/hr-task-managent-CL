@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfCustomField, badRequest } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { logActivity, diff } from "@/lib/activity";
 import { customFieldPatchSchema, settingsFor, syncOptions, validateFieldConfig } from "@/lib/custom-fields";
 
@@ -10,6 +11,7 @@ export const PATCH = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { fieldId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfCustomField(fieldId), "editor");
+  if (ctx.projectId) await assertProjectCap(ctx, ctx.projectId, "fields.manage");
   const body = customFieldPatchSchema.parse(await readJson(req));
   const before = await prisma.customField.findUniqueOrThrow({ where: { id: fieldId } });
   // Changing a field's type would reinterpret stored values; create a new field instead.
@@ -39,6 +41,7 @@ export const DELETE = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { fieldId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfCustomField(fieldId), "editor");
+  if (ctx.projectId) await assertProjectCap(ctx, ctx.projectId, "fields.manage");
   await prisma.$transaction(async (tx) => {
     const f = await tx.customField.update({ where: { id: fieldId }, data: { deletedAt: new Date(), updatedById: user.id } });
     await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "custom_field", entityId: fieldId, action: "deleted", summary: `Deleted field "${f.name}"` });

@@ -48,7 +48,7 @@ export const customFieldPatchSchema = customFieldCreateSchema.partial();
 
 const SYSTEM_LOOKUP_FIELDS = new Set([
   "sys_title", "sys_status", "sys_assignees", "sys_report_to", "sys_priority", "sys_category",
-  "sys_start_date", "sys_due_date", "sys_progress", "sys_estimate", "sys_actual", "sys_objective",
+  "sys_start_date", "sys_due_date", "sys_progress", "sys_completed_at", "sys_estimate", "sys_actual", "sys_objective",
   "sys_importance", "sys_urgency", "sys_description", "sys_created_at", "sys_updated_at", "sys_created_by", "sys_updated_by",
 ]);
 

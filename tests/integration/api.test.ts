@@ -2464,6 +2464,13 @@ test("project owner ranks above the workspace owner; hand-over with checks; role
   }
 });
 
+test("every table has row level security on (nothing is readable around the app through a hosted data API)", async () => {
+  const off = await prisma.$queryRaw<{ relname: string }[]>`SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT c.relrowsecurity ORDER BY 1`;
+  assert.deepEqual(off.map((r) => r.relname), [], "a migration that creates a table must also ENABLE ROW LEVEL SECURITY on it");
+  // The app still reads and writes as the table owner.
+  assert.ok((await prisma.user.count()) > 0);
+});
+
 test("attachments require object storage; nothing is written when it's not configured", async () => {
   if (process.env.BLOB_READ_WRITE_TOKEN) return;
   const form = new FormData();

@@ -15,7 +15,9 @@ import { useT } from "@/components/i18n-provider";
 
 const DATE_TYPES = ["date", "datetime"];
 const COLOR_TYPES = ["single_select", "status", "person", "people"];
-const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+/** Short weekday names (Sunday first) in the UI language. */
+const weekdays = (locale: string) => Array.from({ length: 7 }, (_, i) => new Date(2026, 0, 4 + i).toLocaleDateString(locale, { weekday: "short" }));
+const dateLocale = (locale: string) => (locale === "vi" ? "vi-VN" : "en-GB");
 
 interface EventItem {
   record: RecordRow;
@@ -57,7 +59,8 @@ export function CalendarView({
   onCellChange: (recordId: string, fieldId: string, value: unknown) => void;
   onOpenRecord: (id: string) => void;
 }) {
-  const { t } = useT();
+  const { t, locale } = useT();
+  const dl = dateLocale(locale);
   const dateFields = fields.filter((f) => DATE_TYPES.includes(f.type));
   const dateField = fields.find((f) => f.id === config.dateFieldId) ?? dateFields[0];
   const endDateField = fields.find((f) => f.id === config.endDateFieldId);
@@ -149,10 +152,10 @@ export function CalendarView({
 
   const heading =
     mode === "month"
-      ? cursor.toLocaleDateString(undefined, { month: "long", year: "numeric" })
+      ? cursor.toLocaleDateString(dl, { month: "long", year: "numeric" })
       : mode === "week"
-      ? `Week of ${addDays(cursor, -cursor.getDay()).toLocaleDateString(undefined, { month: "short", day: "numeric" })}`
-      : cursor.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+      ? t("cal.weekOf", { date: addDays(cursor, -cursor.getDay()).toLocaleDateString(dl, { month: "short", day: "numeric" }) })
+      : cursor.toLocaleDateString(dl, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -164,7 +167,7 @@ export function CalendarView({
           <ChevronRight size={14} />
         </Button>
         <Button variant="secondary" size="sm" onClick={() => setCursor(startOfDay(new Date()))}>
-          Today
+          {t("cal.today")}
         </Button>
         <span className="text-sm font-medium text-neutral-800 dark:text-neutral-100">{heading}</span>
         <div className="flex items-center rounded-md border border-neutral-200 dark:border-neutral-800 overflow-hidden ml-2">
@@ -174,7 +177,7 @@ export function CalendarView({
               onClick={() => onConfigChange({ mode: m })}
               className={cn("px-2.5 h-6 text-xs capitalize", mode === m ? "bg-indigo-600 text-white" : "text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800")}
             >
-              {m}
+              {t(`cal.mode.${m}`)}
             </button>
           ))}
         </div>
@@ -242,6 +245,7 @@ function EventChip({ event, onOpen }: { event: EventItem; onOpen: () => void }) 
 }
 
 function MonthGrid({ cursor, eventsByDay, onOpenRecord }: { cursor: Date; eventsByDay: Map<string, EventItem[]>; onOpenRecord: (id: string) => void }) {
+  const { locale } = useT();
   const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
   const gridStart = addDays(monthStart, -monthStart.getDay());
   const days = Array.from({ length: 42 }, (_, i) => addDays(gridStart, i));
@@ -249,7 +253,7 @@ function MonthGrid({ cursor, eventsByDay, onOpenRecord }: { cursor: Date; events
   return (
     <div className="flex-1 overflow-y-auto thin-scroll">
       <div className="grid grid-cols-7 border-t border-l border-neutral-100 dark:border-neutral-900 sticky top-0 bg-white dark:bg-neutral-950 z-10">
-        {WEEKDAYS.map((d) => (
+        {weekdays(dateLocale(locale)).map((d) => (
           <div key={d} className="text-center text-[11px] font-medium text-neutral-400 py-1 border-r border-b border-neutral-100 dark:border-neutral-900">
             {d}
           </div>
@@ -265,6 +269,7 @@ function MonthGrid({ cursor, eventsByDay, onOpenRecord }: { cursor: Date; events
 }
 
 function WeekRow({ cursor, eventsByDay, onOpenRecord }: { cursor: Date; eventsByDay: Map<string, EventItem[]>; onOpenRecord: (id: string) => void }) {
+  const { locale } = useT();
   const weekStart = addDays(cursor, -cursor.getDay());
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   return (
@@ -272,7 +277,7 @@ function WeekRow({ cursor, eventsByDay, onOpenRecord }: { cursor: Date; eventsBy
       <div className="grid grid-cols-7 border-t border-l border-neutral-100 dark:border-neutral-900">
         {days.map((day) => (
           <div key={isoKey(day)} className="border-r border-b border-neutral-100 dark:border-neutral-900 text-center text-[11px] font-medium text-neutral-500 py-1">
-            {day.toLocaleDateString(undefined, { weekday: "short", day: "numeric" })}
+            {day.toLocaleDateString(dateLocale(locale), { weekday: "short", day: "numeric" })}
           </div>
         ))}
       </div>

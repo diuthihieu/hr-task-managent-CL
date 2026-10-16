@@ -844,6 +844,19 @@ test("AI assistant: answers from what the user may see, declines the rest, and e
   assert.equal(saved?.tokensIn, 111, "token usage recorded");
 });
 
+test("help center: members open it from the menu; signed-out visitors are sent to sign in", async () => {
+  const ws = (await admin.get<{ slug: string }>(`/api/workspaces/${s.ws}`)).body;
+  const page = await fetch(`${BASE}/w/${ws.slug}/help?tab=projects&topic=grid`, { headers: { cookie: viewer.cookieHeader() } });
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, /data-testid="help-center"/);
+  assert.match(html, /data-testid="nav-help"/, "Help is in the main menu");
+  const stranger = await fetch(`${BASE}/w/${ws.slug}/help`, { headers: { cookie: outsider.cookieHeader() }, redirect: "manual" });
+  assert.doesNotMatch(await stranger.text(), /data-testid="help-center"/, "people outside the workspace don't get in");
+  const anon = await fetch(`${BASE}/w/${ws.slug}/help`, { redirect: "manual" });
+  assert.equal(anon.status, 307);
+});
+
 test("AI assistant: cited task refs become links to the task; a broken-off answer is resumed", async () => {
   const r = await ask(admin, { kind: "assistant", workspaceId: s.ws, message: "status #cite" });
   assert.equal(r.status, 200, r.text);

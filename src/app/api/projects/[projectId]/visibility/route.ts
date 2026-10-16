@@ -9,9 +9,9 @@ type P = { projectId: string };
 
 /**
  * Project visibility. By default every workspace member sees a project; the
- * project owner/creator (or a workspace admin) can hide it from chosen members.
- * `members` lists everyone who could be hidden, with `lockedReason` for those
- * who can't (workspace owners/admins, the project owner/creator, yourself).
+ * project owner can hide it from chosen members - workspace owners/admins too
+ * (the project permission table edits the same list). `members` lists everyone,
+ * with `lockedReason` for those who can't be hidden (the project owner, yourself).
  */
 export const GET = route<P>(async (_req, { params }) => {
   const user = await requireUser();
@@ -41,9 +41,8 @@ export const GET = route<P>(async (_req, { params }) => {
   });
 });
 
-function lockedReason(userId: string, role: string, project: { ownerId: string | null; createdById: string | null }, me: string) {
-  if (role === "owner" || role === "admin") return "admin";
-  if (userId === project.ownerId || userId === project.createdById) return "project_owner";
+function lockedReason(userId: string, _role: string, project: { ownerId: string | null; createdById: string | null }, me: string) {
+  if (userId === (project.ownerId ?? project.createdById)) return "project_owner";
   if (userId === me) return "self";
   return null;
 }
@@ -63,8 +62,7 @@ export const PUT = route<P>(async (req, { params }) => {
   if (members.length !== wanted.length) throw badRequest("Only workspace members can be hidden from a project");
   for (const m of members) {
     const reason = lockedReason(m.userId, m.role, project, user.id);
-    if (reason === "admin") throw badRequest("Workspace owners and admins can always see every project");
-    if (reason === "project_owner") throw badRequest("The project owner and creator can always see the project");
+    if (reason === "project_owner") throw badRequest("The project owner always sees the project");
     if (reason === "self") throw badRequest("You can't hide a project from yourself");
   }
   await prisma.$transaction(async (tx) => {

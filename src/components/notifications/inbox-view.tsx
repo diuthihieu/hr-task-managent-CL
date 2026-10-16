@@ -23,7 +23,7 @@ const GROUPS: { key: string; types: string[] }[] = [
   { key: "comment", types: ["task_comment"] },
   { key: "updates", types: ["task_status", "task_updated", "template_shared"] },
   { key: "approval", types: ["approval_request", "approval_result"] },
-  { key: "invite", types: ["workspace_invite", "workspace_invite_result", "role_changed", "role_change_result"] },
+  { key: "invite", types: ["workspace_invite", "workspace_invite_result", "role_changed", "role_change_result", "project_owner"] },
   { key: "okr", types: ["objective_risk"] },
   { key: "ai", types: ["ai_suggestion"] },
   { key: "recognition", types: ["kudos", "kudos_reaction", "reward_request", "reward_result"] },

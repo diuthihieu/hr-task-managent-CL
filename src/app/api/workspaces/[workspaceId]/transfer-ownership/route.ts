@@ -29,8 +29,6 @@ export const POST = route<P>(async (req, { params }) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"ws-owners:" + workspaceId}))`;
     await tx.workspaceMember.update({ where: { workspaceId_userId: { workspaceId, userId: toUserId } }, data: { role: "owner" } });
     await tx.workspaceMember.update({ where: { workspaceId_userId: { workspaceId, userId: user.id } }, data: { role: myNewRole } });
-    // Owners manage every project, so nothing can stay hidden from the new owner.
-    await tx.projectHiddenMember.deleteMany({ where: { userId: toUserId, project: { workspaceId } } });
     await logActivity(tx, { workspaceId, actorId: user.id, entityType: "member", entityId: toUserId, action: "role_changed", summary: `Workspace ownership transferred to ${target.user.name}`, changes: { role: { from: target.role, to: "owner" } } });
     await logActivity(tx, { workspaceId, actorId: user.id, entityType: "member", entityId: user.id, action: "role_changed", summary: `${user.name} stepped down after transferring ownership`, changes: { role: { from: "owner", to: myNewRole } } });
     if (target.role !== "owner") {

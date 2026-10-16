@@ -4,24 +4,26 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject, assertCanManageProject, badRequest } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { uuid } from "@/lib/validation";
+import { projectOwner } from "@/lib/project-permissions";
 import { PROJECT_CAPS, CEILING_CAPS, DEFAULT_CAPS, effectiveCaps, type ProjectCap } from "@/lib/project-caps";
 
 type P = { projectId: string };
 
 /**
  * The project's permission table: every workspace member with their workspace
- * role, whether the project is hidden from them, their effective rights here,
- * what their role allows at most, and whether they are locked to full rights
- * (workspace owners/admins and the project owner/creator).
- * Only the project owner/creator and workspace admins can read or change it.
+ * role, whether they can see the project, their rights here and the most their
+ * role allows. Only the project owner is locked (always full rights); the
+ * project owner can narrow or widen everyone else - workspace owners/admins too.
+ * Readable and editable by the project owner (or, for an owner-less project,
+ * a workspace owner/admin).
  */
 export const GET = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { projectId } = await params;
-  const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "editor");
+  const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "viewer");
   await assertCanManageProject(ctx, projectId);
-  const [project, members, hidden, rows] = await Promise.all([
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { ownerId: true, createdById: true } }),
+  const [owner, members, hidden, rows] = await Promise.all([
+    projectOwner(projectId),
     prisma.workspaceMember.findMany({ where: { workspaceId: ctx.workspaceId, user: { deletedAt: null } }, include: { user: { select: { id: true, name: true, email: true, avatarColor: true, isActive: true } } }, orderBy: { createdAt: "asc" } }),
     prisma.projectHiddenMember.findMany({ where: { projectId }, select: { userId: true } }),
     prisma.projectMemberPermission.findMany({ where: { projectId }, select: { userId: true, permissions: true } }),
@@ -32,64 +34,78 @@ export const GET = route<P>(async (_req, { params }) => {
     capabilities: PROJECT_CAPS,
     defaults: DEFAULT_CAPS,
     ceilings: CEILING_CAPS,
+    ownerId: owner.id,
     members: members.map((m) => {
-      const isOwner = m.userId === project.ownerId || m.userId === project.createdById;
-      const locked = m.role === "owner" || m.role === "admin" ? "admin" : isOwner && m.role === "editor" ? "project_owner" : null;
+      const isOwner = m.userId === owner.id;
       return {
         ...m.user,
         role: m.role,
         hidden: hiddenIds.has(m.userId),
-        locked,
+        locked: isOwner ? "project_owner" : m.userId === user.id ? "self" : null,
         custom: stored.has(m.userId),
         permissions: effectiveCaps(m.role, isOwner, stored.get(m.userId) ?? null),
+        defaults: DEFAULT_CAPS[m.role],
         ceiling: CEILING_CAPS[m.role],
       };
     }),
   });
 });
 
-const schema = z.object({
+const change = z.object({
   userId: uuid,
-  /** null = back to the defaults of their workspace role. */
-  permissions: z.array(z.enum(PROJECT_CAPS)).max(PROJECT_CAPS.length).nullable(),
+  /** null = back to the defaults of their workspace role; omitted = unchanged. */
+  permissions: z.array(z.enum(PROJECT_CAPS)).max(PROJECT_CAPS.length).nullable().optional(),
+  /** true = the project is hidden from them (they can't see or do anything in it). */
+  hidden: z.boolean().optional(),
 });
+const schema = z.object({ changes: z.array(change).min(1).max(1000) });
 
-/** Set one member's rights in this project (capped by their workspace role). */
+/** Save the table: all changes apply together, or none (one transaction). */
 export const PUT = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { projectId } = await params;
-  const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "editor");
+  const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "viewer");
   await assertCanManageProject(ctx, projectId);
-  const body = schema.parse(await readJson(req));
-  const [project, member] = await Promise.all([
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { ownerId: true, createdById: true } }),
-    prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: ctx.workspaceId, userId: body.userId } }, select: { role: true } }),
+  const { changes } = schema.parse(await readJson(req));
+  const ids = [...new Set(changes.map((c) => c.userId))];
+  if (ids.length !== changes.length) throw badRequest("One change per member");
+  const [owner, members] = await Promise.all([
+    projectOwner(projectId),
+    prisma.workspaceMember.findMany({ where: { workspaceId: ctx.workspaceId, userId: { in: ids } }, select: { userId: true, role: true } }),
   ]);
-  if (!member) throw badRequest("Only workspace members have rights in a project");
-  if (member.role === "owner" || member.role === "admin") throw badRequest("Workspace owners and admins always have full rights in every project");
-  const isOwner = body.userId === project.ownerId || body.userId === project.createdById;
-  if (isOwner && member.role === "editor") throw badRequest("The project owner and creator always have full rights");
-  const ceiling = new Set<ProjectCap>(CEILING_CAPS[member.role]);
-  const beyond = (body.permissions ?? []).filter((c) => !ceiling.has(c));
-  if (beyond.length) throw badRequest(`A ${member.role} can't be given: ${beyond.join(", ")} - change their workspace role first`);
-  const before = await prisma.projectMemberPermission.findUnique({ where: { projectId_userId: { projectId, userId: body.userId } }, select: { permissions: true } });
+  if (members.length !== ids.length) throw badRequest("Only workspace members have rights in a project");
+  const roleOf = new Map(members.map((m) => [m.userId, m.role]));
+  for (const c of changes) {
+    if (c.userId === owner.id) throw badRequest("The project owner always has full rights - hand the project over to change that");
+    if (c.userId === user.id && c.hidden) throw badRequest("You can't hide the project from yourself");
+    const role = roleOf.get(c.userId)!;
+    const ceiling = new Set<ProjectCap>(CEILING_CAPS[role]);
+    const beyond = (c.permissions ?? []).filter((p) => !ceiling.has(p));
+    if (beyond.length) throw badRequest(`A ${role} can't be given: ${beyond.join(", ")} - change their workspace role first`);
+  }
   await prisma.$transaction(async (tx) => {
-    if (body.permissions === null) await tx.projectMemberPermission.deleteMany({ where: { projectId, userId: body.userId } });
-    else
-      await tx.projectMemberPermission.upsert({
-        where: { projectId_userId: { projectId, userId: body.userId } },
-        create: { projectId, userId: body.userId, permissions: [...new Set(body.permissions)], updatedById: user.id },
-        update: { permissions: [...new Set(body.permissions)], updatedById: user.id },
-      });
+    for (const c of changes) {
+      if (c.permissions === null) await tx.projectMemberPermission.deleteMany({ where: { projectId, userId: c.userId } });
+      else if (c.permissions !== undefined) {
+        const permissions = [...new Set(c.permissions)];
+        await tx.projectMemberPermission.upsert({
+          where: { projectId_userId: { projectId, userId: c.userId } },
+          create: { projectId, userId: c.userId, permissions, updatedById: user.id },
+          update: { permissions, updatedById: user.id },
+        });
+      }
+      if (c.hidden === true) await tx.projectHiddenMember.upsert({ where: { projectId_userId: { projectId, userId: c.userId } }, create: { projectId, userId: c.userId, createdById: user.id }, update: {} });
+      if (c.hidden === false) await tx.projectHiddenMember.deleteMany({ where: { projectId, userId: c.userId } });
+    }
     await logActivity(tx, {
       workspaceId: ctx.workspaceId,
       actorId: user.id,
       entityType: "project",
       entityId: projectId,
       action: "updated",
-      summary: body.permissions === null ? "Reset a member's project rights to the defaults" : "Changed a member's project rights",
-      changes: { [`permissions:${body.userId}`]: { from: before?.permissions ?? "default", to: body.permissions ?? "default" } },
+      summary: `Changed project permissions of ${changes.length} member(s)`,
+      changes: Object.fromEntries(changes.map((c) => [`permissions:${c.userId}`, { from: null, to: { permissions: c.permissions ?? "unchanged", hidden: c.hidden ?? "unchanged" } }])),
     });
   });
-  return NextResponse.json({ userId: body.userId, permissions: effectiveCaps(member.role, isOwner, body.permissions) });
+  return NextResponse.json({ ok: true, changed: changes.length });
 });

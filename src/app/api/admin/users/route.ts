@@ -36,7 +36,8 @@ const createSchema = z.object({
   /** Optional: admin-chosen initial password. Otherwise a temporary one is generated and returned once. */
   password: z.string().optional(),
   workspaceId: uuid.optional(),
-  workspaceRole: workspaceRoleSchema.default("editor"),
+  // A workspace has exactly one owner; it moves only with Transfer ownership.
+  workspaceRole: workspaceRoleSchema.exclude(["owner"]).default("editor"),
 });
 
 export const POST = route(async (req) => {

@@ -28,7 +28,6 @@ const TABS = [
   { key: "health", icon: HeartPulse, group: "memory", label: "brain.tab.health" },
 ] as const;
 export type BrainTab = (typeof TABS)[number]["key"];
-export const BRAIN_TABS: BrainTab[] = TABS.map((x) => x.key);
 export type BrainPeriod = "day" | "week" | "month" | "year";
 const PERIODS: BrainPeriod[] = ["day", "week", "month", "year"];
 const PERIOD_KEY = "woli.brain.period";

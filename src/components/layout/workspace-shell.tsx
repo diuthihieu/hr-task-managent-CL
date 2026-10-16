@@ -64,6 +64,7 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
+  CircleHelp,
 } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { PreferencesDialog } from "@/components/preferences/preferences-dialog";
@@ -173,6 +174,7 @@ export function WorkspaceShell({
   const isMyWork = pathname.includes("/my-work");
   const isDashboards = pathname.endsWith("/dashboards") || pathname.includes("/dash/");
   const isSettings = pathname.includes("/settings");
+  const isHelp = pathname.endsWith("/help");
   const isTeamOkrs = /\/okrs$/.test(pathname);
   const isMyOkrs = pathname.endsWith("/okrs/my");
   const isOkrDashboard = pathname.endsWith("/okrs/dashboard");
@@ -524,6 +526,7 @@ export function WorkspaceShell({
               </button>
             </div>
           )}
+          <NavLink href={`/w/${workspace.slug}/help`} active={isHelp} icon={CircleHelp} label={t("nav.help")} compact={compact} testId="nav-help" />
           <NavLink href={`/w/${workspace.slug}/settings`} active={isSettings && !projectSection} icon={Settings} label={t("nav.settings")} compact={compact} testId="nav-settings" />
           <button onClick={toggleCompact} className={cn("hidden lg:flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-[12px] text-neutral-400 hover:bg-neutral-100 hover:text-neutral-700 dark:hover:bg-neutral-800 dark:hover:text-neutral-200", compact && "justify-center px-0")} title={compact ? t("nav.expand") : t("nav.collapse")} data-testid="sidebar-compact">
             {compact ? <PanelLeftOpen size={16} strokeWidth={1.75} /> : <PanelLeftClose size={16} strokeWidth={1.75} />}

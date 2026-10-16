@@ -3,7 +3,12 @@
   "regions": [
     "sin1"
   ],
-  "ignoreCommand": "bash scripts/vercel-ignore-build.sh",
+  "git": {
+    "deploymentEnabled": {
+      "claude/**": false,
+      "codex/**": false
+    }
+  },
   "crons": [
     {
       "path": "/api/maintenance/activity-logs",

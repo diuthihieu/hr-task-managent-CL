@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfObjective, hiddenProjectIds } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { logActivity } from "@/lib/activity";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 import { assertObjectiveRefs } from "@/lib/okr-write";
@@ -12,6 +13,7 @@ export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { objectiveId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfObjective(objectiveId), "editor");
+  if (ctx.projectId) await assertProjectCap(ctx, ctx.projectId, "okr.manage");
   const body = keyResultSchema.parse(await readJson(req));
   const objective = await prisma.$transaction(async (tx) => {
     await assertObjectiveRefs(tx, ctx.workspaceId, { ownerId: body.ownerId });

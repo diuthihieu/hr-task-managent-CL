@@ -49,7 +49,8 @@ export function SettingsPermissions() {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-neutral-400 mt-3 max-w-2xl">{t("perm.note")}</p>
+      <p className="text-xs text-neutral-500 mt-3 max-w-2xl">{t("perm.projectNote")}</p>
+      <p className="text-xs text-neutral-400 mt-2 max-w-2xl">{t("perm.note")}</p>
     </SettingsSection>
   );
 }

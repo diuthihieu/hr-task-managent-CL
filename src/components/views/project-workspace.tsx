@@ -39,6 +39,7 @@ interface ProjectDetail {
   views: ViewRow[];
   members: Member[];
   myRole: string;
+  myPermissions?: string[];
   workspace: { id: string; slug: string; name: string };
 }
 
@@ -146,7 +147,10 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
   }
 
   const fields = useMemo(() => table?.fields ?? [], [table]);
-  const canEdit = (ROLE_RANK[table?.myRole ?? ""] ?? -1) >= ROLE_RANK.editor;
+  // Rights in this project (the server enforces them; this only shapes the UI).
+  const caps = useMemo(() => new Set(table?.myPermissions ?? []), [table]);
+  const canEdit = (ROLE_RANK[table?.myRole ?? ""] ?? -1) >= ROLE_RANK.editor && caps.has("views.manage");
+  const canFields = caps.has("fields.manage");
 
   // "Depends On" / "Parent Task" pick from this project's own tasks.
   const linkTargets = useMemo(() => {
@@ -196,6 +200,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
   }
 
   async function handleAddRecord(initialData?: Record<string, unknown>) {
+    if (!caps.has("task.create")) return void toast.info(t("pp.noCreate"));
     try {
       const record = await api.post<RecordRow>(`/api/projects/${projectId}/tasks`, { data: initialData ?? {} });
       setRecords((prev) => [...prev, record]);
@@ -264,6 +269,8 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
   async function handleFieldAction(fieldId: string, action: string) {
     const field = fields.find((f) => f.id === fieldId);
     if (!field) return;
+    // Changing the columns themselves needs "Add / edit columns"; view-only actions (hide, sort, filter…) don't.
+    if (!canFields && ["edit", "description", "duplicate", "insert_left", "insert_right", "delete"].includes(action) && !field.system) return void toast.info(t("pp.noFields"));
     const idx = fields.findIndex((f) => f.id === fieldId);
 
     if (action.startsWith("type:")) {
@@ -482,6 +489,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         onDuplicate={handleDuplicateView}
         onReorder={handleReorderViews}
         canManage={canEdit}
+        canCreate={caps.has("views.create")}
         trailing={activeView?.type === "gallery" ? <ViewToolbar
           inline
           fields={fields}
@@ -614,7 +622,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onAddRecord={handleAddRecord}
           onOpenRecord={setOpenRecordId}
           onOpenPage={openPage}
-          onAddField={canEdit ? handleAddField : () => toast.info(t("pw2.editorsOnly"))}
+          onAddField={canFields ? handleAddField : () => toast.info(t("pp.noFields"))}
           onFieldAction={handleFieldAction}
           onReorderFields={handleReorderFields}
           onResizeColumn={handleResizeColumn}

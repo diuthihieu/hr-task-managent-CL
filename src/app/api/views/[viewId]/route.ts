@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, roleAtLeast, route, readJson, workspaceOfView, badRequest, forbidden } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { logActivity } from "@/lib/activity";
 import { serializeView } from "@/lib/serializers";
 import { canDeleteView } from "@/lib/view-permissions";
@@ -31,6 +32,7 @@ export const PATCH = route<P>(async (req, { params }) => {
   const ctx = await requireWorkspaceRole(user, await workspaceOfView(viewId), "editor");
   const body = patchSchema.parse(await readJson(req));
   const before = await prisma.view.findUniqueOrThrow({ where: { id: viewId } });
+  await assertProjectCap(ctx, before.projectId, "views.manage");
   if (body.isPublic && before.type !== "form") throw badRequest("Only form views can be public");
   const view = await prisma.$transaction(async (tx) => {
     if (body.isDefault) await tx.view.updateMany({ where: { projectId: before.projectId, id: { not: viewId } }, data: { isDefault: false } });

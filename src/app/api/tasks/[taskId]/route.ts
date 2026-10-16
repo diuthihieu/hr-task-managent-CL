@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { doneMissing } from "@/lib/done-check";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, assertCanEditTask, route, readJson, workspaceOfTask, notFound } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, assertCanEditTask, assertCanDeleteTask, route, readJson, workspaceOfTask, notFound } from "@/lib/authz";
 import { notifyTaskPatched } from "@/lib/notifications";
 import { logActivity } from "@/lib/activity";
 import { applyTaskPatch, loadTaskRecord } from "@/lib/task-grid";
@@ -71,7 +71,7 @@ export const DELETE = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { taskId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfTask(taskId), "contributor");
-  await assertCanEditTask(ctx, taskId);
+  await assertCanDeleteTask(ctx, taskId);
   await prisma.$transaction(async (tx) => {
     const t = await tx.task.update({ where: { id: taskId }, data: { deletedAt: new Date(), deletedById: user.id } });
     await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "task", entityId: taskId, action: "deleted", summary: `Deleted task "${t.title}"` });

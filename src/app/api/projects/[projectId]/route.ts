@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, roleAtLeast, route, readJson, workspaceOfProject, notFound, badRequest, assertCanManageProject } from "@/lib/authz";
+import { assertProjectCap, projectCaps } from "@/lib/project-permissions";
 import { logActivity, diff } from "@/lib/activity";
 import { dateOnlyToDate, projectInputSchema } from "@/lib/validation";
 import { loadProjectMeta, buildFields } from "@/lib/task-grid";
@@ -26,12 +27,15 @@ export const GET = route<P>(async (_req, { params }) => {
     }),
     prisma.workspace.findUniqueOrThrow({ where: { id: ctx.workspaceId }, select: { id: true, slug: true, name: true } }),
   ]);
+  const caps = await projectCaps(ctx, projectId);
   return NextResponse.json({
     ...serializeProject(project),
     fields: buildFields(meta, makeT(normalizeLocale(user.locale))),
-    views: views.map((view) => serializeView(view, { canEdit: roleAtLeast(ctx.role, "editor"), canDelete: canDeleteView({ workspaceRole: ctx.role, userId: user.id, projectCreatedById: project.createdById, viewCreatedById: view.createdById, isBase: view.isBase }) })),
+    views: views.map((view) => serializeView(view, { canEdit: roleAtLeast(ctx.role, "editor") && caps.has("views.manage"), canDelete: canDeleteView({ workspaceRole: ctx.role, userId: user.id, projectCreatedById: project.createdById, viewCreatedById: view.createdById, isBase: view.isBase }) })),
     members: members.map((m) => m.user),
     myRole: ctx.role,
+    /** The caller's rights in this project (src/lib/project-caps.ts). */
+    myPermissions: [...caps],
     workspace,
   });
 });
@@ -40,9 +44,11 @@ export const PATCH = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { projectId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "editor");
-  await assertCanManageProject(ctx, projectId);
   const raw = await readJson<Record<string, unknown>>(req);
   const body = projectInputSchema.partial().parse(raw);
+  // Changing the owner stays with the owner / workspace admins; other settings can be delegated.
+  if (body.ownerId !== undefined) await assertCanManageProject(ctx, projectId);
+  else await assertProjectCap(ctx, projectId, "settings.manage");
   const order = typeof raw.order === "number" ? Math.round(raw.order) : undefined;
   if (body.ownerId && !(await prisma.workspaceMember.findFirst({ where: { workspaceId: ctx.workspaceId, userId: body.ownerId } }))) throw badRequest("Owner must be a workspace member");
   const project = await prisma.$transaction(async (tx) => {

@@ -1,5 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
+import { ProjectPermissions } from "./project-permissions";
 import { DateInput } from "@/components/ui/date-input";
 import { useRouter } from "next/navigation";
 import { Plus, Trash2 } from "lucide-react";
@@ -29,7 +30,7 @@ interface ProjectInfo {
   endDate: string | null;
 }
 
-export function ProjectSettings({ project, workspaceId, workspaceSlug, canManage, canEditCategories }: { project: ProjectInfo; workspaceId: string; workspaceSlug: string; canManage: boolean; canEditCategories: boolean }) {
+export function ProjectSettings({ project, workspaceId, workspaceSlug, canManage, canOwn, canEditCategories }: { project: ProjectInfo; workspaceId: string; workspaceSlug: string; canManage: boolean; canOwn: boolean; canEditCategories: boolean }) {
   const { t } = useT();
   const router = useRouter();
   const [info, setInfo] = useState(project);
@@ -133,7 +134,7 @@ export function ProjectSettings({ project, workspaceId, workspaceSlug, canManage
             </div>
             <div>
               <label className={label}>{t("ps.owner")}</label>
-              <Select className="w-full" value={info.ownerId ?? ""} onValueChange={(v) => canManage && save({ ownerId: v || null })} options={[{ value: "", label: t("okr.unassigned") }, ...members.map((m) => ({ value: m.id, label: m.name }))]} />
+              <Select className="w-full" value={info.ownerId ?? ""} disabled={!canOwn} onValueChange={(v) => canOwn && save({ ownerId: v || null })} options={[{ value: "", label: t("okr.unassigned") }, ...members.map((m) => ({ value: m.id, label: m.name }))]} />
             </div>
             <div>
               <label className={label}>{t("ps.start")}</label>
@@ -190,7 +191,9 @@ export function ProjectSettings({ project, workspaceId, workspaceSlug, canManage
 
         <ProjectVisibility projectId={project.id} />
 
-        {canManage && (
+        {canOwn && <ProjectPermissions projectId={project.id} />}
+
+        {canOwn && (
           <section className="rounded-lg border border-red-200 dark:border-red-900 p-4">
             <h2 className="text-sm font-semibold text-red-600">{t("ps.danger")}</h2>
             <p className="text-xs text-neutral-500 mt-1 mb-3">{t("ps.deleteHint")}</p>

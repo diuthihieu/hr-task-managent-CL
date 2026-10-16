@@ -2280,6 +2280,50 @@ test("AI sees the asker's own not-yet-planned ideas (Put all things on), never o
   await admin.del(`/api/thoughts/${theirs.body.id}`);
 });
 
+test("project permissions: editors don't manage columns/settings unless delegated; members can be narrowed, never beyond their role", async () => {
+  const setRole = (userId: string, role: "editor" | "contributor" | "viewer") => prisma.workspaceMember.update({ where: { workspaceId_userId: { workspaceId: s.ws, userId } }, data: { role } });
+  const original = (await prisma.workspaceMember.findUniqueOrThrow({ where: { workspaceId_userId: { workspaceId: s.ws, userId: s.contributorId } } })).role;
+  try {
+    await setRole(s.contributorId, "editor");
+    const me = await contributor.get<{ myPermissions: string[] }>(`/api/projects/${s.project}`);
+    assert.ok(me.body.myPermissions.includes("task.edit_all"));
+    assert.ok(!me.body.myPermissions.includes("fields.manage"), "editors don't manage columns by default");
+    assert.equal((await contributor.post(`/api/projects/${s.project}/custom-fields`, { name: "Editor column", type: "text" })).status, 403);
+    assert.equal((await contributor.patch(`/api/projects/${s.project}`, { description: "x" })).status, 403, "settings need delegation");
+    assert.equal((await contributor.get(`/api/projects/${s.project}/permissions`)).status, 403, "only the owner / admins see the table");
+
+    // The admin delegates columns + settings to the editor.
+    const table = await admin.get<{ members: { id: string; permissions: string[]; locked: string | null; ceiling: string[] }[] }>(`/api/projects/${s.project}/permissions`);
+    assert.equal(table.status, 200);
+    const row = table.body.members.find((m) => m.id === s.contributorId)!;
+    assert.equal(row.locked, null);
+    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { userId: s.contributorId, permissions: [...row.permissions, "fields.manage", "settings.manage"] })).status, 200);
+    const col = await contributor.post<{ id: string }>(`/api/projects/${s.project}/custom-fields`, { name: "Delegated column", type: "text" });
+    assert.equal(col.status, 201, JSON.stringify(col.body));
+    assert.equal((await contributor.del(`/api/custom-fields/${col.body.id}`)).status, 204);
+
+    // Narrow: no creating, no comments.
+    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { userId: s.contributorId, permissions: ["task.edit_own"] })).status, 200);
+    assert.equal((await contributor.post(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Blocked" } })).status, 403);
+    assert.equal((await contributor.post(`/api/tasks/${s.r6task}/comments`, { body: "<p>hi</p>" })).status, 403);
+    const other = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Someone else's" } });
+    assert.equal((await contributor.patch(`/api/tasks/${other.body.id}`, { data: { sys_title: "x" } })).status, 403, "edit own only");
+
+    // Never beyond the workspace role.
+    await setRole(s.contributorId, "contributor");
+    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { userId: s.contributorId, permissions: ["task.edit_all"] })).status, 400);
+    const capped = await contributor.get<{ myPermissions: string[] }>(`/api/projects/${s.project}`);
+    assert.ok(!capped.body.myPermissions.includes("fields.manage"), "a stored grant above the role is ignored");
+    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { userId: s.contributorId, permissions: null })).status, 200, "back to defaults");
+    assert.ok((await contributor.get<{ myPermissions: string[] }>(`/api/projects/${s.project}`)).body.myPermissions.includes("task.create"));
+    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { userId: (await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } })).id, permissions: [] })).status, 400, "owners/admins always full");
+    await admin.del(`/api/tasks/${other.body.id}`);
+  } finally {
+    await prisma.projectMemberPermission.deleteMany({ where: { projectId: s.project } });
+    await setRole(s.contributorId, original as "contributor");
+  }
+});
+
 test("attachments require object storage; nothing is written when it's not configured", async () => {
   if (process.env.BLOB_READ_WRITE_TOKEN) return;
   const form = new FormData();

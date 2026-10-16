@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject, HttpError } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { logActivity } from "@/lib/activity";
 import { createTask } from "@/lib/task-grid";
 
@@ -14,6 +15,7 @@ export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { projectId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "editor");
+  await assertProjectCap(ctx, projectId, "task.create");
   const { rows } = schema.parse(await readJson(req));
   const created = await prisma.$transaction(
     async (tx) => {

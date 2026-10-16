@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfKeyResult, hiddenProjectIds } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { logActivity, diff } from "@/lib/activity";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 import { assertObjectiveRefs } from "@/lib/okr-write";
@@ -12,6 +13,7 @@ export const PATCH = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { keyResultId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfKeyResult(keyResultId), "editor");
+  if (ctx.projectId) await assertProjectCap(ctx, ctx.projectId, "okr.manage");
   const body = keyResultSchema.partial().parse(await readJson(req));
   const objective = await prisma.$transaction(async (tx) => {
     await assertObjectiveRefs(tx, ctx.workspaceId, { ownerId: body.ownerId });
@@ -32,6 +34,7 @@ export const DELETE = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { keyResultId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfKeyResult(keyResultId), "editor");
+  if (ctx.projectId) await assertProjectCap(ctx, ctx.projectId, "okr.manage");
   const objective = await prisma.$transaction(async (tx) => {
     const kr = await tx.keyResult.update({ where: { id: keyResultId }, data: { deletedAt: new Date(), updatedById: user.id } });
     // Linked tasks move up to the objective itself; cascaded objectives lose the alignment.

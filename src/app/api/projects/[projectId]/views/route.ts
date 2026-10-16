@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, roleAtLeast, route, readJson, workspaceOfProject } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { logActivity } from "@/lib/activity";
 import { serializeView } from "@/lib/serializers";
 import { viewTypeSchema } from "@/lib/custom-fields";
@@ -31,6 +32,7 @@ export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { projectId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "viewer");
+  await assertProjectCap(ctx, projectId, "views.create");
   const body = createSchema.parse(await readJson(req));
   const view = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw(Prisma.sql`SELECT id FROM projects WHERE id = ${projectId}::uuid FOR UPDATE`);

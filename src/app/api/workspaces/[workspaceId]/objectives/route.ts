@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, hiddenProjectIds, visibleProjectWhere } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { logActivity } from "@/lib/activity";
 import { resolveObjectives, getMyObjectiveRows, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 import { assertObjectiveRefs, parentObjectiveFor } from "@/lib/okr-write";
@@ -53,9 +54,10 @@ export const GET = route<P>(async (req, { params }) => {
 export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { workspaceId } = await params;
-  await requireWorkspaceRole(user, workspaceId, "editor");
+  const ctx = await requireWorkspaceRole(user, workspaceId, "editor");
   const raw = await readJson<Record<string, unknown>>(req);
   const body = objectiveSchema.parse({ ...raw, startDate: lenientDateOnly(raw.startDate), endDate: lenientDateOnly(raw.endDate) });
+  if (body.projectId) await assertProjectCap(ctx, body.projectId, "okr.manage");
   const objective = await prisma.$transaction(async (tx) => {
     await assertObjectiveRefs(tx, workspaceId, body, undefined, user.id);
     const krOwners = (body.keyResults ?? []).map((k) => k.ownerId).filter((id): id is string => Boolean(id));

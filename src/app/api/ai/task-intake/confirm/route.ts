@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject, badRequest } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { notifyTaskCreated } from "@/lib/notifications";
 import { logActivity } from "@/lib/activity";
 import { createTask, loadTaskRecord } from "@/lib/task-grid";
@@ -19,6 +20,7 @@ export const POST = route(async (req) => {
   const user = await requireUser();
   const { draft: raw } = schema.parse(await readJson(req));
   const ctx = await requireWorkspaceRole(user, await workspaceOfProject(raw.projectId), "contributor");
+  await assertProjectCap(ctx, raw.projectId, "task.create");
   const scope = await intakeScope(user, ctx.workspaceId, ctx.role, raw.projectId);
   const draft = sanitizeDraft(raw, scope);
   if (draft.missing.length) throw badRequest(`Missing: ${draft.missing.join(", ")}`);

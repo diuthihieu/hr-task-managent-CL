@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { logActivity } from "@/lib/activity";
 import { badRequest } from "@/lib/http-errors";
 import { customFieldCreateSchema, syncOptions, settingsFor, validateFieldConfig } from "@/lib/custom-fields";
@@ -11,6 +12,7 @@ export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { projectId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "editor");
+  await assertProjectCap(ctx, projectId, "fields.manage");
   const body = customFieldCreateSchema.parse(await readJson(req));
   // Teams were retired: existing team fields keep working, new ones cannot be made.
   if (body.type === "team") throw badRequest("Team fields are no longer available");

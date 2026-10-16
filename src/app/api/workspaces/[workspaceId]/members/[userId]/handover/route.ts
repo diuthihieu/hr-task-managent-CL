@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, badRequest, notFound } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
+import { PROJECT_OWNER_ROLES, ownedProjectsWhere } from "@/lib/member-roles";
 
 type P = { workspaceId: string; userId: string };
 const schema = z.object({ toUserId: z.string().uuid() });
@@ -10,7 +11,7 @@ const schema = z.object({ toUserId: z.string().uuid() });
 /** What a member owns that can be handed over: projects, objectives, key results. */
 async function owned(workspaceId: string, userId: string) {
   const [projects, objectives, keyResults] = await Promise.all([
-    prisma.project.count({ where: { workspaceId, ownerId: userId, deletedAt: null } }),
+    prisma.project.count({ where: ownedProjectsWhere(workspaceId, userId) }),
     prisma.objective.count({ where: { workspaceId, ownerId: userId, deletedAt: null } }),
     prisma.keyResult.count({ where: { ownerId: userId, deletedAt: null, objective: { workspaceId } } }),
   ]);
@@ -38,11 +39,15 @@ export const POST = route<P>(async (req, { params }) => {
   const to = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId: toUserId } }, include: { user: { select: { name: true, isActive: true } } } });
   if (!to) throw notFound("Member");
   if (!to.user.isActive) throw badRequest("This account is deactivated");
+  if (!PROJECT_OWNER_ROLES.includes(to.role) && (await prisma.project.count({ where: ownedProjectsWhere(workspaceId, userId) })))
+    throw badRequest("Projects can only be handed to an editor or above");
   const result = await prisma.$transaction(async (tx) => {
-    const projectIds = (await tx.project.findMany({ where: { workspaceId, ownerId: userId, deletedAt: null }, select: { id: true } })).map((p) => p.id);
+    const projectIds = (await tx.project.findMany({ where: ownedProjectsWhere(workspaceId, userId), select: { id: true } })).map((p) => p.id);
     await tx.project.updateMany({ where: { id: { in: projectIds } }, data: { ownerId: toUserId, updatedById: user.id } });
     // The new owner must be able to see the projects they now own.
     await tx.projectHiddenMember.deleteMany({ where: { userId: toUserId, projectId: { in: projectIds } } });
+    // ...and has full rights there (no narrowed copy kept).
+    await tx.projectMemberPermission.deleteMany({ where: { userId: toUserId, projectId: { in: projectIds } } });
     const objectives = await tx.objective.updateMany({ where: { workspaceId, ownerId: userId, deletedAt: null }, data: { ownerId: toUserId } });
     const keyResults = await tx.keyResult.updateMany({ where: { ownerId: userId, deletedAt: null, objective: { workspaceId } }, data: { ownerId: toUserId } });
     const counts = { projects: projectIds.length, objectives: objectives.count, keyResults: keyResults.count };

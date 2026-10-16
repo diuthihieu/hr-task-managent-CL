@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { useT } from "@/components/i18n-provider";
 import { cn } from "@/lib/utils";
 import type { CategoryRow } from "@/types";
-import { ProjectVisibility } from "./project-visibility";
+import { HandOverProjectDialog } from "./project-handover";
 import { ColorPicker } from "@/components/ui/color-picker";
 import { ProjectIconPicker } from "./project-icon";
 
@@ -38,6 +38,7 @@ export function ProjectSettings({ project, workspaceId, workspaceSlug, canManage
   const [members, setMembers] = useState<{ id: string; name: string }[]>([]);
   const [categories, setCategories] = useState<CategoryRow[]>([]);
   const [newCategory, setNewCategory] = useState("");
+  const [handOver, setHandOver] = useState(false);
 
   const loadCategories = useCallback(async () => {
     try {
@@ -135,7 +136,14 @@ export function ProjectSettings({ project, workspaceId, workspaceSlug, canManage
             </div>
             <div>
               <label className={label}>{t("ps.owner")}</label>
-              <Select className="w-full" value={info.ownerId ?? ""} disabled={!canOwn} onValueChange={(v) => canOwn && save({ ownerId: v || null })} options={[{ value: "", label: t("okr.unassigned") }, ...members.map((m) => ({ value: m.id, label: m.name }))]} />
+              <div className="flex items-center gap-2">
+                <span className="flex-1 h-8 flex items-center rounded-md border border-neutral-200 dark:border-neutral-800 px-2.5 text-sm truncate" data-testid="ps-owner">{members.find((m) => m.id === info.ownerId)?.name ?? t("okr.unassigned")}</span>
+                {canOwn && (
+                  <Button size="sm" variant="outline" onClick={() => setHandOver(true)} data-testid="ps-handover">
+                    {t("po.handOver")}
+                  </Button>
+                )}
+              </div>
             </div>
             <div>
               <label className={label}>{t("ps.start")}</label>
@@ -190,11 +198,11 @@ export function ProjectSettings({ project, workspaceId, workspaceSlug, canManage
           )}
         </section>
 
-        <ProjectVisibility projectId={project.id} />
 
         {canOwn && <ProjectPermissions projectId={project.id} />}
 
         {canOwn && <ProjectTransfer projectId={project.id} workspaceId={workspaceId} workspaceSlug={workspaceSlug} />}
+        {canOwn && <HandOverProjectDialog open={handOver} onOpenChange={setHandOver} projectId={project.id} projectName={info.name} currentOwnerId={info.ownerId} workspaceId={workspaceId} />}
 
         {canOwn && (
           <section className="rounded-lg border border-red-200 dark:border-red-900 p-4">

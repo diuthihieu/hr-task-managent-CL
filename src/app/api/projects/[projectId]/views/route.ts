@@ -2,12 +2,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, roleAtLeast, route, readJson, workspaceOfProject } from "@/lib/authz";
-import { assertProjectCap } from "@/lib/project-permissions";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject } from "@/lib/authz";
+import { assertProjectCap, viewRights } from "@/lib/project-permissions";
 import { logActivity } from "@/lib/activity";
 import { serializeView } from "@/lib/serializers";
 import { viewTypeSchema } from "@/lib/custom-fields";
-import { canDeleteView } from "@/lib/view-permissions";
 
 type P = { projectId: string };
 
@@ -15,11 +14,8 @@ export const GET = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { projectId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "viewer");
-  const [views, project] = await Promise.all([
-    prisma.view.findMany({ where: { projectId }, orderBy: { sortOrder: "asc" } }),
-    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { createdById: true } }),
-  ]);
-  return NextResponse.json(views.map((view) => serializeView(view, { canEdit: roleAtLeast(ctx.role, "editor"), canDelete: canDeleteView({ workspaceRole: ctx.role, userId: user.id, projectCreatedById: project.createdById, viewCreatedById: view.createdById, isBase: view.isBase }) })));
+  const [views, rights] = await Promise.all([prisma.view.findMany({ where: { projectId }, orderBy: { sortOrder: "asc" } }), viewRights(ctx, projectId)]);
+  return NextResponse.json(views.map((view) => serializeView(view, { canEdit: rights.canEdit, canDelete: rights.canDelete(view) })));
 });
 
 const createSchema = z.object({
@@ -51,6 +47,6 @@ export const POST = route<P>(async (req, { params }) => {
     await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "view", entityId: v.id, action: "created", summary: `Created ${v.type} view "${v.name}"`, changes: { projectId: { from: null, to: projectId } } });
     return v;
   });
-  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { createdById: true } });
-  return NextResponse.json(serializeView(view, { canEdit: roleAtLeast(ctx.role, "editor"), canDelete: canDeleteView({ workspaceRole: ctx.role, userId: user.id, projectCreatedById: project.createdById, viewCreatedById: view.createdById, isBase: view.isBase }) }), { status: 201 });
+  const rights = await viewRights(ctx, projectId);
+  return NextResponse.json(serializeView(view, { canEdit: rights.canEdit, canDelete: rights.canDelete(view) }), { status: 201 });
 });

@@ -2254,7 +2254,7 @@ test("ownership: an owner transfers the workspace and steps down; admins hand ov
 
   // Handover: the contributor owns a project and an objective; the admin moves them to themself.
   const p = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Leaver project" });
-  await admin.patch(`/api/projects/${p.body.id}`, { ownerId: s.contributorId });
+  await prisma.project.update({ where: { id: p.body.id }, data: { ownerId: s.contributorId } });
   const counts = await admin.get<{ projects: number; objectives: number; keyResults: number }>(`/api/workspaces/${s.ws}/members/${s.contributorId}/handover`);
   assert.ok(counts.body.projects >= 1);
   assert.equal((await contributor.post(`/api/workspaces/${s.ws}/members/${s.contributorId}/handover`, { toUserId: adminId })).status, 403, "admins only");
@@ -2297,13 +2297,13 @@ test("project permissions: editors don't manage columns/settings unless delegate
     assert.equal(table.status, 200);
     const row = table.body.members.find((m) => m.id === s.contributorId)!;
     assert.equal(row.locked, null);
-    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { userId: s.contributorId, permissions: [...row.permissions, "fields.manage", "settings.manage"] })).status, 200);
+    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { changes: [{ userId: s.contributorId, permissions: [...row.permissions, "fields.manage", "settings.manage"] }] })).status, 200);
     const col = await contributor.post<{ id: string }>(`/api/projects/${s.project}/custom-fields`, { name: "Delegated column", type: "text" });
     assert.equal(col.status, 201, JSON.stringify(col.body));
     assert.equal((await contributor.del(`/api/custom-fields/${col.body.id}`)).status, 204);
 
     // Narrow: no creating, no comments.
-    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { userId: s.contributorId, permissions: ["task.edit_own"] })).status, 200);
+    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { changes: [{ userId: s.contributorId, permissions: ["task.edit_own"] }] })).status, 200);
     assert.equal((await contributor.post(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Blocked" } })).status, 403);
     assert.equal((await contributor.post(`/api/tasks/${s.r6task}/comments`, { body: "<p>hi</p>" })).status, 403);
     const other = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Someone else's" } });
@@ -2311,12 +2311,12 @@ test("project permissions: editors don't manage columns/settings unless delegate
 
     // Never beyond the workspace role.
     await setRole(s.contributorId, "contributor");
-    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { userId: s.contributorId, permissions: ["task.edit_all"] })).status, 400);
+    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { changes: [{ userId: s.contributorId, permissions: ["task.edit_all"] }] })).status, 400);
     const capped = await contributor.get<{ myPermissions: string[] }>(`/api/projects/${s.project}`);
     assert.ok(!capped.body.myPermissions.includes("fields.manage"), "a stored grant above the role is ignored");
-    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { userId: s.contributorId, permissions: null })).status, 200, "back to defaults");
+    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { changes: [{ userId: s.contributorId, permissions: null }] })).status, 200, "back to defaults");
     assert.ok((await contributor.get<{ myPermissions: string[] }>(`/api/projects/${s.project}`)).body.myPermissions.includes("task.create"));
-    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { userId: (await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } })).id, permissions: [] })).status, 400, "owners/admins always full");
+    assert.equal((await admin.put(`/api/projects/${s.project}/permissions`, { changes: [{ userId: (await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } })).id, permissions: [] }] })).status, 400, "owners/admins always full");
     await admin.del(`/api/tasks/${other.body.id}`);
   } finally {
     await prisma.projectMemberPermission.deleteMany({ where: { projectId: s.project } });
@@ -2369,6 +2369,59 @@ test("project transfer: everything of a project moves into another one (tasks, s
   assert.equal(grid.status, 200, "target grid loads");
   await admin.del(`/api/projects/${A}`);
   await admin.del(`/api/projects/${B}`);
+});
+
+test("project owner ranks above the workspace owner; hand-over with checks; roles are saved in batch; exactly one workspace owner", async () => {
+  const adminId = (await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } })).id;
+  const setRole = (userId: string, role: "editor" | "contributor" | "viewer") => prisma.workspaceMember.update({ where: { workspaceId_userId: { workspaceId: s.ws, userId } }, data: { role } });
+  const original = (await prisma.workspaceMember.findUniqueOrThrow({ where: { workspaceId_userId: { workspaceId: s.ws, userId: s.contributorId } } })).role;
+  const proj = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Owned by Casey" })).body.id;
+  try {
+    // Exactly one owner: no owner through role changes.
+    assert.equal((await admin.patch(`/api/workspaces/${s.ws}/members/${s.contributorId}`, { role: "owner" })).status, 403);
+    assert.equal((await admin.put(`/api/workspaces/${s.ws}/members/roles`, { changes: [{ userId: s.contributorId, role: "owner" }] })).status, 400);
+    // Batch save: all or nothing.
+    assert.equal((await admin.put(`/api/workspaces/${s.ws}/members/roles`, { changes: [{ userId: s.contributorId, role: "editor" }, { userId: adminId, role: "admin" }] })).status, 403, "the owner's own row can't change here");
+    assert.equal((await prisma.workspaceMember.findUniqueOrThrow({ where: { workspaceId_userId: { workspaceId: s.ws, userId: s.contributorId } } })).role, original, "nothing applied");
+    assert.equal((await admin.put(`/api/workspaces/${s.ws}/members/roles`, { changes: [{ userId: s.contributorId, role: "editor" }] })).status, 200);
+
+    // Hand-over: contributors/viewers can't own; then Casey (editor) owns the project.
+    await setRole(s.contributorId, "contributor");
+    assert.equal((await admin.post(`/api/projects/${proj}/owner`, { toUserId: s.contributorId })).status, 400);
+    await setRole(s.contributorId, "editor");
+    assert.equal((await admin.patch(`/api/projects/${proj}`, { ownerId: s.contributorId })).status, 400, "only through hand-over");
+    assert.equal((await admin.post(`/api/projects/${proj}/owner`, { toUserId: s.contributorId })).status, 200);
+    assert.equal((await admin.post(`/api/projects/${proj}/owner`, { toUserId: adminId })).status, 403, "the former owner no longer runs it");
+    assert.ok(await prisma.notification.findFirst({ where: { userId: s.contributorId, type: "project_owner", projectId: proj } }));
+
+    // The project owner narrows the workspace owner, then hides the project from them.
+    assert.equal((await admin.get(`/api/projects/${proj}/permissions`)).status, 403);
+    const put = await contributor.put(`/api/projects/${proj}/permissions`, { changes: [{ userId: adminId, permissions: ["task.comment"] }] });
+    assert.equal(put.status, 200, JSON.stringify(put.body));
+    assert.equal((await admin.post(`/api/projects/${proj}/tasks`, { data: { sys_title: "Owner blocked" } })).status, 403, "workspace owner narrowed inside the project");
+    assert.equal((await admin.patch(`/api/projects/${proj}`, { description: "x" })).status, 403);
+    const viewId = (await prisma.view.findFirstOrThrow({ where: { projectId: proj } })).id;
+    await contributor.post(`/api/projects/${proj}/views`, { name: "Second", type: "kanban" });
+    const other = (await prisma.view.findFirstOrThrow({ where: { projectId: proj, id: { not: viewId } } })).id;
+    assert.equal((await admin.del(`/api/views/${other}`)).status, 403, "narrowed workspace owner can't delete shared views");
+    assert.equal((await admin.del(`/api/views/${viewId}`)).status, 403, "nor the base view");
+    // Project owners must stay editors or above.
+    assert.equal((await admin.put(`/api/workspaces/${s.ws}/members/roles`, { changes: [{ userId: s.contributorId, role: "contributor" }] })).status, 400, "hand over their projects first");
+    assert.equal((await admin.post(`/api/workspaces/${s.ws}/projects`, { name: "x", ownerId: s.viewerId })).status, 400, "viewer can't own a project");
+    assert.equal((await contributor.put(`/api/projects/${proj}/permissions`, { changes: [{ userId: s.contributorId, permissions: [] }] })).status, 400, "the project owner stays full");
+    assert.equal((await contributor.put(`/api/projects/${proj}/permissions`, { changes: [{ userId: adminId, hidden: true }] })).status, 200);
+    assert.equal((await admin.get(`/api/projects/${proj}`)).status, 404, "hidden from the workspace owner");
+
+    // Recovery: workspace admins hand over a member's projects (e.g. a leaver).
+    assert.equal((await admin.post(`/api/workspaces/${s.ws}/members/${s.contributorId}/handover`, { toUserId: adminId })).status, 200);
+    assert.equal((await admin.get(`/api/projects/${proj}`)).status, 200, "the new owner sees it again");
+  } finally {
+    await prisma.projectMemberPermission.deleteMany({ where: { projectId: proj } });
+    await prisma.projectHiddenMember.deleteMany({ where: { projectId: proj } });
+    await prisma.project.update({ where: { id: proj }, data: { ownerId: adminId } });
+    await admin.del(`/api/projects/${proj}`);
+    await setRole(s.contributorId, original as "contributor");
+  }
 });
 
 test("attachments require object storage; nothing is written when it's not configured", async () => {

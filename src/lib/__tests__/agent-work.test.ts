@@ -43,16 +43,16 @@ test("Artifact Bundle falls back to a safe Markdown output", () => {
   assert.deepEqual(normalizeOutputDefinitions([{ format: "html", name: "Active content" }]), [{ format: "markdown", name: "Agent result" }]);
 });
 
-test("base view deletion is restricted to workspace owner or project creator", () => {
-  const base = { userId: "user", projectCreatedById: "creator", viewCreatedById: "view-creator", isBase: true };
-  assert.equal(canDeleteView({ ...base, workspaceRole: "admin" }), false);
-  assert.equal(canDeleteView({ ...base, userId: "creator", workspaceRole: "viewer" }), true);
-  assert.equal(canDeleteView({ ...base, workspaceRole: "owner" }), true);
+test("base view deletion is restricted to whoever runs the project", () => {
+  const base = { userId: "user", viewCreatedById: "user", isBase: true, canManageViews: true, canCreateViews: true };
+  assert.equal(canDeleteView({ ...base, isProjectManager: false }), false, "not even with Edit shared views");
+  assert.equal(canDeleteView({ ...base, isProjectManager: true }), true);
 });
 
-test("regular view deletion includes admin and view creator", () => {
-  const regular = { userId: "user", projectCreatedById: "creator", viewCreatedById: "view-creator", isBase: false };
-  assert.equal(canDeleteView({ ...regular, workspaceRole: "editor" }), false);
-  assert.equal(canDeleteView({ ...regular, workspaceRole: "admin" }), true);
-  assert.equal(canDeleteView({ ...regular, userId: "view-creator", workspaceRole: "viewer" }), true);
+test("regular view deletion follows the project rights", () => {
+  const regular = { userId: "user", viewCreatedById: "view-creator", isBase: false, isProjectManager: false, canManageViews: false, canCreateViews: true };
+  assert.equal(canDeleteView(regular), false, "a narrowed member (even a workspace owner) can't");
+  assert.equal(canDeleteView({ ...regular, canManageViews: true }), true);
+  assert.equal(canDeleteView({ ...regular, userId: "view-creator" }), true, "own view");
+  assert.equal(canDeleteView({ ...regular, userId: "view-creator", canCreateViews: false }), false, "not once views rights were taken away");
 });

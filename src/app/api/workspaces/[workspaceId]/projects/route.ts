@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, badRequest, visibleProjectWhere } from "@/lib/authz";
+import { PROJECT_OWNER_ROLES } from "@/lib/member-roles";
 import { logActivity } from "@/lib/activity";
 import { dateOnlyToDate, projectInputSchema } from "@/lib/validation";
 import { serializeProject } from "@/lib/serializers";
@@ -24,7 +25,7 @@ export const POST = route<P>(async (req, { params }) => {
   await requireWorkspaceRole(user, workspaceId, "editor");
   const body = projectInputSchema.parse(await readJson(req));
   const t = makeT(normalizeLocale(user.locale));
-  if (body.ownerId && !(await prisma.workspaceMember.findFirst({ where: { workspaceId, userId: body.ownerId } }))) throw badRequest("Owner must be a workspace member");
+  if (body.ownerId && !(await prisma.workspaceMember.findFirst({ where: { workspaceId, userId: body.ownerId, role: { in: PROJECT_OWNER_ROLES }, user: { isActive: true } } }))) throw badRequest("The project owner must be an active editor or above");
   const last = await prisma.project.aggregate({ where: { workspaceId }, _max: { sortOrder: true } });
   const project = await prisma.$transaction(async (tx) => {
     const p = await tx.project.create({

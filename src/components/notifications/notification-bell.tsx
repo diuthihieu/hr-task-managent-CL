@@ -121,6 +121,8 @@ export function describeNotification(n: NotificationItem, t: TFunction): string 
       const to = t(`role.${String(d.to ?? "viewer")}` as MessageKey);
       return t("notif.role_changed", { actor, from, to });
     }
+    case "project_owner":
+      return t("notif.project_owner", { actor, project: String(d.project ?? "") });
     case "role_change_result":
       return t(d.decision === "declined" ? "notif.role_declined" : "notif.role_accepted", { actor, from: t(`role.${String(d.from ?? "viewer")}` as MessageKey), to: t(`role.${String(d.to ?? "viewer")}` as MessageKey) });
     case "ai_suggestion":

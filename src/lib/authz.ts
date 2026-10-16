@@ -265,11 +265,14 @@ export function visibleWikiWhere(user: SessionUser, role: WorkspaceRole) {
   return { deletedAt: null, OR: [{ access: "workspace" as const }, { createdById: user.id }, { members: { some: { userId: user.id } } }] };
 }
 
-/** Workspace admins/owners manage every project; editors manage the projects they own or created. */
+/**
+ * Running a project (settings that only the owner may touch, permissions,
+ * hand-over, deleting or moving it) belongs to the project owner; workspace
+ * owners/admins step in only when the project has no active owner.
+ */
 export async function assertCanManageProject(ctx: WorkspaceContext, projectId: string) {
-  if (roleAtLeast(ctx.role, "admin")) return;
-  const p = await prisma.project.findFirst({ where: { id: projectId, OR: [{ ownerId: ctx.user.id }, { createdById: ctx.user.id }] }, select: { id: true } });
-  if (!p) throw forbidden("Only the project owner or a workspace admin can change this project");
+  const { canManageProject } = await import("./project-permissions");
+  if (!(await canManageProject(ctx, projectId))) throw forbidden("Only the project owner can do this");
 }
 
 /**

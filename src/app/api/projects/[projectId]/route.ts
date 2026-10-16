@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, roleAtLeast, route, readJson, workspaceOfProject, notFound, badRequest, assertCanManageProject } from "@/lib/authz";
-import { assertProjectCap, projectCaps } from "@/lib/project-permissions";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject, notFound, badRequest, assertCanManageProject } from "@/lib/authz";
+import { assertProjectCap, projectCaps, viewRights } from "@/lib/project-permissions";
 import { logActivity, diff } from "@/lib/activity";
 import { dateOnlyToDate, projectInputSchema } from "@/lib/validation";
 import { loadProjectMeta, buildFields } from "@/lib/task-grid";
 import { serializeProject, serializeView } from "@/lib/serializers";
 import { makeT, normalizeLocale } from "@/lib/i18n/core";
-import { canDeleteView } from "@/lib/view-permissions";
 
 type P = { projectId: string };
 
@@ -27,11 +26,11 @@ export const GET = route<P>(async (_req, { params }) => {
     }),
     prisma.workspace.findUniqueOrThrow({ where: { id: ctx.workspaceId }, select: { id: true, slug: true, name: true } }),
   ]);
-  const caps = await projectCaps(ctx, projectId);
+  const [caps, rights] = await Promise.all([projectCaps(ctx, projectId), viewRights(ctx, projectId)]);
   return NextResponse.json({
     ...serializeProject(project),
     fields: buildFields(meta, makeT(normalizeLocale(user.locale))),
-    views: views.map((view) => serializeView(view, { canEdit: roleAtLeast(ctx.role, "editor") && caps.has("views.manage"), canDelete: canDeleteView({ workspaceRole: ctx.role, userId: user.id, projectCreatedById: project.createdById, viewCreatedById: view.createdById, isBase: view.isBase }) })),
+    views: views.map((view) => serializeView(view, { canEdit: rights.canEdit, canDelete: rights.canDelete(view) })),
     members: members.map((m) => m.user),
     myRole: ctx.role,
     /** The caller's rights in this project (src/lib/project-caps.ts). */
@@ -46,11 +45,10 @@ export const PATCH = route<P>(async (req, { params }) => {
   const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "editor");
   const raw = await readJson<Record<string, unknown>>(req);
   const body = projectInputSchema.partial().parse(raw);
-  // Changing the owner stays with the owner / workspace admins; other settings can be delegated.
-  if (body.ownerId !== undefined) await assertCanManageProject(ctx, projectId);
-  else await assertProjectCap(ctx, projectId, "settings.manage");
+  // The owner changes only through the hand-over (POST /api/projects/[id]/owner, with its checks and confirmation).
+  if (body.ownerId !== undefined) throw badRequest("Use \"Hand over project\" to change the project owner");
+  await assertProjectCap(ctx, projectId, "settings.manage");
   const order = typeof raw.order === "number" ? Math.round(raw.order) : undefined;
-  if (body.ownerId && !(await prisma.workspaceMember.findFirst({ where: { workspaceId: ctx.workspaceId, userId: body.ownerId } }))) throw badRequest("Owner must be a workspace member");
   const project = await prisma.$transaction(async (tx) => {
     const before = await tx.project.findUniqueOrThrow({ where: { id: projectId } });
     const after = await tx.project.update({
@@ -61,14 +59,12 @@ export const PATCH = route<P>(async (req, { params }) => {
         color: body.color,
         icon: body.icon,
         status: body.status,
-        ownerId: body.ownerId,
         startDate: dateOnlyToDate(body.startDate),
         endDate: dateOnlyToDate(body.endDate),
         sortOrder: order,
         updatedById: user.id,
       },
     });
-    if (body.ownerId) await tx.projectHiddenMember.deleteMany({ where: { projectId, userId: body.ownerId } });
     const changes = diff(before, after, ["name", "description", "color", "icon", "status", "ownerId", "startDate", "endDate"]);
     if (changes) await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "project", entityId: projectId, action: "updated", changes });
     return after;

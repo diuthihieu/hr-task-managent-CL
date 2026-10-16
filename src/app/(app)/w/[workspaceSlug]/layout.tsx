@@ -4,7 +4,7 @@ import { requireWorkspacePage } from "@/lib/page-context";
 import type { Metadata } from "next";
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
 import { workspaceLogoUrl } from "@/lib/workspace-logo";
-import { canDeleteView } from "@/lib/view-permissions";
+import { viewRights } from "@/lib/project-permissions";
 
 /** Tab title + favicon follow the workspace (its logo when one is set). */
 export async function generateMetadata({ params }: { params: Promise<{ workspaceSlug: string }> }): Promise<Metadata> {
@@ -33,13 +33,13 @@ export default async function WorkspaceLayout({ children, params }: { children: 
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     select: { id: true, name: true, color: true, icon: true, createdById: true, views: { orderBy: { sortOrder: "asc" }, select: { id: true, name: true, type: true, createdById: true, isBase: true } } },
   });
-  const projects = projectRows.map((project) => ({
-    id: project.id,
-    name: project.name,
-    color: project.color,
-    icon: project.icon,
-    views: project.views.map((view) => ({ id: view.id, name: view.name, type: view.type, canDelete: canDeleteView({ workspaceRole: role, userId: user.id, projectCreatedById: project.createdById, viewCreatedById: view.createdById, isBase: view.isBase }) })),
-  }));
+  // Deleting a view follows each project's own permissions.
+  const projects = await Promise.all(
+    projectRows.map(async (project) => {
+      const rights = await viewRights({ user, role }, project.id);
+      return { id: project.id, name: project.name, color: project.color, icon: project.icon, views: project.views.map((view) => ({ id: view.id, name: view.name, type: view.type, canDelete: rights.canDelete(view) })) };
+    })
+  );
 
   const me = await prisma.user.findUnique({ where: { id: user.id }, select: { avatarUpdatedAt: true } });
 

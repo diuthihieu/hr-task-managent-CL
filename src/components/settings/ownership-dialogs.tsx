@@ -11,10 +11,10 @@ import type { MessageKey } from "@/lib/i18n/core";
 type Member = { id: string; name: string; email: string; role: string; isActive?: boolean };
 
 /** An owner hands the workspace to another member and picks their own role afterwards. */
-export function TransferOwnershipDialog({ open, onOpenChange, workspaceId, members, currentUserId }: { open: boolean; onOpenChange: (o: boolean) => void; workspaceId: string; members: Member[]; currentUserId: string }) {
+export function TransferOwnershipDialog({ open, onOpenChange, workspaceId, members, currentUserId, initialRole = "admin" }: { open: boolean; onOpenChange: (o: boolean) => void; workspaceId: string; members: Member[]; currentUserId: string; initialRole?: string }) {
   const { t } = useT();
   const [to, setTo] = useState("");
-  const [myRole, setMyRole] = useState("admin");
+  const [myRole, setMyRole] = useState(initialRole);
   const [sure, setSure] = useState(false);
   const [busy, setBusy] = useState(false);
   const candidates = members.filter((m) => m.id !== currentUserId && m.isActive !== false);

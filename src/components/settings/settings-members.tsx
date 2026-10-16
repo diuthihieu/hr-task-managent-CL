@@ -76,9 +76,10 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
 
   useEffect(load, [workspaceId, canManage]);
 
-  // Role changes are staged: nothing changes until the admin presses Confirm.
+  // Role changes are staged: nothing changes until Save.
   const [staged, setStaged] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [transferRole, setTransferRole] = useState("admin");
   const roleLabel = (r: string) => t(`role.${r}` as MessageKey);
   const unstage = (id: string) =>
     setStaged((prev) => {
@@ -87,22 +88,37 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
       return next;
     });
 
-  async function confirmRole(m: MemberRow) {
-    const role = staged[m.id];
-    if (!role || role === m.role) return;
-    if (!confirm(t("mem.confirmPrompt", { name: m.name, from: roleLabel(m.role), to: roleLabel(role) }))) return;
-    setSaving(m.id);
+  const pendingChanges = members.filter((m) => staged[m.id] && staged[m.id] !== m.role).map((m) => ({ userId: m.id, role: staged[m.id], name: m.name, from: m.role }));
+
+  async function saveRoles() {
+    if (!pendingChanges.length) return;
+    const summary = pendingChanges.map((c) => `• ${c.name}: ${roleLabel(c.from)} → ${roleLabel(c.role)}`).join("\n");
+    if (!confirm(t("mem.saveConfirm", { list: summary }))) return;
+    setSaving(true);
     try {
-      await api.patch(`/api/workspaces/${workspaceId}/members/${m.id}`, { role });
-      setMembers((prev) => prev.map((x) => (x.id === m.id ? { ...x, role } : x)));
-      unstage(m.id);
-      toast.success(t("mem.changed", { name: m.name }));
+      await api.put(`/api/workspaces/${workspaceId}/members/roles`, { changes: pendingChanges.map(({ userId, role }) => ({ userId, role })) });
+      setMembers((prev) => prev.map((x) => (staged[x.id] ? { ...x, role: staged[x.id] } : x)));
+      setStaged({});
+      toast.success(t("mem.saved", { n: pendingChanges.length }));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
       load();
     } finally {
-      setSaving(null);
+      setSaving(false);
     }
+  }
+
+  /** The owner picking another role for themself: a workspace needs exactly one owner, so hand it over. */
+  function pickRole(m: MemberRow, v: string) {
+    if (m.role === "owner") {
+      if (v !== "owner" && m.id === currentUserId) {
+        setTransferRole(v);
+        setTransferOpen(true);
+      }
+      return;
+    }
+    if (v === m.role) unstage(m.id);
+    else setStaged((prev) => ({ ...prev, [m.id]: v }));
   }
 
   async function removeMember(userId: string, name: string) {
@@ -154,21 +170,14 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
               {canManage ? (
                 <div className="flex items-center gap-1.5 shrink-0">
                   {staged[m.id] && staged[m.id] !== m.role && (
-                    <>
-                      <span className="hidden sm:inline text-[11px] text-amber-600" data-testid="role-pending">{t("mem.pendingChange", { from: roleLabel(m.role), to: roleLabel(staged[m.id]) })}</span>
-                      <Button size="sm" className="h-7 px-2 text-xs" disabled={saving === m.id} onClick={() => confirmRole(m)} data-testid="role-confirm">
-                        <Check size={12} /> {t("mem.confirmChange")}
-                      </Button>
-                      <button onClick={() => unstage(m.id)} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200" title={t("mem.cancelChange")} aria-label={t("mem.cancelChange")} data-testid="role-cancel">
-                        <X size={14} />
-                      </button>
-                    </>
+                    <span className="hidden sm:inline text-[11px] text-amber-600" data-testid="role-pending">{t("mem.pendingChange", { from: roleLabel(m.role), to: roleLabel(staged[m.id]) })}</span>
                   )}
                   <Select
                     className="w-32"
                     value={staged[m.id] ?? m.role}
-                    onValueChange={(v) => setStaged((prev) => ({ ...prev, [m.id]: v }))}
-                    options={currentUserRole === "owner" ? ROLES : ROLES.filter((r) => r.value !== "owner" || m.role === "owner")}
+                    onValueChange={(v) => pickRole(m, v)}
+                    disabled={m.role === "owner" && m.id !== currentUserId}
+                    options={m.role === "owner" ? ROLES : ROLES.filter((r) => r.value !== "owner")}
                     data-testid="member-role"
                   />
                 </div>
@@ -189,7 +198,20 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
           ))}
         </div>
       )}
-      {canManage && Object.entries(staged).some(([id, r]) => members.find((m) => m.id === id)?.role !== r) && <p className="text-xs text-amber-600 mt-2 max-w-2xl">{t("mem.unsaved")}</p>}
+      {canManage && (
+        <div className="max-w-2xl mt-3 flex items-center justify-end gap-2" data-testid="roles-savebar">
+          {pendingChanges.length > 0 && <span className="text-xs text-amber-600 mr-auto">{t("mem.unsavedN", { n: pendingChanges.length })}</span>}
+          {pendingChanges.length > 0 && (
+            <Button size="sm" variant="ghost" onClick={() => setStaged({})} disabled={saving}>
+              <X size={12} /> {t("common.cancel")}
+            </Button>
+          )}
+          <Button size="sm" onClick={saveRoles} disabled={!pendingChanges.length || saving} data-testid="roles-save">
+            <Check size={12} /> {t("common.save")}
+          </Button>
+        </div>
+      )}
+      <p className="text-[11px] text-neutral-400 mt-2 max-w-2xl">{t("mem.oneOwner")}</p>
 
       {canManage && pending.length > 0 && (
         <div className="max-w-2xl mt-6" data-testid="pending-invites">
@@ -220,7 +242,7 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
         </div>
       )}
 
-      <TransferOwnershipDialog open={transferOpen} onOpenChange={setTransferOpen} workspaceId={workspaceId} members={members} currentUserId={currentUserId} />
+      <TransferOwnershipDialog key={transferOpen ? transferRole : "closed"} open={transferOpen} onOpenChange={setTransferOpen} workspaceId={workspaceId} members={members} currentUserId={currentUserId} initialRole={transferRole} />
       <HandoverDialog key={handover?.id ?? "none"} member={handover} onClose={() => setHandover(null)} workspaceId={workspaceId} members={members} />
       <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} workspaceId={workspaceId} onInvited={load} />
     </SettingsSection>

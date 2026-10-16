@@ -37,10 +37,12 @@ export const CEILING_CAPS: Record<Role, ProjectCap[]> = {
   viewer: ["task.comment", "views.create"],
 };
 
-/** Effective caps: full for workspace owners/admins, the role ceiling for the project owner, else stored-or-default capped by the role. */
+/**
+ * Effective caps: the project owner gets everything their role allows; anyone
+ * else (workspace owners/admins included - the project owner can narrow them
+ * too) gets what was stored for them, or their role's defaults, capped by the role.
+ */
 export function effectiveCaps(role: Role, isProjectOwner: boolean, stored: string[] | null | undefined): ProjectCap[] {
-  if (role === "owner" || role === "admin") return [...PROJECT_CAPS];
-  // The project owner gets everything their workspace role allows (all of it for an editor).
   if (isProjectOwner) return [...CEILING_CAPS[role]];
   const ceiling = new Set<string>(CEILING_CAPS[role]);
   const wanted = stored ?? DEFAULT_CAPS[role];

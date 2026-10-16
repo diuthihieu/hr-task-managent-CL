@@ -432,7 +432,8 @@ function GroupSection(
   return (
     <>
       <div role="row" className="bg-neutral-100 dark:bg-neutral-800/60 border-b border-neutral-200 dark:border-neutral-800 px-2 py-1.5" style={{ width: "100%" }}>
-        <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-200">
+        {/* Sticky so the group name stays in view while the grid scrolls sideways. */}
+        <button onClick={() => setOpen((o) => !o)} className="sticky left-2 w-max flex items-center gap-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-200" data-testid="group-header">
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
           {group.color && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: group.color }} />}
           {group.label}

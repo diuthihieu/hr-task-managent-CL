@@ -331,6 +331,11 @@ body {
 .ai-md th { background: var(--color-neutral-50); font-weight: 600; }
 .dark .ai-md th { background: var(--color-neutral-800); }
 .ai-md hr { border-color: var(--color-neutral-200); }
+/* Header rows rebuilt for a table that lost its header (see markdown-tables). */
+.ai-md thead:not(:has(th:not(:empty))) { display: none; }
+/* Source citations: small chips that open the task. */
+.ai-md a[title][href*="/t/"] { display: inline-flex; align-items: center; justify-content: center; min-width: 1.4em; padding: 0 0.3em; margin-left: 0.15em; border-radius: 9999px; font-size: 0.8em; line-height: 1.5; text-decoration: none; background: var(--color-indigo-50); color: var(--color-indigo-700); }
+.dark .ai-md a[title][href*="/t/"] { background: color-mix(in oklab, var(--color-indigo-500) 25%, transparent); color: var(--color-indigo-200); }
 
 /* Touch screens have no hover: reveal hover-only row actions (edit, delete,
    quick actions) so they stay reachable on phones and tablets. */

@@ -844,6 +844,33 @@ test("AI assistant: answers from what the user may see, declines the rest, and e
   assert.equal(saved?.tokensIn, 111, "token usage recorded");
 });
 
+test("AI assistant: cited task refs become links to the task; a broken-off answer is resumed", async () => {
+  const r = await ask(admin, { kind: "assistant", workspaceId: s.ws, message: "status #cite" });
+  assert.equal(r.status, 200, r.text);
+  const system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+  assert.match(system, /CITATIONS - every task/);
+  assert.match(system, /## Task comments[^\n]*\n[^\n]*\n- .*\[T-[0-9a-f]{8}\]/, "comment lines carry their task's ref");
+  const link = r.text.match(/\[↗\]\((\/w\/[^ )]+) "[^"]*"\)/);
+  assert.ok(link, r.text);
+  assert.match(link[1], new RegExp(`^/w/[^/]+/p/[0-9a-f-]{36}/t/[0-9a-f-]{36}$`));
+  const page = await fetch(`${BASE}${link[1]}`, { headers: { cookie: admin.cookieHeader() } });
+  assert.equal(page.status, 200, "the link opens the task");
+  assert.doesNotMatch(r.text, /T-deadbeef/, "refs that are not in the data are dropped");
+  const saved = await prisma.aiMessage.findFirst({ where: { role: "model", conversationId: r.conversationId! }, orderBy: { createdAt: "desc" } });
+  assert.equal(saved?.content, r.text, "the saved answer has the links too");
+
+  const broken = await ask(admin, { kind: "assistant", workspaceId: s.ws, message: "report #break" });
+  assert.equal(broken.status, 200);
+  assert.match(broken.text, /^\| a \| b \|\n\|---\|---\|\n\| 1 \| cut\n/, "the part already written is kept");
+  assert.match(broken.text, /# Stub report/, "then the answer is resumed");
+  assert.doesNotMatch(broken.text, /interrupted/);
+  const resumeReq = (await lastModelRequest()).body.contents;
+  assert.equal(resumeReq.at(-2)?.role, "model", "the resume call gets the partial answer");
+  assert.match(resumeReq.at(-1)?.parts[0].text ?? "", /cut off/);
+  // Keep the admin's daily AI quota for the later tests.
+  await prisma.aiMessage.updateMany({ where: { role: "user", conversationId: { in: [r.conversationId!, broken.conversationId!] } }, data: { createdAt: new Date(Date.now() - 2 * 86_400_000) } });
+});
+
 async function postWithFiles(client: Client, path: string, payload: Record<string, unknown>, files: { name: string; bytes: Uint8Array | string; type: string }[]) {
   const form = new FormData();
   form.set("payload", JSON.stringify(payload));

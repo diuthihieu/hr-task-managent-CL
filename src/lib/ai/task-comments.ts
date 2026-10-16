@@ -12,14 +12,18 @@ const day = (d: Date) => d.toISOString().slice(0, 10);
  * task's notes and answers "nobody commented" when people did.
  * `maxTotalChars` bounds the whole section (newest comments are kept), so it can
  * sit next to the task list without crowding it out of the context budget.
+ * `ref` adds the task's citation ref (see citations.ts) to each line.
  */
-export async function taskCommentsSection(where: Prisma.CommentWhereInput, opts: { limit?: number; maxChars?: number; maxTotalChars?: number } = {}): Promise<string> {
+export async function taskCommentsSection(
+  where: Prisma.CommentWhereInput,
+  opts: { limit?: number; maxChars?: number; maxTotalChars?: number; ref?: (task: { id: string; projectId: string; title: string; project: string }) => string } = {}
+): Promise<string> {
   const limit = opts.limit ?? 400;
   const comments = await prisma.comment.findMany({
     where: { deletedAt: null, ...where },
     orderBy: { createdAt: "desc" },
     take: limit,
-    select: { body: true, createdAt: true, parentCommentId: true, author: { select: { name: true } }, task: { select: { title: true, project: { select: { name: true } } } } },
+    select: { body: true, createdAt: true, parentCommentId: true, author: { select: { name: true } }, task: { select: { id: true, projectId: true, title: true, project: { select: { name: true } } } } },
   });
   if (!comments.length) return "## Task comments\n(none)";
   const maxChars = opts.maxChars ?? 400;
@@ -29,7 +33,8 @@ export async function taskCommentsSection(where: Prisma.CommentWhereInput, opts:
   for (const c of comments) {
     const text = stripMentions(c.body).replace(/\s+/g, " ").trim();
     const clipped = text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
-    const line = `- ${day(c.createdAt)} | ${c.author?.name ?? "(deleted user)"} | ${c.task.project.name} › ${c.task.title}${c.parentCommentId ? " (reply)" : ""}: ${clipped}`;
+    const ref = opts.ref ? ` [${opts.ref({ id: c.task.id, projectId: c.task.projectId, title: c.task.title, project: c.task.project.name })}]` : "";
+    const line = `- ${day(c.createdAt)} | ${c.author?.name ?? "(deleted user)"} | ${c.task.project.name} › ${c.task.title}${ref}${c.parentCommentId ? " (reply)" : ""}: ${clipped}`;
     if (used + line.length + 1 > maxTotal) break;
     lines.push(line);
     used += line.length + 1;

@@ -108,6 +108,21 @@ http
       // Ask My Brain: cite the first source when there is one.
       const brainAnswer = system.includes("SOURCES:") ? (/\n\[S1\] [A-Z]+:/.test(system) ? `Answer from the brain [S1]. You asked: ${userText}` : `No source covers this. You asked: ${userText}`) : null;
       const answer = brainAnswer ?? (hasFile ? "Extracted text from the PDF: leave policy is 12 days per year." : ["# Stub report", "", `You asked: ${userText}`, "", "| a | b |", "|---|---|", "| 1 | 2 |"].join("\n"));
+      if (req.url.includes(":streamGenerateContent") && userText.includes("#cite")) {
+        // Cites the first task ref of the DATA, plus one that does not exist; refs get split across chunks.
+        const ref = system.split("DATA:").at(-1).match(/\bT-[0-9a-f]{8}\b/)?.[0] ?? "T-00000000";
+        const text = `Payroll is on track [${ref}]. Ghost [T-deadbeef].`;
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        for (const p of text.match(/.{1,7}/gs)) res.write(`data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: p }] } }] })}\r\n\r\n`);
+        return res.end();
+      }
+      if (req.url.includes(":streamGenerateContent") && userText.includes("#break")) {
+        // Starts answering, then the stream breaks off with an error event.
+        res.writeHead(200, { "content-type": "text/event-stream" });
+        res.write(`data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "| a | b |\n|---|---|\n| 1 | cut" }] } }] })}\r\n\r\n`);
+        res.write(`data: ${JSON.stringify({ error: { code: 500, status: "INTERNAL", message: "stream broke" } })}\r\n\r\n`);
+        return res.end();
+      }
       if (req.url.includes(":streamGenerateContent") && userText.includes("#stall")) {
         // Headers first, then nothing: the answer never really starts.
         res.writeHead(200, { "content-type": "text/event-stream" });

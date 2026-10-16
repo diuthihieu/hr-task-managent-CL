@@ -10,6 +10,7 @@ import { formatDisplayValue } from "@/lib/format";
 import { parseFieldConfig } from "@/lib/field-types";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
+import { promptDoneCheck } from "@/components/tasks/done-check-dialog";
 import { cn } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
 import type { Member } from "@/components/grid/cell";
@@ -82,6 +83,7 @@ export function GalleryView({
       const rec = await api.post<RecordRow>(`/api/tasks/${id}/quick`, { action });
       onRecordUpdated?.(rec);
       toast.success(t(`cc.done.${action}` as MessageKey));
+      promptDoneCheck(rec, onRecordUpdated);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {

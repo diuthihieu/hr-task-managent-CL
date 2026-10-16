@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { api } from "@/lib/api-client";
 import { onViewsChanged } from "@/lib/view-events";
 import { toast } from "@/components/ui/toast";
+import { promptDoneCheck } from "@/components/tasks/done-check-dialog";
 import { nanoid } from "nanoid";
 import { ViewTabs } from "./view-tabs";
 import { ViewToolbar } from "./view-toolbar";
@@ -187,6 +188,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       // The server normalizes values (e.g. a "done" status sets progress to 100) - adopt its version.
       const saved = await api.patch<RecordRow>(`/api/tasks/${recordId}`, { data: patch });
       setRecords((prev) => prev.map((r) => (r.id === recordId ? saved : r)));
+      promptDoneCheck(saved, (rec) => setRecords((prev) => prev.map((r) => (r.id === rec.id ? rec : r))));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
       load();

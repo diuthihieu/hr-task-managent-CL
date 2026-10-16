@@ -5,6 +5,7 @@ import { NotificationBell, RecognitionCount, UnreadCount } from "@/components/no
 import { WorkspaceAvatar } from "@/components/workspaces/workspace-avatar";
 import { emitViewsChanged } from "@/lib/view-events";
 import { FocusDock } from "@/components/focus/focus-mode";
+import { DoneCheckDialog } from "@/components/tasks/done-check-dialog";
 import { AgentSuggestionPopup } from "@/components/agent-work/agent-suggestion-popup";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { signOut } from "next-auth/react";
@@ -607,6 +608,7 @@ export function WorkspaceShell({
       </div>
 
       <FocusDock workspaceId={workspace.id} />
+      <DoneCheckDialog />
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} workspaceId={workspace.id} workspaceSlug={workspace.slug} />
       <PreferencesDialog open={prefsOpen} onOpenChange={setPrefsOpen} />
 

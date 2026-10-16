@@ -94,9 +94,17 @@ export function GridView(props: GridViewProps) {
 
   const visibleFields = useMemo(() => {
     const byId = new Map(fields.map((f) => [f.id, f]));
-    const ordered = columnOrder.length ? columnOrder.map((id) => byId.get(id)).filter(Boolean) as FieldRow[] : fields;
-    const extra = fields.filter((f) => !ordered.includes(f));
-    return [...ordered, ...extra].filter((f) => !hiddenFieldIds.includes(f.id));
+    if (!columnOrder.length) return fields.filter((f) => !hiddenFieldIds.includes(f.id));
+    const ordered = columnOrder.map((id) => byId.get(id)).filter(Boolean) as FieldRow[];
+    // Fields missing from a saved order: a newly added built-in column goes right
+    // after the field that precedes it in the default order; new custom columns go last.
+    fields.forEach((f, i) => {
+      if (ordered.includes(f)) return;
+      if (!f.system) return void ordered.push(f);
+      const prev = fields.slice(0, i).reverse().find((p) => ordered.includes(p));
+      ordered.splice(prev ? ordered.indexOf(prev) + 1 : 0, 0, f);
+    });
+    return ordered.filter((f) => !hiddenFieldIds.includes(f.id));
   }, [fields, columnOrder, hiddenFieldIds]);
   const [selectedTarget, setSelectedTarget] = useState<GridTarget | null>(null);
   const [clipboard, setClipboard] = useState<GridClipboardPayload | null>(null);

@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
-import { UserPlus, Trash2, Copy, Mail, Clock, Check, X } from "lucide-react";
+import { UserPlus, Trash2, Copy, Mail, Clock, Check, X, Crown, ArrowRightLeft } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/misc";
 import { InviteDialog } from "@/components/invitations/invite-dialog";
+import { TransferOwnershipDialog, HandoverDialog } from "./ownership-dialogs";
 import { initials } from "@/lib/utils";
 import { SettingsSection } from "./settings-shell";
 import { useT } from "@/components/i18n-provider";
@@ -42,6 +43,8 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
   const [loading, setLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [pending, setPending] = useState<PendingInvite[]>([]);
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [handover, setHandover] = useState<MemberRow | null>(null);
   const canManage = ["owner", "admin"].includes(currentUserRole);
 
   function load() {
@@ -118,9 +121,16 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
       description={t("set.membersDesc")}
       action={
         canManage && (
-          <Button size="sm" onClick={() => setInviteOpen(true)}>
-            <UserPlus size={13} /> {t("inv.invite")}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {currentUserRole === "owner" && (
+              <Button size="sm" variant="outline" onClick={() => setTransferOpen(true)} data-testid="transfer-ownership">
+                <Crown size={13} /> {t("own.transfer")}
+              </Button>
+            )}
+            <Button size="sm" onClick={() => setInviteOpen(true)}>
+              <UserPlus size={13} /> {t("inv.invite")}
+            </Button>
+          </div>
         )
       }
     >
@@ -165,6 +175,11 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
               ) : (
                 <span className="text-xs text-neutral-500 w-32 text-right">{t(`role.${m.role}` as MessageKey)}</span>
               )}
+              {canManage && (
+                <button onClick={() => setHandover(m)} className="text-neutral-400 hover:text-indigo-600 shrink-0" title={t("own.handover")} aria-label={t("own.handover")} data-testid="member-handover">
+                  <ArrowRightLeft size={14} />
+                </button>
+              )}
               {canManage && m.id !== currentUserId && (
                 <button onClick={() => removeMember(m.id, m.name)} className="text-neutral-400 hover:text-red-600 shrink-0">
                   <Trash2 size={14} />
@@ -205,6 +220,8 @@ export function SettingsMembers({ workspaceId, currentUserId, currentUserRole }:
         </div>
       )}
 
+      <TransferOwnershipDialog open={transferOpen} onOpenChange={setTransferOpen} workspaceId={workspaceId} members={members} currentUserId={currentUserId} />
+      <HandoverDialog key={handover?.id ?? "none"} member={handover} onClose={() => setHandover(null)} workspaceId={workspaceId} members={members} />
       <InviteDialog open={inviteOpen} onOpenChange={setInviteOpen} workspaceId={workspaceId} onInvited={load} />
     </SettingsSection>
   );

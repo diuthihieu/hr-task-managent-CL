@@ -5,6 +5,7 @@ import { visibleProjectWhere, hiddenProjectIds, type SessionUser } from "../auth
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "../okr-resolver";
 import { htmlToText } from "./extract";
 import { stripMentions } from "../mentions";
+import { myIdeasSection } from "./context";
 
 // Context + instructions for the AI actions embedded in tasks, OKRs, wiki
 // pages, dashboards and Home. Every context is read with the caller's
@@ -54,8 +55,8 @@ export const ACTION_INSTRUCTIONS: Record<AiActionName, string> = {
   dash_anomaly: "Look for anomalies and risks in this dashboard's data: outliers, unusual concentrations (e.g. one person or category with most overdue work), empty or suspicious values, sudden changes. Explain each and what to check.",
   dash_trends: "Summarize the trends in this dashboard's data: what is growing or shrinking, distribution shifts, and what they suggest for the team. Be specific with numbers.",
   home_brief: "Write the user's daily brief: a one-line headline, then 'Today' (what's due or scheduled), 'Needs attention' (overdue, blocked, at-risk), 'Waiting on others', and 'Suggested focus' (top 3 tasks with a reason). Keep it scannable.",
-  home_plan: "Plan the user's day: pick what to do today from their open tasks (overdue and due-soon first, then priority and OKR impact), order them, and time-box them in a realistic 8-hour day using estimates (assume 1h when missing), leaving buffer. Show a schedule table (time, task, why), then what to postpone.",
-  home_risks: "Review the user's risks: overdue and soon-due work, blocked tasks, tasks without dates or estimates, work waiting on others, and objectives/key results behind pace. Rank the risks and give one concrete action for each.",
+  home_plan: "Plan the user's day: pick what to do today from their open tasks (overdue and due-soon first, then priority and OKR impact), order them, and time-box them in a realistic 8-hour day using estimates (assume 1h when missing), leaving buffer. Show a schedule table (time, task, why), then what to postpone. Finally list my captured ideas (Put all things on) that are NOT PLANNED or OVERDUE and suggest when to plan each one or turn it into a task.",
+  home_risks: "Review the user's risks: overdue and soon-due work, blocked tasks, tasks without dates or estimates, captured ideas (Put all things on) that are still not planned or past their planned date, work waiting on others, and objectives/key results behind pace. Rank the risks and give one concrete action for each.",
 };
 
 export async function taskContext(taskId: string) {
@@ -166,6 +167,7 @@ export async function myDayContext(user: SessionUser, workspaceId: string) {
     }),
     prisma.task.findMany({ where: { workspaceId, deletedAt: null, project: visible, status: { category: "done" }, completedAt: { gte: new Date(now.getTime() - 7 * 86400000) }, assignees: { some: { userId: user.id } } }, select, take: 40 }),
   ]);
+  const ideas = await myIdeasSection(user, workspaceId);
   type T = (typeof mine)[number];
   const fmt = (t: T) => {
     const flags = [
@@ -180,6 +182,7 @@ export async function myDayContext(user: SessionUser, workspaceId: string) {
     `MY OPEN TASKS (${mine.length}):\n${mine.map(fmt).join("\n") || "(none)"}`,
     `WAITING ON OTHERS (${waiting.length}):\n${waiting.map((t) => fmt(t) + ` | assignees: ${t.assignees.map((a) => a.user.name).join(", ")}`).join("\n") || "(none)"}`,
     `COMPLETED LAST 7 DAYS (${done.length}):\n${done.map((t) => `- ${t.title}`).join("\n") || "(none)"}`,
+    ideas,
   ].join("\n\n");
 }
 

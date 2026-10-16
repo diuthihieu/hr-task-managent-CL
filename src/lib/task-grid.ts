@@ -30,6 +30,8 @@ export const SYS = {
   startDate: "sys_start_date",
   dueDate: "sys_due_date",
   progress: "sys_progress",
+  /** When the task was finished: set automatically on "done", editable. */
+  completedAt: "sys_completed_at",
   estimate: "sys_estimate",
   actual: "sys_actual",
   keyResult: "sys_key_result",
@@ -181,6 +183,7 @@ export function buildFields(meta: ProjectMeta, t: TFunction = makeT("en")): Fiel
     sysField(pid, SYS.startDate, n(SYS.startDate), "date", 5),
     sysField(pid, SYS.dueDate, n(SYS.dueDate), "date", 6),
     sysField(pid, SYS.progress, n(SYS.progress), "progress", 7),
+    sysField(pid, SYS.completedAt, n(SYS.completedAt), "datetime", 7.5, { description: t("fieldHint.sys_completed_at") }),
     sysField(pid, SYS.estimate, n(SYS.estimate), "number", 8, { config: opts({ precision: 2 }) }),
     sysField(pid, SYS.actual, n(SYS.actual), "number", 8.5, { config: opts({ precision: 2 }), description: t("fieldHint.sys_actual") }),
     ...(meta.objectives.length
@@ -270,6 +273,7 @@ export function toRecord(task: TaskWithRelations, fieldTypes: Map<string, Custom
     [SYS.startDate]: fromDateOnly(task.startDate),
     [SYS.dueDate]: fromDateOnly(task.dueDate),
     [SYS.progress]: task.progress,
+    [SYS.completedAt]: task.completedAt ? task.completedAt.toISOString() : null,
     [SYS.estimate]: task.estimateMinutes === null ? null : Math.round((task.estimateMinutes / 60) * 100) / 100,
     [SYS.actual]: task.actualMinutes === null ? null : Math.round((task.actualMinutes / 60) * 100) / 100,
     [SYS.objective]: okrTargetToken(task),
@@ -439,6 +443,8 @@ export async function loadTaskRecord(taskId: string, db: Tx | typeof prisma = pr
 export interface PatchResult {
   changes: Record<string, { from: unknown; to: unknown }>;
   statusChanged: boolean;
+  /** The status changed to one in the "done" category. */
+  becameDone: boolean;
   /** Name of the new status when it changed (for notifications). */
   newStatusName?: string;
   assigned: string[];
@@ -482,10 +488,11 @@ export async function applyTaskPatch(
   const before = await tx.task.findUniqueOrThrow({ where: { id: taskId }, include: TASK_INCLUDE });
   const update: Prisma.TaskUncheckedUpdateInput = {};
   const changes: PatchResult["changes"] = {};
-  const result: PatchResult = { changes, statusChanged: false, assigned: [], unassigned: [], reportAdded: [] };
+  const result: PatchResult = { changes, statusChanged: false, becameDone: false, assigned: [], unassigned: [], reportAdded: [] };
   const record = (key: string, from: unknown, to: unknown) => {
     if (JSON.stringify(from) !== JSON.stringify(to)) changes[key] = { from, to };
   };
+  let becameDone = false;
 
   const customIds = Object.keys(data).filter((k) => !k.startsWith("sys_"));
   const customFields = customIds.length
@@ -519,7 +526,9 @@ export async function applyTaskPatch(
         if (statusId !== before.statusId) {
           result.statusChanged = true;
           result.newStatusName = status.name;
-          update.completedAt = status.category === "done" ? new Date() : null;
+          becameDone = result.becameDone = status.category === "done";
+          // An explicit completed time in the same patch wins over "now".
+          if (!(SYS.completedAt in data)) update.completedAt = becameDone ? new Date() : null;
           if (status.category === "done") update.progress = 100;
         }
         record("status", before.statusId, statusId);
@@ -557,6 +566,13 @@ export async function applyTaskPatch(
         if (n < 0 || n > 100) throw badRequest("Progress must be between 0 and 100");
         update.progress = Math.round(n);
         record("progress", before.progress, update.progress);
+        break;
+      }
+      case SYS.completedAt: {
+        const d = toTimestamp(value, "Completed time");
+        if (d && d.getTime() > Date.now() + 24 * 3600_000) throw badRequest("Completed time cannot be in the future");
+        update.completedAt = d;
+        record("completedAt", before.completedAt?.toISOString() ?? null, d?.toISOString() ?? null);
         break;
       }
       case SYS.estimate: {
@@ -692,7 +708,7 @@ export async function applyTaskPatch(
   if (Object.keys(update).length || opts.isNew) {
     update.updatedById = actorId;
     await tx.task.update({ where: { id: taskId }, data: update });
-    if (result.statusChanged && update.completedAt) await spawnNextOccurrence(tx, taskId, actorId);
+    if (result.statusChanged && becameDone) await spawnNextOccurrence(tx, taskId, actorId);
   } else if (Object.keys(changes).length) {
     // Join-table-only change: still bump updated_at / updated_by on the task.
     await tx.task.update({ where: { id: taskId }, data: { updatedById: actorId } });

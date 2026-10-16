@@ -16,6 +16,7 @@ import { RetroButton } from "@/components/brain/retro-dialog";
 import { AiTaskActions } from "@/components/ai/ai-actions";
 import { prependMention, stripMentions } from "@/lib/mentions";
 import { toast } from "@/components/ui/toast";
+import { promptDoneCheck } from "@/components/tasks/done-check-dialog";
 import { useT } from "@/components/i18n-provider";
 import { getCellValue } from "@/lib/query-engine";
 import { api } from "@/lib/api-client";
@@ -35,7 +36,7 @@ interface ProjectDetail {
 
 const ROLE_RANK: Record<string, number> = { viewer: 0, contributor: 1, editor: 2, admin: 3, owner: 4 };
 // Shown up front; the rest sits behind "show all fields".
-const PRIMARY_FIELDS = ["sys_status", "sys_assignees", "sys_report_to", "sys_priority", "sys_category", "sys_start_date", "sys_due_date", "sys_progress", "sys_objective", "sys_estimate", "sys_actual", "sys_description"];
+const PRIMARY_FIELDS = ["sys_status", "sys_assignees", "sys_report_to", "sys_priority", "sys_category", "sys_start_date", "sys_due_date", "sys_progress", "sys_completed_at", "sys_objective", "sys_estimate", "sys_actual", "sys_description"];
 const HIDDEN_ON_PAGE = new Set(["sys_title", "sys_attachments"]);
 
 function formatBytes(n: number) {
@@ -112,6 +113,10 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
       const saved = await api.patch<RecordRow>(`/api/tasks/${taskId}`, { data: { [fieldId]: value } });
       setRecord(saved);
       loadActivity();
+      promptDoneCheck(saved, (rec) => {
+        setRecord(rec);
+        loadActivity();
+      });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
       api.get<RecordRow>(`/api/tasks/${taskId}`).then(setRecord).catch(() => {});

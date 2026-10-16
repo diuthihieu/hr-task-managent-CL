@@ -6,6 +6,7 @@ import { AlarmClock, CalendarClock, CheckCircle2, ClipboardList, Hourglass, Load
 import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
+import { promptDoneCheck } from "@/components/tasks/done-check-dialog";
 import { StartFocusButton } from "@/components/focus/focus-mode";
 import { AiActionMenu } from "@/components/ai/ai-actions";
 import { ProjectIcon } from "@/components/projects/project-icon";
@@ -186,7 +187,8 @@ export function CommandCenter({
   async function quick(task: HomeTask, action: "complete" | "start" | "plan") {
     setBusy(task.id + action);
     try {
-      await api.post(`/api/tasks/${task.id}/quick`, { action });
+      const rec = await api.post(`/api/tasks/${task.id}/quick`, { action });
+      promptDoneCheck(rec);
       setTasks((prev) =>
         prev.map((x) =>
           x.id !== task.id

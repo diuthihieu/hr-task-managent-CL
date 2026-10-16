@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireUser, route, readJson } from "@/lib/authz";
 import { quickTaskAction } from "@/lib/task-quick";
 import { loadTaskRecord } from "@/lib/task-grid";
+import { doneMissing } from "@/lib/done-check";
 
 type P = { taskId: string };
 const schema = z.object({ action: z.enum(["complete", "start", "plan", "reopen"]) });
@@ -13,5 +14,6 @@ export const POST = route<P>(async (req, { params }) => {
   const { taskId } = await params;
   const { action } = schema.parse(await readJson(req));
   await quickTaskAction(user, taskId, action);
-  return NextResponse.json(await loadTaskRecord(taskId));
+  const record = await loadTaskRecord(taskId);
+  return NextResponse.json(action === "complete" && record ? { ...record, doneMissing: doneMissing(record.data) } : record);
 });

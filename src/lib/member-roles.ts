@@ -5,6 +5,14 @@ import { logActivity } from "./activity";
 
 type Tx = Prisma.TransactionClient;
 
+/** Who may own a project: editors and above (a project owner runs settings and permissions). */
+export const PROJECT_OWNER_ROLES: WorkspaceRole[] = ["owner", "admin", "editor"];
+
+/** Projects a member owns (owner, or creator of a project that never had one). */
+export function ownedProjectsWhere(workspaceId: string, userId: string) {
+  return { workspaceId, deletedAt: null, OR: [{ ownerId: userId }, { ownerId: null, createdById: userId }] };
+}
+
 export const ROLE_RANK: Record<WorkspaceRole, number> = { viewer: 0, contributor: 1, editor: 2, admin: 3, owner: 4 };
 
 /** Checked inside the change's transaction under a per-workspace lock, so concurrent removals can't drop the last owner. */
@@ -24,6 +32,10 @@ export async function applyRoleChange(tx: Tx, o: { workspaceId: string; actorId:
   if (!target) throw notFound("Member");
   if (o.role === "owner" || target.role === "owner") throw forbidden("A workspace has exactly one owner - use Transfer ownership");
   if (target.role === o.role) return target;
+  if (!PROJECT_OWNER_ROLES.includes(o.role)) {
+    const owned = await tx.project.count({ where: ownedProjectsWhere(o.workspaceId, o.userId) });
+    if (owned) throw badRequest(`They own ${owned} project(s) - hand them over first (Members → Hand over), project owners must be editors or above`);
+  }
   const m = await tx.workspaceMember.update({ where: { workspaceId_userId: { workspaceId: o.workspaceId, userId: o.userId } }, data: { role: o.role } });
   await logActivity(tx, { workspaceId: o.workspaceId, actorId: o.actorId, entityType: "member", entityId: o.userId, action: "role_changed", changes: { role: { from: target.role, to: o.role } } });
   if (o.userId !== o.actorId) {

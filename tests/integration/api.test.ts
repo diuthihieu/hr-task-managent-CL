@@ -2400,6 +2400,14 @@ test("project owner ranks above the workspace owner; hand-over with checks; role
     assert.equal(put.status, 200, JSON.stringify(put.body));
     assert.equal((await admin.post(`/api/projects/${proj}/tasks`, { data: { sys_title: "Owner blocked" } })).status, 403, "workspace owner narrowed inside the project");
     assert.equal((await admin.patch(`/api/projects/${proj}`, { description: "x" })).status, 403);
+    const viewId = (await prisma.view.findFirstOrThrow({ where: { projectId: proj } })).id;
+    await contributor.post(`/api/projects/${proj}/views`, { name: "Second", type: "kanban" });
+    const other = (await prisma.view.findFirstOrThrow({ where: { projectId: proj, id: { not: viewId } } })).id;
+    assert.equal((await admin.del(`/api/views/${other}`)).status, 403, "narrowed workspace owner can't delete shared views");
+    assert.equal((await admin.del(`/api/views/${viewId}`)).status, 403, "nor the base view");
+    // Project owners must stay editors or above.
+    assert.equal((await admin.put(`/api/workspaces/${s.ws}/members/roles`, { changes: [{ userId: s.contributorId, role: "contributor" }] })).status, 400, "hand over their projects first");
+    assert.equal((await admin.post(`/api/workspaces/${s.ws}/projects`, { name: "x", ownerId: s.viewerId })).status, 400, "viewer can't own a project");
     assert.equal((await contributor.put(`/api/projects/${proj}/permissions`, { changes: [{ userId: s.contributorId, permissions: [] }] })).status, 400, "the project owner stays full");
     assert.equal((await contributor.put(`/api/projects/${proj}/permissions`, { changes: [{ userId: adminId, hidden: true }] })).status, 200);
     assert.equal((await admin.get(`/api/projects/${proj}`)).status, 404, "hidden from the workspace owner");

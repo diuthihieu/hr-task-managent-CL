@@ -2,11 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, roleAtLeast, route, readJson, workspaceOfView, badRequest, forbidden } from "@/lib/authz";
-import { assertProjectCap } from "@/lib/project-permissions";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfView, badRequest, forbidden } from "@/lib/authz";
+import { assertProjectCap, viewRights } from "@/lib/project-permissions";
 import { logActivity } from "@/lib/activity";
 import { serializeView } from "@/lib/serializers";
-import { canDeleteView } from "@/lib/view-permissions";
 
 type P = { viewId: string };
 
@@ -14,8 +13,9 @@ export const GET = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { viewId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfView(viewId), "viewer");
-  const view = await prisma.view.findUniqueOrThrow({ where: { id: viewId }, include: { project: { select: { createdById: true } } } });
-  return NextResponse.json(serializeView(view, { canEdit: roleAtLeast(ctx.role, "editor"), canDelete: canDeleteView({ workspaceRole: ctx.role, userId: user.id, projectCreatedById: view.project.createdById, viewCreatedById: view.createdById, isBase: view.isBase }) }));
+  const view = await prisma.view.findUniqueOrThrow({ where: { id: viewId } });
+  const rights = await viewRights(ctx, view.projectId);
+  return NextResponse.json(serializeView(view, { canEdit: rights.canEdit, canDelete: rights.canDelete(view) }));
 });
 
 const patchSchema = z.object({
@@ -60,9 +60,9 @@ export const DELETE = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { viewId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfView(viewId), "viewer");
-  const view = await prisma.view.findUniqueOrThrow({ where: { id: viewId }, include: { project: { select: { createdById: true } } } });
-  if (!canDeleteView({ workspaceRole: ctx.role, userId: user.id, projectCreatedById: view.project.createdById, viewCreatedById: view.createdById, isBase: view.isBase })) {
-    throw forbidden(view.isBase ? "Only the workspace owner or project creator can delete the base view" : "Only a workspace admin, project creator or this view's creator can delete it");
+  const view = await prisma.view.findUniqueOrThrow({ where: { id: viewId } });
+  if (!(await viewRights(ctx, view.projectId)).canDelete(view)) {
+    throw forbidden(view.isBase ? "Only the project owner can delete the base view" : "You need \"Edit shared views\" in this project to delete this view");
   }
   await prisma.$transaction(async (tx) => {
     await tx.$queryRaw(Prisma.sql`SELECT id FROM projects WHERE id = ${view.projectId}::uuid FOR UPDATE`);

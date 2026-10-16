@@ -3,6 +3,7 @@ import type { WorkspaceRole } from "@prisma/client";
 import { prisma } from "./prisma";
 import { forbidden, supportAccess, type WorkspaceContext } from "./authz";
 import { effectiveCaps, PROJECT_CAPS, type ProjectCap } from "./project-caps";
+import { canDeleteView } from "./view-permissions";
 
 type Ctx = Pick<WorkspaceContext, "user" | "role">;
 
@@ -67,4 +68,15 @@ const MESSAGES: Record<ProjectCap, string> = {
 
 export async function assertProjectCap(ctx: Ctx, projectId: string, cap: ProjectCap) {
   if (!(await projectCaps(ctx, projectId)).has(cap)) throw forbidden(MESSAGES[cap]);
+}
+
+/** The caller's rights on a project's views, for API checks and the canEdit/canDelete flags. */
+export async function viewRights(ctx: Ctx, projectId: string) {
+  const [caps, manager] = await Promise.all([projectCaps(ctx, projectId), canManageProject(ctx, projectId)]);
+  const canEdit = caps.has("views.manage");
+  return {
+    canEdit,
+    canDelete: (view: { createdById: string | null; isBase: boolean }) =>
+      canDeleteView({ isProjectManager: manager, canManageViews: canEdit, canCreateViews: caps.has("views.create"), userId: ctx.user.id, viewCreatedById: view.createdById, isBase: view.isBase }),
+  };
 }

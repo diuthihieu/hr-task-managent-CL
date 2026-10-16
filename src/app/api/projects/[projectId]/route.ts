@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, roleAtLeast, route, readJson, workspaceOfProject, notFound, badRequest, assertCanManageProject } from "@/lib/authz";
-import { assertProjectCap, projectCaps } from "@/lib/project-permissions";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject, notFound, badRequest, assertCanManageProject } from "@/lib/authz";
+import { assertProjectCap, projectCaps, viewRights } from "@/lib/project-permissions";
 import { logActivity, diff } from "@/lib/activity";
 import { dateOnlyToDate, projectInputSchema } from "@/lib/validation";
 import { loadProjectMeta, buildFields } from "@/lib/task-grid";
 import { serializeProject, serializeView } from "@/lib/serializers";
 import { makeT, normalizeLocale } from "@/lib/i18n/core";
-import { canDeleteView } from "@/lib/view-permissions";
 
 type P = { projectId: string };
 
@@ -27,11 +26,11 @@ export const GET = route<P>(async (_req, { params }) => {
     }),
     prisma.workspace.findUniqueOrThrow({ where: { id: ctx.workspaceId }, select: { id: true, slug: true, name: true } }),
   ]);
-  const caps = await projectCaps(ctx, projectId);
+  const [caps, rights] = await Promise.all([projectCaps(ctx, projectId), viewRights(ctx, projectId)]);
   return NextResponse.json({
     ...serializeProject(project),
     fields: buildFields(meta, makeT(normalizeLocale(user.locale))),
-    views: views.map((view) => serializeView(view, { canEdit: roleAtLeast(ctx.role, "editor") && caps.has("views.manage"), canDelete: canDeleteView({ workspaceRole: ctx.role, userId: user.id, projectCreatedById: project.createdById, viewCreatedById: view.createdById, isBase: view.isBase }) })),
+    views: views.map((view) => serializeView(view, { canEdit: rights.canEdit, canDelete: rights.canDelete(view) })),
     members: members.map((m) => m.user),
     myRole: ctx.role,
     /** The caller's rights in this project (src/lib/project-caps.ts). */

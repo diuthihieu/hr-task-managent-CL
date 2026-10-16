@@ -29,7 +29,11 @@ export function captureCharts(root: HTMLElement | null): ReportChart[] {
     const title = el.dataset.chartTitle ?? "";
     let svg = "";
     const kpi = el.querySelector<HTMLElement>('[data-testid="report-kpi"], [data-testid="kpi-value"]');
-    const chart = el.querySelector<SVGSVGElement>(".recharts-wrapper svg.recharts-surface, .recharts-wrapper > svg, svg.recharts-surface");
+    // Legend swatches are small svg.recharts-surface too: take the largest chart surface outside the legend.
+    const chart =
+      [...el.querySelectorAll<SVGSVGElement>("svg.recharts-surface")]
+        .filter((s) => !s.closest(".recharts-legend-wrapper"))
+        .sort((a, b) => b.clientWidth * b.clientHeight - a.clientWidth * a.clientHeight)[0] ?? null;
     const table = el.querySelector("table");
     const narrative = el.querySelector<HTMLElement>("[data-narrative]");
     if (narrative) svg = `<div class="narrative">${narrative.innerHTML}</div>`;

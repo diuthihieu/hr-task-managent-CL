@@ -38,7 +38,8 @@ const STYLE = `
   blockquote { border-left: 3px solid #fdba74; margin: 8px 0; padding-left: 10px; color: #4b5563; }
   figure.chart { margin: 12px 0; padding: 10px 12px; border: 1px solid #e5e7eb; border-radius: 10px; page-break-inside: avoid; break-inside: avoid; }
   figure.chart figcaption { font-weight: 600; font-size: 10.5pt; margin-bottom: 6px; color: #111827; }
-  figure.chart svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+  figure.chart > svg { max-width: 100%; height: auto; display: block; margin: 0 auto; }
+  figure.chart li svg { display: inline-block; vertical-align: middle; }
   figure.chart ul { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-wrap: wrap; gap: 4px 12px; justify-content: center; font-size: 8.5pt; color: #4b5563; }
   figure.chart li { display: inline-flex; align-items: center; gap: 4px; }
   figure.chart .narrative { font-size: 10.5pt; }

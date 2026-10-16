@@ -13,6 +13,12 @@ always **Browser → Next.js route handler (authz) → Prisma → PostgreSQL**.
   `20260927120000_open_signup_project_okrs_wiki`.
 - Credentials: `DATABASE_URL` (pooled, runtime) and `DIRECT_URL` (direct,
   migrations) come from environment variables only.
+- Row level security is ON for every table, with no policies, and the
+  hosted-API roles (`anon`, `authenticated` on Supabase) have no privileges
+  (`20270103000000_lock_down_data_api`). The app connects as the table owner,
+  so it is unaffected; a hosted data API (Supabase PostgREST) can read nothing.
+  **A migration that creates a table must also `ALTER TABLE ... ENABLE ROW
+  LEVEL SECURITY`** - an integration test fails otherwise.
 
 ## Entities
 

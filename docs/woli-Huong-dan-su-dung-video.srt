@@ -1,0 +1,235 @@
+1
+00:00:00,496 --> 00:00:07,496
+woli Hướng dẫn sử dụng woli Quản lý công việc, mục tiêu và tri thức cho đội ngũ HR - có AI hỗ trợ Phần 1: Người dùng · Phần 2: Quản trị · Dữ liệu minh hoạ
+
+2
+00:00:10,163 --> 00:00:14,663
+woli Phần 1 - Người dùng Chị Lan, chuyên viên HR, vai trò Biên tập trong workspace "Phòng Nhân sự"
+
+3
+00:00:16,381 --> 00:00:22,016
+Mở địa chỉ woli của công ty, chọn Đăng nhập
+
+4
+00:00:22,016 --> 00:00:26,269
+Nhập email công việc và mật khẩu rồi bấm Đăng nhập
+
+5
+00:00:26,269 --> 00:00:33,280
+Chọn workspace để vào làm việc - mỗi phòng ban là một workspace
+
+6
+00:00:33,280 --> 00:00:40,872
+Trang chủ: việc hôm nay, việc cần chú ý, việc chờ người khác và số liệu trong ngày
+
+7
+00:00:40,872 --> 00:00:50,557
+Bấm vào một con số để mở đúng danh sách task tương ứng
+
+8
+00:00:50,557 --> 00:00:56,136
+Việc của tôi: mọi task được giao cho bạn ở mọi dự án
+
+9
+00:00:56,136 --> 00:01:03,627
+Có ý tưởng chưa thành task? Ghi nhanh vào Put all things on rồi nhấn Enter
+
+10
+00:01:03,627 --> 00:01:10,530
+Ý tưởng hiện thành chấm trên vòng thời gian - kéo để lên lịch, bấm để chuyển thành task
+
+11
+00:01:10,530 --> 00:01:20,257
+Mở dự án Onboarding Q4 ở thanh bên - view Bảng làm việc như bảng tính
+
+12
+00:01:20,257 --> 00:01:25,228
+Bấm vào ô để sửa trực tiếp - mọi view của dự án cập nhật ngay
+
+13
+00:01:25,228 --> 00:01:37,228
+Thanh công cụ: Lọc, Sắp xếp, Nhóm, ẩn/hiện cột, tô màu - lưu riêng cho từng view
+
+14
+00:01:43,543 --> 00:01:48,387
+Task được gom theo Category; tên nhóm luôn hiện khi kéo ngang bảng
+
+15
+00:01:48,387 --> 00:01:54,084
+Bấm nút mở trên một dòng để xem chi tiết task ở panel bên cạnh
+
+16
+00:01:54,084 --> 00:02:01,793
+Panel có mọi trường của task, tab Bình luận, file đính kèm và lịch sử
+
+17
+00:02:01,793 --> 00:02:13,793
+Trao đổi ngay trên task: gõ @ để nhắc tên đồng nghiệp, họ sẽ nhận thông báo
+
+18
+00:02:25,388 --> 00:02:31,034
+Cùng dữ liệu, nhiều cách nhìn: chuyển sang view Kanban
+
+19
+00:02:31,034 --> 00:02:36,724
+Kéo thẻ sang cột khác để đổi trạng thái - ví dụ kéo sang Done khi đã xong
+
+20
+00:02:36,724 --> 00:02:47,259
+View Lịch: xem task theo ngày, kéo sang ngày khác để đổi hạn
+
+21
+00:02:47,259 --> 00:02:59,259
+Wiki: lưu quy trình, chính sách của phòng; bình luận và hỏi AI ngay trên trang
+
+22
+00:03:02,627 --> 00:03:10,248
+Gõ [[ để liên kết tới trang, task, mục tiêu hoặc người khác; quản lý wiki đặt ai được xem / sửa
+
+23
+00:03:10,248 --> 00:03:21,944
+OKR: xem mục tiêu của nhóm, tiến độ tự tính từ key result và task liên kết
+
+24
+00:03:21,944 --> 00:03:28,157
+Mỗi key result có giá trị hiện tại / mục tiêu, người phụ trách, độ tự tin và hạn
+
+25
+00:03:28,157 --> 00:03:39,961
+Vinh danh: nhận và gửi lời khen cho đồng nghiệp, tích điểm đổi quà
+
+26
+00:03:39,961 --> 00:03:51,961
+Second Brain: tổng kết theo ngày, tuần, tháng, năm; nhật ký và sổ quyết định
+
+27
+00:03:55,253 --> 00:04:01,649
+Chế độ tập trung: mở task rồi bấm Bắt đầu tập trung - mỗi phiên mặc định 25 phút
+
+28
+00:04:01,649 --> 00:04:08,550
+Đồng hồ chạy ở thanh focus dưới màn hình; khi dừng, thời gian được cộng vào giờ thực tế
+
+29
+00:04:08,550 --> 00:04:14,683
+Thu nhỏ cửa sổ focus để tiếp tục làm việc - đồng hồ vẫn chạy ở thanh dưới màn hình
+
+30
+00:04:14,683 --> 00:04:22,973
+Bấm vào thanh focus để mở lại; Kết thúc để dừng phiên, Hoàn thành để xong luôn task
+
+31
+00:04:22,973 --> 00:04:32,699
+Trung tâm xử lý: gom việc được giao, được nhắc tên, sắp đến hạn, cần duyệt
+
+32
+00:04:32,699 --> 00:04:39,435
+Chuông thông báo ở góc trên cũng báo các thay đổi mới
+
+33
+00:04:39,435 --> 00:04:48,766
+Tìm nhanh mọi thứ bằng Ctrl K: task, dự án, trang wiki, đồng nghiệp
+
+34
+00:04:48,766 --> 00:05:00,766
+Workspace Intelligence: hỏi AI về công việc - AI chỉ đọc dữ liệu bạn được xem
+
+35
+00:05:11,100 --> 00:05:16,630
+AI trả lời kèm bảng số liệu; xuất PDF hoặc chuyển thành trang wiki ngay dưới câu trả lời
+
+36
+00:05:16,630 --> 00:05:26,560
+Hồ sơ & AI: cho AI biết bạn là ai và nên trả lời thế nào - mọi tính năng AI sẽ làm theo
+
+37
+00:05:26,560 --> 00:05:33,884
+Giao diện & ngôn ngữ (sáng/tối, màu nhấn, cỡ chữ) là thiết lập riêng của bạn
+
+38
+00:05:33,884 --> 00:05:45,884
+Cần xem lại cách dùng? Mở Trợ giúp trên menu - mỗi tab là một nhóm tính năng
+
+39
+00:05:52,896 --> 00:05:56,396
+woli Hết phần 1 Tiếp theo: các thao tác dành cho quản trị workspace
+
+40
+00:06:15,189 --> 00:06:19,689
+woli Phần 2 - Quản trị Chị Hương: chủ sở hữu workspace "Phòng Nhân sự" và quản trị hệ thống
+
+41
+00:06:21,410 --> 00:06:33,410
+Quản trị đăng nhập như mọi người dùng
+
+42
+00:06:36,259 --> 00:06:48,259
+Cài đặt → Thông tin workspace: tên, logo, bật/tắt AI cho cả workspace
+
+43
+00:06:48,437 --> 00:06:56,112
+Cài đặt → Thành viên: mời người mới, đổi vai trò, bàn giao khi có người nghỉ
+
+44
+00:06:56,112 --> 00:07:07,533
+Mời qua email (người được mời phải đồng ý) hoặc gửi link mời chung; dòng dưới ô vai trò giải thích quyền
+
+45
+00:07:07,533 --> 00:07:19,533
+Đổi vai trò ở danh sách rồi bấm Lưu - thay đổi chỉ áp dụng khi lưu
+
+46
+00:07:30,042 --> 00:07:35,577
+Cài đặt dự án → Phân quyền: chủ dự án quyết định từng người được làm gì
+
+47
+00:07:35,577 --> 00:07:38,403
+Bỏ quyền Xoá task của một thành viên, hoặc bỏ Xem dự án để ẩn dự án với họ
+
+48
+00:07:38,403 --> 00:07:43,307
+Dòng có thay đổi được tô vàng; bấm Lưu để áp dụng
+
+49
+00:07:43,307 --> 00:07:49,681
+Chủ dự án cũng có thể Chuyển giao dự án - có bước xác nhận trước khi thực hiện
+
+50
+00:07:49,681 --> 00:07:55,922
+Cần gộp dự án? Chuyển toàn bộ dữ liệu sang dự án khác: task, bình luận, file, cột, category - có xem trước
+
+51
+00:07:55,922 --> 00:08:03,923
+Trạng thái task dùng chung cả workspace: tên, màu và nhóm Chưa làm / Đang làm / Xong
+
+52
+00:08:03,923 --> 00:08:15,798
+OKR: đặt mục tiêu đo được; tiến độ tự tính từ key result và task liên kết
+
+53
+00:08:15,798 --> 00:08:24,827
+Chọn chu kỳ (quý, năm hoặc tuỳ chọn) rồi lưu; sau đó thêm key result và liên kết task
+
+54
+00:08:24,827 --> 00:08:36,827
+Báo cáo & dashboard: biểu đồ tổng hợp nhiều dự án, tạo nhanh bằng AI
+
+55
+00:08:51,571 --> 00:08:57,783
+Kéo tiêu đề để di chuyển, kéo góc để đổi cỡ; bấm vào phần biểu đồ để xem task tương ứng
+
+56
+00:08:57,783 --> 00:09:06,527
+Nhật ký hoạt động: ai làm gì, lúc nào - không thể sửa hay xoá
+
+57
+00:09:06,527 --> 00:09:14,475
+Trang quản trị hệ thống: quản lý tài khoản - đặt lại mật khẩu, khoá, xác minh email
+
+58
+00:09:14,475 --> 00:09:22,069
+Quản trị hệ thống không tự xem được nội dung workspace mình không tham gia; mọi thao tác đều được ghi nhật ký
+
+59
+00:09:22,072 --> 00:09:28,572
+woli Sẵn sàng làm việc cùng woli Cần hỗ trợ? Mở Trợ giúp trên menu chính hoặc liên hệ quản trị workspace Tài liệu: Hướng dẫn sử dụng (Word / PowerPoint)

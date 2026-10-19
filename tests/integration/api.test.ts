@@ -2411,6 +2411,119 @@ test("project transfer: everything of a project moves into another one (tasks, s
   await admin.del(`/api/projects/${B}`);
 });
 
+test("task transfer: move or duplicate selected tasks with sub-tasks, comments, columns, categories and permissions", async () => {
+  const A = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Task move source" })).body.id;
+  const B = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Task move target" })).body.id;
+  try {
+    const catA = (await admin.post<{ id: string }>(`/api/projects/${A}/categories`, { name: "Hồ sơ", color: "#ff0000" })).body.id;
+    const catOnlyA = (await admin.post<{ id: string }>(`/api/projects/${A}/categories`, { name: "Riêng A", color: "#00ff00" })).body.id;
+    const catB = (await admin.post<{ id: string }>(`/api/projects/${B}/categories`, { name: "hồ sơ", color: "#0000ff" })).body.id;
+    const typeA = (await admin.post<{ id: string }>(`/api/projects/${A}/custom-fields`, { name: "Loại", type: "single_select", config: { options: [{ label: "Chính thức", color: "#00ff00" }, { label: "Thử việc", color: "#0000ff" }] } })).body.id;
+    const typeB = (await admin.post<{ id: string }>(`/api/projects/${B}/custom-fields`, { name: "loại", type: "single_select", config: { options: [{ label: "Thử việc", color: "#999999" }] } })).body.id;
+    const noteA = (await admin.post<{ id: string }>(`/api/projects/${A}/custom-fields`, { name: "Ghi chú HR", type: "text" })).body.id;
+    const linkA = await admin.post<{ id: string }>(`/api/projects/${A}/custom-fields`, { name: "Liên quan", type: "link" });
+    assert.equal(linkA.status, 201, JSON.stringify(linkA.body));
+    const optA = (await prisma.customFieldOption.findFirstOrThrow({ where: { customFieldId: typeA, label: "Thử việc" } })).id;
+
+    const R = (await admin.post<Rec>(`/api/projects/${A}/tasks`, { data: { sys_title: "R stays" } })).body.id;
+    const P = (await admin.post<Rec>(`/api/projects/${A}/tasks`, { data: { sys_title: "P", sys_category: catA, [typeA]: optA, [noteA]: "giữ nguyên", [linkA.body.id]: [R] } })).body.id;
+    const C = (await admin.post<Rec>(`/api/projects/${A}/tasks`, { data: { sys_title: "C child", sys_parent: [P] } })).body.id;
+    const Q = (await admin.post<Rec>(`/api/projects/${A}/tasks`, { data: { sys_title: "Q", sys_category: catOnlyA, sys_depends_on: [R] } })).body.id;
+    const c1 = await admin.post<{ id: string }>(`/api/tasks/${P}/comments`, { body: "<p>Đã nhận hồ sơ</p>" });
+    assert.equal(c1.status, 201, JSON.stringify(c1.body));
+    await prisma.comment.create({ data: { taskId: P, authorId: s.contributorId, parentCommentId: c1.body.id, body: "<p>Ok</p>" } });
+    await prisma.attachment.create({ data: { workspaceId: s.ws, taskId: P, fileName: "cv.pdf", contentType: "application/pdf", sizeBytes: 10, storageKey: `it/${P}/cv.pdf`, url: "https://blob.invalid/cv.pdf" } });
+    const body = (mode: "move" | "duplicate", taskIds: string[], extra: object = {}) => ({ sourceProjectId: A, targetProjectId: B, taskIds, mode, ...extra });
+
+    // Permissions: outsiders see nothing; a contributor can't move a task they neither created nor are assigned to.
+    assert.equal((await outsider.post("/api/tasks/transfer", body("duplicate", [P]))).status, 404);
+    assert.equal((await contributor.post("/api/tasks/transfer", body("move", [P]))).status, 403, "contributors move only their own tasks");
+    assert.equal((await admin.post("/api/tasks/transfer", { ...body("move", [P]), targetProjectId: A })).status, 400, "move needs another project");
+    assert.equal((await admin.post("/api/tasks/transfer", body("move", [C, "00000000-0000-4000-8000-000000000000"]))).status, 400, "tasks of another project are refused");
+
+    // Preview.
+    type Plan = { tasks: number; subtasks: number; comments: number; files: number; filesAvailable: boolean; droppedLinks: number; fields: { name: string; action: string }[]; categories: { name: string; action: string }[] };
+    const plan = await admin.post<Plan>("/api/tasks/transfer", body("duplicate", [P, Q], { dryRun: true }));
+    assert.equal(plan.status, 200, JSON.stringify(plan.body));
+    assert.equal(plan.body.tasks, 2);
+    assert.equal(plan.body.subtasks, 1, "sub-tasks come along");
+    assert.equal(plan.body.comments, 2);
+    assert.equal(plan.body.files, 1);
+    assert.equal(plan.body.filesAvailable, false, "no file storage in tests");
+    assert.equal(plan.body.droppedLinks, 1, "a link to a task that stays behind is reported");
+    assert.equal(plan.body.fields.find((f) => f.name === "Loại")?.action, "reuse");
+    assert.equal(plan.body.fields.find((f) => f.name === "Ghi chú HR")?.action, "create");
+    assert.equal(plan.body.categories.find((c) => c.name === "Hồ sơ")?.action, "reuse");
+    assert.equal(plan.body.categories.find((c) => c.name === "Riêng A")?.action, "create");
+    assert.equal(await prisma.task.count({ where: { projectId: B } }), 0, "a preview writes nothing");
+
+    // Duplicate into B.
+    const d = await admin.post<{ tasks: number; subtasks: number; comments: number; files: number; filesFailed: number; taskIds: string[] }>("/api/tasks/transfer", body("duplicate", [P, Q]));
+    assert.equal(d.status, 200, JSON.stringify(d.body));
+    assert.deepEqual([d.body.tasks, d.body.subtasks, d.body.comments, d.body.files, d.body.filesFailed], [2, 1, 2, 0, 1]);
+    const copies = await prisma.task.findMany({ where: { projectId: B }, include: { category: true, customValues: true, comments: { orderBy: { createdAt: "asc" } }, dependencies: true } });
+    assert.equal(copies.length, 3);
+    const P2 = copies.find((t) => t.title === "P")!;
+    const C2 = copies.find((t) => t.title === "C child")!;
+    const Q2 = copies.find((t) => t.title === "Q")!;
+    assert.equal(P2.categoryId, catB, "category matched by name in the target");
+    assert.equal(Q2.category?.name, "Riêng A", "missing category created in the target");
+    assert.equal(Q2.category?.projectId, B);
+    const typeVal = P2.customValues.find((v) => v.customFieldId === typeB);
+    assert.equal((await prisma.customFieldOption.findUniqueOrThrow({ where: { id: typeVal!.valueOptionId! } })).label, "Thử việc");
+    assert.ok(P2.customValues.some((v) => v.valueText === "giữ nguyên"), "value lands in a column created in the target");
+    assert.ok(P2.customValues.every((v) => v.valueTaskIds.length === 0), "links to tasks left behind are dropped");
+    assert.equal(C2.parentTaskId, P2.id, "sub-task copied under the copy");
+    assert.equal(P2.comments.length, 2);
+    assert.equal(P2.comments[0].body, "<p>Đã nhận hồ sơ</p>");
+    assert.equal(P2.comments[1].authorId, s.contributorId, "comment authors are kept");
+    assert.equal(P2.comments[1].parentCommentId, P2.comments[0].id, "replies stay in their thread");
+    assert.deepEqual(Q2.dependencies.map((x) => x.dependsOnTaskId), [R], "dependency on a task outside the copy is kept (same workspace)");
+    assert.equal(await prisma.attachment.count({ where: { taskId: P2.id } }), 0, "without file storage no file is copied (and none is shared)");
+    assert.ok(await prisma.activityLog.findFirst({ where: { entityId: P2.id, summary: { contains: "Duplicated from" } } }), "history says where the copy came from");
+    assert.equal(await prisma.task.count({ where: { projectId: A, deletedAt: null } }), 4, "originals untouched");
+    assert.equal(await prisma.comment.count({ where: { taskId: P } }), 2);
+
+    // Duplicate inside the same project keeps its categories and links.
+    const same = await admin.post<{ taskIds: string[] }>("/api/tasks/transfer", { ...body("duplicate", [Q]), targetProjectId: A });
+    assert.equal(same.status, 200, JSON.stringify(same.body));
+    assert.equal((await prisma.task.findUniqueOrThrow({ where: { id: same.body.taskIds[0] } })).categoryId, catOnlyA);
+
+    // Move P (and its sub-task) into B: same task ids, comments and files stay attached.
+    const m = await admin.post<{ tasks: number; subtasks: number }>("/api/tasks/transfer", body("move", [P]));
+    assert.equal(m.status, 200, JSON.stringify(m.body));
+    assert.deepEqual([m.body.tasks, m.body.subtasks], [1, 1]);
+    const P3 = await prisma.task.findUniqueOrThrow({ where: { id: P }, include: { customValues: true } });
+    assert.equal(P3.projectId, B);
+    assert.equal(P3.categoryId, catB);
+    assert.ok(P3.customValues.some((v) => v.customFieldId === typeB), "value moved onto the matching column");
+    assert.ok(P3.customValues.every((v) => v.valueTaskIds.length === 0), "link to a task that stayed behind removed");
+    const C3 = await prisma.task.findUniqueOrThrow({ where: { id: C } });
+    assert.equal(C3.projectId, B);
+    assert.equal(C3.parentTaskId, P, "sub-task keeps its parent");
+    assert.equal(await prisma.comment.count({ where: { taskId: P } }), 2, "comments stay on the moved task");
+    assert.equal(await prisma.attachment.count({ where: { taskId: P } }), 1, "files stay on the moved task");
+
+    // A selected sub-task whose parent stays behind becomes a top-level task.
+    const S = (await admin.post<Rec>(`/api/projects/${A}/tasks`, { data: { sys_title: "S", sys_parent: [Q] } })).body.id;
+    assert.equal((await admin.post("/api/tasks/transfer", body("move", [S]))).status, 200);
+    const S2 = await prisma.task.findUniqueOrThrow({ where: { id: S } });
+    assert.deepEqual([S2.projectId, S2.parentTaskId], [B, null]);
+
+    // Contributors move their own tasks.
+    const own = (await contributor.post<Rec>(`/api/projects/${A}/tasks`, { data: { sys_title: "Mine" } })).body.id;
+    assert.equal((await contributor.post("/api/tasks/transfer", body("move", [own]))).status, 200);
+
+    assert.equal((await admin.get(`/api/projects/${A}/tasks`)).status, 200);
+    assert.equal((await admin.get(`/api/projects/${B}/tasks`)).status, 200);
+  } finally {
+    // The fake file row (no object storage in tests) must not outlive this test.
+    await prisma.attachment.deleteMany({ where: { storageKey: { startsWith: "it/" } } });
+    await admin.del(`/api/projects/${A}`);
+    await admin.del(`/api/projects/${B}`);
+  }
+});
+
 test("project owner ranks above the workspace owner; hand-over with checks; roles are saved in batch; exactly one workspace owner", async () => {
   const adminId = (await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } })).id;
   const setRole = (userId: string, role: "editor" | "contributor" | "viewer") => prisma.workspaceMember.update({ where: { workspaceId_userId: { workspaceId: s.ws, userId } }, data: { role } });

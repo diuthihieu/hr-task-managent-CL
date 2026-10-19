@@ -62,29 +62,50 @@ function remapJson(value: unknown, ids: Map<string, string>): Prisma.InputJsonVa
   return JSON.parse(text) as Prisma.InputJsonValue;
 }
 
-export async function runTransfer(tx: Tx, o: { sourceId: string; targetId: string; workspaceId: string; actorId: string; includeObjectives: boolean; archiveSource: boolean }) {
+export interface SchemaMap {
+  /** Source category id -> target category id (missing when it could not be created). */
+  catMap: Map<string, string>;
+  /** Source custom-field id -> target custom-field id. */
+  fieldMap: Map<string, string>;
+  optionMap: Map<string, string>;
+  fieldsCreated: number;
+  categoriesCreated: number;
+}
+
+/**
+ * Match the source project's categories and columns to the target project by name (columns: name + type),
+ * creating what is missing. `categoryIds` / `fieldIds` limit the work to what is actually used (moving a few
+ * tasks must not copy every column); `createCategories` / `createFields` false only reuses what exists.
+ * Deleted source columns get a deleted copy (whole-project moves) so their values stay restorable.
+ */
+export async function mapProjectSchema(
+  tx: Tx,
+  o: { sourceId: string; targetId: string; workspaceId: string; actorId: string; categoryIds?: Set<string>; fieldIds?: Set<string>; createCategories?: boolean; createFields?: boolean }
+): Promise<SchemaMap> {
   const { sourceId, targetId, workspaceId, actorId } = o;
-  if (sourceId === targetId) throw badRequest("Choose another project");
-  // One transfer at a time per project pair; lock both projects.
-  await tx.$queryRaw(Prisma.sql`SELECT id FROM projects WHERE id IN (${sourceId}::uuid, ${targetId}::uuid) ORDER BY id FOR UPDATE`);
+  const createCategories = o.createCategories ?? true;
+  const createFields = o.createFields ?? true;
 
   // 1) Categories: reuse by name, create the missing ones.
   const [srcCats, dstCats] = await Promise.all([
-    tx.category.findMany({ where: { projectId: sourceId } }),
+    tx.category.findMany({ where: { projectId: sourceId, ...(o.categoryIds ? { id: { in: [...o.categoryIds] } } : {}) } }),
     tx.category.findMany({ where: { projectId: targetId } }),
   ]);
   const catMap = new Map<string, string>();
+  let categoriesCreated = 0;
   let catOrder = dstCats.reduce((m, c) => Math.max(m, c.sortOrder), 0);
   for (const c of srcCats) {
     const hit = dstCats.find((d) => norm(d.name) === norm(c.name));
-    const id = hit?.id ?? (await tx.category.create({ data: { workspaceId, projectId: targetId, name: c.name, color: c.color, sortOrder: ++catOrder, createdById: actorId, updatedById: actorId } })).id;
-    catMap.set(c.id, id);
+    if (hit) catMap.set(c.id, hit.id);
+    else if (createCategories) {
+      catMap.set(c.id, (await tx.category.create({ data: { workspaceId, projectId: targetId, name: c.name, color: c.color, sortOrder: ++catOrder, createdById: actorId, updatedById: actorId } })).id);
+      categoriesCreated++;
+    }
   }
 
-  // 2) Columns: reuse a live column with the same name and type, else create one
-  //    (deleted source columns get a deleted copy so their values stay restorable).
+  // 2) Columns: reuse a live column with the same name and type, else create one.
   const [srcFields, dstFields] = await Promise.all([
-    tx.customField.findMany({ where: { projectId: sourceId }, include: { options: true }, orderBy: { sortOrder: "asc" } }),
+    tx.customField.findMany({ where: { projectId: sourceId, ...(o.fieldIds ? { id: { in: [...o.fieldIds] } } : {}) }, include: { options: true }, orderBy: { sortOrder: "asc" } }),
     tx.customField.findMany({ where: { projectId: targetId, deletedAt: null }, include: { options: true } }),
   ]);
   const fieldMap = new Map<string, string>();
@@ -96,6 +117,7 @@ export async function runTransfer(tx: Tx, o: { sourceId: string; targetId: strin
     const hit = f.deletedAt ? null : dstFields.find((d) => d.type === f.type && norm(d.name) === norm(f.name) && !usedTarget.has(d.id));
     let targetField = hit;
     if (!targetField) {
+      if (!createFields) continue;
       targetField = await tx.customField.create({
         data: { projectId: targetId, name: f.name, type: f.type, description: f.description, isRequired: f.isRequired, settings: f.settings ?? {}, sortOrder: ++fieldOrder, createdById: actorId, updatedById: actorId, deletedAt: f.deletedAt },
         include: { options: true },
@@ -107,13 +129,23 @@ export async function runTransfer(tx: Tx, o: { sourceId: string; targetId: strin
     let optOrder = targetField.options.reduce((m, x) => Math.max(m, x.sortOrder), 0);
     for (const opt of f.options) {
       const same = targetField.options.find((x) => norm(x.label) === norm(opt.label));
-      const id = same?.id ?? (await tx.customFieldOption.create({ data: { customFieldId: targetField.id, label: opt.label, color: opt.color, sortOrder: ++optOrder } })).id;
-      optionMap.set(opt.id, id);
+      if (same) optionMap.set(opt.id, same.id);
+      else if (createFields) optionMap.set(opt.id, (await tx.customFieldOption.create({ data: { customFieldId: targetField.id, label: opt.label, color: opt.color, sortOrder: ++optOrder } })).id);
     }
   }
   // Created columns may point at other columns (lookups) or at the source project (links).
   const idMap = new Map<string, string>([...fieldMap, [sourceId, targetId]]);
   for (const c of created) await tx.customField.update({ where: { id: c.id }, data: { settings: remapJson(c.settings, idMap) } });
+  return { catMap, fieldMap, optionMap, fieldsCreated: created.length, categoriesCreated };
+}
+
+export async function runTransfer(tx: Tx, o: { sourceId: string; targetId: string; workspaceId: string; actorId: string; includeObjectives: boolean; archiveSource: boolean }) {
+  const { sourceId, targetId, workspaceId, actorId } = o;
+  if (sourceId === targetId) throw badRequest("Choose another project");
+  // One transfer at a time per project pair; lock both projects.
+  await tx.$queryRaw(Prisma.sql`SELECT id FROM projects WHERE id IN (${sourceId}::uuid, ${targetId}::uuid) ORDER BY id FOR UPDATE`);
+
+  const { catMap, fieldMap, optionMap, fieldsCreated, categoriesCreated } = await mapProjectSchema(tx, { sourceId, targetId, workspaceId, actorId });
 
   // 3) Tasks. Sub-tasks must stay in their parent's project at every step, so
   //    parents are detached first and re-attached after the move.
@@ -161,5 +193,5 @@ export async function runTransfer(tx: Tx, o: { sourceId: string; targetId: strin
   await tx.$executeRaw`UPDATE wiki_pages SET source_project_ids = ARRAY(SELECT DISTINCT unnest(source_project_ids)) WHERE ${targetId}::uuid = ANY(source_project_ids)`;
 
   if (o.archiveSource) await tx.project.update({ where: { id: sourceId }, data: { status: "archived", updatedById: actorId } });
-  return { tasks: taskIds.length, objectives, ideas: ideas.length, fieldsCreated: created.length, categoriesCreated: srcCats.length - [...catMap.values()].filter((id) => dstCats.some((d) => d.id === id)).length };
+  return { tasks: taskIds.length, objectives, ideas: ideas.length, fieldsCreated, categoriesCreated };
 }

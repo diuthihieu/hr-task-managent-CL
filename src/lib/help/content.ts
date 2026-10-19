@@ -200,7 +200,7 @@ export const HELP_TABS: HelpTab[] = [
         body: ["Work like a spreadsheet: one row per task, edit in the cell, paste many cells at once, select several rows.", "Làm việc như bảng tính: mỗi dòng một task, sửa trực tiếp trong ô, dán nhiều ô một lúc, chọn nhiều dòng."],
         steps: [
           ["Click a cell to edit it; press Esc to cancel.", "Bấm vào ô để sửa; nhấn Esc để huỷ."],
-          ["Copy / paste with Ctrl C / Ctrl V, or right-click a cell or row.", "Sao chép / dán bằng Ctrl C / Ctrl V, hoặc chuột phải vào ô hay dòng."],
+          ["Drag across cells (or Shift+click) to select a range; click the row handles (Shift+click for more) to select whole rows. Ctrl C / Ctrl V copy and paste ranges and rows - also between projects and with Excel; Ctrl D fills the first value down. Right-click for Paste as new rows.", "Kéo chuột qua các ô (hoặc Shift+click) để chọn vùng; bấm ô đầu dòng (Shift+click để chọn thêm) để chọn cả dòng. Ctrl C / Ctrl V sao chép và dán vùng ô hoặc dòng - kể cả giữa các project và với Excel; Ctrl D điền giá trị đầu tiên xuống các dòng bên dưới. Chuột phải để chọn Dán thành dòng mới."],
           ["Drag a column header to reorder it; drag its edge to resize.", "Kéo tiêu đề cột để đổi vị trí; kéo mép cột để đổi độ rộng."],
           ["Press + Add task at the bottom to add a row.", "Bấm + Thêm task ở cuối bảng để thêm dòng."],
         ],
@@ -621,7 +621,7 @@ export const HELP_TABS: HelpTab[] = [
       {
         id: "keys",
         title: ["Keyboard in the table", "Bàn phím trong bảng"],
-        body: ["Ctrl C / Ctrl V copy and paste cells or whole rows, Esc closes menus and cancels editing, Enter confirms.", "Ctrl C / Ctrl V sao chép và dán ô hoặc cả dòng, Esc đóng menu và huỷ sửa, Enter xác nhận."],
+        body: ["Ctrl C / Ctrl V copy and paste cells, ranges or whole rows, Ctrl D fills down, Esc closes menus and cancels editing, Enter confirms.", "Ctrl C / Ctrl V sao chép và dán ô, vùng ô hoặc cả dòng, Ctrl D điền xuống, Esc đóng menu và huỷ sửa, Enter xác nhận."],
       },
       {
         id: "devices",

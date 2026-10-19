@@ -7,21 +7,46 @@ import {
   getFieldType,
   migrateFieldValue,
   parseFieldConfig,
+  resolveOkrTarget,
 } from "./field-types";
 import type { FieldRow } from "@/types";
 
-export interface GridClipboardEntry {
+/** One copied column: enough of the source field to convert its values into another field or project. */
+export interface GridClipboardColumn {
   fieldId: string;
   fieldType: string;
   fieldConfig: string | null;
-  value: unknown;
+  fieldName: string;
+  projectId: string;
 }
 
-export type GridClipboardPayload =
-  | { kind: "cell"; text: string; entry: GridClipboardEntry }
-  | { kind: "row"; text: string; entries: GridClipboardEntry[] };
+/**
+ * A rectangular copy from the task grid. `cells` came from a cell range and pastes by position;
+ * `rows` came from whole rows and pastes by matching fields, so column order and views do not matter.
+ */
+export interface GridClipboardPayload {
+  kind: "cells" | "rows";
+  text: string;
+  columns: GridClipboardColumn[];
+  rows: unknown[][];
+}
 
 export type ClipboardValueResult = { ok: true; value: unknown } | { ok: false };
+
+/** Values that only make sense inside one project/workspace, checked against what the target grid offers. */
+export interface PasteTargetContext {
+  memberIds: ReadonlySet<string>;
+  /** Selectable records per link field id. */
+  linkIds: Readonly<Record<string, ReadonlySet<string>>>;
+  okrIds: ReadonlySet<string>;
+}
+
+export interface TextLookup {
+  /** Resolves a display label (member name, linked task title, objective title) to an id for the field. */
+  idForLabel: (field: FieldRow, label: string) => string | null;
+}
+
+const SELECT_TYPES = [...SELECT_SINGLE_TYPES, ...SELECT_MULTI_TYPES];
 
 const cloneValue = (value: unknown): unknown => {
   if (value === undefined || value === null || typeof value !== "object") return value;
@@ -32,31 +57,20 @@ export function isGridFieldPasteable(field: FieldRow): boolean {
   return !field.readOnly && getFieldType(field.type).editable;
 }
 
-export function createCellClipboardPayload(field: FieldRow, value: unknown, text: string): GridClipboardPayload {
-  return {
-    kind: "cell",
-    text,
-    entry: { fieldId: field.id, fieldType: field.type, fieldConfig: field.config, value: cloneValue(value) },
-  };
+export function columnOf(field: FieldRow): GridClipboardColumn {
+  return { fieldId: field.id, fieldType: field.type, fieldConfig: field.config, fieldName: field.name, projectId: field.projectId };
 }
 
-export function createRowClipboardPayload(fields: FieldRow[], values: unknown[], text: string): GridClipboardPayload {
-  return {
-    kind: "row",
-    text,
-    entries: fields.map((field, index) => ({
-      fieldId: field.id,
-      fieldType: field.type,
-      fieldConfig: field.config,
-      value: cloneValue(values[index]),
-    })),
-  };
+export function createClipboardPayload(kind: GridClipboardPayload["kind"], fields: FieldRow[], rows: unknown[][], displayRows: string[][]): GridClipboardPayload {
+  return { kind, text: toTsv(displayRows), columns: fields.map(columnOf), rows: rows.map((row) => row.map(cloneValue)) };
 }
 
-function selectIdsForTarget(entry: GridClipboardEntry, target: FieldRow): ClipboardValueResult {
-  const sourceConfig = parseFieldConfig(entry.fieldConfig);
+const sameField = (column: GridClipboardColumn, target: FieldRow) => column.fieldId === target.id && column.projectId === target.projectId;
+
+function selectIdsForTarget(column: GridClipboardColumn, value: unknown, target: FieldRow): ClipboardValueResult {
+  const sourceConfig = parseFieldConfig(column.fieldConfig);
   const targetConfig = parseFieldConfig(target.config);
-  const sourceIds = Array.isArray(entry.value) ? entry.value.map(String) : entry.value == null ? [] : [String(entry.value)];
+  const sourceIds = Array.isArray(value) ? value.map(String) : value == null ? [] : [String(value)];
   const targetIds: string[] = [];
   for (const sourceId of sourceIds) {
     const label = sourceConfig.options?.find((option) => option.id === sourceId)?.label;
@@ -65,60 +79,99 @@ function selectIdsForTarget(entry: GridClipboardEntry, target: FieldRow): Clipbo
     if (!targetOption) return { ok: false };
     targetIds.push(targetOption.id);
   }
-  return SELECT_MULTI_TYPES.includes(target.type)
-    ? { ok: true, value: targetIds }
-    : { ok: true, value: targetIds[0] ?? null };
+  return SELECT_MULTI_TYPES.includes(target.type) ? { ok: true, value: targetIds } : { ok: true, value: targetIds[0] ?? null };
 }
 
-/** Preserve typed values for in-app paste, only converting combinations with a defined safe meaning. */
-export function clipboardEntryToField(entry: GridClipboardEntry, target: FieldRow): ClipboardValueResult {
+/**
+ * Convert one copied value into the target field. Values are kept as-is only for the very same field of the
+ * same project; anything else (another column, or the same built-in column of another project, whose
+ * categories and tasks are different) goes through a conversion with a defined meaning.
+ */
+export function clipboardEntryToField(column: GridClipboardColumn, value: unknown, target: FieldRow): ClipboardValueResult {
   if (!isGridFieldPasteable(target)) return { ok: false };
-  if (entry.fieldId === target.id || entry.fieldType === target.type && ![...SELECT_SINGLE_TYPES, ...SELECT_MULTI_TYPES].includes(target.type)) {
-    return { ok: true, value: cloneValue(entry.value) };
-  }
+  if (sameField(column, target)) return { ok: true, value: cloneValue(value) };
 
-  const sourceSelect = [...SELECT_SINGLE_TYPES, ...SELECT_MULTI_TYPES].includes(entry.fieldType);
-  const targetSelect = [...SELECT_SINGLE_TYPES, ...SELECT_MULTI_TYPES].includes(target.type);
-  if (sourceSelect && targetSelect) return selectIdsForTarget(entry, target);
+  const sourceSelect = SELECT_TYPES.includes(column.fieldType);
+  const targetSelect = SELECT_TYPES.includes(target.type);
+  if (sourceSelect && targetSelect) return selectIdsForTarget(column, value, target);
+  if (column.fieldType === target.type) return { ok: true, value: cloneValue(value) };
 
   const compatible =
-    (TEXT_LIKE_TYPES.includes(entry.fieldType) && TEXT_LIKE_TYPES.includes(target.type)) ||
-    (NUMERIC_LIKE_TYPES.includes(entry.fieldType) && NUMERIC_LIKE_TYPES.includes(target.type)) ||
-    (DATE_LIKE_TYPES.includes(entry.fieldType) && (DATE_LIKE_TYPES.includes(target.type) || TEXT_LIKE_TYPES.includes(target.type))) ||
+    (TEXT_LIKE_TYPES.includes(column.fieldType) && TEXT_LIKE_TYPES.includes(target.type)) ||
+    (NUMERIC_LIKE_TYPES.includes(column.fieldType) && NUMERIC_LIKE_TYPES.includes(target.type)) ||
+    (DATE_LIKE_TYPES.includes(column.fieldType) && (DATE_LIKE_TYPES.includes(target.type) || TEXT_LIKE_TYPES.includes(target.type))) ||
     (sourceSelect && TEXT_LIKE_TYPES.includes(target.type)) ||
-    (["checkbox", ...TEXT_LIKE_TYPES, ...NUMERIC_LIKE_TYPES].includes(entry.fieldType) &&
+    (["checkbox", ...TEXT_LIKE_TYPES, ...NUMERIC_LIKE_TYPES].includes(column.fieldType) &&
       ["checkbox", ...TEXT_LIKE_TYPES, ...NUMERIC_LIKE_TYPES].includes(target.type)) ||
-    (["person", "people"].includes(entry.fieldType) && ["person", "people"].includes(target.type)) ||
-    (entry.fieldType === "attachment" && TEXT_LIKE_TYPES.includes(target.type));
+    (["person", "people"].includes(column.fieldType) && ["person", "people"].includes(target.type)) ||
+    (column.fieldType === "attachment" && TEXT_LIKE_TYPES.includes(target.type));
 
   if (!compatible) return { ok: false };
-  return {
-    ok: true,
-    value: migrateFieldValue(entry.fieldType, target.type, cloneValue(entry.value), parseFieldConfig(entry.fieldConfig)),
-  };
+  return { ok: true, value: migrateFieldValue(column.fieldType, target.type, cloneValue(value), parseFieldConfig(column.fieldConfig)) };
 }
 
-export function rowClipboardPatch(payload: GridClipboardPayload, fields: FieldRow[]): Record<string, unknown> | null {
-  if (payload.kind !== "row") return null;
-  const sourceById = new Map(payload.entries.map((entry) => [entry.fieldId, entry]));
-  const patch: Record<string, unknown> = {};
-  for (const field of fields) {
-    const source = sourceById.get(field.id);
-    if (!source || !isGridFieldPasteable(field)) continue;
-    const result = clipboardEntryToField(source, field);
-    if (result.ok) patch[field.id] = result.value;
+/**
+ * The copied column that feeds a target field in a whole-row paste: the same field, else the same built-in
+ * column of another project (they share ids), else a custom column with the same name.
+ */
+export function matchColumn(columns: GridClipboardColumn[], target: FieldRow): number {
+  const exact = columns.findIndex((column) => sameField(column, target));
+  if (exact >= 0) return exact;
+  if (target.system) return columns.findIndex((column) => column.fieldId === target.id);
+  const name = target.name.trim().toLocaleLowerCase();
+  return columns.findIndex((column) => !column.fieldId.startsWith("sys_") && column.fieldName.trim().toLocaleLowerCase() === name);
+}
+
+/**
+ * Drop references the target cannot accept (members, linked tasks, objectives and options of another
+ * project or workspace), so one foreign id never makes the server reject the whole row.
+ * Returns `{ ok: false }` when nothing usable is left for a value that was not empty.
+ */
+export function sanitizeForTarget(field: FieldRow, value: unknown, ctx: PasteTargetContext): ClipboardValueResult {
+  const keep = (ids: unknown, allowed: ReadonlySet<string> | undefined) => {
+    const list = Array.isArray(ids) ? ids.map(String) : ids == null || ids === "" ? [] : [String(ids)];
+    const kept = allowed ? list.filter((id) => allowed.has(id)) : [];
+    return { list, kept };
+  };
+  if (SELECT_TYPES.includes(field.type)) {
+    const options = new Set((parseFieldConfig(field.config).options ?? []).map((option) => option.id));
+    const { list, kept } = keep(value, options);
+    if (list.length && !kept.length) return { ok: false };
+    // Every task has a status: clearing it is not a valid paste.
+    if (field.type === "status" && !kept.length) return { ok: false };
+    return { ok: true, value: SELECT_MULTI_TYPES.includes(field.type) ? kept : kept[0] ?? null };
   }
-  return Object.keys(patch).length ? patch : null;
+  if (field.type === "person" || field.type === "people") {
+    const { list, kept } = keep(value, ctx.memberIds);
+    if (list.length && !kept.length) return { ok: false };
+    return { ok: true, value: field.type === "people" ? kept : kept[0] ?? null };
+  }
+  if (field.type === "link") {
+    const { list, kept } = keep(value, ctx.linkIds[field.id]);
+    if (list.length && !kept.length) return { ok: false };
+    const max = parseFieldConfig(field.config).maxLinks;
+    return { ok: true, value: max ? kept.slice(-max) : kept };
+  }
+  if (field.type === "okr_target") {
+    if (value == null || value === "") return { ok: true, value: null };
+    return resolveOkrTarget(parseFieldConfig(field.config), value) ? { ok: true, value } : { ok: false };
+  }
+  if (field.type === "okr_objective" || field.type === "okr_key_result") {
+    if (value == null || value === "") return { ok: true, value: null };
+    return ctx.okrIds.has(String(value)) ? { ok: true, value } : { ok: false };
+  }
+  if (field.isPrimary && (typeof value !== "string" || !value.trim())) return { ok: false };
+  return { ok: true, value };
 }
 
 /** Convert plain clipboard text (for example from Excel) to a cell's typed value. */
-export function clipboardTextToField(text: string, target: FieldRow): ClipboardValueResult {
+export function clipboardTextToField(text: string, target: FieldRow, lookup?: TextLookup): ClipboardValueResult {
   if (!isGridFieldPasteable(target)) return { ok: false };
   const raw = text.replace(/\r\n/g, "\n");
   const trimmed = raw.trim();
   if (TEXT_LIKE_TYPES.includes(target.type) || target.type === "barcode") return { ok: true, value: raw };
   if (!trimmed) {
-    if (target.type === "multi_select" || target.type === "people" || target.type === "attachment") return { ok: true, value: [] };
+    if (target.type === "multi_select" || target.type === "people" || target.type === "attachment" || target.type === "link") return { ok: true, value: [] };
     return { ok: true, value: null };
   }
 
@@ -135,11 +188,11 @@ export function clipboardTextToField(text: string, target: FieldRow): ClipboardV
     return { ok: false };
   }
   if (DATE_LIKE_TYPES.includes(target.type)) {
-    const date = new Date(trimmed);
-    if (Number.isNaN(date.getTime())) return { ok: false };
+    const date = parseClipboardDate(trimmed);
+    if (!date) return { ok: false };
     return { ok: true, value: target.type === "date" ? date.toISOString().slice(0, 10) : date.toISOString() };
   }
-  if ([...SELECT_SINGLE_TYPES, ...SELECT_MULTI_TYPES].includes(target.type)) {
+  if (SELECT_TYPES.includes(target.type)) {
     const config = parseFieldConfig(target.config);
     const labels = trimmed.split(",").map((label) => label.trim()).filter(Boolean);
     const ids: string[] = [];
@@ -149,6 +202,17 @@ export function clipboardTextToField(text: string, target: FieldRow): ClipboardV
       ids.push(option.id);
     }
     return SELECT_MULTI_TYPES.includes(target.type) ? { ok: true, value: ids } : { ok: true, value: ids[0] ?? null };
+  }
+  if (["person", "people", "link"].includes(target.type) || target.type.startsWith("okr_")) {
+    if (!lookup) return { ok: false };
+    const labels = target.type.startsWith("okr_") ? [trimmed] : trimmed.split(",").map((label) => label.trim()).filter(Boolean);
+    const ids: string[] = [];
+    for (const label of labels) {
+      const id = lookup.idForLabel(target, label);
+      if (!id) return { ok: false };
+      ids.push(id);
+    }
+    return target.type === "people" || target.type === "link" ? { ok: true, value: ids } : { ok: true, value: ids[0] ?? null };
   }
   if (target.type === "team") {
     const team = parseFieldConfig(target.config).teams?.find((candidate) => candidate.id === trimmed || candidate.name.trim().toLocaleLowerCase() === trimmed.toLocaleLowerCase());
@@ -164,3 +228,75 @@ export function clipboardTextToField(text: string, target: FieldRow): ClipboardV
   }
   return { ok: false };
 }
+
+/** Dates as the grid shows them (dd/mm/yyyy), ISO, or anything Date understands - in that order. */
+function parseClipboardDate(text: string): Date | null {
+  const dmy = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{4})(?:[ T](\d{1,2}):(\d{2}))?$/.exec(text);
+  if (dmy) {
+    const [, d, m, y, hh, mm] = dmy.map(Number);
+    const date = new Date(Date.UTC(y, m - 1, d, hh || 0, mm || 0));
+    return date.getUTCMonth() === m - 1 && date.getUTCDate() === d ? date : null;
+  }
+  const iso = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  if (iso) {
+    const date = new Date(`${text}T00:00:00Z`);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** Tab-separated text the way spreadsheets write it: cells holding tabs, newlines or quotes are quoted. */
+export function toTsv(rows: string[][]): string {
+  const cell = (value: string) => (/[\t\n\r"]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
+  return rows.map((row) => row.map(cell).join("\t")).join("\n");
+}
+
+/** Parse spreadsheet clipboard text into rows of cells (quoted cells may contain tabs and newlines). */
+export function parseTsv(text: string): string[][] {
+  const src = text.replace(/\r\n?/g, "\n").replace(/\n$/, "");
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let i = 0;
+  let atCellStart = true;
+  while (i < src.length) {
+    const ch = src[i];
+    if (atCellStart && ch === '"') {
+      const end = findClosingQuote(src, i + 1);
+      if (end >= 0 && (end + 1 === src.length || src[end + 1] === "\t" || src[end + 1] === "\n")) {
+        cell = src.slice(i + 1, end).replace(/""/g, '"');
+        i = end + 1;
+        atCellStart = false;
+        continue;
+      }
+    }
+    atCellStart = false;
+    if (ch === "\t") {
+      row.push(cell);
+      cell = "";
+      atCellStart = true;
+    } else if (ch === "\n") {
+      row.push(cell);
+      rows.push(row);
+      row = [];
+      cell = "";
+      atCellStart = true;
+    } else cell += ch;
+    i++;
+  }
+  row.push(cell);
+  rows.push(row);
+  return rows;
+}
+
+function findClosingQuote(src: string, from: number): number {
+  for (let i = from; i < src.length; i++) {
+    if (src[i] !== '"') continue;
+    if (src[i + 1] === '"') i++;
+    else return i;
+  }
+  return -1;
+}
+
+export const normalizeClipboardText = (text: string) => text.replace(/\r\n?/g, "\n").replace(/\n$/, "");

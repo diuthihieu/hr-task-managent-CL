@@ -9,7 +9,7 @@ import { promptDoneCheck } from "@/components/tasks/done-check-dialog";
 import { nanoid } from "nanoid";
 import { ViewTabs } from "./view-tabs";
 import { ViewToolbar } from "./view-toolbar";
-import { GridView } from "@/components/grid/grid-view";
+import { GridView, type GridBulkChange } from "@/components/grid/grid-view";
 import { GanttView } from "@/components/gantt/gantt-view";
 import { KanbanView } from "@/components/kanban/kanban-view";
 import { CalendarView } from "@/components/calendar/calendar-view";
@@ -197,6 +197,48 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
       toast.error(e instanceof Error ? e.message : t("common.failed"));
       load();
     }
+  }
+
+  /**
+   * Paste / fill down: many rows at once. Updates go out a few at a time; new rows are created in order
+   * so they keep the pasted order. One summary toast and one reload instead of one per failed row.
+   */
+  async function handleBulkChange({ updates, creates }: GridBulkChange) {
+    const patches = new Map(updates.map((u) => [u.recordId, u.patch]));
+    setRecords((prev) => prev.map((r) => (patches.has(r.id) ? { ...r, data: { ...r.data, ...patches.get(r.id) } } : r)));
+    let updated = 0;
+    let created = 0;
+    const errors: string[] = [];
+    const queue = [...updates];
+    const worker = async () => {
+      for (let next = queue.shift(); next; next = queue.shift()) {
+        try {
+          const saved = await api.patch<RecordRow>(`/api/tasks/${next.recordId}`, { data: next.patch });
+          setRecords((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
+          updated++;
+        } catch (e) {
+          errors.push(e instanceof Error ? e.message : t("common.failed"));
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
+    if (creates.length && !caps.has("task.create")) toast.info(t("pp.noCreate"));
+    else {
+      for (const data of creates) {
+        try {
+          const record = await api.post<RecordRow>(`/api/projects/${projectId}/tasks`, { data });
+          setRecords((prev) => [...prev, record]);
+          created++;
+        } catch (e) {
+          errors.push(e instanceof Error ? e.message : t("common.failed"));
+        }
+      }
+    }
+    if (errors.length) {
+      toast.error(t("grid.pasteFailed", { n: errors.length, reason: errors[0] }));
+      load();
+    }
+    return { updated, created, failed: errors.length };
   }
 
   async function handleAddRecord(initialData?: Record<string, unknown>) {
@@ -618,7 +660,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onToggleSelect={toggleSelect}
           onToggleSelectAll={toggleSelectAll}
           onCellChange={handleCellChange}
-          onRowChange={handleCellChangeMultiple}
+          onBulkChange={handleBulkChange}
           onAddRecord={handleAddRecord}
           onOpenRecord={setOpenRecordId}
           onOpenPage={openPage}

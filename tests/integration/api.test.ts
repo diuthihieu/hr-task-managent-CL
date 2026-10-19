@@ -2524,6 +2524,26 @@ test("task transfer: move or duplicate selected tasks with sub-tasks, comments, 
   }
 });
 
+test("platform overview: woli system admins see platform-wide counts; everyone else is refused; each view is logged", async () => {
+  assert.equal((await new Client().get("/api/admin/stats")).status, 401);
+  assert.equal((await contributor.get("/api/admin/stats")).status, 403, "workspace roles do not grant the platform overview");
+  type Overview = { users: { total: number; verified: number }; workspaces: { total: number }; projects: { total: number }; tasks: { total: number }; weekly: { week: string; signups: number }[]; workspaceRows: { id: string; name: string; ownerEmail: string | null; members: number; tasks: number }[] };
+  const r = await admin.get<Overview>("/api/admin/stats");
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.users.total, await prisma.user.count({ where: { deletedAt: null } }));
+  assert.equal(r.body.workspaces.total, await prisma.workspace.count({ where: { deletedAt: null } }));
+  assert.equal(r.body.projects.total, await prisma.project.count({ where: { deletedAt: null, workspace: { deletedAt: null } } }));
+  assert.equal(r.body.tasks.total, await prisma.task.count({ where: { deletedAt: null, workspace: { deletedAt: null } } }));
+  assert.equal(r.body.weekly.length, 12);
+  assert.equal(r.body.workspaceRows.length, r.body.workspaces.total, "every workspace is listed, also those the admin is not in");
+  const row = r.body.workspaceRows.find((w) => w.id === s.ws)!;
+  assert.ok(row && row.ownerEmail && row.members >= 2, JSON.stringify(row));
+  assert.equal(row.tasks, await prisma.task.count({ where: { workspaceId: s.ws, deletedAt: null } }));
+  assert.ok(!JSON.stringify(r.body).includes("sys_title"), "no task content");
+  const adminId = (await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } })).id;
+  assert.ok(await prisma.activityLog.findFirst({ where: { actorId: adminId, action: "admin_overview_viewed" } }), "view logged");
+});
+
 test("project owner ranks above the workspace owner; hand-over with checks; roles are saved in batch; exactly one workspace owner", async () => {
   const adminId = (await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } })).id;
   const setRole = (userId: string, role: "editor" | "contributor" | "viewer") => prisma.workspaceMember.update({ where: { workspaceId_userId: { workspaceId: s.ws, userId } }, data: { role } });

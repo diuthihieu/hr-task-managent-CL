@@ -16,7 +16,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ArrowDownToLine, ClipboardPaste, Copy, GripVertical, Info, Plus, ChevronDown, ChevronRight, Rows3 } from "lucide-react";
+import { ArrowDownToLine, ArrowRightLeft, ClipboardPaste, CopyPlus, Copy, GripVertical, Info, Plus, ChevronDown, ChevronRight, Rows3 } from "lucide-react";
 import { Checkbox } from "@/components/ui/misc";
 import { Cell, CellDisplayValue, type Member, type LinkTarget, type OkrOptions } from "./cell";
 import { FieldHeaderMenu } from "./field-header-menu";
@@ -75,6 +75,8 @@ interface GridViewProps {
   onCellChange: (recordId: string, fieldId: string, value: unknown) => void;
   /** Writes many cells / new rows at once (paste, fill down); resolves with what was saved. */
   onBulkChange: (change: GridBulkChange) => Promise<{ updated: number; created: number; failed: number }>;
+  /** Move / duplicate whole tasks (with comments and files) into another project. */
+  onTransferTasks?: (taskIds: string[], mode: "move" | "duplicate") => void;
   onAddRecord: () => void;
   onOpenRecord: (id: string) => void;
   onOpenPage?: (id: string) => void;
@@ -570,6 +572,12 @@ export function GridView(props: GridViewProps) {
 
   const canPaste = visibleFields.some(isGridFieldPasteable);
 
+  /** Tasks a move / duplicate acts on: the ticked rows, else the rows of the current selection. */
+  function transferIds(): string[] {
+    if (props.selectedIds.size) return [...props.selectedIds];
+    return range ? displayRows.slice(range.top, range.bottom + 1).map((record) => record.id) : [];
+  }
+
   return (
     <div
       ref={containerRef}
@@ -665,6 +673,7 @@ export function GridView(props: GridViewProps) {
           paste={() => void pasteFromMenu("overwrite")}
           pasteAsNew={() => void pasteFromMenu("new")}
           fillDown={() => void fillDown()}
+          transfer={props.onTransferTasks ? (mode) => props.onTransferTasks!(transferIds(), mode) : undefined}
         />
       ) : null}
     </div>
@@ -881,6 +890,7 @@ function GridClipboardMenu({
   paste,
   pasteAsNew,
   fillDown,
+  transfer,
 }: {
   menu: GridContextMenu;
   rowsSelected: boolean;
@@ -893,10 +903,11 @@ function GridClipboardMenu({
   paste: () => void;
   pasteAsNew: () => void;
   fillDown: () => void;
+  transfer?: (mode: "move" | "duplicate") => void;
 }) {
   const { t } = useT();
   const left = typeof window === "undefined" ? menu.x : Math.min(menu.x, window.innerWidth - 230);
-  const top = typeof window === "undefined" ? menu.y : Math.min(menu.y, window.innerHeight - 220);
+  const top = typeof window === "undefined" ? menu.y : Math.min(menu.y, window.innerHeight - 300);
   const action = (handler: () => void) => () => {
     close();
     handler();
@@ -932,6 +943,19 @@ function GridClipboardMenu({
           <Plus size={14} />
           {t("grid.pasteAsNew")}
         </button>
+        {transfer ? (
+          <>
+            <div className="my-1 h-px bg-neutral-100 dark:bg-neutral-800" />
+            <button type="button" role="menuitem" className={item} onClick={action(() => transfer("move"))}>
+              <ArrowRightLeft size={14} />
+              {t("tt.moveMenu")}
+            </button>
+            <button type="button" role="menuitem" className={item} onClick={action(() => transfer("duplicate"))}>
+              <CopyPlus size={14} />
+              {t("tt.duplicateMenu")}
+            </button>
+          </>
+        ) : null}
       </div>
     </div>
   );

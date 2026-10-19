@@ -2,7 +2,7 @@
 // metadata + the blob URL/pathname. Blobs are private by default and served
 // through /api/attachments/[id]/download after an authorization check.
 
-import { put, get, del } from "@vercel/blob";
+import { put, get, del, copy } from "@vercel/blob";
 import { HttpError } from "./http-errors";
 
 export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // Vercel function request body limit is 4.5 MB.
@@ -127,6 +127,22 @@ function storageError(e: unknown) {
 
 export async function openAttachment(url: string, provider?: string | null) {
   return get(url, { access: accessOf(provider) });
+}
+
+/**
+ * Server-side copy of a stored file under a new task (duplicating a task must not share one blob between two
+ * attachments: deleting either would break the other). Keeps the access mode the file was written with.
+ */
+export async function copyTaskAttachmentBlob(opts: { url: string; provider?: string | null; workspaceId: string; taskId: string; fileName: string; contentType: string }) {
+  if (!storageConfigured()) throw new HttpError(503, "File storage is not configured (BLOB_READ_WRITE_TOKEN missing)");
+  const pathname = `workspaces/${opts.workspaceId}/tasks/${opts.taskId}/${safeFileName(opts.fileName)}`;
+  const access = accessOf(opts.provider);
+  try {
+    const result = await copy(opts.url, pathname, { access, addRandomSuffix: true, contentType: opts.contentType });
+    return { url: result.url, pathname: result.pathname, provider: providerOf(access) };
+  } catch (e) {
+    throw storageError(e);
+  }
 }
 
 export async function deleteAttachmentBlob(url: string) {

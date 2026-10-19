@@ -10,6 +10,7 @@ import { nanoid } from "nanoid";
 import { ViewTabs } from "./view-tabs";
 import { ViewToolbar } from "./view-toolbar";
 import { GridView, type GridBulkChange } from "@/components/grid/grid-view";
+import { TaskTransferDialog, type TaskTransferMode } from "@/components/tasks/task-transfer-dialog";
 import { GanttView } from "@/components/gantt/gantt-view";
 import { KanbanView } from "@/components/kanban/kanban-view";
 import { CalendarView } from "@/components/calendar/calendar-view";
@@ -62,6 +63,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
   const [okrOptions, setOkrOptions] = useState<OkrOptions>({ objectives: [], keyResults: [] });
   const [loading, setLoading] = useState(true);
   const [aiSidebar, setAiSidebar] = useState(false);
+  const [transfer, setTransfer] = useState<{ mode: TaskTransferMode; ids: string[] } | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
@@ -542,6 +544,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onConfigChange={updateConfig}
           selectedCount={selectedIds.size}
           onBulkDelete={handleBulkDelete}
+          onTransfer={(mode) => setTransfer({ mode, ids: [...selectedIds] })}
           onClearSelection={() => setSelectedIds(new Set())}
           onExportClick={() => setExportOpen(true)}
           onSaveAsView={handleSaveAsView}
@@ -560,6 +563,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onConfigChange={updateConfig}
           selectedCount={selectedIds.size}
           onBulkDelete={handleBulkDelete}
+          onTransfer={(mode) => setTransfer({ mode, ids: [...selectedIds] })}
           onClearSelection={() => setSelectedIds(new Set())}
           onExportClick={() => setExportOpen(true)}
           onSaveAsView={handleSaveAsView}
@@ -661,6 +665,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onToggleSelectAll={toggleSelectAll}
           onCellChange={handleCellChange}
           onBulkChange={handleBulkChange}
+          onTransferTasks={(ids, mode) => setTransfer({ mode, ids })}
           onAddRecord={handleAddRecord}
           onOpenRecord={setOpenRecordId}
           onOpenPage={openPage}
@@ -709,6 +714,23 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         onOpenTask={setOpenRecordId}
         onSidebarChange={setAiSidebar}
       />
+
+      {transfer && table ? (
+        <TaskTransferDialog
+          open
+          onOpenChange={(open) => !open && setTransfer(null)}
+          initialMode={transfer.mode}
+          taskIds={transfer.ids}
+          sourceProjectId={projectId}
+          workspaceId={table.workspace.id}
+          onDone={() => {
+            // Moved tasks (and their sub-tasks) leave this grid; copies into this project appear.
+            setSelectedIds(new Set());
+            load();
+            syncSidebar();
+          }}
+        />
+      ) : null}
 
       <ExportDialog
         open={exportOpen}

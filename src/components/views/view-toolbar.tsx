@@ -1,6 +1,6 @@
 "use client";
 import { createContext, forwardRef, useContext } from "react";
-import { Search, ListFilter, ArrowUpDown, Group as GroupIcon, EyeOff, Paintbrush, Rows3, Trash2, X, Download, Copy, WrapText } from "lucide-react";
+import { Search, ListFilter, ArrowUpDown, Group as GroupIcon, EyeOff, Paintbrush, Rows3, Trash2, X, Download, Copy, WrapText, ArrowRightLeft, CopyPlus } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/misc";
@@ -25,6 +25,7 @@ export function ViewToolbar({
   onConfigChange,
   selectedCount,
   onBulkDelete,
+  onTransfer,
   onClearSelection,
   onExportClick,
   onSaveAsView,
@@ -44,6 +45,8 @@ export function ViewToolbar({
   onConfigChange: (patch: Partial<ViewConfig>) => void;
   selectedCount: number;
   onBulkDelete: () => void;
+  /** Move / duplicate the selected tasks into another project. */
+  onTransfer?: (mode: "move" | "duplicate") => void;
   onClearSelection: () => void;
   onExportClick: () => void;
   onSaveAsView?: () => void;
@@ -67,6 +70,16 @@ export function ViewToolbar({
         <Button size="sm" variant="secondary" onClick={onExportClick}>
           <Download size={12} /> {t("tb.exportSelected")}
         </Button>
+        {onTransfer ? (
+          <>
+            <Button size="sm" variant="secondary" onClick={() => onTransfer("move")} data-testid="bulk-move">
+              <ArrowRightLeft size={12} /> {t("tt.move")}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => onTransfer("duplicate")} data-testid="bulk-duplicate">
+              <CopyPlus size={12} /> {t("tt.duplicate")}
+            </Button>
+          </>
+        ) : null}
         <button onClick={onClearSelection} className="text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 ml-auto">
           <X size={15} />
         </button>

@@ -16,7 +16,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ArrowDownToLine, ArrowRightLeft, ClipboardPaste, CopyPlus, ListTree, Copy, GripVertical, Info, Plus, ChevronDown, ChevronRight, Rows3 } from "lucide-react";
+import { ArrowDownToLine, ArrowRightLeft, ClipboardPaste, CopyPlus, ListTree, Copy, GripVertical, Info, Plus, ChevronDown, ChevronRight, Rows3, ArrowUp, ArrowDown, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/misc";
 import { Cell, CellDisplayValue, type Member, type LinkTarget, type OkrOptions } from "./cell";
 import { FieldHeaderMenu } from "./field-header-menu";
@@ -45,12 +45,15 @@ import { getGridClipboard, setGridClipboard } from "@/lib/grid-clipboard-store";
 import { buildTaskTree, type TreeRow } from "@/lib/task-tree";
 import { inRange, normalizeRange, planFillDown, planPaste, rangeCols, rangeRows, type CellRange } from "@/lib/grid-selection";
 import { parseFieldConfig } from "@/lib/field-types";
+import { groupFieldPatch } from "@/lib/grid-group";
 
 const ROW_HEIGHTS: Record<string, number> = { short: 32, medium: 40, tall: 64 };
 const DEFAULT_WIDTH = 180;
 const PRIMARY_WIDTH = 220;
 /** One paste writes at most this many rows, so a stray clipboard cannot flood a project. */
 const MAX_PASTE_ROWS = 500;
+/** "Insert rows" adds at most this many at once (the server enforces the same limit). */
+const MAX_INSERT_ROWS = 50;
 
 export interface GridBulkChange {
   updates: { recordId: string; patch: Record<string, unknown> }[];
@@ -80,6 +83,12 @@ interface GridViewProps {
   onTransferTasks?: (taskIds: string[], mode: "move" | "duplicate") => void;
   /** Adds a task; `initialData` pre-fills it (e.g. { sys_parent: [id] } for a sub-task). */
   onAddRecord: (initialData?: Record<string, unknown>) => void;
+  /** Inserts `count` new tasks right above / below a task, each starting with `data`. */
+  onInsertRows?: (anchorId: string, position: "above" | "below", count: number, data: Record<string, unknown>) => Promise<void>;
+  /** Deletes these tasks (after the grid asked the user to confirm). */
+  onDeleteRecords?: (ids: string[]) => Promise<void>;
+  /** The field the view is grouped by: new rows added inside a group take that group's value. */
+  groupFieldId?: string;
   onOpenRecord: (id: string) => void;
   onOpenPage?: (id: string) => void;
   onAddField: (afterFieldId: string | undefined, type: string) => void;
@@ -106,6 +115,8 @@ interface GridInteractions {
   openMenu: (event: React.MouseEvent) => void;
   /** Sub-task tree: collapsed parents, toggling one, adding a sub-task; `indent` when the view shows any hierarchy. */
   tree: { collapsed: ReadonlySet<string>; toggle: (id: string) => void; addSubtask: (parentId: string) => void; indent: boolean };
+  /** Values a new row needs to land in a group (grouped views); `{}` otherwise. */
+  groupData: (groupKey: string | undefined, sample: RecordRow | undefined) => Record<string, unknown>;
 }
 
 export function GridView(props: GridViewProps) {
@@ -224,7 +235,25 @@ export function GridView(props: GridViewProps) {
   const displayRows = groups
     ? groups.flatMap((group) => (collapsedGroups.has(group.key) ? [] : (groupTrees.get(group.key) ?? []).map((r) => r.record)))
     : flatTree.map((r) => r.record);
+  // The group each on-screen row is shown in (a task with several assignees can sit in several groups).
+  const displayGroupKeys: (string | undefined)[] = groups
+    ? groups.flatMap((group) => (collapsedGroups.has(group.key) ? [] : (groupTrees.get(group.key) ?? []).map(() => group.key)))
+    : displayRows.map(() => undefined);
   const rowIndex = new Map(displayRows.map((record, index) => [record.id, index]));
+  const groupField = props.groupFieldId ? fields.find((f) => f.id === props.groupFieldId) : undefined;
+
+  /** What a new row inserted in a group starts with, so it shows in that same group. */
+  function groupData(groupKey: string | undefined, sample: RecordRow | undefined): Record<string, unknown> {
+    if (!groupField || groupKey === undefined) return {};
+    const value = sample ? getCellValue(sample, groupField, fields) : undefined;
+    return groupFieldPatch(groupField, groupKey, value) ?? {};
+  }
+
+  /** New rows next to `anchor` stay at its level (same parent task) and in its group. */
+  function insertData(anchor: RecordRow, groupKey: string | undefined): Record<string, unknown> {
+    const parent = Array.isArray(anchor.data.sys_parent) ? (anchor.data.sys_parent as string[]) : [];
+    return { ...(parent.length ? { sys_parent: parent.slice(0, 1) } : {}), ...groupData(groupKey, anchor) };
+  }
   const colIndex = new Map(visibleFields.map((field, index) => [field.id, index]));
 
   function rangeOf(sel: GridSelection | null): CellRange | null {
@@ -592,9 +621,12 @@ export function GridView(props: GridViewProps) {
           next.delete(parentId);
           return next;
         });
-        props.onAddRecord({ sys_parent: [parentId] });
+        const row = rowIndex.get(parentId);
+        const parent = row === undefined ? undefined : displayRows[row];
+        props.onAddRecord({ ...groupData(row === undefined ? undefined : displayGroupKeys[row], parent), sys_parent: [parentId] });
       },
     },
+    groupData,
   };
 
   const canPaste = visibleFields.some(isGridFieldPasteable);
@@ -603,6 +635,25 @@ export function GridView(props: GridViewProps) {
   function transferIds(): string[] {
     if (props.selectedIds.size) return [...props.selectedIds];
     return range ? displayRows.slice(range.top, range.bottom + 1).map((record) => record.id) : [];
+  }
+
+  async function insertRows(position: "above" | "below", count: number) {
+    if (!range || !props.onInsertRows) return;
+    const at = position === "above" ? range.top : range.bottom;
+    const anchor = displayRows[at];
+    if (!anchor) return;
+    await props.onInsertRows(anchor.id, position, count, insertData(anchor, displayGroupKeys[at]));
+  }
+
+  async function deleteRows() {
+    const ids = transferIds();
+    if (!ids.length || !props.onDeleteRecords) return;
+    const gone = new Set(ids);
+    const orphans = flatRecords.filter((r) => !gone.has(r.id) && ((r.data.sys_parent as string[] | undefined) ?? []).some((p) => gone.has(p))).length;
+    const message = orphans ? t("grid.deleteRowsWithChildren", { n: ids.length, c: orphans }) : t("grid.deleteRowsConfirm", { n: ids.length });
+    if (!confirm(message)) return;
+    setSelection(null);
+    await props.onDeleteRecords(ids);
   }
 
   return (
@@ -703,6 +754,10 @@ export function GridView(props: GridViewProps) {
           fillDown={() => void fillDown()}
           transfer={props.onTransferTasks ? (mode) => props.onTransferTasks!(transferIds(), mode) : undefined}
           addSubtask={range && range.top === range.bottom ? () => interactions.tree.addSubtask(displayRows[range.top].id) : undefined}
+          defaultInsertCount={range ? rangeRows(range) : 1}
+          insertRows={props.onInsertRows && range ? (position, count) => void insertRows(position, count) : undefined}
+          deleteCount={props.onDeleteRecords ? transferIds().length : 0}
+          deleteRows={() => void deleteRows()}
         />
       ) : null}
     </div>
@@ -775,6 +830,7 @@ function GroupSection(
   } & GridViewProps
 ) {
   const { group, open, onToggle, treeRows, ...rowProps } = props;
+  const { t } = useT();
   return (
     <>
       <div role="row" className="bg-neutral-100 dark:bg-neutral-800/60 border-b border-neutral-200 dark:border-neutral-800 px-2 py-1.5" style={{ width: "100%" }}>
@@ -788,6 +844,16 @@ function GroupSection(
         </button>
       </div>
       {open && treeRows.map((r) => <Row key={r.record.id} record={r.record} depth={r.depth} childCount={r.childCount} {...rowProps} />)}
+      {open ? (
+        <button
+          type="button"
+          onClick={() => rowProps.onAddRecord(rowProps.interactions.groupData(group.key, group.records[0]))}
+          className="sticky left-0 flex items-center gap-2 px-3 py-1.5 text-xs text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-50 dark:hover:bg-neutral-900 text-left border-b border-neutral-100 dark:border-neutral-900"
+          data-testid="group-add-task"
+        >
+          <Plus size={12} /> {t("grid.addToGroup", { group: group.label })}
+        </button>
+      ) : null}
     </>
   );
 }
@@ -957,6 +1023,10 @@ function GridClipboardMenu({
   fillDown,
   transfer,
   addSubtask,
+  defaultInsertCount,
+  insertRows,
+  deleteCount,
+  deleteRows,
 }: {
   menu: GridContextMenu;
   rowsSelected: boolean;
@@ -971,10 +1041,16 @@ function GridClipboardMenu({
   fillDown: () => void;
   transfer?: (mode: "move" | "duplicate") => void;
   addSubtask?: () => void;
+  defaultInsertCount: number;
+  insertRows?: (position: "above" | "below", count: number) => void;
+  deleteCount: number;
+  deleteRows: () => void;
 }) {
   const { t } = useT();
-  const left = typeof window === "undefined" ? menu.x : Math.min(menu.x, window.innerWidth - 230);
-  const top = typeof window === "undefined" ? menu.y : Math.min(menu.y, window.innerHeight - 340);
+  const [insertCount, setInsertCount] = useState(String(Math.min(Math.max(defaultInsertCount, 1), MAX_INSERT_ROWS)));
+  const count = Math.min(Math.max(Math.floor(Number(insertCount)) || 1, 1), MAX_INSERT_ROWS);
+  const left = typeof window === "undefined" ? menu.x : Math.min(menu.x, window.innerWidth - 250);
+  const top = typeof window === "undefined" ? menu.y : Math.max(8, Math.min(menu.y, window.innerHeight - 460));
   const action = (handler: () => void) => () => {
     close();
     handler();
@@ -983,7 +1059,7 @@ function GridClipboardMenu({
   const kbd = "ml-auto text-[10px] text-neutral-400";
   return (
     <div className="fixed inset-0 z-[80]" onMouseDown={close} onContextMenu={(event) => { event.preventDefault(); close(); }}>
-      <div role="menu" aria-label={t("grid.clipboardMenu")} className="fixed w-56 rounded-md border border-neutral-200 bg-white p-1 shadow-xl dark:border-neutral-800 dark:bg-neutral-900" style={{ left, top }} onMouseDown={(event) => event.stopPropagation()}>
+      <div role="menu" aria-label={t("grid.clipboardMenu")} className="fixed w-60 max-h-[calc(100vh-16px)] overflow-y-auto thin-scroll rounded-md border border-neutral-200 bg-white p-1 shadow-xl dark:border-neutral-800 dark:bg-neutral-900" style={{ left, top }} onMouseDown={(event) => event.stopPropagation()}>
         <button type="button" role="menuitem" className={item} onClick={action(copy)}>
           <Copy size={14} />
           {rowsSelected ? t("grid.copyRows") : multi ? t("grid.copySelection") : t("grid.copyCell")}
@@ -1010,6 +1086,41 @@ function GridClipboardMenu({
           <Plus size={14} />
           {t("grid.pasteAsNew")}
         </button>
+        {insertRows ? (
+          <>
+            <div className="my-1 h-px bg-neutral-100 dark:bg-neutral-800" />
+            <div className="flex items-center gap-1.5 px-2 py-1 text-sm text-neutral-700 dark:text-neutral-200" data-testid="grid-insert-rows">
+              <Plus size={14} className="shrink-0" />
+              {t("grid.insertRows")}
+              <input
+                type="number"
+                min={1}
+                max={MAX_INSERT_ROWS}
+                value={insertCount}
+                onChange={(event) => setInsertCount(event.target.value)}
+                onKeyDown={(event) => {
+                  event.stopPropagation();
+                  if (event.key === "Enter") action(() => insertRows("below", count))();
+                  if (event.key === "Escape") close();
+                }}
+                className="h-6 w-12 rounded border border-neutral-200 bg-white px-1 text-center text-sm dark:border-neutral-700 dark:bg-neutral-950"
+                aria-label={t("grid.insertRowsCount")}
+                data-testid="grid-insert-count"
+              />
+              <span className="text-neutral-500">{t("grid.rowsWord")}</span>
+            </div>
+            <div className="flex gap-1 px-2 pb-1">
+              <button type="button" role="menuitem" className={cn(item, "justify-center border border-neutral-200 dark:border-neutral-700")} title={t("grid.insertAboveTitle", { n: count })} onClick={action(() => insertRows("above", count))} data-testid="grid-insert-above">
+                <ArrowUp size={13} />
+                {t("grid.insertAbove")}
+              </button>
+              <button type="button" role="menuitem" className={cn(item, "justify-center border border-neutral-200 dark:border-neutral-700")} title={t("grid.insertBelowTitle", { n: count })} onClick={action(() => insertRows("below", count))} data-testid="grid-insert-below">
+                <ArrowDown size={13} />
+                {t("grid.insertBelow")}
+              </button>
+            </div>
+          </>
+        ) : null}
         {addSubtask ? (
           <>
             <div className="my-1 h-px bg-neutral-100 dark:bg-neutral-800" />
@@ -1029,6 +1140,15 @@ function GridClipboardMenu({
             <button type="button" role="menuitem" className={item} onClick={action(() => transfer("duplicate"))}>
               <CopyPlus size={14} />
               {t("tt.duplicateMenu")}
+            </button>
+          </>
+        ) : null}
+        {deleteCount > 0 ? (
+          <>
+            <div className="my-1 h-px bg-neutral-100 dark:bg-neutral-800" />
+            <button type="button" role="menuitem" className={cn(item, "text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-950/40")} onClick={action(deleteRows)} data-testid="grid-delete-rows">
+              <Trash2 size={14} />
+              {t("grid.deleteRows", { n: deleteCount })}
             </button>
           </>
         ) : null}

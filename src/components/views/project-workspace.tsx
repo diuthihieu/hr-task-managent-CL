@@ -253,6 +253,47 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
     }
   }
 
+  /** Grid "Insert rows": new tasks right above / below a task, in its group and at its level. */
+  async function handleInsertRows(anchorId: string, position: "above" | "below", count: number, data: Record<string, unknown>) {
+    if (!caps.has("task.create")) return void toast.info(t("pp.noCreate"));
+    try {
+      const { records: created } = await api.post<{ records: RecordRow[] }>(`/api/projects/${projectId}/tasks/insert`, { anchorId, position, count, data });
+      setRecords((prev) => {
+        const at = prev.findIndex((r) => r.id === anchorId);
+        if (at < 0) return [...prev, ...created];
+        // Mirror the server: rows after the insertion point (the anchor too for "above") move down by
+        // count + 1, the new rows take the orders right after the anchor's.
+        const anchorOrder = prev[at].order;
+        const shift = count + 1;
+        const moved = prev.map((r, i) => {
+          const after = r.order > anchorOrder || (r.order === anchorOrder && (position === "above" ? i >= at : i > at));
+          return after ? { ...r, order: r.order + shift } : r;
+        });
+        const index = position === "above" ? at : at + 1;
+        return [...moved.slice(0, index), ...created, ...moved.slice(index)];
+      });
+      toast.success(t("grid.inserted", { n: created.length }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+      load();
+    }
+  }
+
+  /** Grid "Delete rows" (the grid already asked for confirmation). Sub-tasks of deleted tasks stay. */
+  async function handleDeleteRecords(ids: string[]) {
+    const gone = new Set(ids);
+    setRecords((prev) => prev.filter((r) => !gone.has(r.id)));
+    setSelectedIds((prev) => new Set([...prev].filter((id) => !gone.has(id))));
+    if (openRecordId && gone.has(openRecordId)) setOpenRecordId(null);
+    try {
+      await api.post(`/api/projects/${projectId}/tasks/bulk-delete`, { ids });
+      toast.success(t("grid.deleted", { n: ids.length }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+      load();
+    }
+  }
+
   async function handleDeleteRecord(id: string) {
     setRecords((prev) => prev.filter((r) => r.id !== id));
     setOpenRecordId(null);
@@ -667,6 +708,9 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onBulkChange={handleBulkChange}
           onTransferTasks={(ids, mode) => setTransfer({ mode, ids })}
           onAddRecord={handleAddRecord}
+          onInsertRows={caps.has("task.create") ? handleInsertRows : undefined}
+          onDeleteRecords={caps.has("task.delete") ? handleDeleteRecords : undefined}
+          groupFieldId={config.group?.fieldId || undefined}
           onOpenRecord={setOpenRecordId}
           onOpenPage={openPage}
           onAddField={canFields ? handleAddField : () => toast.info(t("pp.noFields"))}
@@ -692,6 +736,19 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onTaskCreated={(record) => {
             // A task created from a comment into this project shows up in the grid right away.
             if (record.projectId === projectId) setRecords((prev) => (prev.some((r) => r.id === record.id) ? prev : [...prev, record]));
+          }}
+          tasks={records}
+          canCreate={caps.has("task.create")}
+          onOpenTask={setOpenRecordId}
+          onAddSubtask={async (title) => {
+            try {
+              const record = await api.post<RecordRow>(`/api/projects/${projectId}/tasks`, { data: { sys_title: title, sys_parent: [openRecord.id] } });
+              setRecords((prev) => [...prev, record]);
+              toast.success(t("th.added"));
+            } catch (e) {
+              toast.error(e instanceof Error ? e.message : t("common.failed"));
+              throw e;
+            }
           }}
           onChange={(fieldId, value) => handleCellChange(openRecord.id, fieldId, value)}
           onDelete={() => {

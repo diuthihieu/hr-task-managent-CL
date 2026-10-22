@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { AttachmentViewer } from "@/components/attachments/attachment-viewer";
 import { MentionInput } from "@/components/comments/mention-input";
 import { TaskCommentThread, type TaskCommentItem } from "@/components/comments/task-comment-thread";
+import { CommentTaskSuggestion } from "@/components/comments/comment-task-suggestion";
 import { formatDate, cn } from "@/lib/utils";
 import type { ActivityRow, AttachmentRow, FieldRow, RecordRow } from "@/types";
 import { Meta } from "@/components/ui/meta";
@@ -39,8 +40,11 @@ export function RecordDrawer({
   onDelete,
   pageHref,
   currentUserId,
+  onTaskCreated,
 }: {
   pageHref?: string;
+  /** A task was created from a comment suggestion. */
+  onTaskCreated?: (record: RecordRow) => void;
   record: RecordRow;
   fields: FieldRow[];
   members: Member[];
@@ -59,6 +63,8 @@ export function RecordDrawer({
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [draft, setDraft] = useState("");
   const [replyTo, setReplyTo] = useState<TaskCommentItem | null>(null);
+  /** The comment just posted, checked by AI for a task to propose. */
+  const [suggestFor, setSuggestFor] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [viewing, setViewing] = useState<number | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -84,6 +90,7 @@ export function RecordDrawer({
       setComments((prev) => [...prev, c]);
       setDraft("");
       setReplyTo(null);
+      setSuggestFor(c.id);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
@@ -193,6 +200,9 @@ export function RecordDrawer({
             </div>
           )}
 
+          {tab === "comments" && suggestFor ? (
+            <CommentTaskSuggestion key={suggestFor} taskId={record.id} commentId={suggestFor} onDone={() => setSuggestFor(null)} onCreated={onTaskCreated} />
+          ) : null}
           {tab === "comments" && (
             <TaskCommentThread
               comments={comments}

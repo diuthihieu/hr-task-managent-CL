@@ -2544,6 +2544,75 @@ test("platform overview: woli system admins see platform-wide counts; everyone e
   assert.ok(await prisma.activityLog.findFirst({ where: { actorId: adminId, action: "admin_overview_viewed" } }), "view logged");
 });
 
+test("comment -> task suggestion: AI proposes a task only to the comment's author, within projects they may create in; model output is re-checked", async () => {
+  const wsBefore = await prisma.workspace.findUniqueOrThrow({ where: { id: s.ws }, select: { aiEnabled: true } });
+  const roles = await prisma.workspaceMember.findMany({ where: { workspaceId: s.ws, userId: { in: [s.contributorId, s.viewerId] } }, select: { userId: true, role: true } });
+  await prisma.workspace.update({ where: { id: s.ws }, data: { aiEnabled: true } });
+  await prisma.workspaceMember.updateMany({ where: { workspaceId: s.ws, userId: s.contributorId }, data: { role: "contributor" } });
+  await prisma.workspaceMember.updateMany({ where: { workspaceId: s.ws, userId: s.viewerId }, data: { role: "viewer" } });
+  const P = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Comment AI project" })).body.id;
+  try {
+    const T = (await admin.post<Rec>(`/api/projects/${P}/tasks`, { data: { sys_title: "Tuyển kỹ sư" } })).body.id;
+    const contributorName = (await prisma.user.findUniqueOrThrow({ where: { id: s.contributorId } })).name;
+    const say = async (who: Client, body: string) => (await who.post<{ id: string }>(`/api/tasks/${T}/comments`, { body })).body.id;
+    type Sug = { suggest: boolean; reason?: string; draft?: { title: string; projectId: string; dueDate: string | null; priority: string; assigneeIds: string[]; asSubtask: boolean }; projects?: { id: string }[] };
+    const ask = (who: Client, commentId: string) => who.post<Sug>(`/api/tasks/${T}/comments/${commentId}/task-suggestion`);
+
+    const c1 = await say(admin, `Nhờ @[${contributorName}](${s.contributorId}) gửi hợp đồng cho ứng viên Lan trước 31/12`);
+    const r1 = await ask(admin, c1);
+    assert.equal(r1.status, 200, JSON.stringify(r1.body));
+    assert.equal(r1.body.suggest, true, JSON.stringify(r1.body));
+    assert.equal(r1.body.draft!.title, "Gửi hợp đồng cho ứng viên");
+    assert.equal(r1.body.draft!.projectId, P, "the commented task's project comes first");
+    assert.equal(r1.body.draft!.dueDate, "2026-12-31");
+    assert.deepEqual(r1.body.draft!.assigneeIds, [s.contributorId], "the mentioned person is proposed");
+    assert.equal(r1.body.draft!.asSubtask, true);
+    assert.ok(r1.body.projects!.every((p) => p.id), "only projects the author can create in");
+
+    // Only the author; outsiders do not even see the task.
+    assert.equal((await ask(contributor, c1)).status, 403);
+    assert.equal((await ask(outsider, c1)).status, 404);
+    assert.equal((await admin.post(`/api/tasks/${T}/comments/00000000-0000-4000-8000-000000000000/task-suggestion`)).status, 404);
+
+    // Not a task / too short.
+    assert.deepEqual((await ask(admin, await say(admin, "Cập nhật: đã xong phần phỏng vấn #notask"))).body, { suggest: false, reason: "not_task" });
+    assert.equal((await ask(admin, await say(admin, "ok"))).body.reason, "short");
+
+    // Ids the model invents are dropped; bad dates / priorities fall back.
+    const h = (await ask(admin, await say(admin, "Please prepare everything for onboarding #hallucinate"))).body;
+    assert.equal(h.suggest, true);
+    assert.equal(h.draft!.projectId, P);
+    assert.deepEqual(h.draft!.assigneeIds, []);
+    assert.equal(h.draft!.dueDate, null);
+    assert.equal(h.draft!.priority, "medium");
+
+    // A viewer can comment but create tasks nowhere: no proposal.
+    const cv = await say(viewer, "Nhờ mọi người chuẩn bị phòng họp cho buổi phỏng vấn ngày mai");
+    assert.equal((await ask(viewer, cv)).body.reason, "no_project");
+
+    // AI switched off for the workspace: silently no proposal.
+    await prisma.workspace.update({ where: { id: s.ws }, data: { aiEnabled: false } });
+    assert.deepEqual((await ask(admin, c1)).body, { suggest: false, reason: "ai_off" });
+    await prisma.workspace.update({ where: { id: s.ws }, data: { aiEnabled: true } });
+
+    // Confirming goes through the normal task API (sub-task of the commented task).
+    const made = await admin.post<Rec>(`/api/projects/${P}/tasks`, { data: { sys_title: r1.body.draft!.title, sys_parent: [T], sys_assignees: r1.body.draft!.assigneeIds, sys_due_date: r1.body.draft!.dueDate, sys_priority: r1.body.draft!.priority } });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    assert.deepEqual(made.body.data.sys_parent, [T]);
+    // A contributor can't put a task into a project they may not create in.
+    await prisma.projectMemberPermission.upsert({ where: { projectId_userId: { projectId: P, userId: s.contributorId } }, create: { projectId: P, userId: s.contributorId, permissions: ["task.comment"] }, update: { permissions: ["task.comment"] } });
+    assert.equal((await contributor.post(`/api/projects/${P}/tasks`, { data: { sys_title: "x" } })).status, 403);
+    const cc = await say(contributor, "Mình sẽ chuẩn bị bộ câu hỏi phỏng vấn cho vòng 2 vào thứ sáu");
+    const rc = (await ask(contributor, cc)).body;
+    assert.ok(!rc.suggest || rc.draft!.projectId !== P, "a project without create rights is never proposed");
+  } finally {
+    await prisma.projectMemberPermission.deleteMany({ where: { projectId: P } });
+    for (const r of roles) await prisma.workspaceMember.updateMany({ where: { workspaceId: s.ws, userId: r.userId }, data: { role: r.role } });
+    await prisma.workspace.update({ where: { id: s.ws }, data: { aiEnabled: wsBefore.aiEnabled } });
+    await admin.del(`/api/projects/${P}`);
+  }
+});
+
 test("project owner ranks above the workspace owner; hand-over with checks; roles are saved in batch; exactly one workspace owner", async () => {
   const adminId = (await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } })).id;
   const setRole = (userId: string, role: "editor" | "contributor" | "viewer") => prisma.workspaceMember.update({ where: { workspaceId_userId: { workspaceId: s.ws, userId } }, data: { role } });

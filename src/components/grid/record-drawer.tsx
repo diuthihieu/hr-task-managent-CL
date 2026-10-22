@@ -13,6 +13,7 @@ import { AttachmentViewer } from "@/components/attachments/attachment-viewer";
 import { MentionInput } from "@/components/comments/mention-input";
 import { TaskCommentThread, type TaskCommentItem } from "@/components/comments/task-comment-thread";
 import { CommentTaskSuggestion } from "@/components/comments/comment-task-suggestion";
+import { TaskHierarchy } from "@/components/tasks/task-hierarchy";
 import { formatDate, cn } from "@/lib/utils";
 import type { ActivityRow, AttachmentRow, FieldRow, RecordRow } from "@/types";
 import { Meta } from "@/components/ui/meta";
@@ -41,7 +42,16 @@ export function RecordDrawer({
   pageHref,
   currentUserId,
   onTaskCreated,
+  tasks,
+  canCreate = false,
+  onOpenTask,
+  onAddSubtask,
 }: {
+  /** Tasks of the project, for the "Parent task" / "Sub-tasks" section (hidden without them). */
+  tasks?: RecordRow[];
+  canCreate?: boolean;
+  onOpenTask?: (id: string) => void;
+  onAddSubtask?: (title: string) => Promise<void>;
   pageHref?: string;
   /** A task was created from a comment suggestion. */
   onTaskCreated?: (record: RecordRow) => void;
@@ -175,6 +185,21 @@ export function RecordDrawer({
         <div className="flex-1 overflow-y-auto thin-scroll p-4">
           {tab === "details" && (
             <div className="space-y-4">
+              {tasks && onOpenTask && onAddSubtask ? (
+                <div className="rounded-lg border border-neutral-200 dark:border-neutral-800 p-3">
+                  <TaskHierarchy
+                    task={record}
+                    tasks={tasks}
+                    fields={fields}
+                    members={members}
+                    canEdit={canEdit}
+                    canCreate={canCreate}
+                    onOpen={onOpenTask}
+                    onSetParent={(parentId) => onChange("sys_parent", parentId ? [parentId] : [])}
+                    onAddSubtask={onAddSubtask}
+                  />
+                </div>
+              ) : null}
               {fields.map((field) => (
                 <div key={field.id}>
                   <label className="text-xs font-medium text-neutral-500 mb-1 block">{field.name}</label>

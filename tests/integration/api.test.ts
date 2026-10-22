@@ -2544,6 +2544,62 @@ test("platform overview: woli system admins see platform-wide counts; everyone e
   assert.ok(await prisma.activityLog.findFirst({ where: { actorId: adminId, action: "admin_overview_viewed" } }), "view logged");
 });
 
+test("grid rows: insert N rows above / below a task in place (group value, parent kept); bulk delete follows delete rights", async () => {
+  const A = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Insert rows" })).body.id;
+  try {
+    const cat = (await admin.post<{ id: string }>(`/api/projects/${A}/categories`, { name: "Tuyển dụng", color: "#ff0000" })).body.id;
+    const mk = async (title: string, data: object = {}) => (await admin.post<Rec>(`/api/projects/${A}/tasks`, { data: { sys_title: title, ...data } })).body.id;
+    const t1 = await mk("T1");
+    const t2 = await mk("T2", { sys_category: cat });
+    const t3 = await mk("T3");
+    const child = await mk("T2 child", { sys_parent: [t2] });
+    const titles = async () => (await admin.get<Rec[]>(`/api/projects/${A}/tasks`)).body.map((r) => String(r.data.sys_title));
+    const insert = (who: Client, body: object) => who.post<{ records: Rec[] }>(`/api/projects/${A}/tasks/insert`, body);
+
+    // Below T2, 2 rows, in T2's group (category) and at T2's level.
+    const below = await insert(admin, { anchorId: t2, position: "below", count: 2, data: { sys_title: "New", sys_category: cat } });
+    assert.equal(below.status, 201, JSON.stringify(below.body));
+    assert.equal(below.body.records.length, 2);
+    assert.ok(below.body.records.every((r) => r.data.sys_category === cat), "group value written");
+    assert.deepEqual(await titles(), ["T1", "T2", "New", "New", "T3", "T2 child"]);
+    // Above T1 (the first row), and above T3 as sub-tasks of T2 (parent kept).
+    assert.equal((await insert(admin, { anchorId: t1, position: "above", count: 1, data: { sys_title: "Top" } })).status, 201);
+    const sub = await insert(admin, { anchorId: t3, position: "above", count: 1, data: { sys_title: "Sib", sys_parent: [t2] } });
+    assert.deepEqual(sub.body.records[0].data.sys_parent, [t2]);
+    assert.deepEqual(await titles(), ["Top", "T1", "T2", "New", "New", "Sib", "T3", "T2 child"]);
+
+    // Limits and validation: count 1..50, the anchor must be a live task of this project, bad data rolls back.
+    assert.equal((await insert(admin, { anchorId: t1, position: "below", count: 51 })).status, 400);
+    assert.equal((await insert(admin, { anchorId: t1, position: "below", count: 0 })).status, 400);
+    assert.equal((await insert(admin, { anchorId: s.task1, position: "below", count: 1 })).status, 404, "anchor from another project");
+    const before = (await titles()).length;
+    assert.notEqual((await insert(admin, { anchorId: t1, position: "below", count: 3, data: { sys_parent: [s.task1] } })).status, 201, "parent from another project");
+    assert.equal((await titles()).length, before, "nothing half-inserted");
+    // Rights: viewers and outsiders can't insert.
+    assert.equal((await insert(viewer, { anchorId: t1, position: "below", count: 1 })).status, 403);
+    assert.equal((await insert(outsider, { anchorId: t1, position: "below", count: 1 })).status, 404);
+
+    // Bulk delete: a contributor may not delete tasks they neither created nor are assigned to...
+    const del = (who: Client, ids: string[]) => who.post<{ deleted: number }>(`/api/projects/${A}/tasks/bulk-delete`, { ids });
+    assert.equal((await del(contributor, [t1])).status, 403);
+    assert.equal((await del(viewer, [t1])).status, 403);
+    const own = (await contributor.post<Rec>(`/api/projects/${A}/tasks`, { data: { sys_title: "Mine" } })).body.id;
+    assert.equal((await del(contributor, [own, t1])).status, 403, "one foreign task refuses the whole request");
+    assert.ok(await prisma.task.findFirst({ where: { id: own, deletedAt: null } }), "nothing deleted");
+    // ...but their own, yes; editors+ delete any task. Sub-tasks of a deleted task are kept.
+    assert.equal((await del(contributor, [own])).body.deleted, 1);
+    const r = await del(admin, [t2]);
+    assert.equal(r.body.deleted, 1);
+    assert.ok(await prisma.task.findFirst({ where: { id: child, deletedAt: null } }), "sub-task kept");
+    // Without "delete tasks" in the project nobody below admin deletes.
+    assert.equal((await admin.put(`/api/projects/${A}/permissions`, { changes: [{ userId: s.contributorId, permissions: ["task.create", "task.edit_own"] }] })).status, 200);
+    const own2 = (await contributor.post<Rec>(`/api/projects/${A}/tasks`, { data: { sys_title: "Mine 2" } })).body.id;
+    assert.equal((await del(contributor, [own2])).status, 403);
+  } finally {
+    await admin.del(`/api/projects/${A}`);
+  }
+});
+
 test("comment -> task suggestion: AI proposes a task only to the comment's author, within projects they may create in; model output is re-checked", async () => {
   const wsBefore = await prisma.workspace.findUniqueOrThrow({ where: { id: s.ws }, select: { aiEnabled: true } });
   const roles = await prisma.workspaceMember.findMany({ where: { workspaceId: s.ws, userId: { in: [s.contributorId, s.viewerId] } }, select: { userId: true, role: true } });

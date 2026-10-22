@@ -189,7 +189,7 @@ export function Cell({ field, value, record, members, linkTargets, okrOptions, w
 
   if (readOnlyOverride) {
     const showFullText = wrapText && (field.type === "text" || field.type === "long_text");
-    return <div className={cn(base, "text-neutral-700 dark:text-neutral-300", showFullText ? "h-auto min-h-[32px] items-start whitespace-pre-wrap break-words py-1.5" : "truncate")}>{CellDisplayValue(field, value) || <span className="text-neutral-300">—</span>}</div>;
+    return <div className={cn(base, "text-neutral-700 dark:text-neutral-300", showFullText ? "h-auto min-h-[32px] items-start whitespace-pre-wrap break-words py-1.5" : "truncate")}>{readOnlyText(field, value, members, linkTargets, okrOptions) || <span className="text-neutral-300">—</span>}</div>;
   }
 
   if (typeDef.comingSoon) {
@@ -761,6 +761,34 @@ function PopoverOption({ option, selected, onClick }: { option: SelectOption; se
       {selected && <Check size={13} className="text-indigo-600" />}
     </button>
   );
+}
+
+/** Read-only text for a cell: names instead of member / task / OKR ids, and readable dates. */
+function readOnlyText(field: FieldRow, value: unknown, members: Member[], linkTargets?: Record<string, LinkTarget>, okrOptions?: OkrOptions): string {
+  const ids = Array.isArray(value) ? value.map(String) : value ? [String(value)] : [];
+  switch (field.type) {
+    case "created_time":
+    case "modified_time":
+    case "datetime":
+      return formatDate(value as string, true);
+    case "date": {
+      const m = typeof value === "string" ? /^(\d{4})-(\d{2})-(\d{2})/.exec(value) : null;
+      return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+    }
+    case "person":
+    case "people":
+    case "created_by":
+    case "modified_by":
+      return ids.map((id) => members.find((m) => m.id === id)?.name ?? "").filter(Boolean).join(", ");
+    case "link":
+      return ids.map((id) => linkTargets?.[field.id]?.records.find((r) => r.id === id)?.label ?? "").filter(Boolean).join(", ");
+    case "okr_objective":
+      return okrOptions?.objectives.find((o) => o.id === value)?.title ?? "";
+    case "okr_key_result":
+      return okrOptions?.keyResults.find((k) => k.id === value)?.title ?? "";
+    default:
+      return CellDisplayValue(field, value);
+  }
 }
 
 export function CellDisplayValue(field: FieldRow, value: unknown): string {

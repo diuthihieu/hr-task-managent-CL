@@ -18,6 +18,7 @@ import { AiTaskActions } from "@/components/ai/ai-actions";
 import { prependMention, stripMentions } from "@/lib/mentions";
 import { toast } from "@/components/ui/toast";
 import { promptDoneCheck } from "@/components/tasks/done-check-dialog";
+import { TaskHierarchy } from "@/components/tasks/task-hierarchy";
 import { useT } from "@/components/i18n-provider";
 import { getCellValue } from "@/lib/query-engine";
 import { api } from "@/lib/api-client";
@@ -33,6 +34,8 @@ interface ProjectDetail {
   fields: FieldRow[];
   members: Member[];
   myRole: string;
+  /** Rights in this project (task.create, task.delete...); the server enforces them. */
+  myPermissions?: string[];
 }
 
 const ROLE_RANK: Record<string, number> = { viewer: 0, contributor: 1, editor: 2, admin: 3, owner: 4 };
@@ -59,6 +62,8 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
   const [comments, setComments] = useState<TaskCommentItem[]>([]);
   const [activity, setActivity] = useState<ActivityRow[]>([]);
   const [siblings, setSiblings] = useState<{ id: string; label: string }[]>([]);
+  /** All tasks of the project: parent chain and sub-tasks of this task. */
+  const [projectTasks, setProjectTasks] = useState<RecordRow[]>([]);
   const [notFound, setNotFound] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -89,7 +94,11 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
     api.get<TaskCommentItem[]>(`/api/tasks/${taskId}/comments`).then((c) => !cancelled && setComments(c)).catch(() => {});
     api
       .get<RecordRow[]>(`/api/projects/${projectId}/tasks`)
-      .then((rows) => !cancelled && setSiblings(rows.map((r) => ({ id: r.id, label: String(r.data.sys_title ?? "") }))))
+      .then((rows) => {
+        if (cancelled) return;
+        setProjectTasks(rows);
+        setSiblings(rows.map((r) => ({ id: r.id, label: String(r.data.sys_title ?? "") })));
+      })
       .catch(() => {});
     loadActivity();
     return () => {
@@ -290,6 +299,30 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
                 {showAll ? <ChevronUp size={12} /> : <ChevronDown size={12} />} {showAll ? t("record.showLess") : t("record.showAll", { count: pageFields.length })}
               </button>
             )}
+          </section>
+
+          <section className="mt-6 rounded-lg border border-neutral-200 dark:border-neutral-800 p-4">
+            <TaskHierarchy
+              task={record}
+              tasks={projectTasks}
+              fields={fields}
+              members={project.members}
+              canEdit={canEdit}
+              canCreate={(project.myPermissions ?? []).includes("task.create") && (ROLE_RANK[role] ?? -1) >= ROLE_RANK.contributor}
+              onOpen={(id) => router.push(`${tasksHref}/t/${id}`)}
+              onSetParent={(parentId) => void change("sys_parent", parentId ? [parentId] : [])}
+              onAddSubtask={async (title) => {
+                try {
+                  const created = await api.post<RecordRow>(`/api/projects/${projectId}/tasks`, { data: { sys_title: title, sys_parent: [taskId] } });
+                  setProjectTasks((prev) => [...prev, created]);
+                  setSiblings((prev) => [...prev, { id: created.id, label: String(created.data.sys_title ?? "") }]);
+                  toast.success(t("th.added"));
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : t("common.failed"));
+                  throw e;
+                }
+              }}
+            />
           </section>
 
           <section className="mt-8">

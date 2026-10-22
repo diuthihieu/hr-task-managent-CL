@@ -77,12 +77,22 @@ http
           if (/#summary|\bok\b|yes/i.test(userText)) return { type: "summary", message: "- Task: Monthly report\n- Due: 2026-09-30 02:00\n\nConfirm?", draft: { projectId: project, title: "Monthly report", description: "PDF for the board", dueDate: "2026-09-30", dueTime: "02:00", priority: "high", assigneeIds: member ? [member] : [], reportToIds: [], categoryId: null, estimateHours: 2 } };
           return { type: "question", message: "Which project, and who should do it?", draft: { projectId: null, title: "Monthly report", dueDate: "2026-09-30", dueTime: "02:00" } };
         })() : null;
+        // Comment -> task suggestion: "#notask" is not a task, "#hallucinate" answers ids it was never given.
+        const commentTask = schema === "comment_task" ? (() => {
+          if (userText.includes("#notask")) return { isTask: false, confidence: 0.95, reason: "Just a status update" };
+          if (userText.includes("#hallucinate")) return { isTask: true, confidence: 0.9, title: "Ghost task", projectId: "00000000-0000-4000-8000-000000000000", assigneeIds: ["00000000-0000-4000-8000-000000000001"], dueDate: "31/12", priority: "urgent!!" };
+          const project = system.match(/project id: ([0-9a-f-]{36})/)?.[1] ?? null;
+          const member = system.match(/member id: ([0-9a-f-]{36}) \| [^\n]* \(mentioned\)/)?.[1] ?? null;
+          return { isTask: true, confidence: 0.92, title: "Gửi hợp đồng cho ứng viên", description: "Gửi bản hợp đồng thử việc cho ứng viên Lan.", projectId: project, dueDate: "2026-12-31", priority: "high", assigneeIds: member ? [member] : [], reason: "The comment asks someone to send a contract." };
+        })() : null;
         const projectId = catalog ? JSON.parse(catalog)[0]?.id : undefined;
         // AI PDF report: embed the first listed chart and echo the request.
         const pdfReport = system.includes("Write a report to export as PDF")
           ? { title: "Stub monthly report", fileName: "stub-report", markdown: `# Stub monthly report\n\nYou asked: ${userText}\n\n${system.split("CHARTS:")[1]?.match(/\[\[chart:[A-Za-z0-9_-]+\]\]/)?.[0] ?? ""}\n\n## Analysis\n\nAll good.` }
           : null;
-        const json = pdfReport
+        const json = commentTask
+          ? commentTask
+          : pdfReport
           ? pdfReport
           : intake
           ? intake

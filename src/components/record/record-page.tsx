@@ -11,6 +11,7 @@ import { AttachmentViewer } from "@/components/attachments/attachment-viewer";
 import { TaskApprovals } from "@/components/approvals/task-approvals";
 import { MentionInput } from "@/components/comments/mention-input";
 import { TaskCommentThread, type TaskCommentItem } from "@/components/comments/task-comment-thread";
+import { CommentTaskSuggestion } from "@/components/comments/comment-task-suggestion";
 import { StartFocusButton, TaskFocusHistory } from "@/components/focus/focus-mode";
 import { RetroButton } from "@/components/brain/retro-dialog";
 import { AiTaskActions } from "@/components/ai/ai-actions";
@@ -64,6 +65,8 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
   const [uploading, setUploading] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [replyTo, setReplyTo] = useState<TaskCommentItem | null>(null);
+  /** The comment just posted (and from which comment box), checked by AI for a task to propose. */
+  const [suggest, setSuggest] = useState<{ commentId: string; where: "inline" | "side" } | null>(null);
   const [side, setSide] = useState<"comments" | "activity">("comments");
   const fileRef = useRef<HTMLInputElement>(null);
   const tasksHref = `/w/${workspaceSlug}/p/${projectId}`;
@@ -158,7 +161,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
     }
   }
 
-  async function postComment() {
+  async function postComment(where: "inline" | "side" = "side") {
     if (!draft.trim()) return;
     try {
       const c = await api.post<TaskCommentItem>(`/api/tasks/${taskId}/comments`, {
@@ -168,6 +171,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
       setComments((prev) => [...prev, c]);
       setDraft("");
       setReplyTo(null);
+      setSuggest({ commentId: c.id, where });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
@@ -383,7 +387,8 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
               onReactionsChange={(commentId, reactions) => setComments((current) => current.map((comment) => (comment.id === commentId ? { ...comment, reactions } : comment)))}
               empty={<p className="text-xs text-neutral-400">{t("record.noComments")}</p>}
             />
-            <CommentBox taskId={taskId} draft={draft} setDraft={setDraft} replyTo={replyTo} clearReply={() => setReplyTo(null)} onSend={postComment} testIdPrefix="record-comment-inline" />
+            <CommentBox taskId={taskId} draft={draft} setDraft={setDraft} replyTo={replyTo} clearReply={() => setReplyTo(null)} onSend={() => postComment("inline")} testIdPrefix="record-comment-inline" />
+            {suggest?.where === "inline" ? <CommentTaskSuggestion key={suggest.commentId} taskId={taskId} commentId={suggest.commentId} onDone={() => setSuggest(null)} /> : null}
           </section>
         </div>
       </div>
@@ -441,7 +446,8 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
         </div>
         {side === "comments" && (
           <div className="border-t border-neutral-200 dark:border-neutral-800 p-3 shrink-0">
-            <CommentBox taskId={taskId} draft={draft} setDraft={setDraft} replyTo={replyTo} clearReply={() => setReplyTo(null)} onSend={postComment} />
+            {suggest?.where === "side" ? <CommentTaskSuggestion key={suggest.commentId} taskId={taskId} commentId={suggest.commentId} onDone={() => setSuggest(null)} /> : null}
+            <CommentBox taskId={taskId} draft={draft} setDraft={setDraft} replyTo={replyTo} clearReply={() => setReplyTo(null)} onSend={() => postComment("side")} />
           </div>
         )}
       </aside>

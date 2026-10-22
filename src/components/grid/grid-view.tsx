@@ -16,7 +16,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { ArrowDownToLine, ArrowRightLeft, ClipboardPaste, CopyPlus, Copy, GripVertical, Info, Plus, ChevronDown, ChevronRight, Rows3 } from "lucide-react";
+import { ArrowDownToLine, ArrowRightLeft, ClipboardPaste, CopyPlus, ListTree, Copy, GripVertical, Info, Plus, ChevronDown, ChevronRight, Rows3 } from "lucide-react";
 import { Checkbox } from "@/components/ui/misc";
 import { Cell, CellDisplayValue, type Member, type LinkTarget, type OkrOptions } from "./cell";
 import { FieldHeaderMenu } from "./field-header-menu";
@@ -42,6 +42,7 @@ import {
   type TextLookup,
 } from "@/lib/grid-clipboard";
 import { getGridClipboard, setGridClipboard } from "@/lib/grid-clipboard-store";
+import { buildTaskTree, type TreeRow } from "@/lib/task-tree";
 import { inRange, normalizeRange, planFillDown, planPaste, rangeCols, rangeRows, type CellRange } from "@/lib/grid-selection";
 import { parseFieldConfig } from "@/lib/field-types";
 
@@ -77,7 +78,8 @@ interface GridViewProps {
   onBulkChange: (change: GridBulkChange) => Promise<{ updated: number; created: number; failed: number }>;
   /** Move / duplicate whole tasks (with comments and files) into another project. */
   onTransferTasks?: (taskIds: string[], mode: "move" | "duplicate") => void;
-  onAddRecord: () => void;
+  /** Adds a task; `initialData` pre-fills it (e.g. { sys_parent: [id] } for a sub-task). */
+  onAddRecord: (initialData?: Record<string, unknown>) => void;
   onOpenRecord: (id: string) => void;
   onOpenPage?: (id: string) => void;
   onAddField: (afterFieldId: string | undefined, type: string) => void;
@@ -102,6 +104,8 @@ interface GridInteractions {
   cellFocus: (key: CellKey) => void;
   rowMouseDown: (event: React.MouseEvent, recordId: string) => void;
   openMenu: (event: React.MouseEvent) => void;
+  /** Sub-task tree: collapsed parents, toggling one, adding a sub-task; `indent` when the view shows any hierarchy. */
+  tree: { collapsed: ReadonlySet<string>; toggle: (id: string) => void; addSubtask: (parentId: string) => void; indent: boolean };
 }
 
 export function GridView(props: GridViewProps) {
@@ -135,6 +139,7 @@ export function GridView(props: GridViewProps) {
   const [selection, setSelection] = useState<GridSelection | null>(null);
   const [contextMenu, setContextMenu] = useState<GridContextMenu | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [collapsedTasks, setCollapsedTasks] = useState<Set<string>>(new Set());
   const [dragging, setDragging] = useState(false);
   const dragRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -211,12 +216,14 @@ export function GridView(props: GridViewProps) {
   const recordById = new Map(flatRecords.map((r) => [r.id, r]));
   const orderedFlatRecords = rowOrder.map((id) => recordById.get(id)).filter(Boolean) as RecordRow[];
 
-  // Rows in the order they are on screen (rows of collapsed groups are not part of any range).
+  // Sub-tasks sit under their parent (indented); collapsed parents hide theirs.
+  const flatTree = groups ? [] : buildTaskTree(props.reorderable ? orderedFlatRecords : flatRecords, collapsedTasks);
+  const groupTrees = new Map((groups ?? []).map((group) => [group.key, buildTaskTree(group.records, collapsedTasks)]));
+  const hasHierarchy = groups ? [...groupTrees.values()].some((rows) => rows.some((r) => r.depth > 0 || r.childCount > 0)) : flatTree.some((r) => r.depth > 0 || r.childCount > 0);
+  // Rows in the order they are on screen (rows of collapsed groups / parents are not part of any range).
   const displayRows = groups
-    ? groups.flatMap((group) => (collapsedGroups.has(group.key) ? [] : group.records))
-    : props.reorderable
-      ? orderedFlatRecords
-      : flatRecords;
+    ? groups.flatMap((group) => (collapsedGroups.has(group.key) ? [] : (groupTrees.get(group.key) ?? []).map((r) => r.record)))
+    : flatTree.map((r) => r.record);
   const rowIndex = new Map(displayRows.map((record, index) => [record.id, index]));
   const colIndex = new Map(visibleFields.map((field, index) => [field.id, index]));
 
@@ -568,6 +575,26 @@ export function GridView(props: GridViewProps) {
       event.preventDefault();
       setContextMenu({ x: event.clientX, y: event.clientY });
     },
+    tree: {
+      collapsed: collapsedTasks,
+      indent: hasHierarchy,
+      toggle: (id) =>
+        setCollapsedTasks((prev) => {
+          const next = new Set(prev);
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+          return next;
+        }),
+      addSubtask: (parentId) => {
+        setCollapsedTasks((prev) => {
+          if (!prev.has(parentId)) return prev;
+          const next = new Set(prev);
+          next.delete(parentId);
+          return next;
+        });
+        props.onAddRecord({ sys_parent: [parentId] });
+      },
+    },
   };
 
   const canPaste = visibleFields.some(isGridFieldPasteable);
@@ -633,19 +660,20 @@ export function GridView(props: GridViewProps) {
                   })
                 }
                 {...props}
+                treeRows={groupTrees.get(group.key) ?? []}
                 visibleFields={visibleFields}
                 widthOf={widthOf}
                 interactions={interactions}
               />
             ))
           ) : props.reorderable ? (
-            <SortableContext items={rowOrder} strategy={verticalListSortingStrategy}>
-              {orderedFlatRecords.map((record) => (
-                <Row key={record.id} record={record} {...props} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />
+            <SortableContext items={flatTree.map((r) => r.record.id)} strategy={verticalListSortingStrategy}>
+              {flatTree.map((r) => (
+                <Row key={r.record.id} record={r.record} depth={r.depth} childCount={r.childCount} {...props} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />
               ))}
             </SortableContext>
           ) : (
-            flatRecords.map((record) => <Row key={record.id} record={record} {...props} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />)
+            flatTree.map((r) => <Row key={r.record.id} record={r.record} depth={r.depth} childCount={r.childCount} {...props} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />)
           )}
         </DndContext>
       </div>
@@ -674,6 +702,7 @@ export function GridView(props: GridViewProps) {
           pasteAsNew={() => void pasteFromMenu("new")}
           fillDown={() => void fillDown()}
           transfer={props.onTransferTasks ? (mode) => props.onTransferTasks!(transferIds(), mode) : undefined}
+          addSubtask={range && range.top === range.bottom ? () => interactions.tree.addSubtask(displayRows[range.top].id) : undefined}
         />
       ) : null}
     </div>
@@ -737,6 +766,7 @@ function HeaderCell({
 function GroupSection(
   props: {
     group: RecordGroup;
+    treeRows: TreeRow<RecordRow>[];
     open: boolean;
     onToggle: () => void;
     visibleFields: FieldRow[];
@@ -744,7 +774,7 @@ function GroupSection(
     interactions: GridInteractions;
   } & GridViewProps
 ) {
-  const { group, open, onToggle } = props;
+  const { group, open, onToggle, treeRows, ...rowProps } = props;
   return (
     <>
       <div role="row" className="bg-neutral-100 dark:bg-neutral-800/60 border-b border-neutral-200 dark:border-neutral-800 px-2 py-1.5" style={{ width: "100%" }}>
@@ -757,16 +787,15 @@ function GroupSection(
           {group.aggregate !== undefined && <span className="text-neutral-400 font-normal ml-2">Σ {group.aggregate.toLocaleString()}</span>}
         </button>
       </div>
-      {open &&
-        group.records.map((record) => (
-          <Row key={record.id} record={record} {...props} />
-        ))}
+      {open && treeRows.map((r) => <Row key={r.record.id} record={r.record} depth={r.depth} childCount={r.childCount} {...rowProps} />)}
     </>
   );
 }
 
 function Row({
   record,
+  depth = 0,
+  childCount = 0,
   visibleFields,
   widthOf,
   frozenCount,
@@ -774,11 +803,14 @@ function Row({
   ...props
 }: {
   record: RecordRow;
+  depth?: number;
+  childCount?: number;
   visibleFields: FieldRow[];
   widthOf: (f: FieldRow) => number;
   frozenCount: number;
   interactions: GridInteractions;
 } & GridViewProps) {
+  const { t } = useT();
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: record.id, disabled: !props.reorderable });
   const autoFit = props.rowHeight === "auto";
   const height = autoFit ? undefined : ROW_HEIGHTS[props.rowHeight] ?? 36;
@@ -849,12 +881,45 @@ function Row({
             )}
           >
             <div className={cn("flex", autoFit ? "items-start" : "h-full items-center")}>
+              {field.isPrimary && interactions.tree.indent && (
+                // One indent step per parent level, then the expand / collapse chevron (or its empty slot).
+                <span className={cn("flex shrink-0 items-center", autoFit && "mt-2")} style={{ paddingLeft: depth * 18 }} data-depth={depth}>
+                  {childCount > 0 ? (
+                    <button
+                      type="button"
+                      onClick={() => interactions.tree.toggle(record.id)}
+                      className="flex h-5 w-5 items-center justify-center rounded text-neutral-500 hover:bg-neutral-200/70 dark:hover:bg-neutral-700"
+                      aria-label={t(interactions.tree.collapsed.has(record.id) ? "grid.expandSubtasks" : "grid.collapseSubtasks", { n: childCount })}
+                      aria-expanded={!interactions.tree.collapsed.has(record.id)}
+                      data-testid="subtask-toggle"
+                    >
+                      {interactions.tree.collapsed.has(record.id) ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                  ) : (
+                    <span className="w-5" />
+                  )}
+                  {childCount > 0 && interactions.tree.collapsed.has(record.id) ? <span className="text-[10px] text-neutral-400 tabular-nums">{childCount}</span> : null}
+                </span>
+              )}
               {field.isPrimary && (
                 <RecordOpenButtons
                   onOpen={() => props.onOpenRecord(record.id)}
                   onOpenPage={props.onOpenPage ? () => props.onOpenPage?.(record.id) : undefined}
                   className={cn("ml-1", autoFit && "mt-2", revealOn.row)}
                 />
+              )}
+              {field.isPrimary && (
+                <button
+                  type="button"
+                  onClick={() => interactions.tree.addSubtask(record.id)}
+                  // Floats over the cell's right edge (on row hover) so it never takes room from the title.
+                  className={cn("absolute right-1 z-[7] flex h-6 w-6 items-center justify-center rounded border border-neutral-200 bg-white text-neutral-500 shadow-sm hover:text-indigo-600 dark:border-neutral-700 dark:bg-neutral-900", autoFit ? "top-1.5" : "top-1/2 -translate-y-1/2", revealOn.row)}
+                  title={t("grid.addSubtask")}
+                  aria-label={t("grid.addSubtask")}
+                  data-testid="add-subtask"
+                >
+                  <ListTree size={13} />
+                </button>
               )}
               <div className={cn("flex-1 overflow-hidden", autoFit ? "" : "h-full")}>
                 <Cell
@@ -891,6 +956,7 @@ function GridClipboardMenu({
   pasteAsNew,
   fillDown,
   transfer,
+  addSubtask,
 }: {
   menu: GridContextMenu;
   rowsSelected: boolean;
@@ -904,10 +970,11 @@ function GridClipboardMenu({
   pasteAsNew: () => void;
   fillDown: () => void;
   transfer?: (mode: "move" | "duplicate") => void;
+  addSubtask?: () => void;
 }) {
   const { t } = useT();
   const left = typeof window === "undefined" ? menu.x : Math.min(menu.x, window.innerWidth - 230);
-  const top = typeof window === "undefined" ? menu.y : Math.min(menu.y, window.innerHeight - 300);
+  const top = typeof window === "undefined" ? menu.y : Math.min(menu.y, window.innerHeight - 340);
   const action = (handler: () => void) => () => {
     close();
     handler();
@@ -943,6 +1010,15 @@ function GridClipboardMenu({
           <Plus size={14} />
           {t("grid.pasteAsNew")}
         </button>
+        {addSubtask ? (
+          <>
+            <div className="my-1 h-px bg-neutral-100 dark:bg-neutral-800" />
+            <button type="button" role="menuitem" className={item} onClick={action(addSubtask)}>
+              <ListTree size={14} />
+              {t("grid.addSubtask")}
+            </button>
+          </>
+        ) : null}
         {transfer ? (
           <>
             <div className="my-1 h-px bg-neutral-100 dark:bg-neutral-800" />

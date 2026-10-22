@@ -689,6 +689,10 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           pageHref={`/w/${table.workspace.slug}/p/${projectId}/t/${openRecord.id}`}
           currentUserId={currentUserId}
           onClose={() => setOpenRecordId(null)}
+          onTaskCreated={(record) => {
+            // A task created from a comment into this project shows up in the grid right away.
+            if (record.projectId === projectId) setRecords((prev) => (prev.some((r) => r.id === record.id) ? prev : [...prev, record]));
+          }}
           onChange={(fieldId, value) => handleCellChange(openRecord.id, fieldId, value)}
           onDelete={() => {
             if (confirm(t("record.deleteConfirm"))) handleDeleteRecord(openRecord.id);

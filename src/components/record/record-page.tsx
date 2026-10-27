@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Paperclip, Download, Trash2, Send, FileText, MessageSquare, History, ChevronDown, ChevronUp, FileImage, File as FileIcon, Reply } from "lucide-react";
@@ -19,6 +19,7 @@ import { prependMention, stripMentions } from "@/lib/mentions";
 import { toast } from "@/components/ui/toast";
 import { promptDoneCheck } from "@/components/tasks/done-check-dialog";
 import { TaskHierarchy } from "@/components/tasks/task-hierarchy";
+import { uploadCommentImage } from "@/lib/comment-image-upload";
 import { useT } from "@/components/i18n-provider";
 import { getCellValue } from "@/lib/query-engine";
 import { api } from "@/lib/api-client";
@@ -117,6 +118,20 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
     for (const f of fields) if (f.type === "link") out[f.id] = target;
     return out;
   }, [siblings, fields, taskId, t]);
+
+  /** A sub-task edited from this page (status, PIC, completed date, quick view): saved and mirrored in the list. */
+  async function updateSubtask(id: string, patch: Record<string, unknown>) {
+    const put = (rec: RecordRow) => setProjectTasks((prev) => prev.map((r) => (r.id === rec.id ? rec : r)));
+    setProjectTasks((prev) => prev.map((r) => (r.id === id ? { ...r, data: { ...r.data, ...patch } } : r)));
+    try {
+      const saved = await api.patch<RecordRow>(`/api/tasks/${id}`, { data: patch });
+      put(saved);
+      promptDoneCheck(saved, put);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+      api.get<RecordRow>(`/api/tasks/${id}`).then(put).catch(() => {});
+    }
+  }
 
   async function change(fieldId: string, value: unknown) {
     if (!record) return;
@@ -310,6 +325,12 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
               canEdit={canEdit}
               canCreate={(project.myPermissions ?? []).includes("task.create") && (ROLE_RANK[role] ?? -1) >= ROLE_RANK.contributor}
               onOpen={(id) => router.push(`${tasksHref}/t/${id}`)}
+              onOpenFull={(id) => router.push(`${tasksHref}/t/${id}`)}
+              canEditTask={(r) =>
+                (ROLE_RANK[role] ?? -1) >= ROLE_RANK.editor ||
+                (role === "contributor" && (r.createdById === currentUserId || ((r.data.sys_assignees as string[] | undefined) ?? []).includes(currentUserId)))
+              }
+              onUpdateTask={(id, patch) => void updateSubtask(id, patch)}
               onSetParent={(parentId) => void change("sys_parent", parentId ? [parentId] : [])}
               onAddSubtask={async (title) => {
                 try {
@@ -502,7 +523,7 @@ function CommentBox({ taskId, draft, setDraft, replyTo, clearReply, onSend, test
         </div>
       )}
       <div className="flex gap-2">
-        <MentionInput taskId={taskId} formatting autoGrow value={draft} onChange={setDraft} onSubmit={onSend} placeholder={t("record.commentPlaceholder")} testId={`${testIdPrefix}-input`} />
+        <MentionInput taskId={taskId} formatting autoGrow onUploadImage={(file) => uploadCommentImage(taskId, file)} value={draft} onChange={setDraft} onSubmit={onSend} placeholder={t("record.commentPlaceholder")} testId={`${testIdPrefix}-input`} />
         <Button size="icon" onClick={onSend} aria-label={t("record.send")} data-testid={`${testIdPrefix}-send`}>
           <Send size={13} />
         </Button>
@@ -514,19 +535,44 @@ function CommentBox({ taskId, draft, setDraft, replyTo, clearReply, onSend, test
 function TitleInput({ value, disabled, placeholder, onCommit }: { value: string; disabled: boolean; placeholder: string; onCommit: (v: string) => void }) {
   const [draft, setDraft] = useState(value);
   const [last, setLast] = useState(value);
+  const ref = useRef<HTMLTextAreaElement>(null);
   if (value !== last) {
     setLast(value);
     setDraft(value);
   }
+  // Long names wrap onto more lines: the box grows with its text instead of cutting it off.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [draft]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      el.style.height = "auto";
+      el.style.height = `${el.scrollHeight}px`;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   return (
-    <input
+    <textarea
+      ref={ref}
+      rows={1}
       value={draft}
       disabled={disabled}
       placeholder={placeholder}
-      onChange={(e) => setDraft(e.target.value)}
+      onChange={(e) => setDraft(e.target.value.replace(/\n/g, " "))}
       onBlur={() => draft.trim() && draft !== value && onCommit(draft.trim())}
-      onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-      className="w-full bg-transparent text-2xl md:text-3xl font-bold text-neutral-900 dark:text-neutral-50 outline-none placeholder:text-neutral-300"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+          e.preventDefault();
+          (e.target as HTMLTextAreaElement).blur();
+        }
+      }}
+      className="block w-full resize-none overflow-hidden break-words bg-transparent text-2xl md:text-3xl font-bold leading-tight text-neutral-900 dark:text-neutral-50 outline-none placeholder:text-neutral-300"
       data-testid="record-title"
     />
   );

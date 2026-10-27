@@ -10,7 +10,7 @@ import { Switch } from "@/components/ui/misc";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
-import { useInbox } from "@/components/notifications/notification-bell";
+import { fetchInbox, useInbox } from "@/components/notifications/notification-bell";
 import { DEFAULT_NOTIFY_SETTINGS, NOTIFY_GROUP_KEYS, RINGTONES, playRingtone, type NotifyGroup, type NotifySettings, type Ringtone } from "@/lib/notification-prefs";
 import type { MessageKey } from "@/lib/i18n/core";
 import { SettingsSection } from "./settings-shell";
@@ -32,6 +32,8 @@ export function SettingsNotifications() {
     useInbox.getState().set({ settings: next });
     try {
       await api.put("/api/account/notification-settings", patch);
+      // The bell's list and badge follow the in-app switches: refresh the count right away.
+      if (patch.popupOff) fetchInbox().catch(() => {});
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     }

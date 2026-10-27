@@ -2166,6 +2166,26 @@ test("notification settings: per-group pop-up / device switches and a ringtone, 
   // Notifications carry the actor, so the Action center can show their profile picture.
   const n = await contributor.get<{ items: { actor: { id: string } | null; workspaceId: string | null }[] }>("/api/notifications");
   assert.ok(n.body.items.some((x) => x.actor?.id && x.workspaceId));
+
+  // A group switched off for the app is left out of the bell's unread count (and flagged), but kept.
+  const userId = s.viewerId;
+  const before = await viewer.get<{ unread: number; unreadAll: number }>("/api/notifications");
+  await prisma.notification.createMany({
+    data: [
+      { userId, type: "task_updated", title: "Updated: description", workspaceId: s.ws },
+      { userId, type: "task_status", title: "Status changed", workspaceId: s.ws },
+      { userId, type: "task_comment", title: "New comment", workspaceId: s.ws },
+    ],
+  });
+  type Inbox = { unread: number; unreadAll: number; items: { type: string; muted: boolean }[] };
+  const after = await viewer.get<Inbox>("/api/notifications");
+  assert.equal(after.body.unreadAll, before.body.unreadAll + 3, "all three are kept");
+  assert.equal(after.body.unread, before.body.unread + 1, "only the comment counts: updates are switched off");
+  assert.ok(after.body.items.filter((x) => x.type === "task_updated" || x.type === "task_status").every((x) => x.muted));
+  assert.ok(after.body.items.filter((x) => x.type === "task_comment").every((x) => !x.muted));
+  // Switching updates back on counts them again.
+  await viewer.put("/api/account/notification-settings", { popupOff: [] });
+  assert.equal((await viewer.get<Inbox>("/api/notifications")).body.unread, before.body.unreadAll + 3);
 });
 
 test("invite links and invitations for people without an account: accept, decline, revoke, replace", async () => {
@@ -2542,6 +2562,118 @@ test("platform overview: woli system admins see platform-wide counts; everyone e
   assert.ok(!JSON.stringify(r.body).includes("sys_title"), "no task content");
   const adminId = (await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } })).id;
   assert.ok(await prisma.activityLog.findFirst({ where: { actorId: adminId, action: "admin_overview_viewed" } }), "view logged");
+
+  // AI token report: every Gemini call made by the earlier tests was counted with its workspace, user and route.
+  type Ai = { ai: { requests30: number; tokensAll: number }; aiFeatures: { feature: string; requests: number; tokens: number }[]; userRows: { id: string; aiRequests30: number; aiTokens30: number }[]; workspaceRows: { id: string; aiTokens30: number }[] };
+  const ai = (r.body as unknown as Ai);
+  const events = await prisma.aiUsageEvent.count();
+  assert.ok(events > 0, "AI calls were recorded");
+  assert.equal(ai.ai.requests30, await prisma.aiUsageEvent.count({ where: { createdAt: { gte: new Date(Date.now() - 30 * 86400_000) } } }));
+  const sample = await prisma.aiUsageEvent.findFirstOrThrow({ where: { feature: { startsWith: "/api/" } } });
+  assert.ok(sample.userId && sample.workspaceId && sample.tokensIn > 0, JSON.stringify(sample));
+  assert.ok(!/[0-9a-f]{8}-[0-9a-f]{4}/.test(sample.feature), "ids are replaced in the feature name");
+  const byUser = await prisma.aiUsageEvent.groupBy({ by: ["userId"], _sum: { tokensIn: true, tokensOut: true }, where: { userId: { not: null }, createdAt: { gte: new Date(Date.now() - 30 * 86400_000) } } });
+  const top = byUser.sort((a, b) => (b._sum.tokensIn ?? 0) + (b._sum.tokensOut ?? 0) - ((a._sum.tokensIn ?? 0) + (a._sum.tokensOut ?? 0)))[0];
+  const topRow = ai.userRows.find((u) => u.id === top.userId)!;
+  assert.equal(topRow.aiTokens30, (top._sum.tokensIn ?? 0) + (top._sum.tokensOut ?? 0), "per-user tokens");
+  const wsTok = await prisma.aiUsageEvent.aggregate({ _sum: { tokensIn: true, tokensOut: true }, where: { workspaceId: s.ws, createdAt: { gte: new Date(Date.now() - 30 * 86400_000) } } });
+  assert.equal(ai.workspaceRows.find((w) => w.id === s.ws)!.aiTokens30, (wsTok._sum.tokensIn ?? 0) + (wsTok._sum.tokensOut ?? 0), "per-workspace tokens");
+  assert.ok(ai.aiFeatures.length > 0 && ai.aiFeatures.every((f) => f.requests > 0));
+  assert.ok(!JSON.stringify(r.body).includes("RESPONSE_SCHEMA"), "no prompt text in the report");
+});
+
+test("workspace AI reads hours, completed dates, parent tasks, custom fields and task files - and a per-person hours table", async () => {
+  const A = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Hours data" })).body.id;
+  try {
+    const field = (await admin.post<{ id: string }>(`/api/projects/${A}/custom-fields`, { name: "Mã hồ sơ", type: "text" })).body.id;
+    const P = (await admin.post<Rec>(`/api/projects/${A}/tasks`, { data: { sys_title: "Payroll tháng 10", sys_assignees: [s.contributorId], sys_due_date: "2026-10-30", sys_estimate: 3, sys_actual: 2.5, [field]: "HS-042" } })).body.id;
+    await admin.post(`/api/projects/${A}/tasks`, { data: { sys_title: "Đối soát BHXH", sys_parent: [P], sys_assignees: [s.contributorId], sys_due_date: "2026-10-20", sys_estimate: 1, sys_actual: 1.5 } });
+    await prisma.attachment.create({ data: { workspaceId: s.ws, taskId: P, fileName: "bang-luong.xlsx", contentType: "application/vnd.ms-excel", sizeBytes: 2048, storageKey: `it/${P}/bang-luong.xlsx`, url: "https://blob.invalid/x", extractedText: "Tổng quỹ lương 1.234.567" } });
+    // The admin used up the daily AI quota in earlier tests: move those questions out of the last 24 hours.
+    const adminId = (await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } })).id;
+    await prisma.aiMessage.updateMany({ where: { role: "user", conversation: { userId: adminId } }, data: { createdAt: new Date(Date.now() - 2 * 86400_000) } });
+    const r = await ask(admin, { kind: "assistant", workspaceId: s.ws, message: "Tổng giờ actual tháng 10 của từng người?" });
+    assert.equal(r.status, 200, r.text);
+    const sys = (await lastModelRequest()).body.systemInstruction?.parts.map((p) => p.text).join("\n") ?? "";
+    const name = (await prisma.user.findUniqueOrThrow({ where: { id: s.contributorId } })).name;
+    assert.match(sys, /estimate h \| actual h/, "task table has hour columns");
+    assert.match(sys, /Payroll tháng 10 \|[^\n]*\| 3 \| 2\.5 \|/, "estimate and actual of the task");
+    assert.match(sys, new RegExp(`${name} \\| 2026-10 \\| \\d+ \\| \\d+ \\| [\\d.]+ \\| [\\d.]+`), "per-person monthly hours");
+    assert.ok(sys.includes("Mã hồ sơ = HS-042"), "custom field values");
+    assert.ok(sys.includes("bang-luong.xlsx") && sys.includes("Tổng quỹ lương 1.234.567"), "task files with their text");
+    assert.match(sys, /Đối soát BHXH \|[^\n]*\| T-[0-9a-f]{8} \|/, "parent task ref");
+  } finally {
+    await prisma.attachment.deleteMany({ where: { storageKey: { startsWith: "it/" } } });
+    await admin.del(`/api/projects/${A}`);
+  }
+});
+
+test("comment images: only real images, anyone who may comment can send one, and a comment shows only this task's images", async () => {
+  const RICH = "<!--woli-rich-comment:v1-->";
+  const send = async (who: Client, taskId: string, name: string, bytes: Uint8Array | string, type: string) => {
+    const form = new FormData();
+    form.append("file", new Blob([bytes as BlobPart], { type }), name);
+    const res = await fetch(`${BASE}/api/tasks/${taskId}/comments/images`, { method: "POST", body: form, headers: { cookie: who.cookieHeader() } });
+    return { status: res.status, body: (await res.json().catch(() => null)) as { error?: string } | null };
+  };
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  // Not an image (even when it claims to be one) is refused; outsiders can't reach the task.
+  assert.equal((await send(admin, s.task1, "x.png", "<svg onload=alert(1)>", "image/png")).status, 400);
+  assert.equal((await send(admin, s.task1, "page.html", "<html></html>", "text/html")).status, 400);
+  assert.equal((await send(outsider, s.task1, "a.png", png, "image/png")).status, 404);
+  // A real image from a viewer passes the checks (the test server has no file storage, hence 503).
+  assert.equal((await send(viewer, s.task1, "shot.png", png, "image/png")).status, 503);
+
+  // The comment keeps images of its own task only; other tasks' files and outside URLs are dropped.
+  const mine = await prisma.attachment.create({ data: { workspaceId: s.ws, taskId: s.task1, fileName: "shot.png", contentType: "image/png", sizeBytes: 16, storageKey: `it/${s.task1}/shot.png`, url: "https://blob.invalid/shot.png" } });
+  const other = await prisma.attachment.create({ data: { workspaceId: s.ws, taskId: s.task2, fileName: "other.png", contentType: "image/png", sizeBytes: 16, storageKey: `it/${s.task2}/other.png`, url: "https://blob.invalid/other.png" } });
+  try {
+    const img = (id: string) => `<img src="/api/attachments/${id}/download?inline=1" alt="a">`;
+    const body = `${RICH}<p>Lỗi đây</p>${img(mine.id)}${img(other.id)}<img src="https://evil.example/pixel.gif"><img src="/api/attachments/${mine.id}/download">`;
+    const c = await viewer.post<{ id: string; body: string }>(`/api/tasks/${s.task1}/comments`, { body });
+    assert.equal(c.status, 201, JSON.stringify(c.body));
+    const saved = (await prisma.comment.findUniqueOrThrow({ where: { id: c.body.id } })).body;
+    assert.equal((saved.match(/<img/g) ?? []).length, 1, saved);
+    assert.ok(saved.includes(`/api/attachments/${mine.id}/download?inline=1`) && !saved.includes(other.id) && !saved.includes("evil.example"), saved);
+    // A comment with only an image is fine; one whose only image is not allowed is empty.
+    assert.equal((await viewer.post(`/api/tasks/${s.task1}/comments`, { body: `${RICH}${img(mine.id)}` })).status, 201);
+    assert.equal((await viewer.post(`/api/tasks/${s.task1}/comments`, { body: `${RICH}${img(other.id)}` })).status, 400);
+    // Editing keeps the same rule.
+    const edited = await viewer.patch<{ body: string }>(`/api/comments/${c.body.id}`, { body: `${RICH}<p>Sửa</p>${img(other.id)}${img(mine.id)}` });
+    assert.equal(edited.status, 200);
+    assert.equal((edited.body.body.match(/<img/g) ?? []).length, 1);
+  } finally {
+    await prisma.attachment.deleteMany({ where: { storageKey: { startsWith: "it/" } } });
+  }
+});
+
+test("sub-task dates stay inside the parent task's dates; a parent cannot shrink past its sub-tasks", async () => {
+  const A = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Sub-task dates" })).body.id;
+  try {
+    const mk = (data: object) => admin.post<Rec & { error?: string }>(`/api/projects/${A}/tasks`, { data });
+    const P = (await mk({ sys_title: "Parent", sys_start_date: "2026-11-01", sys_due_date: "2026-11-30" })).body.id;
+    // Created inside the range: fine; outside: refused (also when only one end is outside).
+    const C = await mk({ sys_title: "Child", sys_parent: [P], sys_start_date: "2026-11-05", sys_due_date: "2026-11-20" });
+    assert.equal(C.status, 201, JSON.stringify(C.body));
+    assert.equal((await mk({ sys_title: "Too late", sys_parent: [P], sys_due_date: "2026-12-02" })).status, 400);
+    assert.equal((await mk({ sys_title: "Too early", sys_parent: [P], sys_start_date: "2026-10-31" })).status, 400);
+    assert.equal((await mk({ sys_title: "No dates", sys_parent: [P] })).status, 201, "a sub-task without dates is fine");
+    // Editing the child's dates or attaching a dated task to the parent is checked too.
+    const bad = await admin.patch<{ error?: string }>(`/api/tasks/${C.body.id}`, { data: { sys_due_date: "2026-12-15" } });
+    assert.equal(bad.status, 400);
+    assert.match(JSON.stringify(bad.body), /task mẹ/);
+    const loose = (await mk({ sys_title: "Loose", sys_start_date: "2026-12-01" })).body.id;
+    assert.equal((await admin.patch(`/api/tasks/${loose}`, { data: { sys_parent: [P] } })).status, 400);
+    // The parent's range cannot shrink so the child falls outside; widening is fine.
+    assert.equal((await admin.patch(`/api/tasks/${P}`, { data: { sys_due_date: "2026-11-10" } })).status, 400);
+    assert.equal((await admin.patch(`/api/tasks/${P}`, { data: { sys_due_date: "2026-12-31" } })).status, 200);
+    assert.equal((await admin.patch(`/api/tasks/${C.body.id}`, { data: { sys_due_date: "2026-12-15" } })).status, 200);
+    // A parent without dates puts no limit on its sub-tasks.
+    const Q = (await mk({ sys_title: "Open parent" })).body.id;
+    assert.equal((await mk({ sys_title: "Any date", sys_parent: [Q], sys_due_date: "2030-01-01" })).status, 201);
+  } finally {
+    await admin.del(`/api/projects/${A}`);
+  }
 });
 
 test("grid rows: insert N rows above / below a task in place (group value, parent kept); bulk delete follows delete rights", async () => {

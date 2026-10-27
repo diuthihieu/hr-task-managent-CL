@@ -22,6 +22,11 @@
   "overrides": {
     "pptxgenjs": {
       "image-size": "2.0.4"
+    },
+    "nodemailer": "$nodemailer",
+    "deepmerge-ts": "^8.0.2",
+    "@vercel/cli-config": {
+      "zod": "$zod"
     }
   },
   "dependencies": {
@@ -60,15 +65,15 @@
     "d3-force": "^3.0.0",
     "date-fns": "^4.4.0",
     "docx": "^9.8.1",
-    "dompurify": "^3.4.16",
+    "dompurify": "^3.4.17",
     "jszip": "^3.10.1",
     "lucide-react": "^1.45.0",
     "mammoth": "^1.13.0",
     "marked": "^18.0.14",
     "nanoid": "^6.0.1",
-    "next": "^16.3.8",
+    "next": "^16.4.3",
     "next-auth": "^5.0.0-beta.32",
-    "nodemailer": "^8.0.11",
+    "nodemailer": "^10.2.1",
     "pdf-lib": "^1.17.1",
     "pptxgenjs": "^4.0.1",
     "react": "19.2.8",
@@ -76,11 +81,11 @@
     "react-force-graph-2d": "^1.29.1",
     "react-grid-layout": "^1.5.4",
     "recharts": "^3.10.1",
-    "sanitize-html": "^2.17.7",
+    "sanitize-html": "^2.18.1",
     "server-only": "^0.0.1",
     "tailwind-merge": "^3.6.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
-    "zod": "^4.6.5",
+    "zod": "^4.6.7",
     "zustand": "^5.0.15"
   },
   "devDependencies": {
@@ -97,7 +102,7 @@
     "@types/react-grid-layout": "^1.3.6",
     "@types/sanitize-html": "^2.16.1",
     "eslint": "^9",
-    "eslint-config-next": "^16.3.8",
+    "eslint-config-next": "^16.4.3",
     "prisma": "^6.19.3",
     "tailwindcss": "^4",
     "tsx": "^4.23.13",

@@ -4,6 +4,7 @@ import { hiddenProjectIds, requireUser, route } from "@/lib/authz";
 import { generateReminders } from "@/lib/notifications";
 import { syncInvitations } from "@/lib/invitations";
 import { syncPointsIfStale } from "@/lib/recognition/points";
+import { notifyGroupOf, type NotifyGroup } from "@/lib/notification-prefs";
 
 /** Keeps points (and "you can redeem a reward" notices) fresh; at most every 10 minutes per workspace. */
 async function syncMyWorkspacesPoints(userId: string) {
@@ -14,7 +15,9 @@ async function syncMyWorkspacesPoints(userId: string) {
 /**
  * The caller's notifications (reminders are generated on the fly).
  * ?view=todo (default: not acted on, not snoozed) | all | snoozed; ?unread=1.
- * `unread` counts unread, un-snoozed items.
+ * `unread` counts unread, un-snoozed items of the groups the user did not switch off for the app
+ * (Settings -> Notifications -> In-app); `unreadAll` counts them all. Each item says whether it is `muted`:
+ * muted items are left out of the bell and its badge but stay in the Action center.
  */
 export const GET = route(async (req) => {
   const user = await requireUser();
@@ -42,7 +45,13 @@ export const GET = route(async (req) => {
       ...(url.searchParams.get("unread") === "1" ? [{ readAt: null }] : []),
     ],
   };
-  const [items, unread] = await Promise.all([
+  const me = await prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { notifyPopupOff: true } });
+  const off = new Set(me.notifyPopupOff as NotifyGroup[]);
+  const isMuted = (n: { type: string; data: unknown }) => {
+    const g = notifyGroupOf(n);
+    return !!g && off.has(g);
+  };
+  const [items, unreadRows] = await Promise.all([
     prisma.notification.findMany({
       where,
       orderBy: { createdAt: "desc" },
@@ -54,11 +63,13 @@ export const GET = route(async (req) => {
         task: { select: { id: true, deletedAt: true, status: { select: { category: true } } } },
       },
     }),
-    prisma.notification.count({ where: { userId: user.id, readAt: null, AND: [live, notSnoozed] } }),
+    prisma.notification.findMany({ where: { userId: user.id, readAt: null, AND: [live, notSnoozed] }, select: { type: true, data: true }, take: 10_000 }),
   ]);
   return NextResponse.json({
-    unread,
+    unread: unreadRows.filter((n) => !isMuted(n)).length,
+    unreadAll: unreadRows.length,
     items: items.map((n) => ({
+      muted: isMuted(n),
       id: n.id,
       type: n.type,
       title: n.title,

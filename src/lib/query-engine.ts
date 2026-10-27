@@ -123,7 +123,11 @@ export interface GanttConfig {
   statusFieldId?: string;
   dependencyFieldId?: string;
   zoom?: "day" | "week" | "month";
+  /** Quick time filter on top of the view's filters. */
+  quickFilter?: GanttQuickFilter;
 }
+
+export type GanttQuickFilter = "all" | "dated" | "month" | "quarter" | "overdue";
 
 export interface KanbanConfig {
   groupFieldId?: string;
@@ -377,9 +381,25 @@ export function applyGroup(
   const field = byId.get(group.fieldId);
   if (!field) return null;
   const groups = new Map<string, RecordRow[]>();
-  for (const record of records) {
+  const keysOf = (record: RecordRow) => {
     const value = computeCellValue(record, field, byId);
-    const keys = Array.isArray(value) ? (value.length ? value : ["__empty__"]) : [value ?? "__empty__"];
+    return Array.isArray(value) ? (value.length ? value : ["__empty__"]) : [value ?? "__empty__"];
+  };
+  // Sub-tasks stay with their parent: a task whose parent (or an ancestor) is in the list goes into the
+  // group(s) of its top-most listed ancestor, whatever its own value is, so it sits right under it.
+  const listed = new Map(records.map((r) => [r.id, r]));
+  const parentIdOf = (r: RecordRow) => (Array.isArray(r.data.sys_parent) ? String((r.data.sys_parent as unknown[])[0] ?? "") : "");
+  const topOf = (record: RecordRow) => {
+    let top = record;
+    const seen = new Set([record.id]);
+    for (let id = parentIdOf(top); id && !seen.has(id) && listed.has(id); id = parentIdOf(top)) {
+      seen.add(id);
+      top = listed.get(id)!;
+    }
+    return top;
+  };
+  for (const record of records) {
+    const keys = keysOf(topOf(record));
     for (const key of keys) {
       const k = String(key);
       if (!groups.has(k)) groups.set(k, []);

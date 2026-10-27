@@ -19,6 +19,7 @@ import { prisma } from "./prisma";
 
 export { HttpError, unauthorized, forbidden, notFound, badRequest } from "./http-errors";
 import { HttpError, unauthorized, forbidden, notFound, badRequest } from "./http-errors";
+import { featureOfPath, runWithAiContext, setAiContextUser } from "./ai/usage";
 
 export interface SessionUser {
   id: string;
@@ -53,6 +54,7 @@ export async function getSessionUser(): Promise<SessionUser | null> {
 export async function requireUser(opts: { allowPasswordChange?: boolean } = {}): Promise<SessionUser> {
   const user = await getSessionUser();
   if (!user) throw unauthorized();
+  setAiContextUser(user.id);
   if (user.mustChangePassword && !opts.allowPasswordChange) throw new HttpError(403, "Choose a new password before continuing", "password_change_required");
   return user;
 }
@@ -312,11 +314,18 @@ type Handler<P> = (req: Request, ctx: { params: Promise<P> }) => Promise<Respons
 
 export function route<P = Record<string, string>>(handler: Handler<P>): Handler<P> {
   return async (req, ctx) => {
+    // AI calls made while handling this request are counted against its route and user (admin token report).
+    let feature = "unknown";
     try {
-      return await handler(req, ctx);
-    } catch (e) {
-      return errorResponse(e);
-    }
+      feature = featureOfPath(new URL(req.url).pathname);
+    } catch {}
+    return runWithAiContext({ feature, userId: null }, async () => {
+      try {
+        return await handler(req, ctx);
+      } catch (e) {
+        return errorResponse(e);
+      }
+    });
   };
 }
 

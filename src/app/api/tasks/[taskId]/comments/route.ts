@@ -8,7 +8,7 @@ import { notifyTaskComment } from "@/lib/notifications";
 import { logActivity } from "@/lib/activity";
 import { uuid } from "@/lib/validation";
 import { mentionedUserIds, stripMentions } from "@/lib/mentions";
-import { sanitizeCommentBody } from "@/lib/comment-rich-text-server";
+import { sanitizeCommentBody, taskCommentImageIds } from "@/lib/comment-rich-text-server";
 import { summarizeCommentReactions } from "@/lib/comment-reactions";
 
 type P = { taskId: string };
@@ -45,7 +45,7 @@ export const POST = route<P>(async (req, { params }) => {
   const ctx = await requireWorkspaceRole(user, await workspaceOfTask(taskId), "viewer");
   if (ctx.projectId) await assertProjectCap(ctx, ctx.projectId, "task.comment");
   const body = createSchema.parse(await readJson(req));
-  const commentBody = sanitizeCommentBody(body.body);
+  const commentBody = sanitizeCommentBody(body.body, { imageIds: await taskCommentImageIds(taskId, body.body) });
   let parentCommentId: string | null = null;
   if (body.parentCommentId) {
     const parent = await prisma.comment.findFirst({ where: { id: body.parentCommentId, taskId, deletedAt: null }, select: { id: true, parentCommentId: true } });

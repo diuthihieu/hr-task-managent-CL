@@ -346,6 +346,7 @@ model User {
   customFieldUserValues TaskCustomFieldValue[]    @relation("CustomValueUser")
   knowledgeDocs         KnowledgeDoc[]
   aiConversations       AiConversation[]
+  aiUsageEvents         AiUsageEvent[]
   savedReports          SavedReport[]
   aiSettingsUpdated     WikiAiSettings[]
   wikisCreated          Wiki[]                    @relation("WikiCreatedByUser")
@@ -429,6 +430,7 @@ model Workspace {
   notifications       Notification[]
   knowledgeDocs       KnowledgeDoc[]
   aiConversations     AiConversation[]
+  aiUsageEvents       AiUsageEvent[]
   savedReports        SavedReport[]
   wikis               Wiki[]
   decisions           Decision[]
@@ -1327,6 +1329,28 @@ model KnowledgeDoc {
 
   @@index([wikiId, deletedAt])
   @@map("knowledge_docs")
+}
+
+/// One AI (Gemini) call: workspace, user, feature and token counts. Counts only - never the prompt or
+/// the answer. Written by src/lib/ai/usage.ts for every call; read by the system admin overview.
+model AiUsageEvent {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId String?  @map("workspace_id") @db.Uuid
+  userId      String?  @map("user_id") @db.Uuid
+  /// Where the call came from: the API route (ids replaced by ":id"), or "background".
+  feature     String   @db.VarChar(160)
+  model       String?  @db.VarChar(80)
+  tokensIn    Int      @default(0) @map("tokens_in")
+  tokensOut   Int      @default(0) @map("tokens_out")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("ai_usage_events")
 }
 
 enum AiConversationKind {

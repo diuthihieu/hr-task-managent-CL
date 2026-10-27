@@ -8,6 +8,7 @@ import { PRIORITIES, SYS } from "../task-grid";
 import { SCOPE_GUARD } from "./personal";
 import { readTaskFiles } from "./task-files";
 import { taskCommentsSection } from "./task-comments";
+import { hoursSection } from "./context";
 
 // AI task intake: the user describes a task in their own words, the AI asks
 // for what is missing, summarizes a draft, and the user confirms it. The same
@@ -153,7 +154,7 @@ export interface TaskRef {
  * model uses to propose changes; refs only live for this one turn.
  */
 export async function projectData(user: SessionUser, projectId: string, budget = 150_000): Promise<{ text: string; refs: Map<string, TaskRef> }> {
-  const [project, tasks, objectives, hidden, attachments, comments] = await Promise.all([
+  const [project, tasks, objectives, hidden, attachments, comments, hours] = await Promise.all([
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { workspaceId: true, name: true, status: true, description: true, startDate: true, endDate: true, owner: { select: { name: true } } } }),
     prisma.task.findMany({
       where: { projectId, deletedAt: null },
@@ -190,6 +191,8 @@ export async function projectData(user: SessionUser, projectId: string, budget =
       select: { id: true, fileName: true, contentType: true, sizeBytes: true, storageProvider: true, url: true, extractedText: true, task: { select: { title: true } } },
     }),
     taskCommentsSection({ task: { projectId, deletedAt: null } }, { limit: 300, maxTotalChars: Math.floor(budget * 0.2) }),
+    // Hours over all of the project's tasks, not only the listed (most recently updated) ones.
+    hoursSection({ projectId, deletedAt: null }),
   ]);
   const fileContext = await readTaskFiles(attachments, project.workspaceId, {
     maxFiles: 50,
@@ -244,6 +247,7 @@ export async function projectData(user: SessionUser, projectId: string, budget =
     // files and comments, so the final cut to the budget trims those instead of the tasks.
     `## Tasks (${tasks.length}${tasks.length === PROJECT_TASKS ? ", most recently updated" : ""})\nref | task | status | priority | progress | start | due | assignees | report to | category | estimate | actual | objective/KR | parent\n` +
     lines.join("\n") +
+    `\n\n${hours}` +
     `\n\n${comments}\n\n` +
     fileSection;
   if (text.length > budget) text = text.slice(0, budget) + "\n…[truncated]";

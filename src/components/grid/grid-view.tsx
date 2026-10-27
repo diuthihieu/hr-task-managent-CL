@@ -46,6 +46,7 @@ import { buildTaskTree, type TreeRow } from "@/lib/task-tree";
 import { inRange, normalizeRange, planFillDown, planPaste, rangeCols, rangeRows, type CellRange } from "@/lib/grid-selection";
 import { parseFieldConfig } from "@/lib/field-types";
 import { groupFieldPatch } from "@/lib/grid-group";
+import { orderVisibleFields } from "@/lib/grid-columns";
 
 const ROW_HEIGHTS: Record<string, number> = { short: 32, medium: 40, tall: 64 };
 const DEFAULT_WIDTH = 180;
@@ -54,6 +55,8 @@ const PRIMARY_WIDTH = 220;
 const MAX_PASTE_ROWS = 500;
 /** "Insert rows" adds at most this many at once (the server enforces the same limit). */
 const MAX_INSERT_ROWS = 50;
+/** Indent per sub-task level in the name column (px). */
+const TREE_STEP = 22;
 
 export interface GridBulkChange {
   updates: { recordId: string; patch: Record<string, unknown> }[];
@@ -89,6 +92,9 @@ interface GridViewProps {
   onDeleteRecords?: (ids: string[]) => Promise<void>;
   /** The field the view is grouped by: new rows added inside a group take that group's value. */
   groupFieldId?: string;
+  /** Scroll to this task and focus its name cell (e.g. right after "+ New task"); `onFocused` then clears it. */
+  focusRecordId?: string | null;
+  onFocused?: () => void;
   onOpenRecord: (id: string) => void;
   onOpenPage?: (id: string) => void;
   onAddField: (afterFieldId: string | undefined, type: string) => void;
@@ -133,20 +139,7 @@ export function GridView(props: GridViewProps) {
     onResizeColumn,
   } = props;
 
-  const visibleFields = useMemo(() => {
-    const byId = new Map(fields.map((f) => [f.id, f]));
-    if (!columnOrder.length) return fields.filter((f) => !hiddenFieldIds.includes(f.id));
-    const ordered = columnOrder.map((id) => byId.get(id)).filter(Boolean) as FieldRow[];
-    // Fields missing from a saved order: a newly added built-in column goes right
-    // after the field that precedes it in the default order; new custom columns go last.
-    fields.forEach((f, i) => {
-      if (ordered.includes(f)) return;
-      if (!f.system) return void ordered.push(f);
-      const prev = fields.slice(0, i).reverse().find((p) => ordered.includes(p));
-      ordered.splice(prev ? ordered.indexOf(prev) + 1 : 0, 0, f);
-    });
-    return ordered.filter((f) => !hiddenFieldIds.includes(f.id));
-  }, [fields, columnOrder, hiddenFieldIds]);
+  const visibleFields = useMemo(() => orderVisibleFields(fields, columnOrder, hiddenFieldIds), [fields, columnOrder, hiddenFieldIds]);
   const [selection, setSelection] = useState<GridSelection | null>(null);
   const [contextMenu, setContextMenu] = useState<GridContextMenu | null>(null);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -249,10 +242,13 @@ export function GridView(props: GridViewProps) {
     return groupFieldPatch(groupField, groupKey, value) ?? {};
   }
 
-  /** New rows next to `anchor` stay at its level (same parent task) and in its group. */
+  /**
+   * New rows next to `anchor` stay at its level: next to a sub-task they become sub-tasks of the same
+   * parent (and are shown with it whatever the grouping); next to a top-level task they take its group.
+   */
   function insertData(anchor: RecordRow, groupKey: string | undefined): Record<string, unknown> {
     const parent = Array.isArray(anchor.data.sys_parent) ? (anchor.data.sys_parent as string[]) : [];
-    return { ...(parent.length ? { sys_parent: parent.slice(0, 1) } : {}), ...groupData(groupKey, anchor) };
+    return parent.length ? { sys_parent: parent.slice(0, 1) } : groupData(groupKey, anchor);
   }
   const colIndex = new Map(visibleFields.map((field, index) => [field.id, index]));
 
@@ -621,15 +617,29 @@ export function GridView(props: GridViewProps) {
           next.delete(parentId);
           return next;
         });
-        const row = rowIndex.get(parentId);
-        const parent = row === undefined ? undefined : displayRows[row];
-        props.onAddRecord({ ...groupData(row === undefined ? undefined : displayGroupKeys[row], parent), sys_parent: [parentId] });
+        // Sub-tasks are always shown right under their parent (grouping follows the parent), so they
+        // need no group value of their own.
+        props.onAddRecord({ sys_parent: [parentId] });
       },
     },
     groupData,
   };
 
   const canPaste = visibleFields.some(isGridFieldPasteable);
+
+  const { focusRecordId, onFocused } = props;
+  const focusVisible = !!focusRecordId && rowIndex.has(focusRecordId);
+  useEffect(() => {
+    if (!focusRecordId || !focusVisible) return;
+    const row = containerRef.current?.querySelector(`[data-record-id="${focusRecordId}"]`);
+    const input = row?.querySelector<HTMLInputElement | HTMLTextAreaElement>('[data-field-id="sys_title"] input, [data-field-id="sys_title"] textarea');
+    row?.scrollIntoView({ block: "center" });
+    if (input) {
+      input.focus();
+      input.select();
+    }
+    onFocused?.();
+  }, [focusRecordId, focusVisible, onFocused]);
 
   /** Tasks a move / duplicate acts on: the ticked rows, else the rows of the current selection. */
   function transferIds(): string[] {
@@ -894,6 +904,7 @@ function Row({
     <div
       role="row"
       ref={setNodeRef}
+      data-record-id={record.id}
       aria-selected={activeRow || undefined}
       style={{ transform: CSS.Transform.toString(transform), transition, backgroundColor: rowStyle.rowColor ? `${rowStyle.rowColor}18` : undefined }}
       className={cn("flex group/row hover:bg-neutral-50 dark:hover:bg-neutral-900/60", isDragging && "opacity-50 z-40 relative", (selected || activeRow) && "bg-indigo-50/50 dark:bg-indigo-950/20")}
@@ -948,13 +959,25 @@ function Row({
           >
             <div className={cn("flex", autoFit ? "items-start" : "h-full items-center")}>
               {field.isPrimary && interactions.tree.indent && (
-                // One indent step per parent level, then the expand / collapse chevron (or its empty slot).
-                <span className={cn("flex shrink-0 items-center", autoFit && "mt-2")} style={{ paddingLeft: depth * 18 }} data-depth={depth}>
+                // One step per parent level with tree guide lines (├─) so sub-tasks read clearly as children,
+                // then the expand / collapse chevron (or its empty slot).
+                <span className={cn("relative flex shrink-0 self-stretch items-center", autoFit && "pt-2 items-start")} style={{ paddingLeft: depth * TREE_STEP }} data-depth={depth}>
+                  {Array.from({ length: depth }, (_, level) => (
+                    <span
+                      key={level}
+                      aria-hidden
+                      className={cn("pointer-events-none absolute top-0 bottom-0 border-l", level === depth - 1 ? "border-indigo-300 dark:border-indigo-700" : "border-neutral-200 dark:border-neutral-700")}
+                      style={{ left: level * TREE_STEP + TREE_STEP / 2 }}
+                    />
+                  ))}
+                  {depth > 0 ? (
+                    <span aria-hidden className="pointer-events-none absolute border-t border-indigo-300 dark:border-indigo-700" style={{ left: (depth - 1) * TREE_STEP + TREE_STEP / 2, width: TREE_STEP / 2 + 2, top: autoFit ? 18 : "50%" }} data-testid="subtask-connector" />
+                  ) : null}
                   {childCount > 0 ? (
                     <button
                       type="button"
                       onClick={() => interactions.tree.toggle(record.id)}
-                      className="flex h-5 w-5 items-center justify-center rounded text-neutral-500 hover:bg-neutral-200/70 dark:hover:bg-neutral-700"
+                      className="relative flex h-5 w-5 items-center justify-center rounded text-indigo-600 hover:bg-indigo-100/70 dark:text-indigo-300 dark:hover:bg-indigo-900/60"
                       aria-label={t(interactions.tree.collapsed.has(record.id) ? "grid.expandSubtasks" : "grid.collapseSubtasks", { n: childCount })}
                       aria-expanded={!interactions.tree.collapsed.has(record.id)}
                       data-testid="subtask-toggle"
@@ -964,7 +987,11 @@ function Row({
                   ) : (
                     <span className="w-5" />
                   )}
-                  {childCount > 0 && interactions.tree.collapsed.has(record.id) ? <span className="text-[10px] text-neutral-400 tabular-nums">{childCount}</span> : null}
+                  {childCount > 0 ? (
+                    <span className="ml-0.5 rounded-full bg-indigo-50 px-1.5 text-[10px] font-medium leading-4 text-indigo-700 tabular-nums dark:bg-indigo-950 dark:text-indigo-300" title={t("grid.subtaskCount", { n: childCount })} data-testid="subtask-count">
+                      {childCount}
+                    </span>
+                  ) : null}
                 </span>
               )}
               {field.isPrimary && (
@@ -987,7 +1014,7 @@ function Row({
                   <ListTree size={13} />
                 </button>
               )}
-              <div className={cn("flex-1 overflow-hidden", autoFit ? "" : "h-full")}>
+              <div className={cn("flex-1 overflow-hidden", autoFit ? "" : "h-full", field.isPrimary && childCount > 0 && "[&_input]:font-semibold [&_textarea]:font-semibold", field.isPrimary && depth > 0 && "[&_input]:text-neutral-700 [&_textarea]:text-neutral-700 dark:[&_input]:text-neutral-300 dark:[&_textarea]:text-neutral-300")}>
                 <Cell
                   field={field}
                   value={value}

@@ -1,6 +1,6 @@
 "use client";
 import { createContext, forwardRef, useContext } from "react";
-import { Search, ListFilter, ArrowUpDown, Group as GroupIcon, EyeOff, Paintbrush, Rows3, Trash2, X, Download, Copy, WrapText, ArrowRightLeft, CopyPlus } from "lucide-react";
+import { Search, ListFilter, ArrowUpDown, Group as GroupIcon, EyeOff, Paintbrush, Rows3, Trash2, X, Download, Copy, WrapText, ArrowRightLeft, CopyPlus, Plus } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/misc";
@@ -32,7 +32,10 @@ export function ViewToolbar({
   viewType = "grid",
   extra,
   inline,
+  onNewTask,
 }: {
+  /** "+ New task" at the start of the toolbar (table view): adds a task at the top and focuses its name. */
+  onNewTask?: () => void;
   /** Render only the controls (no own row), with icon-only buttons below xl - for a one-row header. */
   inline?: boolean;
   /** View-specific controls (e.g. gallery card settings) kept on the same row. */
@@ -90,6 +93,16 @@ export function ViewToolbar({
   return (
     <CompactContext.Provider value={!!inline}>
     <div className={inline ? "flex items-center gap-1" : "flex items-center gap-1.5 px-3 h-10 border-b border-neutral-200 dark:border-neutral-800 shrink-0 overflow-x-auto thin-scroll"}>
+      {onNewTask ? (
+        <button
+          type="button"
+          onClick={onNewTask}
+          className="mr-1 inline-flex h-7 shrink-0 items-center gap-1 rounded-md bg-indigo-600 px-2.5 text-xs font-medium text-white hover:bg-indigo-700"
+          data-testid="toolbar-new-task"
+        >
+          <Plus size={13} /> {t("tb.newTask")}
+        </button>
+      ) : null}
       <ToolbarPopover icon={<ListFilter size={13} />} label={t("tb.filter")} count={filterCount}>
         <FilterPanel
           fields={fields}

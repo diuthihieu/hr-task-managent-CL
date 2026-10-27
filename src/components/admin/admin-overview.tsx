@@ -16,8 +16,11 @@ interface Overview {
   tasks: { total: number; new30: number };
   storageBytes: number;
   aiQuestions30: number;
-  weekly: { week: string; signups: number; workspaces: number; activeUsers: number }[];
-  workspaceRows: { id: string; name: string; ownerName: string | null; ownerEmail: string | null; createdAt: string; members: number; projects: number; tasks: number; storageBytes: number; lastActivityAt: string | null }[];
+  ai: { requests30: number; tokensIn30: number; tokensOut30: number; requestsAll: number; tokensAll: number };
+  aiFeatures: { feature: string; requests: number; tokens: number }[];
+  weekly: { week: string; signups: number; workspaces: number; activeUsers: number; aiTokens: number }[];
+  workspaceRows: { id: string; name: string; ownerName: string | null; ownerEmail: string | null; createdAt: string; members: number; projects: number; tasks: number; storageBytes: number; lastActivityAt: string | null; aiRequests30: number; aiTokens30: number; aiTokensAll: number }[];
+  userRows: { id: string; name: string; email: string; workspaces: number; aiRequests30: number; aiTokens30: number; aiTokensAll: number; storageBytes: number; lastAiAt: string | null }[];
 }
 
 const fmt = (n: number) => n.toLocaleString("vi-VN");
@@ -42,6 +45,7 @@ export function AdminOverview() {
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [userQuery, setUserQuery] = useState("");
 
   async function load() {
     setLoading(true);
@@ -64,6 +68,11 @@ export function AdminOverview() {
     const list = data?.workspaceRows ?? [];
     return q ? list.filter((r) => `${r.name} ${r.ownerName ?? ""} ${r.ownerEmail ?? ""}`.toLowerCase().includes(q)) : list;
   }, [data, query]);
+  const people = useMemo(() => {
+    const q = userQuery.trim().toLowerCase();
+    const list = data?.userRows ?? [];
+    return q ? list.filter((r) => `${r.name} ${r.email}`.toLowerCase().includes(q)) : list;
+  }, [data, userQuery]);
 
   function exportCsv() {
     if (!data) return;
@@ -72,11 +81,17 @@ export function AdminOverview() {
       return /[",\n;]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const lines = [
-      [t("ao.csvWorkspace"), t("ao.owner"), t("ao.ownerEmail"), t("ao.created"), t("ao.members"), t("ao.projects"), t("ao.tasks"), t("ao.storageMb"), t("ao.lastActivity")].map(esc).join(","),
-      ...data.workspaceRows.map((r) => [r.name, r.ownerName, r.ownerEmail, r.createdAt.slice(0, 10), r.members, r.projects, r.tasks, (r.storageBytes / 1048576).toFixed(2), r.lastActivityAt?.slice(0, 10) ?? ""].map(esc).join(",")),
+      [t("ao.csvWorkspace"), t("ao.owner"), t("ao.ownerEmail"), t("ao.created"), t("ao.members"), t("ao.projects"), t("ao.tasks"), t("ao.storageMb"), t("ao.lastActivity"), t("ao.aiReq30"), t("ao.aiTok30"), t("ao.aiTokAll")].map(esc).join(","),
+      ...data.workspaceRows.map((r) => [r.name, r.ownerName, r.ownerEmail, r.createdAt.slice(0, 10), r.members, r.projects, r.tasks, (r.storageBytes / 1048576).toFixed(2), r.lastActivityAt?.slice(0, 10) ?? "", r.aiRequests30, r.aiTokens30, r.aiTokensAll].map(esc).join(",")),
       "",
-      [t("ao.csvWeek"), t("ao.signups"), t("ao.newWorkspaces"), t("ao.activeUsers")].map(esc).join(","),
-      ...data.weekly.map((w) => [w.week, w.signups, w.workspaces, w.activeUsers].join(",")),
+      [t("ao.user"), t("ao.email"), t("ao.workspaces"), t("ao.aiReq30"), t("ao.aiTok30"), t("ao.aiTokAll"), t("ao.storageMb"), t("ao.lastAi")].map(esc).join(","),
+      ...data.userRows.map((r) => [r.name, r.email, r.workspaces, r.aiRequests30, r.aiTokens30, r.aiTokensAll, (r.storageBytes / 1048576).toFixed(2), r.lastAiAt?.slice(0, 10) ?? ""].map(esc).join(",")),
+      "",
+      [t("ao.feature"), t("ao.aiReq30"), t("ao.aiTok30")].map(esc).join(","),
+      ...data.aiFeatures.map((f) => [f.feature, f.requests, f.tokens].map(esc).join(",")),
+      "",
+      [t("ao.csvWeek"), t("ao.signups"), t("ao.newWorkspaces"), t("ao.activeUsers"), t("ao.aiTokens")].map(esc).join(","),
+      ...data.weekly.map((w) => [w.week, w.signups, w.workspaces, w.activeUsers, w.aiTokens].join(",")),
     ];
     // BOM so Excel opens Vietnamese text correctly.
     const blob = new Blob(["﻿" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
@@ -113,13 +128,14 @@ export function AdminOverview() {
         <Tile icon={FolderKanban} label={t("ao.projects")} value={data.projects.total} />
         <Tile icon={ListChecks} label={t("ao.tasks")} value={data.tasks.total} sub={t("ao.tasksSub", { n: fmt(data.tasks.new30) })} />
         <Tile icon={HardDrive} label={t("ao.storage")} text={bytes(data.storageBytes)} />
-        <Tile icon={Sparkles} label={t("ao.ai30")} value={data.aiQuestions30} />
+        <Tile icon={Sparkles} label={t("ao.aiTokens30")} value={data.ai.tokensIn30 + data.ai.tokensOut30} sub={t("ao.aiSub", { req: fmt(data.ai.requests30), tin: fmt(data.ai.tokensIn30), tout: fmt(data.ai.tokensOut30), all: fmt(data.ai.tokensAll) })} testId="ao-ai" />
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
         <WeeklyBars title={t("ao.signups")} points={data.weekly.map((w) => ({ week: w.week, value: w.signups }))} />
         <WeeklyBars title={t("ao.newWorkspaces")} points={data.weekly.map((w) => ({ week: w.week, value: w.workspaces }))} />
         <WeeklyBars title={t("ao.activeUsers")} points={data.weekly.map((w) => ({ week: w.week, value: w.activeUsers }))} />
+        <WeeklyBars title={t("ao.aiTokens")} points={data.weekly.map((w) => ({ week: w.week, value: w.aiTokens }))} />
       </div>
 
       <section className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
@@ -138,6 +154,8 @@ export function AdminOverview() {
                 <th className="text-right font-medium px-3 py-2">{t("ao.projects")}</th>
                 <th className="text-right font-medium px-3 py-2">{t("ao.tasks")}</th>
                 <th className="text-right font-medium px-3 py-2">{t("ao.storage")}</th>
+                <th className="text-right font-medium px-3 py-2">{t("ao.aiTok30")}</th>
+                <th className="text-right font-medium px-3 py-2">{t("ao.aiTokAll")}</th>
                 <th className="text-left font-medium px-3 py-2">{t("ao.created")}</th>
                 <th className="text-left font-medium px-3 py-2">{t("ao.lastActivity")}</th>
               </tr>
@@ -156,6 +174,11 @@ export function AdminOverview() {
                     <td className="px-3 py-2 text-right tabular-nums">{fmt(r.projects)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{fmt(r.tasks)}</td>
                     <td className="px-3 py-2 text-right tabular-nums">{bytes(r.storageBytes)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums" data-testid="ao-ws-ai30">
+                      {fmt(r.aiTokens30)}
+                      <div className="text-[11px] text-neutral-400">{t("ao.reqN", { n: fmt(r.aiRequests30) })}</div>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt(r.aiTokensAll)}</td>
                     <td className="px-3 py-2 text-neutral-600 dark:text-neutral-400">{dmy(r.createdAt)}</td>
                     <td className="px-3 py-2">
                       <span className="text-neutral-700 dark:text-neutral-300">{dmy(r.lastActivityAt)}</span>
@@ -168,7 +191,83 @@ export function AdminOverview() {
               })}
               {!rows.length && (
                 <tr>
-                  <td colSpan={8} className="px-3 py-8 text-center text-neutral-400">{t("ao.noMatch")}</td>
+                  <td colSpan={10} className="px-3 py-8 text-center text-neutral-400">{t("ao.noMatch")}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900" data-testid="ao-users-table">
+        <div className="flex flex-wrap items-center gap-2 p-3 border-b border-neutral-200 dark:border-neutral-800">
+          <h2 className="font-medium text-neutral-900 dark:text-neutral-100">{t("ao.userTable", { n: fmt(data.userRows.length) })}</h2>
+          <span className="text-xs text-neutral-500">{t("ao.userPrivacy")}</span>
+          <Input value={userQuery} onChange={(e) => setUserQuery(e.target.value)} placeholder={t("ao.searchUser")} className="ml-auto h-8 w-60" />
+        </div>
+        <div className="overflow-x-auto max-h-[480px] overflow-y-auto thin-scroll">
+          <table className="w-full text-sm">
+            <thead className="sticky top-0 text-xs text-neutral-500 bg-neutral-50 dark:bg-neutral-800">
+              <tr>
+                <th className="text-left font-medium px-3 py-2">{t("ao.user")}</th>
+                <th className="text-right font-medium px-3 py-2">{t("ao.workspaces")}</th>
+                <th className="text-right font-medium px-3 py-2">{t("ao.aiReq30")}</th>
+                <th className="text-right font-medium px-3 py-2">{t("ao.aiTok30")}</th>
+                <th className="text-right font-medium px-3 py-2">{t("ao.aiTokAll")}</th>
+                <th className="text-right font-medium px-3 py-2">{t("ao.storage")}</th>
+                <th className="text-left font-medium px-3 py-2">{t("ao.lastAi")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {people.map((r) => (
+                <tr key={r.id} className="border-t border-neutral-100 dark:border-neutral-800">
+                  <td className="px-3 py-2">
+                    <div className="text-neutral-900 dark:text-neutral-100">{r.name}</div>
+                    <div className="text-xs text-neutral-500">{r.email}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt(r.workspaces)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt(r.aiRequests30)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-medium">{fmt(r.aiTokens30)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt(r.aiTokensAll)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{bytes(r.storageBytes)}</td>
+                  <td className="px-3 py-2 text-neutral-600 dark:text-neutral-400">{dmy(r.lastAiAt)}</td>
+                </tr>
+              ))}
+              {!people.length && (
+                <tr>
+                  <td colSpan={7} className="px-3 py-8 text-center text-neutral-400">{t("ao.noMatch")}</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="rounded-lg border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900" data-testid="ao-features">
+        <div className="p-3 border-b border-neutral-200 dark:border-neutral-800">
+          <h2 className="font-medium text-neutral-900 dark:text-neutral-100">{t("ao.featureTable")}</h2>
+          <p className="text-xs text-neutral-500">{t("ao.featureHint")}</p>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="text-xs text-neutral-500 bg-neutral-50 dark:bg-neutral-800/40">
+              <tr>
+                <th className="text-left font-medium px-3 py-2">{t("ao.feature")}</th>
+                <th className="text-right font-medium px-3 py-2">{t("ao.aiReq30")}</th>
+                <th className="text-right font-medium px-3 py-2">{t("ao.aiTok30")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.aiFeatures.map((f) => (
+                <tr key={f.feature} className="border-t border-neutral-100 dark:border-neutral-800">
+                  <td className="px-3 py-2 font-mono text-xs text-neutral-700 dark:text-neutral-300">{f.feature}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt(f.requests)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{fmt(f.tokens)}</td>
+                </tr>
+              ))}
+              {!data.aiFeatures.length && (
+                <tr>
+                  <td colSpan={3} className="px-3 py-6 text-center text-neutral-400">{t("ao.noAi")}</td>
                 </tr>
               )}
             </tbody>

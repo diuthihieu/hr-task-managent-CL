@@ -14,6 +14,7 @@ import { MentionInput } from "@/components/comments/mention-input";
 import { TaskCommentThread, type TaskCommentItem } from "@/components/comments/task-comment-thread";
 import { CommentTaskSuggestion } from "@/components/comments/comment-task-suggestion";
 import { TaskHierarchy } from "@/components/tasks/task-hierarchy";
+import { uploadCommentImage } from "@/lib/comment-image-upload";
 import { formatDate, cn } from "@/lib/utils";
 import type { ActivityRow, AttachmentRow, FieldRow, RecordRow } from "@/types";
 import { Meta } from "@/components/ui/meta";
@@ -46,7 +47,13 @@ export function RecordDrawer({
   canCreate = false,
   onOpenTask,
   onAddSubtask,
+  onUpdateTask,
+  onOpenFull,
 }: {
+  /** Saves fields of a sub-task edited in the Sub-tasks list / its quick view. */
+  onUpdateTask?: (id: string, patch: Record<string, unknown>) => void;
+  /** Opens a task in the full page view. */
+  onOpenFull?: (id: string) => void;
   /** Tasks of the project, for the "Parent task" / "Sub-tasks" section (hidden without them). */
   tasks?: RecordRow[];
   canCreate?: boolean;
@@ -142,11 +149,11 @@ export function RecordDrawer({
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="flex-1 bg-black/30" onClick={onClose} />
       <div className="w-full max-w-lg h-full bg-white dark:bg-neutral-900 shadow-2xl flex flex-col animate-in" role="dialog" aria-label="Task details">
-        <div className="flex items-center justify-between px-4 h-12 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
-          <span className="font-medium text-neutral-900 dark:text-neutral-100 truncate">
+        <div className="flex items-start justify-between gap-2 px-4 py-3 min-h-12 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+          <span className="font-medium text-neutral-900 dark:text-neutral-100 break-words min-w-0 leading-snug" data-testid="drawer-title">
             {primary ? (getCellValue(record, primary, fields) as string) || "Untitled task" : "Task"}
           </span>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             {pageHref && (
               <Link href={pageHref} className="p-1.5 rounded-md text-neutral-400 hover:text-indigo-600 hover:bg-neutral-100 dark:hover:bg-neutral-800" title={t("record.openAsPage")} aria-label={t("record.openAsPage")} data-testid="drawer-open-page">
                 <Maximize2 size={15} />
@@ -195,6 +202,8 @@ export function RecordDrawer({
                     canEdit={canEdit}
                     canCreate={canCreate}
                     onOpen={onOpenTask}
+                    onOpenFull={onOpenFull}
+                    onUpdateTask={onUpdateTask}
                     onSetParent={(parentId) => onChange("sys_parent", parentId ? [parentId] : [])}
                     onAddSubtask={onAddSubtask}
                   />
@@ -310,7 +319,7 @@ export function RecordDrawer({
               </div>
             ) : null}
             <div className="flex gap-2">
-              <MentionInput taskId={record.id} formatting rows={1} autoGrow value={draft} onChange={setDraft} onSubmit={postComment} placeholder={t("record.commentPlaceholder")} testId="drawer-comment-input" />
+              <MentionInput taskId={record.id} formatting rows={1} autoGrow onUploadImage={(file) => uploadCommentImage(record.id, file)} value={draft} onChange={setDraft} onSubmit={postComment} placeholder={t("record.commentPlaceholder")} testId="drawer-comment-input" />
               <Button size="icon" onClick={postComment} aria-label={t("record.send")}>
                 <Send size={13} />
               </Button>

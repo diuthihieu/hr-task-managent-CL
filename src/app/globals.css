@@ -158,6 +158,37 @@ body {
   border: 1px solid var(--color-neutral-300);
   padding: 0.35em 0.6em;
   vertical-align: top;
+  position: relative;
+  overflow-wrap: break-word;
+}
+/* Resizable table columns (editor): wide tables scroll sideways; drag a column's right edge. */
+.rich-content .tableWrapper {
+  overflow-x: auto;
+  margin: 0.75em 0;
+}
+.rich-content .tableWrapper table {
+  margin: 0;
+}
+.rich-content .column-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -2px;
+  bottom: -1px;
+  width: 4px;
+  background: var(--color-indigo-400);
+  pointer-events: none;
+  z-index: 2;
+}
+.rich-content.resize-cursor,
+.ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+.rich-content .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--color-indigo-400) 15%, transparent);
+  pointer-events: none;
 }
 .dark .rich-content th,
 .dark .rich-content td {
@@ -192,6 +223,23 @@ body {
   height: 0;
   color: var(--color-neutral-400);
   pointer-events: none;
+}
+/* Images in comments: fit the column, keep a readable size, open full size on click. */
+.comment-editor-content img,
+.comment-rich-content img {
+  display: block;
+  max-width: min(100%, 420px);
+  max-height: 320px;
+  height: auto;
+  object-fit: contain;
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-neutral-200);
+}
+.comment-rich-content img {
+  cursor: zoom-in;
+}
+.comment-editor-content img.ProseMirror-selectednode {
+  outline: 2px solid var(--color-indigo-400);
 }
 .comment-editor-content > * + *,
 .comment-rich-content > * + * {

@@ -22,6 +22,9 @@ import { ExportDialog } from "./export-dialog";
 import type { LinkTarget, Member } from "@/components/grid/cell";
 import { applyFilters, applySorts, applyGroup, getCellValue, type ViewConfig, type FilterCondition } from "@/lib/query-engine";
 import { parseFieldConfig, getFieldType, CUSTOM_FIELD_TYPE_IDS } from "@/lib/field-types";
+import { groupFieldPatch } from "@/lib/grid-group";
+import { orderVisibleFields } from "@/lib/grid-columns";
+import { NewTaskDialog } from "@/components/tasks/new-task-dialog";
 import { EisenhowerView } from "@/components/eisenhower/eisenhower-view";
 import { ReportView } from "@/components/report/report-view";
 import { ProjectHeader } from "@/components/projects/project-tabs";
@@ -58,6 +61,10 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
   const [search, setSearch] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [openRecordId, setOpenRecordId] = useState<string | null>(searchParams.get("record"));
+  /** A task just added from the toolbar: the grid focuses its name cell once it is on screen. */
+  const [focusTaskId, setFocusTaskId] = useState<string | null>(null);
+  /** The toolbar's "+ New task" form (null = closed). */
+  const [newTask, setNewTask] = useState<{ initialData: Record<string, unknown> } | null>(null);
   const [fieldDialog, setFieldDialog] = useState<{ open: boolean; field: FieldRow | null; insertAfterOrder?: number }>({ open: false, field: null });
   const [exportOpen, setExportOpen] = useState(false);
   const [okrOptions, setOkrOptions] = useState<OkrOptions>({ objectives: [], keyResults: [] });
@@ -254,8 +261,11 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
   }
 
   /** Grid "Insert rows": new tasks right above / below a task, in its group and at its level. */
-  async function handleInsertRows(anchorId: string, position: "above" | "below", count: number, data: Record<string, unknown>) {
-    if (!caps.has("task.create")) return void toast.info(t("pp.noCreate"));
+  async function handleInsertRows(anchorId: string, position: "above" | "below", count: number, data: Record<string, unknown>, quiet = false): Promise<RecordRow[]> {
+    if (!caps.has("task.create")) {
+      toast.info(t("pp.noCreate"));
+      return [];
+    }
     try {
       const { records: created } = await api.post<{ records: RecordRow[] }>(`/api/projects/${projectId}/tasks/insert`, { anchorId, position, count, data });
       setRecords((prev) => {
@@ -272,11 +282,51 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         const index = position === "above" ? at : at + 1;
         return [...moved.slice(0, index), ...created, ...moved.slice(index)];
       });
-      toast.success(t("grid.inserted", { n: created.length }));
+      if (!quiet) toast.success(t("grid.inserted", { n: created.length }));
+      return created;
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
       load();
+      return [];
     }
+  }
+
+  /** Where a task from the toolbar's "+ New task" goes: above the first top-level task the view shows (first group when grouped). */
+  function newTaskSlot() {
+    const firstGroup = groups?.[0];
+    const pool = firstGroup ? firstGroup.records : sorted;
+    const anchor = pool.find((r) => !((r.data.sys_parent as string[] | undefined) ?? []).length);
+    const groupField = firstGroup && config.group?.fieldId ? fields.find((f) => f.id === config.group?.fieldId) : undefined;
+    const data = groupField && firstGroup && anchor ? (groupFieldPatch(groupField, firstGroup.key, getCellValue(anchor, groupField, fields)) ?? {}) : {};
+    return { anchor, data };
+  }
+
+  /** Toolbar "+ New task": opens the form with the table's columns (pre-filled with the first group's value). */
+  function openNewTask() {
+    if (!caps.has("task.create")) return void toast.info(t("pp.noCreate"));
+    setNewTask({ initialData: newTaskSlot().data });
+  }
+
+  /** Saves the form: the task goes to the top of the view, then the grid scrolls to it. */
+  async function submitNewTask(data: Record<string, unknown>): Promise<boolean> {
+    const { anchor } = newTaskSlot();
+    if (!anchor) {
+      try {
+        const record = await api.post<RecordRow>(`/api/projects/${projectId}/tasks`, { data });
+        setRecords((prev) => [...prev, record]);
+        setFocusTaskId(record.id);
+        toast.success(t("ntd.added"));
+        return true;
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : t("common.failed"));
+        return false;
+      }
+    }
+    const [created] = await handleInsertRows(anchor.id, "above", 1, data, true);
+    if (!created) return false;
+    setFocusTaskId(created.id);
+    toast.success(t("ntd.added"));
+    return true;
   }
 
   /** Grid "Delete rows" (the grid already asked for confirmation). Sub-tasks of deleted tasks stay. */
@@ -596,6 +646,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
 
       {activeView?.type !== "form" && activeView?.type !== "gallery" && (
         <ViewToolbar
+          onNewTask={(activeView?.type ?? "grid") === "grid" && caps.has("task.create") ? openNewTask : undefined}
           fields={fields}
           config={config}
           members={members}
@@ -708,7 +759,9 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onBulkChange={handleBulkChange}
           onTransferTasks={(ids, mode) => setTransfer({ mode, ids })}
           onAddRecord={handleAddRecord}
-          onInsertRows={caps.has("task.create") ? handleInsertRows : undefined}
+          onInsertRows={caps.has("task.create") ? async (anchorId, position, count, data) => void (await handleInsertRows(anchorId, position, count, data)) : undefined}
+          focusRecordId={focusTaskId}
+          onFocused={() => setFocusTaskId(null)}
           onDeleteRecords={caps.has("task.delete") ? handleDeleteRecords : undefined}
           groupFieldId={config.group?.fieldId || undefined}
           onOpenRecord={setOpenRecordId}
@@ -738,6 +791,8 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
             if (record.projectId === projectId) setRecords((prev) => (prev.some((r) => r.id === record.id) ? prev : [...prev, record]));
           }}
           tasks={records}
+          onUpdateTask={(id, patch) => void handleCellChangeMultiple(id, patch)}
+          onOpenFull={openPage}
           canCreate={caps.has("task.create")}
           onOpenTask={setOpenRecordId}
           onAddSubtask={async (title) => {
@@ -756,6 +811,20 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           }}
         />
       )}
+
+      {newTask ? (
+        <NewTaskDialog
+          open
+          onOpenChange={(open) => !open && setNewTask(null)}
+          fields={orderVisibleFields(fields, config.columnOrder ?? [], config.hiddenFieldIds ?? [])}
+          allFields={fields}
+          members={members}
+          linkTargets={linkTargets}
+          okrOptions={okrOptions}
+          initialData={newTask.initialData}
+          onSubmit={submitNewTask}
+        />
+      ) : null}
 
       <FieldEditorDialog
         open={fieldDialog.open}

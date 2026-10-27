@@ -5,7 +5,10 @@ import { Node, mergeAttributes, type Editor } from "@tiptap/core";
 import { EditorContent, useEditor } from "@tiptap/react";
 import { StarterKit } from "@tiptap/starter-kit";
 import { Placeholder } from "@tiptap/extension-placeholder";
-import { AtSign, Bold, Code, Italic, Link2, List, ListOrdered, Redo2, Strikethrough, Underline, Undo2 } from "lucide-react";
+import { Image } from "@tiptap/extension-image";
+import { AtSign, Bold, Code, ImagePlus, Italic, Link2, List, ListOrdered, Loader2, Redo2, Strikethrough, Underline, Undo2 } from "lucide-react";
+import { toast } from "@/components/ui/toast";
+import { COMMENT_IMAGE_TYPES } from "@/lib/comment-images";
 import { useT } from "@/components/i18n-provider";
 import { AvatarImg } from "@/components/ui/avatar-img";
 import { api } from "@/lib/api-client";
@@ -78,6 +81,10 @@ function bodyFromEditor(editor: Editor) {
 
 type MentionRange = { from: number; to: number; query: string };
 
+function imageFiles(list: FileList | null | undefined): File[] {
+  return [...(list ?? [])].filter((f) => COMMENT_IMAGE_TYPES.includes(f.type));
+}
+
 export interface RichCommentInputHandle {
   focus: () => void;
 }
@@ -91,8 +98,17 @@ export const RichCommentInput = forwardRef<RichCommentInputHandle, {
   placeholder?: string;
   className?: string;
   testId?: string;
-}>(function RichCommentInput({ peopleUrl, value, onChange, onSubmit, placeholder, className, testId }, ref) {
+  /** Uploads a pasted / dropped / picked image and resolves with its URL; without it, images are off. */
+  onUploadImage?: (file: File) => Promise<string>;
+}>(function RichCommentInput({ peopleUrl, value, onChange, onSubmit, placeholder, className, testId, onUploadImage }, ref) {
   const { t } = useT();
+  const [uploading, setUploading] = useState(0);
+  const uploadRef = useRef(onUploadImage);
+  const insertImagesRef = useRef<(files: File[]) => void>(() => {});
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    uploadRef.current = onUploadImage;
+  }, [onUploadImage]);
   const [people, setPeople] = useState<Person[]>([]);
   const [mentionRange, setMentionRange] = useState<MentionRange | null>(null);
   const [active, setActiveState] = useState(0);
@@ -121,12 +137,28 @@ export const RichCommentInput = forwardRef<RichCommentInputHandle, {
       StarterKit.configure({ heading: false, horizontalRule: false, link: { openOnClick: false, autolink: true, protocols: ["http", "https", "mailto", "tel"] } }),
       Placeholder.configure({ placeholder: placeholder ?? "" }),
       CommentMention,
+      Image.configure({ inline: false, allowBase64: false, HTMLAttributes: { class: "comment-image" } }),
     ],
     content: editorHtmlFromBody(value),
     editorProps: {
       attributes: {
         class: "comment-editor-content focus:outline-none",
         ...(testId ? { "data-testid": testId } : {}),
+      },
+      // Images pasted (e.g. a screenshot with Ctrl+V) or dropped into the box are uploaded and shown inline.
+      handlePaste: (_view, event) => {
+        const files = imageFiles(event.clipboardData?.files);
+        if (!files.length || !uploadRef.current) return false;
+        event.preventDefault();
+        insertImagesRef.current(files);
+        return true;
+      },
+      handleDrop: (_view, event, _slice, moved) => {
+        const files = moved ? [] : imageFiles((event as DragEvent).dataTransfer?.files);
+        if (!files.length || !uploadRef.current) return false;
+        event.preventDefault();
+        insertImagesRef.current(files);
+        return true;
       },
       handleKeyDown: (_view, event) => {
         const matches = matchesRef.current;
@@ -232,6 +264,23 @@ export const RichCommentInput = forwardRef<RichCommentInputHandle, {
     editor.chain().focus().insertContent(previous && !/\s/.test(previous) ? " @" : "@").run();
   }
 
+  async function insertImages(files: File[]) {
+    const upload = uploadRef.current;
+    if (!editor || !upload) return;
+    setUploading((n) => n + files.length);
+    for (const file of files) {
+      try {
+        const src = await upload(file);
+        editor.chain().focus().setImage({ src, alt: file.name }).run();
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : t("common.failed"));
+      } finally {
+        setUploading((n) => n - 1);
+      }
+    }
+  }
+  insertImagesRef.current = (files) => void insertImages(files);
+
   function setLink() {
     if (!editor) return;
     const current = editor.getAttributes("link").href as string | undefined;
@@ -263,7 +312,10 @@ export const RichCommentInput = forwardRef<RichCommentInputHandle, {
 
   return (
     <div className={cn("relative min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:border-neutral-700 dark:bg-neutral-900 dark:focus-within:ring-indigo-950", className)}>
-      <EditorContent editor={editor} />
+      {/* A long comment scrolls inside the box instead of pushing the send button / panel out of view. */}
+      <div className="max-h-[40vh] overflow-y-auto thin-scroll [overflow-wrap:anywhere]" data-testid={testId ? `${testId}-scroll` : undefined}>
+        <EditorContent editor={editor} />
+      </div>
       <div className="flex flex-wrap items-center gap-0.5 border-t border-neutral-200 px-1.5 py-1 dark:border-neutral-800" role="toolbar" aria-label={t("editor.toolbar")} data-testid={testId ? `${testId}-toolbar` : undefined}>
         {toolbarButton(t("fmt.bold"), editor.isActive("bold"), () => editor.chain().focus().toggleBold().run(), <Bold size={15} />)}
         {toolbarButton(t("fmt.italic"), editor.isActive("italic"), () => editor.chain().focus().toggleItalic().run(), <Italic size={15} />)}
@@ -276,6 +328,29 @@ export const RichCommentInput = forwardRef<RichCommentInputHandle, {
         {toolbarButton(t("fmt.link"), editor.isActive("link"), setLink, <Link2 size={15} />)}
         <span className="mx-0.5 h-5 w-px bg-neutral-200 dark:bg-neutral-700" />
         {toolbarButton(t("comment.mention"), false, openMentionPicker, <AtSign size={15} />)}
+        {onUploadImage ? (
+          <>
+            {toolbarButton(t("comment.addImage"), false, () => fileInputRef.current?.click(), <ImagePlus size={15} />)}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept={COMMENT_IMAGE_TYPES.join(",")}
+              multiple
+              className="hidden"
+              onChange={(event) => {
+                const files = imageFiles(event.target.files);
+                event.target.value = "";
+                if (files.length) void insertImages(files);
+              }}
+              data-testid={testId ? `${testId}-image-file` : undefined}
+            />
+          </>
+        ) : null}
+        {uploading > 0 ? (
+          <span className="ml-1 inline-flex items-center gap-1 text-[11px] text-neutral-400" data-testid={testId ? `${testId}-uploading` : undefined}>
+            <Loader2 size={11} className="animate-spin" /> {t("comment.uploadingImage")}
+          </span>
+        ) : null}
         <span className="flex-1" />
         {toolbarButton(t("editor.undo"), false, () => editor.chain().focus().undo().run(), <Undo2 size={15} />)}
         {toolbarButton(t("editor.redo"), false, () => editor.chain().focus().redo().run(), <Redo2 size={15} />)}

@@ -705,6 +705,16 @@ export async function applyTaskPatch(
     }
   }
 
+  if ("startDate" in update || "dueDate" in update || "parentTaskId" in update) {
+    await assertDatesWithinParent(tx, {
+      taskId,
+      start: "startDate" in update ? (update.startDate as Date | null) : before.startDate,
+      due: "dueDate" in update ? (update.dueDate as Date | null) : before.dueDate,
+      parentId: "parentTaskId" in update ? (update.parentTaskId as string | null) : before.parentTaskId,
+      checkChildren: "startDate" in update || "dueDate" in update,
+    });
+  }
+
   if (Object.keys(update).length || opts.isNew) {
     update.updatedById = actorId;
     await tx.task.update({ where: { id: taskId }, data: update });
@@ -714,6 +724,40 @@ export async function applyTaskPatch(
     await tx.task.update({ where: { id: taskId }, data: { updatedById: actorId } });
   }
   return result;
+}
+
+const dmy = (d: Date) => `${String(d.getUTCDate()).padStart(2, "0")}/${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
+const rangeText = (start: Date | null, due: Date | null) => `${start ? dmy(start) : "…"} - ${due ? dmy(due) : "…"}`;
+/** Is [start, due] (open ends allowed) inside [outerStart, outerDue]? */
+function insideRange(start: Date | null, due: Date | null, outerStart: Date | null, outerDue: Date | null) {
+  for (const d of [start, due]) {
+    if (!d) continue;
+    if (outerStart && d < outerStart) return false;
+    if (outerDue && d > outerDue) return false;
+  }
+  return true;
+}
+
+/**
+ * A sub-task's start / due dates must stay inside its parent task's dates; a parent task's dates
+ * cannot shrink so that a sub-task falls outside them.
+ */
+async function assertDatesWithinParent(tx: Tx, o: { taskId: string; start: Date | null; due: Date | null; parentId: string | null; checkChildren: boolean }) {
+  if (o.parentId) {
+    const parent = await tx.task.findFirst({ where: { id: o.parentId, deletedAt: null }, select: { title: true, startDate: true, dueDate: true } });
+    if (parent && !insideRange(o.start, o.due, parent.startDate, parent.dueDate)) {
+      const range = rangeText(parent.startDate, parent.dueDate);
+      throw badRequest(`Ngày của task con phải nằm trong khoảng ngày của task mẹ "${parent.title}" (${range}) · Sub-task dates must stay within the parent task's dates (${range})`);
+    }
+  }
+  if (o.checkChildren && (o.start || o.due)) {
+    const children = await tx.task.findMany({ where: { parentTaskId: o.taskId, deletedAt: null }, select: { title: true, startDate: true, dueDate: true } });
+    const outside = children.filter((c) => !insideRange(c.startDate, c.dueDate, o.start, o.due));
+    if (outside.length) {
+      const first = `"${outside[0].title}" (${rangeText(outside[0].startDate, outside[0].dueDate)})`;
+      throw badRequest(`Ngày mới làm ${outside.length} task con nằm ngoài khoảng ngày của task mẹ, ví dụ ${first} - hãy sửa ngày task con trước · These dates would leave ${outside.length} sub-task(s) outside the parent's dates, e.g. ${first}`);
+    }
+  }
 }
 
 export type RecurrenceRule = { freq: "daily" | "weekly" | "monthly"; interval: number };

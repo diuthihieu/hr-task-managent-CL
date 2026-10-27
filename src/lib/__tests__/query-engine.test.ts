@@ -82,3 +82,17 @@ test("conditional formatting colors row or a single cell", () => {
   assert.equal(getConditionalStyle(records[1], fields, rules, "status").backgroundColor, "green");
   assert.equal(getConditionalStyle(records[1], fields, rules, "name").backgroundColor, undefined);
 });
+
+test("sub-tasks are grouped with their top-most parent in the list, whatever their own value", () => {
+  const rs = [
+    record("p", { name: "Parent", status: "todo" }, 0),
+    record("c", { name: "Child", status: "done", sys_parent: ["p"] }, 1),
+    record("g", { name: "Grandchild", status: "done", sys_parent: ["c"] }, 2),
+    record("o", { name: "Orphan", status: "done", sys_parent: ["missing"] }, 3),
+  ];
+  const groups = applyGroup(rs, fields, { fieldId: "status" })!;
+  assert.deepEqual(groups.map((g) => [g.label, ids(g.records)]), [
+    ["Done", ["o"]],
+    ["To Do", ["p", "c", "g"]],
+  ]);
+});

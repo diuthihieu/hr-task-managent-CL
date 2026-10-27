@@ -60,7 +60,7 @@ function toDateOnly(iso: string | null) {
 
 export function GanttView(props: GanttViewProps) {
   const { t } = useT();
-  const { fields, groups, flatRecords, members, linkTargets, config, onConfigChange, onCellChange, onOpenRecord, onOpenPage } = props;
+  const { fields, groups: allGroups, flatRecords: allRecords, members, linkTargets, config, onConfigChange, onCellChange, onOpenRecord, onOpenPage } = props;
 
   const primaryField = fields.find((f) => f.isPrimary);
   const taskField = fields.find((f) => f.id === config.taskFieldId) ?? primaryField ?? fields[0];
@@ -73,6 +73,33 @@ export function GanttView(props: GanttViewProps) {
   const ownerField = fields.find((f) => f.id === config.ownerFieldId) ?? fields.find((f) => ["person", "people"].includes(f.type));
   const statusField = fields.find((f) => f.id === config.statusFieldId) ?? fields.find((f) => ["status", "single_select"].includes(f.type));
   const dependencyField = fields.find((f) => f.id === config.dependencyFieldId) ?? fields.find((f) => f.type === "link");
+
+  // Quick time filter (on top of the view's own filters): tasks with dates, this month / quarter, overdue.
+  const quick = config.quickFilter ?? "all";
+  const { flatRecords, groups } = useMemo(() => {
+    if (quick === "all") return { flatRecords: allRecords, groups: allGroups };
+    const today = startOfDay(new Date());
+    const doneIds = new Set((statusField ? parseFieldConfig(statusField.config).options ?? [] : []).filter((o) => (o as { category?: string }).category === "done").map((o) => o.id));
+    const [from, to] =
+      quick === "month"
+        ? [new Date(today.getFullYear(), today.getMonth(), 1), new Date(today.getFullYear(), today.getMonth() + 1, 0)]
+        : quick === "quarter"
+          ? [new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1), new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3 + 3, 0)]
+          : [null, null];
+    const keep = (record: RecordRow) => {
+      const start = startField ? toDateOnly(getCellValue(record, startField, fields) as string | null) : null;
+      const end = (endField ? toDateOnly(getCellValue(record, endField, fields) as string | null) : null) ?? start;
+      const first = start ?? end;
+      if (!first || !end) return false;
+      if (quick === "dated") return true;
+      if (quick === "overdue") return end < today && !(statusField && doneIds.has(String(getCellValue(record, statusField, fields) ?? "")));
+      return first <= to! && end >= from!; // overlaps the month / quarter
+    };
+    const flat = allRecords.filter(keep);
+    const kept = new Set(flat.map((r) => r.id));
+    const grouped = allGroups ? allGroups.map((g) => ({ ...g, records: g.records.filter((r) => kept.has(r.id)) })).filter((g) => g.records.length) : null;
+    return { flatRecords: flat, groups: grouped };
+  }, [quick, allRecords, allGroups, startField, endField, statusField, fields]);
 
   const zoom = config.zoom ?? "day";
   const pxPerDay = ZOOM_PX_PER_DAY[zoom];
@@ -316,6 +343,22 @@ export function GanttView(props: GanttViewProps) {
           ))}
         </div>
         <GanttSettings fields={fields} config={config} onChange={onConfigChange} />
+        <div className="flex items-center gap-1 text-xs" role="group" aria-label={t("gt.quick")} data-testid="gantt-quick-filter">
+          <span className="text-neutral-400 hidden sm:inline">{t("gt.quick")}:</span>
+          {(["all", "dated", "month", "quarter", "overdue"] as const).map((q) => (
+            <button
+              key={q}
+              type="button"
+              onClick={() => onConfigChange({ quickFilter: q })}
+              aria-pressed={quick === q}
+              className={cn("rounded-full border px-2 h-6", quick === q ? "border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300" : "border-neutral-200 text-neutral-500 hover:bg-neutral-100 dark:border-neutral-800 dark:hover:bg-neutral-800")}
+              data-testid={`gantt-quick-${q}`}
+            >
+              {t(`gt.quick.${q}`)}
+            </button>
+          ))}
+          {quick !== "all" ? <span className="text-neutral-400">{t("gt.quickCount", { n: flatRecords.length, total: allRecords.length })}</span> : null}
+        </div>
         {missingDates && <span className="text-xs text-amber-600 dark:text-amber-500">{t("gt.missingDates")}</span>}
       </div>
 

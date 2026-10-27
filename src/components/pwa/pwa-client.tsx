@@ -18,17 +18,33 @@ interface PwaState {
 }
 export const usePwa = create<PwaState>((set) => ({ installEvent: null, installed: false, set: (p) => set(p) }));
 
-const APK_KEY = "woli.androidAppVersion";
+/**
+ * Set by the Android app's start address (/android-app?v=1.0.0) to that app's version. Session storage
+ * belongs to the app window only: ordinary Chrome tabs on the same site share local storage and cookies
+ * with the app, but must not be treated as the app.
+ */
+const ANDROID_APP_KEY = "woli.androidApp";
+
+export function rememberAndroidApp(version: string | null) {
+  try {
+    sessionStorage.setItem(ANDROID_APP_KEY, version && /^\d+\.\d+\.\d+/.test(version) ? version : "0.0.0");
+  } catch {}
+}
+
+/** Version of the Android app this window runs in, or null in a browser tab / home-screen app. */
+export function androidAppVersion(): string | null {
+  try {
+    return sessionStorage.getItem(ANDROID_APP_KEY);
+  } catch {
+    return null;
+  }
+}
 
 /** Running as an installed app (home-screen icon or the Android app), not in a browser tab. */
 export function runningAsApp(): boolean {
   if (typeof window === "undefined") return false;
   if (window.matchMedia?.("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true) return true;
-  try {
-    return new URLSearchParams(window.location.search).get("source") === "android" || !!localStorage.getItem(APK_KEY);
-  } catch {
-    return false;
-  }
+  return androidAppVersion() !== null;
 }
 
 const BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID ?? "";
@@ -51,22 +67,16 @@ export function PwaClient() {
   /** A newer Android app (APK) than the installed one, when running inside it. */
   const [apkUpdate, setApkUpdate] = useState<string | null>(null);
 
-  // Inside the Android app the start address carries its version (?source=android&app_version=1.0.0).
-  // The web part updates by itself; the app shell rarely changes, but when a newer APK is published
-  // the user is offered it once per session.
+  // Inside the Android app the web part updates by itself; the app shell rarely changes, but when a
+  // newer APK is published the user is offered it once per session.
   useEffect(() => {
-    let installedApk: string | null = null;
-    try {
-      const q = new URLSearchParams(window.location.search);
-      if (q.get("source") === "android" && q.get("app_version")) localStorage.setItem(APK_KEY, q.get("app_version")!);
-      installedApk = localStorage.getItem(APK_KEY);
-    } catch {}
+    const installedApk = androidAppVersion();
     if (!installedApk) return;
     usePwa.getState().set({ installed: true });
     fetch("/api/desktop/releases/latest?platform=android")
       .then((r) => (r.ok ? r.json() : null))
       .then((latest: { version?: string } | null) => {
-        if (latest?.version && newerVersion(latest.version, installedApk!)) setApkUpdate(latest.version);
+        if (latest?.version && newerVersion(latest.version, installedApk)) setApkUpdate(latest.version);
       })
       .catch(() => {});
   }, []);

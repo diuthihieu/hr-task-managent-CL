@@ -2679,6 +2679,8 @@ test("phone app (PWA): manifest, icons, service worker, offline page and build i
   assert.equal(links[0].target.namespace, "android_app");
   assert.equal(links[0].target.package_name, "vn.woli.app");
   assert.match(links[0].target.sha256_cert_fingerprints[0], /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/);
+  const launch = await fetch(`${BASE}/android-app?v=1.0.0`, { redirect: "manual" });
+  assert.equal(launch.status, 200, "the app's start address is public (it continues to sign-in itself)");
   assert.equal((await get("/api/desktop/releases/latest?platform=android")).status, 404, "no APK yet");
   const apk = await admin.post("/api/desktop/releases", { version: "1.0.0", platform: "android", installerUrl: "https://github.com/diuthihieu/hr-task-managent-CL/releases/download/android-v1.0.0/woli-android-1.0.0.apk", installerFileName: "woli-android-1.0.0.apk", installerSizeBytes: 2_000_000, sha256: "a".repeat(64), minOsVersion: "Android 7.0+" });
   assert.equal(apk.status, 201, JSON.stringify(apk.body));

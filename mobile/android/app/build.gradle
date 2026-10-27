@@ -25,7 +25,7 @@ android {
         versionCode Math.max(appVersionCode, 1)
         versionName appVersion
 
-        def launchUrl = "https://${appHost}/workspaces?source=android&app_version=${appVersion}"
+        def launchUrl = "https://${appHost}/android-app?v=${appVersion}"
         resValue "string", "appName", "woli"
         resValue "string", "launchUrl", launchUrl
         resValue "string", "hostName", appHost

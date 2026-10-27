@@ -224,6 +224,23 @@ body {
   color: var(--color-neutral-400);
   pointer-events: none;
 }
+/* Images in comments: fit the column, keep a readable size, open full size on click. */
+.comment-editor-content img,
+.comment-rich-content img {
+  display: block;
+  max-width: min(100%, 420px);
+  max-height: 320px;
+  height: auto;
+  object-fit: contain;
+  border-radius: 0.375rem;
+  border: 1px solid var(--color-neutral-200);
+}
+.comment-rich-content img {
+  cursor: zoom-in;
+}
+.comment-editor-content img.ProseMirror-selectednode {
+  outline: 2px solid var(--color-indigo-400);
+}
 .comment-editor-content > * + *,
 .comment-rich-content > * + * {
   margin-top: 0.4em;

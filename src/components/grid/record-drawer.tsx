@@ -14,6 +14,7 @@ import { MentionInput } from "@/components/comments/mention-input";
 import { TaskCommentThread, type TaskCommentItem } from "@/components/comments/task-comment-thread";
 import { CommentTaskSuggestion } from "@/components/comments/comment-task-suggestion";
 import { TaskHierarchy } from "@/components/tasks/task-hierarchy";
+import { uploadCommentImage } from "@/lib/comment-image-upload";
 import { formatDate, cn } from "@/lib/utils";
 import type { ActivityRow, AttachmentRow, FieldRow, RecordRow } from "@/types";
 import { Meta } from "@/components/ui/meta";
@@ -310,7 +311,7 @@ export function RecordDrawer({
               </div>
             ) : null}
             <div className="flex gap-2">
-              <MentionInput taskId={record.id} formatting rows={1} autoGrow value={draft} onChange={setDraft} onSubmit={postComment} placeholder={t("record.commentPlaceholder")} testId="drawer-comment-input" />
+              <MentionInput taskId={record.id} formatting rows={1} autoGrow onUploadImage={(file) => uploadCommentImage(record.id, file)} value={draft} onChange={setDraft} onSubmit={postComment} placeholder={t("record.commentPlaceholder")} testId="drawer-comment-input" />
               <Button size="icon" onClick={postComment} aria-label={t("record.send")}>
                 <Send size={13} />
               </Button>

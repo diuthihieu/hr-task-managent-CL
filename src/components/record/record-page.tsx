@@ -19,6 +19,7 @@ import { prependMention, stripMentions } from "@/lib/mentions";
 import { toast } from "@/components/ui/toast";
 import { promptDoneCheck } from "@/components/tasks/done-check-dialog";
 import { TaskHierarchy } from "@/components/tasks/task-hierarchy";
+import { uploadCommentImage } from "@/lib/comment-image-upload";
 import { useT } from "@/components/i18n-provider";
 import { getCellValue } from "@/lib/query-engine";
 import { api } from "@/lib/api-client";
@@ -502,7 +503,7 @@ function CommentBox({ taskId, draft, setDraft, replyTo, clearReply, onSend, test
         </div>
       )}
       <div className="flex gap-2">
-        <MentionInput taskId={taskId} formatting autoGrow value={draft} onChange={setDraft} onSubmit={onSend} placeholder={t("record.commentPlaceholder")} testId={`${testIdPrefix}-input`} />
+        <MentionInput taskId={taskId} formatting autoGrow onUploadImage={(file) => uploadCommentImage(taskId, file)} value={draft} onChange={setDraft} onSubmit={onSend} placeholder={t("record.commentPlaceholder")} testId={`${testIdPrefix}-input`} />
         <Button size="icon" onClick={onSend} aria-label={t("record.send")} data-testid={`${testIdPrefix}-send`}>
           <Send size={13} />
         </Button>

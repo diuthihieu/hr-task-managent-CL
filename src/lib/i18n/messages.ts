@@ -788,6 +788,8 @@ export const MESSAGES = {
   "grid.collapseSubtasks": ["Hide {n} sub-task(s)", "Ẩn {n} task con"],
   "grid.copySelection": ["Copy selection", "Sao chép vùng chọn"],
   "tb.newTask": ["New task", "Task mới"],
+  "comment.addImage": ["Add image (or paste / drop one)", "Thêm ảnh (hoặc dán / kéo thả ảnh)"],
+  "comment.uploadingImage": ["Uploading image…", "Đang tải ảnh…"],
   "ntd.title": ["New task", "Thêm task mới"],
   "ntd.add": ["Add", "Thêm"],
   "ntd.added": ["Task added", "Đã thêm task"],

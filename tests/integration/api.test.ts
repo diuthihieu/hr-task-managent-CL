@@ -2588,6 +2588,45 @@ test("workspace AI reads hours, completed dates, parent tasks, custom fields and
   }
 });
 
+test("comment images: only real images, anyone who may comment can send one, and a comment shows only this task's images", async () => {
+  const RICH = "<!--woli-rich-comment:v1-->";
+  const send = async (who: Client, taskId: string, name: string, bytes: Uint8Array | string, type: string) => {
+    const form = new FormData();
+    form.append("file", new Blob([bytes as BlobPart], { type }), name);
+    const res = await fetch(`${BASE}/api/tasks/${taskId}/comments/images`, { method: "POST", body: form, headers: { cookie: who.cookieHeader() } });
+    return { status: res.status, body: (await res.json().catch(() => null)) as { error?: string } | null };
+  };
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  // Not an image (even when it claims to be one) is refused; outsiders can't reach the task.
+  assert.equal((await send(admin, s.task1, "x.png", "<svg onload=alert(1)>", "image/png")).status, 400);
+  assert.equal((await send(admin, s.task1, "page.html", "<html></html>", "text/html")).status, 400);
+  assert.equal((await send(outsider, s.task1, "a.png", png, "image/png")).status, 404);
+  // A real image from a viewer passes the checks (the test server has no file storage, hence 503).
+  assert.equal((await send(viewer, s.task1, "shot.png", png, "image/png")).status, 503);
+
+  // The comment keeps images of its own task only; other tasks' files and outside URLs are dropped.
+  const mine = await prisma.attachment.create({ data: { workspaceId: s.ws, taskId: s.task1, fileName: "shot.png", contentType: "image/png", sizeBytes: 16, storageKey: `it/${s.task1}/shot.png`, url: "https://blob.invalid/shot.png" } });
+  const other = await prisma.attachment.create({ data: { workspaceId: s.ws, taskId: s.task2, fileName: "other.png", contentType: "image/png", sizeBytes: 16, storageKey: `it/${s.task2}/other.png`, url: "https://blob.invalid/other.png" } });
+  try {
+    const img = (id: string) => `<img src="/api/attachments/${id}/download?inline=1" alt="a">`;
+    const body = `${RICH}<p>Lỗi đây</p>${img(mine.id)}${img(other.id)}<img src="https://evil.example/pixel.gif"><img src="/api/attachments/${mine.id}/download">`;
+    const c = await viewer.post<{ id: string; body: string }>(`/api/tasks/${s.task1}/comments`, { body });
+    assert.equal(c.status, 201, JSON.stringify(c.body));
+    const saved = (await prisma.comment.findUniqueOrThrow({ where: { id: c.body.id } })).body;
+    assert.equal((saved.match(/<img/g) ?? []).length, 1, saved);
+    assert.ok(saved.includes(`/api/attachments/${mine.id}/download?inline=1`) && !saved.includes(other.id) && !saved.includes("evil.example"), saved);
+    // A comment with only an image is fine; one whose only image is not allowed is empty.
+    assert.equal((await viewer.post(`/api/tasks/${s.task1}/comments`, { body: `${RICH}${img(mine.id)}` })).status, 201);
+    assert.equal((await viewer.post(`/api/tasks/${s.task1}/comments`, { body: `${RICH}${img(other.id)}` })).status, 400);
+    // Editing keeps the same rule.
+    const edited = await viewer.patch<{ body: string }>(`/api/comments/${c.body.id}`, { body: `${RICH}<p>Sửa</p>${img(other.id)}${img(mine.id)}` });
+    assert.equal(edited.status, 200);
+    assert.equal((edited.body.body.match(/<img/g) ?? []).length, 1);
+  } finally {
+    await prisma.attachment.deleteMany({ where: { storageKey: { startsWith: "it/" } } });
+  }
+});
+
 test("sub-task dates stay inside the parent task's dates; a parent cannot shrink past its sub-tasks", async () => {
   const A = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Sub-task dates" })).body.id;
   try {

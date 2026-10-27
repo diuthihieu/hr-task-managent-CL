@@ -45,7 +45,9 @@ export const MentionInput = forwardRef<MentionInputHandle, {
   autoGrow?: boolean;
   className?: string;
   testId?: string;
-}>(function MentionInput({ taskId, mentionUrl, formatting, value, onChange, onSubmit, placeholder, rows = 2, autoGrow, className, testId }, ref) {
+  /** Images in the comment (rich editor only): uploads one and resolves with its URL. */
+  onUploadImage?: (file: File) => Promise<string>;
+}>(function MentionInput({ taskId, mentionUrl, formatting, value, onChange, onSubmit, placeholder, rows = 2, autoGrow, className, testId, onUploadImage }, ref) {
   const peopleUrl = mentionUrl ?? (taskId ? `/api/tasks/${taskId}/mentionable` : "");
   const { t } = useT();
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -149,7 +151,7 @@ export const MentionInput = forwardRef<MentionInputHandle, {
   }
 
   if (formatting) {
-    return <RichCommentInput ref={richRef} peopleUrl={peopleUrl} value={value} onChange={onChange} onSubmit={onSubmit} placeholder={placeholder} className={className} testId={testId} />;
+    return <RichCommentInput ref={richRef} peopleUrl={peopleUrl} value={value} onChange={onChange} onSubmit={onSubmit} placeholder={placeholder} className={className} testId={testId} onUploadImage={onUploadImage} />;
   }
 
   return (
@@ -211,7 +213,17 @@ export const MentionInput = forwardRef<MentionInputHandle, {
 /** Renders a comment body with @mentions as highlighted chips (and sanitized Markdown when `markdown`). */
 export function CommentBody({ body, className, markdown }: { body: string; className?: string; markdown?: boolean }) {
   if (isRichComment(body)) {
-    return <div className={cn("comment-rich-content break-words", className)} dangerouslySetInnerHTML={{ __html: richCommentHtml(body) }} />;
+    // An image in a comment opens full size in a new tab when clicked.
+    return (
+      <div
+        className={cn("comment-rich-content break-words", className)}
+        onClick={(event) => {
+          const img = (event.target as HTMLElement).closest("img");
+          if (img?.getAttribute("src")) window.open(img.getAttribute("src")!, "_blank", "noopener");
+        }}
+        dangerouslySetInnerHTML={{ __html: richCommentHtml(body) }}
+      />
+    );
   }
   if (markdown) {
     const esc = (x: string) => x.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);

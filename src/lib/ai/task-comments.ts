@@ -31,7 +31,11 @@ export async function taskCommentsSection(
   const lines: string[] = [];
   let used = 0;
   for (const c of comments) {
-    const text = stripMentions(c.body).replace(/\s+/g, " ").trim();
+    const text = stripMentions(c.body.replace(/<img\b[^>]*>/gi, " [image] "))
+      .replace(/<[^>]+>/g, " ")
+      .replace(/&nbsp;/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
     const clipped = text.length > maxChars ? `${text.slice(0, maxChars)}…` : text;
     const ref = opts.ref ? ` [${opts.ref({ id: c.task.id, projectId: c.task.projectId, title: c.task.title, project: c.task.project.name })}]` : "";
     const line = `- ${day(c.createdAt)} | ${c.author?.name ?? "(deleted user)"} | ${c.task.project.name} › ${c.task.title}${ref}${c.parentCommentId ? " (reply)" : ""}: ${clipped}`;

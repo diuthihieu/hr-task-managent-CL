@@ -21,6 +21,8 @@ export interface NotificationItem {
   link: string | null;
   read: boolean;
   actioned?: boolean;
+  /** Its group is switched off for the app: not in the bell or its badge (still in the Action center). */
+  muted?: boolean;
   snoozedUntil?: string | null;
   taskId?: string | null;
   taskOpen?: boolean;
@@ -53,7 +55,7 @@ export async function fetchInbox() {
 export async function markRead(n: NotificationItem) {
   if (n.read) return;
   const st = useInbox.getState();
-  st.set({ items: st.items.map((x) => (x.id === n.id ? { ...x, read: true } : x)), unread: Math.max(0, st.unread - 1) });
+  st.set({ items: st.items.map((x) => (x.id === n.id ? { ...x, read: true } : x)), unread: isMuted(n, st.settings) ? st.unread : Math.max(0, st.unread - 1) });
   await api.patch(`/api/notifications/${n.id}`, { read: true }).catch(() => {});
 }
 
@@ -63,6 +65,16 @@ export async function markAllRead() {
   await api.post("/api/notifications/read-all").catch(() => {});
 }
 
+/**
+ * A notification whose group the user switched off for the app (Settings -> Notifications -> In-app).
+ * Uses the settings loaded in this tab (so a change applies at once), else the server's flag.
+ */
+export function isMuted(n: NotificationItem, settings?: NotifySettings): boolean {
+  if (!settings) return !!n.muted;
+  const g = notifyGroupOf(n);
+  return !!g && settings.popupOff.includes(g);
+}
+
 /** Notifications that belong to the Recognition area: letters, reward requests/results, "you can redeem" alerts. */
 export function isRecognitionNotification(n: NotificationItem) {
   return n.type === "kudos" || n.type === "kudos_reaction" || n.type === "reward_request" || n.type === "reward_result" || (n.type === "ai_suggestion" && (n.data as { kind?: string } | null)?.kind === "reward_reachable");
@@ -70,7 +82,7 @@ export function isRecognitionNotification(n: NotificationItem) {
 
 /** Unread Recognition notifications for one workspace (sidebar badge). */
 export function RecognitionCount({ workspaceId }: { workspaceId: string }) {
-  const n = useInbox((s) => s.items.filter((x) => !x.read && isRecognitionNotification(x) && (!x.workspaceId || x.workspaceId === workspaceId)).length);
+  const n = useInbox((s) => s.items.filter((x) => !x.read && !isMuted(x, s.settings) && isRecognitionNotification(x) && (!x.workspaceId || x.workspaceId === workspaceId)).length);
   if (!n) return null;
   return <span className="min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-semibold leading-5 text-center" data-testid="nav-recognition-count">{n > 99 ? "99+" : n}</span>;
 }
@@ -242,7 +254,10 @@ export function NotificationBell({ className, align = "start" }: { className?: s
     setPermission(await Notification.requestPermission());
   }
 
-  const shown = filter === "unread" ? items.filter((n) => !n.read) : items;
+  // Groups switched off for the app (Settings -> Notifications) are not in the bell; the Action center keeps them.
+  const settings = useInbox((st) => st.settings);
+  const inBell = items.filter((n) => !isMuted(n, settings));
+  const shown = filter === "unread" ? inBell.filter((n) => !n.read) : inBell;
 
   return (
     <>

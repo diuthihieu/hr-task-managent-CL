@@ -2166,6 +2166,26 @@ test("notification settings: per-group pop-up / device switches and a ringtone, 
   // Notifications carry the actor, so the Action center can show their profile picture.
   const n = await contributor.get<{ items: { actor: { id: string } | null; workspaceId: string | null }[] }>("/api/notifications");
   assert.ok(n.body.items.some((x) => x.actor?.id && x.workspaceId));
+
+  // A group switched off for the app is left out of the bell's unread count (and flagged), but kept.
+  const userId = s.viewerId;
+  const before = await viewer.get<{ unread: number; unreadAll: number }>("/api/notifications");
+  await prisma.notification.createMany({
+    data: [
+      { userId, type: "task_updated", title: "Updated: description", workspaceId: s.ws },
+      { userId, type: "task_status", title: "Status changed", workspaceId: s.ws },
+      { userId, type: "task_comment", title: "New comment", workspaceId: s.ws },
+    ],
+  });
+  type Inbox = { unread: number; unreadAll: number; items: { type: string; muted: boolean }[] };
+  const after = await viewer.get<Inbox>("/api/notifications");
+  assert.equal(after.body.unreadAll, before.body.unreadAll + 3, "all three are kept");
+  assert.equal(after.body.unread, before.body.unread + 1, "only the comment counts: updates are switched off");
+  assert.ok(after.body.items.filter((x) => x.type === "task_updated" || x.type === "task_status").every((x) => x.muted));
+  assert.ok(after.body.items.filter((x) => x.type === "task_comment").every((x) => !x.muted));
+  // Switching updates back on counts them again.
+  await viewer.put("/api/account/notification-settings", { popupOff: [] });
+  assert.equal((await viewer.get<Inbox>("/api/notifications")).body.unread, before.body.unreadAll + 3);
 });
 
 test("invite links and invitations for people without an account: accept, decline, revoke, replace", async () => {

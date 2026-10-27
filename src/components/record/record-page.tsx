@@ -119,6 +119,20 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
     return out;
   }, [siblings, fields, taskId, t]);
 
+  /** A sub-task edited from this page (status, PIC, completed date, quick view): saved and mirrored in the list. */
+  async function updateSubtask(id: string, patch: Record<string, unknown>) {
+    const put = (rec: RecordRow) => setProjectTasks((prev) => prev.map((r) => (r.id === rec.id ? rec : r)));
+    setProjectTasks((prev) => prev.map((r) => (r.id === id ? { ...r, data: { ...r.data, ...patch } } : r)));
+    try {
+      const saved = await api.patch<RecordRow>(`/api/tasks/${id}`, { data: patch });
+      put(saved);
+      promptDoneCheck(saved, put);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+      api.get<RecordRow>(`/api/tasks/${id}`).then(put).catch(() => {});
+    }
+  }
+
   async function change(fieldId: string, value: unknown) {
     if (!record) return;
     setRecord({ ...record, data: { ...record.data, [fieldId]: value } });
@@ -311,6 +325,12 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
               canEdit={canEdit}
               canCreate={(project.myPermissions ?? []).includes("task.create") && (ROLE_RANK[role] ?? -1) >= ROLE_RANK.contributor}
               onOpen={(id) => router.push(`${tasksHref}/t/${id}`)}
+              onOpenFull={(id) => router.push(`${tasksHref}/t/${id}`)}
+              canEditTask={(r) =>
+                (ROLE_RANK[role] ?? -1) >= ROLE_RANK.editor ||
+                (role === "contributor" && (r.createdById === currentUserId || ((r.data.sys_assignees as string[] | undefined) ?? []).includes(currentUserId)))
+              }
+              onUpdateTask={(id, patch) => void updateSubtask(id, patch)}
               onSetParent={(parentId) => void change("sys_parent", parentId ? [parentId] : [])}
               onAddSubtask={async (title) => {
                 try {

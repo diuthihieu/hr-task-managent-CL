@@ -791,6 +791,8 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
             if (record.projectId === projectId) setRecords((prev) => (prev.some((r) => r.id === record.id) ? prev : [...prev, record]));
           }}
           tasks={records}
+          onUpdateTask={(id, patch) => void handleCellChangeMultiple(id, patch)}
+          onOpenFull={openPage}
           canCreate={caps.has("task.create")}
           onOpenTask={setOpenRecordId}
           onAddSubtask={async (title) => {

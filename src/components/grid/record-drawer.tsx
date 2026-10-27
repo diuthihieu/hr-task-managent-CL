@@ -47,7 +47,13 @@ export function RecordDrawer({
   canCreate = false,
   onOpenTask,
   onAddSubtask,
+  onUpdateTask,
+  onOpenFull,
 }: {
+  /** Saves fields of a sub-task edited in the Sub-tasks list / its quick view. */
+  onUpdateTask?: (id: string, patch: Record<string, unknown>) => void;
+  /** Opens a task in the full page view. */
+  onOpenFull?: (id: string) => void;
   /** Tasks of the project, for the "Parent task" / "Sub-tasks" section (hidden without them). */
   tasks?: RecordRow[];
   canCreate?: boolean;
@@ -196,6 +202,8 @@ export function RecordDrawer({
                     canEdit={canEdit}
                     canCreate={canCreate}
                     onOpen={onOpenTask}
+                    onOpenFull={onOpenFull}
+                    onUpdateTask={onUpdateTask}
                     onSetParent={(parentId) => onChange("sys_parent", parentId ? [parentId] : [])}
                     onAddSubtask={onAddSubtask}
                   />

@@ -6,7 +6,9 @@ import { SearchPicker } from "@/components/ui/search-list";
 import { parseFieldConfig } from "@/lib/field-types";
 import { cn } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
-import type { Member } from "@/components/grid/cell";
+import { Cell, type LinkTarget, type Member } from "@/components/grid/cell";
+import { getCellValue } from "@/lib/query-engine";
+import { QuickTaskDialog } from "./quick-task-dialog";
 
 const parentOf = (r: RecordRow) => (Array.isArray(r.data.sys_parent) ? String((r.data.sys_parent as unknown[])[0] ?? "") : "") || null;
 const titleOf = (r: RecordRow, fallback: string) => String(r.data.sys_title ?? "").trim() || fallback;
@@ -31,7 +33,16 @@ export function TaskHierarchy({
   onOpen,
   onSetParent,
   onAddSubtask,
+  onUpdateTask,
+  onOpenFull,
+  canEditTask,
 }: {
+  /** Saves fields of a sub-task (status, PIC, completed date, or anything from the quick view). */
+  onUpdateTask?: (id: string, patch: Record<string, unknown>) => void;
+  /** Opens a task in its full view. */
+  onOpenFull?: (id: string) => void;
+  /** Whether the user may edit this sub-task (the server checks again). Defaults to `canEdit`. */
+  canEditTask?: (task: RecordRow) => boolean;
   task: RecordRow;
   /** Tasks of the task's project (may include the task itself). */
   tasks: RecordRow[];
@@ -49,6 +60,15 @@ export function TaskHierarchy({
   const [draft, setDraft] = useState("");
   const [adding, setAdding] = useState(false);
   const untitled = t("task.untitled");
+  /** The sub-task shown in the quick view. */
+  const [quickId, setQuickId] = useState<string | null>(null);
+  const fieldById = useMemo(() => new Map(fields.map((f) => [f.id, f])), [fields]);
+  // Link columns (Parent task, Depends on) pick from all of the project's tasks, this one included.
+  const linkTargets = useMemo(() => {
+    const target: LinkTarget = { records: tasks.map((r) => ({ id: r.id, label: titleOf(r, untitled) })) };
+    return Object.fromEntries(fields.filter((f) => f.type === "link").map((f) => [f.id, target]));
+  }, [tasks, fields, untitled]);
+  const editable = (r: RecordRow) => !!onUpdateTask && (canEditTask ? canEditTask(r) : canEdit);
   const byId = useMemo(() => new Map(tasks.map((r) => [r.id, r])), [tasks]);
   const statuses = useMemo(() => {
     const field = fields.find((f) => f.id === "sys_status");
@@ -149,21 +169,62 @@ export function TaskHierarchy({
         </h3>
         {children.length ? (
           <ul className="mt-1.5 divide-y divide-neutral-100 rounded-md border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800" data-testid="th-children">
+            {onUpdateTask ? (
+              <li className="hidden items-center gap-x-1.5 bg-neutral-50 px-1.5 py-1 text-[11px] text-neutral-400 dark:bg-neutral-900 sm:flex" aria-hidden>
+                <span className="w-[118px] shrink-0 px-2">{fieldById.get("sys_status")?.name}</span>
+                <span className="flex-1 px-1">{t("th.subtasks")}</span>
+                <span className="w-[150px] shrink-0 px-2">{t("th.pic")}</span>
+                <span className="w-[190px] shrink-0 px-2">{fieldById.get("sys_completed_at")?.name}</span>
+                <span className="w-9 shrink-0">{t("th.due")}</span>
+              </li>
+            ) : null}
             {children.map((c) => {
               const status = statuses.get(String(c.data.sys_status ?? ""));
               const people = ((c.data.sys_assignees as string[] | undefined) ?? []).map((id) => members.find((m) => m.id === id)?.name).filter(Boolean);
               const nested = childCount(c.id);
               const isDone = status?.category === "done";
+              const inline = (fieldId: string, width: string, testId: string) => {
+                const field = fieldById.get(fieldId);
+                if (!field) return null;
+                return (
+                  <div className={cn("h-8 shrink-0 overflow-hidden rounded hover:bg-neutral-100 dark:hover:bg-neutral-800", width)} data-testid={testId} onClick={(e) => e.stopPropagation()}>
+                    <Cell field={field} value={getCellValue(c, field, fields)} record={c} members={members} linkTargets={linkTargets} readOnlyOverride={!editable(c)} onChange={(v) => onUpdateTask?.(c.id, { [fieldId]: v })} />
+                  </div>
+                );
+              };
               return (
-                <li key={c.id} className="flex items-center gap-2 px-2.5 py-1.5 text-sm">
-                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: status?.color ?? "#a3a3a3" }} title={status?.label} />
-                  <button type="button" onClick={() => onOpen(c.id)} className={cn("min-w-0 flex-1 truncate text-left hover:text-indigo-600 hover:underline", isDone && "text-neutral-400 line-through")} data-testid="th-child">
+                <li key={c.id} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 text-sm sm:flex-nowrap">
+                  {onUpdateTask ? (
+                    inline("sys_status", "w-[118px]", "th-child-status")
+                  ) : (
+                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: status?.color ?? "#a3a3a3" }} title={status?.label} />
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => (onUpdateTask ? setQuickId(c.id) : onOpen(c.id))}
+                    className={cn("min-w-0 flex-1 truncate px-1 text-left hover:text-indigo-600 hover:underline", isDone && "text-neutral-400 line-through")}
+                    title={titleOf(c, untitled)}
+                    data-testid="th-child"
+                  >
                     {titleOf(c, untitled)}
                   </button>
                   {nested ? <span className="shrink-0 text-[11px] text-neutral-400">{t("th.nested", { n: nested })}</span> : null}
-                  {status ? <span className="hidden shrink-0 text-[11px] text-neutral-500 sm:inline">{status.label}</span> : null}
-                  {people.length ? <span className="hidden max-w-[140px] shrink-0 truncate text-[11px] text-neutral-500 sm:inline">{people.join(", ")}</span> : null}
-                  {shortDate(c.data.sys_due_date) ? <span className="shrink-0 text-[11px] tabular-nums text-neutral-400">{shortDate(c.data.sys_due_date)}</span> : null}
+                  {onUpdateTask ? (
+                    <>
+                      {inline("sys_assignees", "w-[150px]", "th-child-pic")}
+                      {inline("sys_completed_at", "w-[190px]", "th-child-completed")}
+                    </>
+                  ) : (
+                    <>
+                      {status ? <span className="hidden shrink-0 text-[11px] text-neutral-500 sm:inline">{status.label}</span> : null}
+                      {people.length ? <span className="hidden max-w-[140px] shrink-0 truncate text-[11px] text-neutral-500 sm:inline">{people.join(", ")}</span> : null}
+                    </>
+                  )}
+                  {shortDate(c.data.sys_due_date) ? (
+                    <span className="shrink-0 text-[11px] tabular-nums text-neutral-400" title={t("th.due")}>
+                      {shortDate(c.data.sys_due_date)}
+                    </span>
+                  ) : null}
                 </li>
               );
             })}
@@ -193,6 +254,22 @@ export function TaskHierarchy({
           </div>
         ) : null}
       </section>
+      {quickId && byId.get(quickId) ? (
+        <QuickTaskDialog
+          record={byId.get(quickId)!}
+          fields={fields}
+          members={members}
+          linkTargets={linkTargets}
+          canEdit={editable(byId.get(quickId)!)}
+          onChange={(patch) => onUpdateTask?.(quickId, patch)}
+          onOpenFull={() => {
+            const id = quickId;
+            setQuickId(null);
+            (onOpenFull ?? onOpen)(id);
+          }}
+          onClose={() => setQuickId(null)}
+        />
+      ) : null}
     </div>
   );
 }

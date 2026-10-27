@@ -109,6 +109,22 @@ export function timeSummarySection(
   );
 }
 
+const HOURS_TASK_LIMIT = 50_000;
+
+/**
+ * The per-person monthly hours table over every task matching `where` (the caller's permission filter),
+ * not only the tasks listed in the context - so totals stay right in big workspaces.
+ */
+export async function hoursSection(where: Prisma.TaskWhereInput): Promise<string> {
+  const rows = await prisma.task.findMany({
+    where,
+    select: { estimateMinutes: true, actualMinutes: true, completedAt: true, dueDate: true, startDate: true, status: { select: { category: true } }, assignees: { select: { user: { select: { name: true } } } } },
+    take: HOURS_TASK_LIMIT,
+  });
+  const text = timeSummarySection(rows);
+  return rows.length === HOURS_TASK_LIMIT ? `${text}\n[Note: only the first ${HOURS_TASK_LIMIT} tasks were counted - totals are partial.]` : text;
+}
+
 /** Focus time each person logged on tasks the asker can see, per month (last 12 months). */
 async function focusTimeSection(o: { workspaceId: string; task: Prisma.TaskWhereInput }): Promise<string> {
   const since = new Date(Date.now() - 366 * 86_400_000);
@@ -337,7 +353,7 @@ export async function workspaceData(user: SessionUser, workspaceId: string, role
   const now = new Date();
   // Hours are summed here (not left to the model): per person and month, from the tasks' estimate /
   // actual hours, plus the focus time each person logged themselves.
-  b.add(timeSummarySection(tasks));
+  b.add(await hoursSection({ workspaceId, deletedAt: null, project: { deletedAt: null, ...visible } }));
   b.add(await focusTimeSection({ workspaceId, task: { deletedAt: null, project: { deletedAt: null, ...visible } } }));
   b.add(await taskAttachmentsSection({ workspaceId, deletedAt: null, task: { deletedAt: null, project: { deletedAt: null, ...visible } } }, { maxTotalChars: Math.min(60_000, Math.floor(budget * 0.15)), ref: cite }));
 

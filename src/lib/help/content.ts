@@ -634,7 +634,13 @@ export const HELP_TABS: HelpTab[] = [
       {
         id: "devices",
         title: ["Phone, tablet and desktop app", "Điện thoại, máy tính bảng và ứng dụng máy tính"],
-        body: ["woli works in the browser on phones and tablets (row actions are always visible on touch screens). A Windows desktop app uses the same account and data — download it from the sidebar.", "woli chạy trên trình duyệt của điện thoại và máy tính bảng (nút thao tác trên dòng luôn hiện trên màn hình cảm ứng). Ứng dụng Windows dùng cùng tài khoản và dữ liệu — tải từ thanh bên."],
+        body: ["woli works in the browser on phones and tablets (row actions are always visible on touch screens), and installs as a phone app. A Windows desktop app uses the same account and data — download it from the sidebar.", "woli chạy trên trình duyệt của điện thoại và máy tính bảng (nút thao tác trên dòng luôn hiện trên màn hình cảm ứng), và cài được thành app điện thoại. Ứng dụng Windows dùng cùng tài khoản và dữ liệu — tải từ thanh bên."],
+        steps: [
+          ["Phone app: open woli on the phone (on a computer, press Phone app in the sidebar and scan the QR code). The install window opens by itself on Home.", "App điện thoại: mở woli trên điện thoại (trên máy tính, bấm App điện thoại ở thanh bên rồi quét mã QR). Cửa sổ cài đặt tự hiện ở Trang chủ."],
+          ["Android (Chrome): press Install woli on this phone - or menu ⋮ > Install app.", "Android (Chrome): bấm Cài đặt woli trên điện thoại này - hoặc menu ⋮ > Cài đặt ứng dụng."],
+          ["iPhone / iPad (Safari): Share button > Add to Home Screen > Add.", "iPhone / iPad (Safari): nút Chia sẻ > Thêm vào MH chính > Thêm."],
+          ["The app always runs the latest woli: after an update it reloads by itself the next time you open it (or press Update now).", "App luôn chạy bản woli mới nhất: sau mỗi lần cập nhật, app tự tải lại ở lần mở tiếp theo (hoặc bấm Cập nhật ngay)."],
+        ],
       },
     ],
   },

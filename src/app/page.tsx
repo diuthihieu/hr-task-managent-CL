@@ -6,7 +6,8 @@ import type { Metadata } from "next";
 import { prisma } from "@/lib/prisma";
 import { workspaceLogoUrl } from "@/lib/workspace-logo";
 import { redirect } from "next/navigation";
-import { Monitor, Download, Target, PieChart, Check, ArrowRight, PlayCircle, ClipboardList, BookOpen, Sparkles } from "lucide-react";
+import { Monitor, Download, Target, PieChart, Check, ArrowRight, PlayCircle, ClipboardList, BookOpen, Sparkles, Smartphone } from "lucide-react";
+import { MobileAppButton, MobileAppPrompt } from "@/components/pwa/mobile-app-prompt";
 import { AiSection, GetStarted, WhyWoli } from "@/components/landing/sections";
 import { Brand } from "@/components/brand/brand";
 import { WorkspaceAvatar } from "@/components/workspaces/workspace-avatar";
@@ -225,6 +226,9 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
                   <Download size={18} /> {t("landing.desktop.button")}
                 </a>
               )}
+              <MobileAppButton className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/60 text-white font-semibold px-5 py-3 hover:bg-white/10" testId="landing-mobile-app">
+                <Smartphone size={18} /> {t("mapp.title")}
+              </MobileAppButton>
               <Link href="/download" className="text-center text-sm text-white/85 hover:text-white underline-offset-2 hover:underline">
                 {t("landing.desktop.details")}
               </Link>
@@ -243,6 +247,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
           </div>
         </div>
       </footer>
+      <MobileAppPrompt auto />
     </div>
   );
 }

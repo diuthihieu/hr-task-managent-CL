@@ -14,8 +14,15 @@ const securityHeaders = [
   { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
 ];
 
+/**
+ * Identifies this build. The browser keeps the value it loaded with; /api/version answers with the
+ * deployed one, so the installed phone app (and open tabs) notice a new deploy and reload into it.
+ */
+const BUILD_ID = process.env.VERCEL_GIT_COMMIT_SHA || process.env.BUILD_ID || `local-${Date.now()}`;
+
 const nextConfig: NextConfig = {
   output: "standalone",
+  env: { NEXT_PUBLIC_BUILD_ID: BUILD_ID },
   outputFileTracingIncludes: {
     "/*": ["./node_modules/@fontsource/noto-sans/files/noto-sans-vietnamese-400-normal.woff"],
   },
@@ -23,7 +30,11 @@ const nextConfig: NextConfig = {
   // SMTP needs the real Node net/tls stack; bundling nodemailer breaks the handshake.
   serverExternalPackages: ["nodemailer"],
   async headers() {
-    return [{ source: "/:path*", headers: securityHeaders }];
+    return [
+      { source: "/:path*", headers: securityHeaders },
+      // The service worker must be re-checked on every load so a new one is picked up right away.
+      { source: "/sw.js", headers: [{ key: "Cache-Control", value: "no-cache, no-store, must-revalidate" }] },
+    ];
   },
   // Keep Turbopack inside this repository when a parent directory happens to
   // contain an unrelated lockfile (common on developer workstations).

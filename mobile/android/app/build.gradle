@@ -1,0 +1,64 @@
+// woli for Android: a Trusted Web Activity - the live woli site, full screen, running in Chrome (so
+// Google / Microsoft sign-in work). Every web deploy reaches the app at once; this shell only needs a
+// new release when its icon, name or start address change.
+//
+// Build:   gradle -p mobile/android assembleRelease -PappVersion=1.0.0 -PappHost=woli-work.vercel.app
+// Signing: ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+//          (without them the release build is unsigned; CI then builds a debug APK to check the code).
+plugins {
+    id "com.android.application"
+}
+
+def appVersion = (project.findProperty("appVersion") ?: "1.0.0").toString()
+def appHost = (project.findProperty("appHost") ?: "woli-work.vercel.app").toString()
+def parts = appVersion.replaceAll(/-.*$/, "").tokenize(".").collect { it as int } + [0, 0, 0]
+def appVersionCode = parts[0] * 10000 + parts[1] * 100 + parts[2]
+
+android {
+    namespace "vn.woli.app"
+    compileSdk 35
+
+    defaultConfig {
+        applicationId "vn.woli.app"
+        minSdk 24
+        targetSdk 35
+        versionCode Math.max(appVersionCode, 1)
+        versionName appVersion
+
+        def launchUrl = "https://${appHost}/workspaces?source=android&app_version=${appVersion}"
+        resValue "string", "appName", "woli"
+        resValue "string", "launchUrl", launchUrl
+        resValue "string", "hostName", appHost
+        resValue "string", "assetStatements", """[{ "relation": ["delegate_permission/common.handle_all_urls"], "target": { "namespace": "web", "site": "https://${appHost}" } }]"""
+        manifestPlaceholders = [hostName: appHost]
+    }
+
+    signingConfigs {
+        release {
+            def ks = System.getenv("ANDROID_KEYSTORE_PATH")
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            if (System.getenv("ANDROID_KEYSTORE_PATH")) signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation "com.google.androidbrowserhelper:androidbrowserhelper:2.5.0"
+    implementation "androidx.appcompat:appcompat:1.7.0"
+}

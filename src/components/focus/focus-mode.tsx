@@ -284,7 +284,7 @@ export function FocusDock({ workspaceId }: { workspaceId: string }) {
 
   if (!expanded)
     return (
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 max-w-[calc(100vw-7rem)] overflow-x-auto thin-scroll" data-testid="focus-pill">
+      <div className="fixed bottom-[calc(1rem+var(--app-bottom))] left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 max-w-[calc(100vw-7rem)] overflow-x-auto thin-scroll" data-testid="focus-pill">
         {sessions.map((x) => (
           <div key={x.id} className={cn("flex items-center gap-1.5 rounded-full shadow-lg pl-3 pr-1 py-1 shrink-0", x.running ? "bg-neutral-900 text-white" : "bg-white dark:bg-neutral-800 text-neutral-700 dark:text-neutral-200 border border-neutral-200 dark:border-neutral-700")} data-testid="focus-chip" data-state={x.status}>
             <Timer size={13} className={cn(x.running && "animate-pulse text-indigo-300")} />

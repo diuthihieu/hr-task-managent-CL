@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { detectPlatform, isIosOtherBrowser } from "../mobile-platform";
+import { detectPlatform, isIosOtherBrowser, newerVersion } from "../mobile-platform";
 
 const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1";
 const IPAD_DESKTOP_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Safari/605.1.15";
@@ -19,4 +19,12 @@ test("iOS in-app / non-Safari browsers are recognised (they need the 'open in Sa
   assert.equal(isIosOtherBrowser(IPHONE), false);
   assert.equal(isIosOtherBrowser(IPHONE.replace("Version/18.1", "CriOS/141.0")), true);
   assert.equal(isIosOtherBrowser(`${IPHONE} Zalo/24.10`), true);
+});
+
+test("a newer Android app version is detected (the in-app 'new APK' offer)", () => {
+  assert.equal(newerVersion("1.1.0", "1.0.9"), true);
+  assert.equal(newerVersion("1.0.0", "1.0.0"), false);
+  assert.equal(newerVersion("v1.10.0", "1.9.3"), true);
+  assert.equal(newerVersion("1.0.0", "1.0.1"), false);
+  assert.equal(newerVersion("2.0.0-beta.1", "1.9.9"), true);
 });

@@ -38,7 +38,7 @@ const colors = {
 export function Toaster() {
   const { toasts, remove } = useToastStore();
   return (
-    <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 w-80">
+    <div className="fixed bottom-[calc(1rem+var(--app-bottom))] right-4 z-[100] max-w-[calc(100vw-2rem)] flex flex-col gap-2 w-80">
       {toasts.map((t) => {
         const Icon = icons[t.variant];
         return (

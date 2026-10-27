@@ -618,3 +618,13 @@ body { font-size: calc(1rem * var(--font-scale)); }
 [data-testid="sidebar"] button:focus:not(:focus-visible) { outline: none; }
 [data-testid="sidebar"] a:focus-visible,
 [data-testid="sidebar"] button:focus-visible { outline: 2px solid color-mix(in oklab, var(--color-indigo-500) 45%, transparent); outline-offset: 1px; }
+
+/* Phone / tablet bottom tabs: fixed buttons, toasts and pop-ups sit above the bar while it is shown. */
+:root {
+  --app-bottom: 0px;
+}
+@media (max-width: 1023.98px) {
+  body.has-bottom-nav {
+    --app-bottom: calc(3.5rem + env(safe-area-inset-bottom));
+  }
+}

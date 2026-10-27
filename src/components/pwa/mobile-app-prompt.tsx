@@ -40,6 +40,8 @@ export function MobileAppPrompt({ auto = false, open: openProp, onOpenChange }: 
   const [ua, setUa] = useState("");
   const [qr, setQr] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  /** The packaged Android app (APK) when one is published. */
+  const [apk, setApk] = useState<{ version: string; installerSizeBytes: number | null } | null>(null);
   const open = openProp ?? autoOpen;
   const setOpen = (v: boolean) => {
     if (!v && auto) {
@@ -68,6 +70,14 @@ export function MobileAppPrompt({ auto = false, open: openProp, onOpenChange }: 
       .then(setQr)
       .catch(() => setQr(null));
   }, [open, platform, link]);
+
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/desktop/releases/latest?platform=android")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => setApk(r && r.version ? { version: r.version, installerSizeBytes: r.installerSizeBytes } : null))
+      .catch(() => setApk(null));
+  }, [open]);
 
   async function install() {
     if (!installEvent) return;
@@ -166,6 +176,19 @@ export function MobileAppPrompt({ auto = false, open: openProp, onOpenChange }: 
               </div>
             ) : (
               <div className="mt-4" data-testid="mapp-android">
+                {apk ? (
+                  <div className="mb-4 rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 dark:border-indigo-900 dark:bg-indigo-950/30" data-testid="mapp-apk">
+                    <a
+                      href="/api/desktop/download/latest?platform=android"
+                      className="flex w-full items-center justify-center gap-2 rounded-md bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"
+                      data-testid="mapp-apk-download"
+                    >
+                      <Download size={16} /> {t("mapp.apkDownload", { version: apk.version, size: apk.installerSizeBytes ? `${(apk.installerSizeBytes / 1048576).toFixed(1)} MB` : "" })}
+                    </a>
+                    <p className="mt-2 text-xs text-neutral-600 dark:text-neutral-300">{t("mapp.apkHint")}</p>
+                  </div>
+                ) : null}
+                {apk ? <p className="mb-2 text-xs font-medium text-neutral-500">{t("mapp.orChrome")}</p> : null}
                 {done ? (
                   <p className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
                     <CheckCircle2 size={16} /> {t("mapp.androidDone")}

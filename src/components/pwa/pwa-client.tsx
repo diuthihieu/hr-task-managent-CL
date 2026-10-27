@@ -62,8 +62,9 @@ export function PwaClient() {
 
     let found = false;
     let hiddenAt = 0;
-    const check = async () => {
-      if (!BUILD_ID || found) return;
+    /** Resolves true when the server runs a newer build than the one loaded. */
+    const check = async (): Promise<boolean> => {
+      if (!BUILD_ID || found) return found;
       try {
         const res = await fetch("/api/version", { cache: "no-store" });
         const { buildId } = (await res.json()) as { buildId?: string };
@@ -75,6 +76,7 @@ export function PwaClient() {
       } catch {
         // offline: try again later
       }
+      return found;
     };
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
@@ -83,12 +85,14 @@ export function PwaClient() {
       }
       // Back in the foreground after a while with a newer build waiting: load it. A short switch away
       // (e.g. copying something) keeps the page; the "Update now" banner stays until the next time.
+      // Timers may not run while a phone app is suspended, so ask the server now, then decide.
       const away = hiddenAt ? Date.now() - hiddenAt : 0;
-      if (found && away >= (runningAsApp() ? AWAY_MS_APP : AWAY_MS_TAB)) return void window.location.reload();
-      void check();
+      void check().then((newer) => {
+        if (newer && away >= (runningAsApp() ? AWAY_MS_APP : AWAY_MS_TAB)) window.location.reload();
+      });
     };
     void check();
-    const timer = window.setInterval(check, CHECK_EVERY_MS);
+    const timer = window.setInterval(() => void check(), CHECK_EVERY_MS);
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       window.removeEventListener("beforeinstallprompt", onPrompt);

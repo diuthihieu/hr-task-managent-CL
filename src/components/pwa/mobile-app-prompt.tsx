@@ -71,12 +71,14 @@ export function MobileAppPrompt({ auto = false, open: openProp, onOpenChange }: 
 
   async function install() {
     if (!installEvent) return;
-    await installEvent.prompt();
-    const choice = await installEvent.userChoice.catch(() => ({ outcome: "dismissed" as const }));
-    if (choice.outcome === "accepted") {
-      setDone(true);
-      usePwa.getState().set({ installEvent: null });
-    }
+    // Chrome's install event works once: drop it whatever the user picks, so a dismissed dialog falls
+    // back to the manual steps until Chrome offers a fresh one.
+    usePwa.getState().set({ installEvent: null });
+    const choice = await installEvent
+      .prompt()
+      .then(() => installEvent.userChoice)
+      .catch(() => ({ outcome: "dismissed" as const }));
+    if (choice.outcome === "accepted") setDone(true);
   }
 
   function copyLink() {

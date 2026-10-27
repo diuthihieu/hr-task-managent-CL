@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { MobileAppButton } from "@/components/pwa/mobile-app-prompt";
 import { NotificationBell, RecognitionCount, UnreadCount } from "@/components/notifications/notification-bell";
 import { WorkspaceAvatar } from "@/components/workspaces/workspace-avatar";
 import { emitViewsChanged } from "@/lib/view-events";
@@ -25,6 +26,7 @@ import {
   ShieldCheck,
   KeyRound,
   MonitorDown,
+  Smartphone,
   Plus,
   Settings,
   Sheet,
@@ -525,6 +527,12 @@ export function WorkspaceShell({
                 <X size={12} />
               </button>
             </div>
+          )}
+          {!compact && (
+            <MobileAppButton className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] text-neutral-500 hover:bg-neutral-50 hover:text-indigo-600 dark:hover:bg-neutral-800/60" testId="sidebar-mobile-app">
+              <Smartphone size={15} strokeWidth={1.75} className="shrink-0" />
+              <span className="truncate">{t("mapp.open")}</span>
+            </MobileAppButton>
           )}
           <NavLink href={`/w/${workspace.slug}/help`} active={isHelp} icon={CircleHelp} label={t("nav.help")} compact={compact} testId="nav-help" />
           <NavLink href={`/w/${workspace.slug}/settings`} active={isSettings && !projectSection} icon={Settings} label={t("nav.settings")} compact={compact} testId="nav-settings" />

@@ -1,4 +1,5 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { PwaClient } from "@/components/pwa/pwa-client";
 import "./globals.css";
 import { Providers } from "@/components/providers";
 import { headers } from "next/headers";
@@ -23,7 +24,14 @@ export const metadata: Metadata = {
     images: [{ url: OG_IMAGE, width: 1200, height: 630, alt: "woli - Không gian làm việc thông minh cho đội ngũ" }],
   },
   twitter: { card: "summary_large_image", title: "woli | Team Workspace", description: "Projects, tasks, OKRs, a team wiki and an AI assistant in one workspace.", images: [OG_IMAGE] },
+  // Installed on a phone (Add to Home Screen): full screen, named "woli".
+  appleWebApp: { capable: true, title: "woli", statusBarStyle: "default" },
+  // Older iPhones (before iOS 16.4) only read Apple's own tag, not the manifest's "standalone".
+  other: { "apple-mobile-web-app-capable": "yes" },
+  formatDetection: { telephone: false },
 };
+
+export const viewport: Viewport = { themeColor: "#f97316" };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const prefs = await getRequestPrefs();
@@ -45,7 +53,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         />
       </head>
       <body className="min-h-full flex flex-col">
-        <Providers locale={locale} accent={accent} themeMode={themeMode} tone={tone} fontSize={fontSize} displaySize={displaySize}>{children}</Providers>
+        <Providers locale={locale} accent={accent} themeMode={themeMode} tone={tone} fontSize={fontSize} displaySize={displaySize}>
+          {children}
+          <PwaClient />
+        </Providers>
       </body>
     </html>
   );

@@ -2647,6 +2647,34 @@ test("comment images: only real images, anyone who may comment can send one, and
   }
 });
 
+test("phone app (PWA): manifest, icons, service worker, offline page and build id are public and correct", async () => {
+  const get = (path: string) => fetch(`${BASE}${path}`);
+  const m = await get("/manifest.webmanifest");
+  assert.equal(m.status, 200);
+  const manifest = (await m.json()) as { display: string; start_url: string; scope: string; icons: { src: string; sizes: string; purpose?: string }[] };
+  assert.equal(manifest.display, "standalone");
+  assert.equal(manifest.scope, "/");
+  assert.ok(manifest.start_url.startsWith("/workspaces"));
+  assert.ok(manifest.icons.some((i) => i.sizes === "192x192") && manifest.icons.some((i) => i.sizes === "512x512") && manifest.icons.some((i) => i.purpose === "maskable"));
+  for (const icon of manifest.icons) {
+    const r = await get(icon.src);
+    assert.equal(r.status, 200, icon.src);
+    assert.equal(r.headers.get("content-type"), "image/png");
+  }
+  const sw = await get("/sw.js");
+  assert.equal(sw.status, 200);
+  assert.match(sw.headers.get("cache-control") ?? "", /no-cache/, "a new service worker is picked up at once");
+  const swText = await sw.text();
+  assert.ok(swText.includes('url.pathname.startsWith("/api/")'), "API responses are never cached");
+  assert.equal((await get("/offline.html")).status, 200);
+  const v = await get("/api/version");
+  assert.equal(v.status, 200);
+  assert.equal(v.headers.get("cache-control"), "no-store");
+  assert.ok(((await v.json()) as { buildId: string }).buildId.length > 0);
+  const page = await (await get("/")).text();
+  assert.ok(page.includes('rel="manifest"') && page.includes("apple-mobile-web-app-capable"), "pages link the manifest and the iOS app tags");
+});
+
 test("sub-task dates stay inside the parent task's dates; a parent cannot shrink past its sub-tasks", async () => {
   const A = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Sub-task dates" })).body.id;
   try {

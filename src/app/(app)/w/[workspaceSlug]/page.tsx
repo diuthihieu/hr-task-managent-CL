@@ -15,6 +15,7 @@ import type { HomeData } from "@/components/home/home-widgets";
 import { PRESETS } from "@/lib/home-widgets";
 import { parseWidgets } from "@/lib/home-templates";
 import { focusElapsed } from "@/lib/focus";
+import { MobileAppPrompt } from "@/components/pwa/mobile-app-prompt";
 
 
 /** Server components render once per request, so "now" is the request time. */
@@ -200,6 +201,8 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
           <HomeBoard data={homeData} initial={layout ? parseWidgets(layout.widgets) : PRESETS.command} custom={!!layout} role={role} />
         </Suspense>
       </div>
+      {/* On a phone browser: offer to install woli as an app (once; again after 14 days if closed). */}
+      <MobileAppPrompt auto />
     </div>
   );
 }

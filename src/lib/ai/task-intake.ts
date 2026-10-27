@@ -8,6 +8,7 @@ import { PRIORITIES, SYS } from "../task-grid";
 import { SCOPE_GUARD } from "./personal";
 import { readTaskFiles } from "./task-files";
 import { taskCommentsSection } from "./task-comments";
+import { timeSummarySection } from "./context";
 
 // AI task intake: the user describes a task in their own words, the AI asks
 // for what is missing, summarizes a draft, and the user confirms it. The same
@@ -244,6 +245,7 @@ export async function projectData(user: SessionUser, projectId: string, budget =
     // files and comments, so the final cut to the budget trims those instead of the tasks.
     `## Tasks (${tasks.length}${tasks.length === PROJECT_TASKS ? ", most recently updated" : ""})\nref | task | status | priority | progress | start | due | assignees | report to | category | estimate | actual | objective/KR | parent\n` +
     lines.join("\n") +
+    `\n\n${timeSummarySection(tasks)}` +
     `\n\n${comments}\n\n` +
     fileSection;
   if (text.length > budget) text = text.slice(0, budget) + "\n…[truncated]";

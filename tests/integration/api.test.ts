@@ -2542,6 +2542,79 @@ test("platform overview: woli system admins see platform-wide counts; everyone e
   assert.ok(!JSON.stringify(r.body).includes("sys_title"), "no task content");
   const adminId = (await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } })).id;
   assert.ok(await prisma.activityLog.findFirst({ where: { actorId: adminId, action: "admin_overview_viewed" } }), "view logged");
+
+  // AI token report: every Gemini call made by the earlier tests was counted with its workspace, user and route.
+  type Ai = { ai: { requests30: number; tokensAll: number }; aiFeatures: { feature: string; requests: number; tokens: number }[]; userRows: { id: string; aiRequests30: number; aiTokens30: number }[]; workspaceRows: { id: string; aiTokens30: number }[] };
+  const ai = (r.body as unknown as Ai);
+  const events = await prisma.aiUsageEvent.count();
+  assert.ok(events > 0, "AI calls were recorded");
+  assert.equal(ai.ai.requests30, await prisma.aiUsageEvent.count({ where: { createdAt: { gte: new Date(Date.now() - 30 * 86400_000) } } }));
+  const sample = await prisma.aiUsageEvent.findFirstOrThrow({ where: { feature: { startsWith: "/api/" } } });
+  assert.ok(sample.userId && sample.workspaceId && sample.tokensIn > 0, JSON.stringify(sample));
+  assert.ok(!/[0-9a-f]{8}-[0-9a-f]{4}/.test(sample.feature), "ids are replaced in the feature name");
+  const byUser = await prisma.aiUsageEvent.groupBy({ by: ["userId"], _sum: { tokensIn: true, tokensOut: true }, where: { userId: { not: null }, createdAt: { gte: new Date(Date.now() - 30 * 86400_000) } } });
+  const top = byUser.sort((a, b) => (b._sum.tokensIn ?? 0) + (b._sum.tokensOut ?? 0) - ((a._sum.tokensIn ?? 0) + (a._sum.tokensOut ?? 0)))[0];
+  const topRow = ai.userRows.find((u) => u.id === top.userId)!;
+  assert.equal(topRow.aiTokens30, (top._sum.tokensIn ?? 0) + (top._sum.tokensOut ?? 0), "per-user tokens");
+  const wsTok = await prisma.aiUsageEvent.aggregate({ _sum: { tokensIn: true, tokensOut: true }, where: { workspaceId: s.ws, createdAt: { gte: new Date(Date.now() - 30 * 86400_000) } } });
+  assert.equal(ai.workspaceRows.find((w) => w.id === s.ws)!.aiTokens30, (wsTok._sum.tokensIn ?? 0) + (wsTok._sum.tokensOut ?? 0), "per-workspace tokens");
+  assert.ok(ai.aiFeatures.length > 0 && ai.aiFeatures.every((f) => f.requests > 0));
+  assert.ok(!JSON.stringify(r.body).includes("RESPONSE_SCHEMA"), "no prompt text in the report");
+});
+
+test("workspace AI reads hours, completed dates, parent tasks, custom fields and task files - and a per-person hours table", async () => {
+  const A = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Hours data" })).body.id;
+  try {
+    const field = (await admin.post<{ id: string }>(`/api/projects/${A}/custom-fields`, { name: "Mã hồ sơ", type: "text" })).body.id;
+    const P = (await admin.post<Rec>(`/api/projects/${A}/tasks`, { data: { sys_title: "Payroll tháng 10", sys_assignees: [s.contributorId], sys_due_date: "2026-10-30", sys_estimate: 3, sys_actual: 2.5, [field]: "HS-042" } })).body.id;
+    await admin.post(`/api/projects/${A}/tasks`, { data: { sys_title: "Đối soát BHXH", sys_parent: [P], sys_assignees: [s.contributorId], sys_due_date: "2026-10-20", sys_estimate: 1, sys_actual: 1.5 } });
+    await prisma.attachment.create({ data: { workspaceId: s.ws, taskId: P, fileName: "bang-luong.xlsx", contentType: "application/vnd.ms-excel", sizeBytes: 2048, storageKey: `it/${P}/bang-luong.xlsx`, url: "https://blob.invalid/x", extractedText: "Tổng quỹ lương 1.234.567" } });
+    // The admin used up the daily AI quota in earlier tests: move those questions out of the last 24 hours.
+    const adminId = (await prisma.user.findUniqueOrThrow({ where: { email: ADMIN_EMAIL } })).id;
+    await prisma.aiMessage.updateMany({ where: { role: "user", conversation: { userId: adminId } }, data: { createdAt: new Date(Date.now() - 2 * 86400_000) } });
+    const r = await ask(admin, { kind: "assistant", workspaceId: s.ws, message: "Tổng giờ actual tháng 10 của từng người?" });
+    assert.equal(r.status, 200, r.text);
+    const sys = (await lastModelRequest()).body.systemInstruction?.parts.map((p) => p.text).join("\n") ?? "";
+    const name = (await prisma.user.findUniqueOrThrow({ where: { id: s.contributorId } })).name;
+    assert.match(sys, /estimate h \| actual h/, "task table has hour columns");
+    assert.match(sys, /Payroll tháng 10 \|[^\n]*\| 3 \| 2\.5 \|/, "estimate and actual of the task");
+    assert.match(sys, new RegExp(`${name} \\| 2026-10 \\| \\d+ \\| \\d+ \\| [\\d.]+ \\| [\\d.]+`), "per-person monthly hours");
+    assert.ok(sys.includes("Mã hồ sơ = HS-042"), "custom field values");
+    assert.ok(sys.includes("bang-luong.xlsx") && sys.includes("Tổng quỹ lương 1.234.567"), "task files with their text");
+    assert.match(sys, /Đối soát BHXH \|[^\n]*\| T-[0-9a-f]{8} \|/, "parent task ref");
+  } finally {
+    await prisma.attachment.deleteMany({ where: { storageKey: { startsWith: "it/" } } });
+    await admin.del(`/api/projects/${A}`);
+  }
+});
+
+test("sub-task dates stay inside the parent task's dates; a parent cannot shrink past its sub-tasks", async () => {
+  const A = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Sub-task dates" })).body.id;
+  try {
+    const mk = (data: object) => admin.post<Rec & { error?: string }>(`/api/projects/${A}/tasks`, { data });
+    const P = (await mk({ sys_title: "Parent", sys_start_date: "2026-11-01", sys_due_date: "2026-11-30" })).body.id;
+    // Created inside the range: fine; outside: refused (also when only one end is outside).
+    const C = await mk({ sys_title: "Child", sys_parent: [P], sys_start_date: "2026-11-05", sys_due_date: "2026-11-20" });
+    assert.equal(C.status, 201, JSON.stringify(C.body));
+    assert.equal((await mk({ sys_title: "Too late", sys_parent: [P], sys_due_date: "2026-12-02" })).status, 400);
+    assert.equal((await mk({ sys_title: "Too early", sys_parent: [P], sys_start_date: "2026-10-31" })).status, 400);
+    assert.equal((await mk({ sys_title: "No dates", sys_parent: [P] })).status, 201, "a sub-task without dates is fine");
+    // Editing the child's dates or attaching a dated task to the parent is checked too.
+    const bad = await admin.patch<{ error?: string }>(`/api/tasks/${C.body.id}`, { data: { sys_due_date: "2026-12-15" } });
+    assert.equal(bad.status, 400);
+    assert.match(JSON.stringify(bad.body), /task mẹ/);
+    const loose = (await mk({ sys_title: "Loose", sys_start_date: "2026-12-01" })).body.id;
+    assert.equal((await admin.patch(`/api/tasks/${loose}`, { data: { sys_parent: [P] } })).status, 400);
+    // The parent's range cannot shrink so the child falls outside; widening is fine.
+    assert.equal((await admin.patch(`/api/tasks/${P}`, { data: { sys_due_date: "2026-11-10" } })).status, 400);
+    assert.equal((await admin.patch(`/api/tasks/${P}`, { data: { sys_due_date: "2026-12-31" } })).status, 200);
+    assert.equal((await admin.patch(`/api/tasks/${C.body.id}`, { data: { sys_due_date: "2026-12-15" } })).status, 200);
+    // A parent without dates puts no limit on its sub-tasks.
+    const Q = (await mk({ sys_title: "Open parent" })).body.id;
+    assert.equal((await mk({ sys_title: "Any date", sys_parent: [Q], sys_due_date: "2030-01-01" })).status, 201);
+  } finally {
+    await admin.del(`/api/projects/${A}`);
+  }
 });
 
 test("grid rows: insert N rows above / below a task in place (group value, parent kept); bulk delete follows delete rights", async () => {

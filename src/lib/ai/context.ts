@@ -1,7 +1,7 @@
 import "server-only";
 import { stripMentions } from "@/lib/mentions";
 import { prisma } from "../prisma";
-import type { WorkspaceRole } from "@prisma/client";
+import type { Prisma, WorkspaceRole } from "@prisma/client";
 import { visibleProjectWhere, visibleWikiWhere, hiddenProjectIds, type SessionUser } from "../authz";
 import { visiblePageWhere } from "../wiki-sources";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "../okr-resolver";
@@ -42,6 +42,119 @@ class Budget {
 }
 
 const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "-");
+
+const hours = (minutes: number | null) => (minutes === null || minutes === undefined ? "-" : String(Math.round((minutes / 60) * 100) / 100));
+const month = (d: Date | null) => (d ? d.toISOString().slice(0, 7) : "no date");
+
+type CustomValueRow = {
+  valueText: string | null;
+  valueNumber: { toString(): string } | null;
+  valueDate: Date | null;
+  valueBool: boolean | null;
+  valueOptionIds: string[];
+  valueTaskIds: string[];
+  option: { label: string } | null;
+  user: { name: string } | null;
+  customField: { name: string; type: string; options: { id: string; label: string }[] };
+};
+/** A custom column's value as readable text (option labels and names, not ids). */
+function customValueText(v: CustomValueRow): string {
+  switch (v.customField.type) {
+    case "single_select":
+      return v.option?.label ?? "";
+    case "multi_select":
+      return v.valueOptionIds.map((id) => v.customField.options.find((o) => o.id === id)?.label).filter(Boolean).join(", ");
+    case "person":
+      return v.user?.name ?? "";
+    case "checkbox":
+      return v.valueBool ? "yes" : "no";
+    case "date":
+      return v.valueDate ? day(v.valueDate) : "";
+    case "datetime":
+      return v.valueDate ? v.valueDate.toISOString().slice(0, 16).replace("T", " ") : "";
+    case "link":
+      return v.valueTaskIds.length ? `${v.valueTaskIds.length} linked task(s)` : "";
+    default:
+      if (v.valueNumber !== null) return v.valueNumber.toString();
+      return (v.valueText ?? "").replace(/\s+/g, " ").slice(0, 200);
+  }
+}
+
+/**
+ * Estimate / actual hours per person and month (month of completion, else due date, else start date).
+ * A task with several assignees counts in full for each of them; unassigned tasks are listed as "(unassigned)".
+ */
+export function timeSummarySection(
+  tasks: { estimateMinutes: number | null; actualMinutes: number | null; completedAt: Date | null; dueDate: Date | null; startDate: Date | null; status: { category: string }; assignees: { user: { name: string } }[] }[]
+): string {
+  const rows = new Map<string, { person: string; month: string; tasks: number; done: number; est: number; act: number }>();
+  for (const t of tasks) {
+    const m = month(t.completedAt ?? t.dueDate ?? t.startDate);
+    const people = t.assignees.length ? t.assignees.map((a) => a.user.name) : ["(unassigned)"];
+    for (const person of people) {
+      const key = `${person}\u0000${m}`;
+      const r = rows.get(key) ?? { person, month: m, tasks: 0, done: 0, est: 0, act: 0 };
+      r.tasks++;
+      if (t.status.category === "done") r.done++;
+      r.est += t.estimateMinutes ?? 0;
+      r.act += t.actualMinutes ?? 0;
+      rows.set(key, r);
+    }
+  }
+  const list = [...rows.values()].sort((a, b) => a.person.localeCompare(b.person) || b.month.localeCompare(a.month));
+  if (!list.length) return "## Hours per person and month\n(no tasks)";
+  return (
+    "## Hours per person and month (from the tasks' Estimate (h) / Actual (h); month = completed, else due, else start date; a task with several assignees counts for each)\nperson | month | tasks | done | estimate h | actual h\n" +
+    list.map((r) => [r.person, r.month, r.tasks, r.done, hours(r.est), hours(r.act)].join(" | ")).join("\n")
+  );
+}
+
+/** Focus time each person logged on tasks the asker can see, per month (last 12 months). */
+async function focusTimeSection(o: { workspaceId: string; task: Prisma.TaskWhereInput }): Promise<string> {
+  const since = new Date(Date.now() - 366 * 86_400_000);
+  const sessions = await prisma.focusSession.findMany({
+    where: { workspaceId: o.workspaceId, startedAt: { gte: since }, task: o.task },
+    select: { startedAt: true, recordedSeconds: true, user: { select: { name: true } } },
+    take: 20_000,
+  });
+  const rows = new Map<string, { person: string; month: string; sessions: number; seconds: number }>();
+  for (const f of sessions) {
+    const key = `${f.user.name}\u0000${month(f.startedAt)}`;
+    const r = rows.get(key) ?? { person: f.user.name, month: month(f.startedAt), sessions: 0, seconds: 0 };
+    r.sessions++;
+    r.seconds += f.recordedSeconds;
+    rows.set(key, r);
+  }
+  if (!rows.size) return "## Focus time logged\n(none in the last 12 months)";
+  return (
+    "## Focus time logged (focus sessions, last 12 months; these minutes are also included in the tasks' Actual (h))\nperson | month | sessions | hours\n" +
+    [...rows.values()].sort((a, b) => a.person.localeCompare(b.person) || b.month.localeCompare(a.month)).map((r) => [r.person, r.month, r.sessions, hours(r.seconds / 60)].join(" | ")).join("\n")
+  );
+}
+
+/** Files attached to tasks the asker can see: who / when / size, and the text read from them at upload. */
+async function taskAttachmentsSection(where: Prisma.AttachmentWhereInput, opts: { maxTotalChars: number; ref: (t: { id: string; projectId: string; title: string; project: string }) => string }): Promise<string> {
+  const files = await prisma.attachment.findMany({
+    where,
+    orderBy: { createdAt: "desc" },
+    take: 500,
+    select: { fileName: true, contentType: true, sizeBytes: true, createdAt: true, extractedText: true, uploadedBy: { select: { name: true } }, task: { select: { id: true, projectId: true, title: true, project: { select: { name: true } } } } },
+  });
+  if (!files.length) return "## Task files\n(none)";
+  const lines: string[] = [];
+  let used = 0;
+  for (const f of files) {
+    if (!f.task) continue;
+    const ref = opts.ref({ id: f.task.id, projectId: f.task.projectId, title: f.task.title, project: f.task.project.name });
+    const head = `- ${f.fileName} | ${f.task.project.name} › ${f.task.title} [${ref}] | ${f.uploadedBy?.name ?? "-"} | ${day(f.createdAt)} | ${Math.max(1, Math.round(f.sizeBytes / 1024))} KB`;
+    const text = f.extractedText ? `\n    content: ${f.extractedText.replace(/\s+/g, " ").slice(0, 1500)}` : "";
+    const line = used + head.length + text.length > opts.maxTotalChars ? head : head + text;
+    if (used + line.length > opts.maxTotalChars) break;
+    lines.push(line);
+    used += line.length + 1;
+  }
+  return `## Task files (${lines.length}${lines.length < files.length || files.length === 500 ? ", most recent only" : ""}; newest first)\nfile | project › task | uploaded by | date | size\n${lines.join("\n")}`;
+}
 
 /** A wiki's pages and reference documents, for its assistant. */
 export async function wikiKnowledge(wikiId: string, budget = CONTEXT_CHARS, hidden: Set<string> = new Set()) {
@@ -140,6 +253,32 @@ export async function workspaceData(user: SessionUser, workspaceId: string, role
         reportTo: { select: { user: { select: { name: true } } } },
         objective: { select: { title: true } },
         keyResult: { select: { title: true } },
+        estimateMinutes: true,
+        actualMinutes: true,
+        importance: true,
+        urgency: true,
+        createdAt: true,
+        recurrenceFreq: true,
+        recurrenceInterval: true,
+        parentTaskId: true,
+        createdBy: { select: { name: true } },
+        dependencies: { select: { dependsOnTaskId: true } },
+        _count: { select: { comments: { where: { deletedAt: null } } } },
+        attachments: { where: { deletedAt: null }, select: { fileName: true }, orderBy: { createdAt: "asc" }, take: 20 },
+        customValues: {
+          where: { customField: { deletedAt: null } },
+          select: {
+            valueText: true,
+            valueNumber: true,
+            valueDate: true,
+            valueBool: true,
+            valueOptionIds: true,
+            valueTaskIds: true,
+            option: { select: { label: true } },
+            user: { select: { name: true } },
+            customField: { select: { name: true, type: true, options: { select: { id: true, label: true } } } },
+          },
+        },
       },
     }),
     prisma.objective.findMany({
@@ -196,8 +335,19 @@ export async function workspaceData(user: SessionUser, workspaceId: string, role
   b.add(await taskCommentsSection({ task: { workspaceId, deletedAt: null, project: { deletedAt: null, ...visible } } }, { maxChars: 1500, maxTotalChars: Math.min(80_000, Math.floor(budget * 0.2)), ref: cite }));
 
   const now = new Date();
+  // Hours are summed here (not left to the model): per person and month, from the tasks' estimate /
+  // actual hours, plus the focus time each person logged themselves.
+  b.add(timeSummarySection(tasks));
+  b.add(await focusTimeSection({ workspaceId, task: { deletedAt: null, project: { deletedAt: null, ...visible } } }));
+  b.add(await taskAttachmentsSection({ workspaceId, deletedAt: null, task: { deletedAt: null, project: { deletedAt: null, ...visible } } }, { maxTotalChars: Math.min(60_000, Math.floor(budget * 0.15)), ref: cite }));
+
+  const titleById = new Map(tasks.map((t) => [t.id, t]));
+  const refOf = (id: string) => {
+    const x = titleById.get(id);
+    return x ? cite({ id: x.id, projectId: x.projectId, title: x.title, project: x.project.name }) : null;
+  };
   b.add(
-    `## Tasks (${tasks.length}${tasks.length === 2000 ? ", most recently updated" : ""})\nref | project | task | status | priority | progress | start | due | assignees | report to | category | objective/KR\n` +
+    `## Tasks (${tasks.length}${tasks.length === 2000 ? ", most recently updated" : ""})\nref | project | task | status | priority | progress | start | due | completed | estimate h | actual h | assignees | report to | category | objective/KR | importance/urgency | created (by) | parent task | depends on | comments | files | repeats\n` +
       tasks
         .map((t) => {
           const overdue = t.dueDate && t.dueDate < now && (t.status.category === "todo" || t.status.category === "in_progress") ? " (OVERDUE)" : "";
@@ -210,11 +360,23 @@ export async function workspaceData(user: SessionUser, workspaceId: string, role
             `${t.progress}%`,
             day(t.startDate),
             day(t.dueDate) + overdue,
+            day(t.completedAt),
+            hours(t.estimateMinutes),
+            hours(t.actualMinutes),
             t.assignees.map((a) => a.user.name).join(", ") || "-",
             t.reportTo.map((r) => r.user.name).join(", ") || "-",
             t.category?.name ?? "-",
             t.keyResult?.title ?? t.objective?.title ?? "-",
-          ].join(" | ") + (t.description ? `\n    notes: ${t.description.replace(/\s+/g, " ").slice(0, 600)}` : "");
+            `${t.importance ?? "-"}/${t.urgency ?? "-"}`,
+            `${day(t.createdAt)} (${t.createdBy?.name ?? "-"})`,
+            (t.parentTaskId && refOf(t.parentTaskId)) || "-",
+            t.dependencies.map((d) => refOf(d.dependsOnTaskId)).filter(Boolean).join(", ") || "-",
+            String(t._count.comments),
+            t.attachments.length ? `${t.attachments.length}: ${t.attachments.map((a) => a.fileName).join(", ")}` : "0",
+            t.recurrenceFreq ? `every ${t.recurrenceInterval ?? 1} ${t.recurrenceFreq}` : "-",
+          ].join(" | ") +
+            (t.customValues.length ? `\n    fields: ${t.customValues.map((v) => `${v.customField.name} = ${customValueText(v)}`).filter((x) => !x.endsWith("= ")).join("; ")}` : "") +
+            (t.description ? `\n    notes: ${t.description.replace(/\s+/g, " ").slice(0, 600)}` : "");
         })
         .join("\n")
   );

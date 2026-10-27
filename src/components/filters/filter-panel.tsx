@@ -40,7 +40,7 @@ export function FilterPanel({
   }
 
   return (
-    <div className="w-[420px] p-3">
+    <div className="w-[min(560px,calc(100vw-48px))] p-3" data-testid="filter-panel">
       <div className="flex items-center gap-2 mb-3 text-xs font-semibold text-neutral-500">
         <ListFilter size={13} /> {t("flt.title")}
       </div>
@@ -51,7 +51,7 @@ export function FilterPanel({
           const ops = field ? operatorsForType(field.type, t) : [];
           const needsValue = !NO_VALUE_OPS.includes(cond.operator);
           return (
-            <div key={cond.id} className="flex items-center gap-1.5">
+            <div key={cond.id} className="flex items-center gap-1.5 min-w-0">
               <span className="w-10 text-xs text-neutral-400 shrink-0">{idx === 0 ? t("flt.where") : filter.conjunction === "OR" ? t("flt.orLower") : t("flt.andLower")}</span>
               <Select
                 className="w-28 shrink-0"
@@ -118,7 +118,7 @@ export function FilterValueInput({
   if ([...SELECT_SINGLE_TYPES, "multi_select"].includes(field.type)) {
     return (
       <Select
-        className="flex-1"
+        className="flex-1 min-w-0"
         value={(value as string) ?? ""}
         onValueChange={onChange}
         options={(config.options ?? []).map((o) => ({ value: o.id, label: o.label }))}
@@ -127,17 +127,17 @@ export function FilterValueInput({
   }
   if (["person", "people"].includes(field.type)) {
     return (
-      <Select className="flex-1" value={(value as string) ?? ""} onValueChange={onChange} options={members.map((m) => ({ value: m.id, label: m.name }))} />
+      <Select className="flex-1 min-w-0" value={(value as string) ?? ""} onValueChange={onChange} options={members.map((m) => ({ value: m.id, label: m.name }))} />
     );
   }
   if (["date", "datetime"].includes(field.type)) {
-    return <Input type="date" className="flex-1" value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} />;
+    return <Input type="date" className="flex-1 min-w-0" value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} />;
   }
   if (["number", "integer", "percent", "currency", "rating", "progress", "duration"].includes(field.type)) {
-    return <Input type="number" className="flex-1" value={(value as number) ?? ""} onChange={(e) => onChange(Number(e.target.value))} />;
+    return <Input type="number" className="flex-1 min-w-0" value={(value as number) ?? ""} onChange={(e) => onChange(Number(e.target.value))} />;
   }
   if (field.type === "checkbox") {
-    return <Select className="flex-1" value={String(value ?? "true")} onValueChange={(v) => onChange(v === "true")} options={[{ value: "true", label: "Checked" }, { value: "false", label: "Unchecked" }]} />;
+    return <Select className="flex-1 min-w-0" value={String(value ?? "true")} onValueChange={(v) => onChange(v === "true")} options={[{ value: "true", label: "Checked" }, { value: "false", label: "Unchecked" }]} />;
   }
-  return <Input className="flex-1" value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} placeholder="value" />;
+  return <Input className="flex-1 min-w-0" value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} placeholder="value" />;
 }

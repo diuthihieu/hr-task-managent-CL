@@ -142,11 +142,11 @@ export function RecordDrawer({
     <div className="fixed inset-0 z-50 flex justify-end">
       <div className="flex-1 bg-black/30" onClick={onClose} />
       <div className="w-full max-w-lg h-full bg-white dark:bg-neutral-900 shadow-2xl flex flex-col animate-in" role="dialog" aria-label="Task details">
-        <div className="flex items-center justify-between px-4 h-12 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
-          <span className="font-medium text-neutral-900 dark:text-neutral-100 truncate">
+        <div className="flex items-start justify-between gap-2 px-4 py-3 min-h-12 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+          <span className="font-medium text-neutral-900 dark:text-neutral-100 break-words min-w-0 leading-snug" data-testid="drawer-title">
             {primary ? (getCellValue(record, primary, fields) as string) || "Untitled task" : "Task"}
           </span>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             {pageHref && (
               <Link href={pageHref} className="p-1.5 rounded-md text-neutral-400 hover:text-indigo-600 hover:bg-neutral-100 dark:hover:bg-neutral-800" title={t("record.openAsPage")} aria-label={t("record.openAsPage")} data-testid="drawer-open-page">
                 <Maximize2 size={15} />

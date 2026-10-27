@@ -13,6 +13,8 @@ import { AttachmentsCell, type CellFile } from "./attachments-cell";
 import { AvatarImg } from "@/components/ui/avatar-img";
 import { Barcode, JsonInput, LocationInput, SignatureInput, SignaturePreview } from "@/components/fields/advanced-field-inputs";
 import { api } from "@/lib/api-client";
+import { useT } from "@/components/i18n-provider";
+import { SearchList } from "@/components/ui/search-list";
 
 export interface Member {
   id: string;
@@ -447,41 +449,8 @@ export function Cell({ field, value, record, members, linkTargets, okrOptions, w
           <PopoverContent className="w-96 p-3"><SignatureInput value={value} onChange={onChange} /></PopoverContent>
         </Popover>
       );
-    case "link": {
-      const values: string[] = Array.isArray(value) ? (value as string[]) : [];
-      const target = linkTargets?.[field.id];
-      const labels = values.map((id) => target?.records.find((r) => r.id === id)?.label ?? "…");
-      return (
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className={cn(base, "gap-1 cursor-pointer overflow-hidden")}>
-              {labels.length ? (
-                labels.map((l, i) => (
-                  <span key={i} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 text-xs truncate max-w-[100px]">
-                    <Link2 size={10} /> {l}
-                  </span>
-                ))
-              ) : (
-                <span className="text-neutral-300">—</span>
-              )}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent className="w-56 p-1 max-h-64 overflow-y-auto thin-scroll">
-            {!target && <div className="text-xs text-neutral-400 px-2 py-2">No linked table configured</div>}
-            {target?.records.map((r) => (
-              <button
-                key={r.id}
-                onClick={() => onChange(values.includes(r.id) ? values.filter((v) => v !== r.id) : [...values, r.id])}
-                className="w-full flex items-center gap-2 rounded-sm px-2 py-1.5 hover:bg-neutral-100 dark:hover:bg-neutral-800 text-sm text-left"
-              >
-                <span className="flex-1 truncate">{r.label}</span>
-                {values.includes(r.id) && <Check size={13} className="text-indigo-600" />}
-              </button>
-            ))}
-          </PopoverContent>
-        </Popover>
-      );
-    }
+    case "link":
+      return <LinkCell field={field} config={config} value={value} recordId={record.id} target={linkTargets?.[field.id]} base={base} onChange={onChange} />;
     case "okr_target": {
       const objectives = config.objectives ?? [];
       const selected = resolveOkrTarget(config, value);
@@ -672,6 +641,58 @@ export function Cell({ field, value, record, members, linkTargets, okrOptions, w
     default:
       return <div className={base}>{String(value ?? "")}</div>;
   }
+}
+
+/** Link to other tasks (Parent task, Depends on...): chips, and a searchable list to pick from. */
+function LinkCell({ field, config, value, recordId, target, base, onChange }: { field: FieldRow; config: ReturnType<typeof parseFieldConfig>; value: unknown; recordId: string; target?: LinkTarget; base: string; onChange: (v: unknown) => void }) {
+  const { t } = useT();
+  const [open, setOpen] = useState(false);
+  const values: string[] = Array.isArray(value) ? (value as string[]) : [];
+  const labels = values.map((id) => target?.records.find((r) => r.id === id)?.label ?? "…");
+  const single = (config as { maxLinks?: number }).maxLinks === 1;
+  const items = (target?.records ?? []).filter((r) => r.id !== recordId).map((r) => ({ value: r.id, label: r.label }));
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className={cn(base, "gap-1 cursor-pointer overflow-hidden")} data-testid={`link-cell-${field.id}`}>
+          {labels.length ? (
+            labels.map((l, i) => (
+              <span key={i} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 text-xs truncate max-w-[160px]" title={l}>
+                <Link2 size={10} className="shrink-0" /> <span className="truncate">{l}</span>
+              </span>
+            ))
+          ) : (
+            <span className="text-neutral-300">—</span>
+          )}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-1.5 pt-2">
+        {!target ? (
+          <div className="text-xs text-neutral-400 px-2 py-2">No linked table configured</div>
+        ) : (
+          <>
+            <SearchList
+              items={items}
+              selected={values}
+              placeholder={t("th.searchParent")}
+              testId={`link-search-${field.id}`}
+              onPick={(id) => {
+                if (single) {
+                  onChange(values.includes(id) ? [] : [id]);
+                  setOpen(false);
+                } else onChange(values.includes(id) ? values.filter((v) => v !== id) : [...values, id]);
+              }}
+            />
+            {single && values.length ? (
+              <button type="button" onClick={() => { onChange([]); setOpen(false); }} className="mt-1 w-full rounded-sm px-2 py-1.5 text-left text-xs text-neutral-500 hover:bg-neutral-100 hover:text-red-600 dark:hover:bg-neutral-800">
+                {t("th.removeParent")}
+              </button>
+            ) : null}
+          </>
+        )}
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 function safeButtonUrl(template: string | undefined, taskId: string): string | null {

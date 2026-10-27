@@ -70,9 +70,11 @@ export const MentionInput = forwardRef<MentionInputHandle, {
     const element = taRef.current;
     if (!autoGrow || !element) return;
     const fit = () => {
+      // Grow with the text up to 40% of the screen, then scroll inside the box.
+      const max = Math.round(window.innerHeight * 0.4);
       element.style.height = "auto";
-      element.style.height = `${element.scrollHeight}px`;
-      element.style.overflowY = "hidden";
+      element.style.height = `${Math.min(element.scrollHeight, max)}px`;
+      element.style.overflowY = element.scrollHeight > max ? "auto" : "hidden";
     };
     fit();
     const observer = typeof ResizeObserver !== "undefined" ? new ResizeObserver(fit) : null;

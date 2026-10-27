@@ -2,7 +2,7 @@
 import { useMemo, useState } from "react";
 import { ChevronRight, CornerLeftUp, ListTree, Plus, X } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
-import { Select } from "@/components/ui/misc";
+import { SearchPicker } from "@/components/ui/search-list";
 import { parseFieldConfig } from "@/lib/field-types";
 import { cn } from "@/lib/utils";
 import type { FieldRow, RecordRow } from "@/types";
@@ -137,7 +137,7 @@ export function TaskHierarchy({
         )}
         {canEdit && parentOptions.length ? (
           <div className="mt-1.5 max-w-sm">
-            <Select value="" onValueChange={(v) => v && onSetParent(v)} options={[{ value: "", label: t("th.pickParent") }, ...parentOptions]} className="h-8 w-full text-xs" data-testid="th-pick-parent" />
+            <SearchPicker items={parentOptions} onPick={onSetParent} label={chain.length ? t("th.changeParent") : t("th.pickParent")} placeholder={t("th.searchParent")} testId="th-pick-parent" />
           </div>
         ) : null}
       </section>

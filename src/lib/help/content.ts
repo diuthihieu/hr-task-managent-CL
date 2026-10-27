@@ -207,7 +207,8 @@ export const HELP_TABS: HelpTab[] = [
           ["Right-click a row: Insert N rows above / below (type how many, up to 50) or Delete the selected rows. New rows keep the level of the row you clicked (same parent task). In a grouped view they also take that group's value, so they stay in the group; they only move when you change that value. Each group also has its own + Add task button.", "Chuột phải vào dòng: Chèn N dòng phía trên / phía dưới (gõ số dòng, tối đa 50) hoặc Xoá các dòng đang chọn. Dòng mới giữ cùng cấp với dòng bạn bấm (cùng task mẹ). Trong view đang nhóm, dòng mới tự nhận giá trị của nhóm đó nên nằm đúng nhóm; chỉ chuyển nhóm khi bạn đổi giá trị đó. Mỗi nhóm cũng có nút + Thêm task riêng."],
           ["After you comment, AI checks whether the comment asks for new work and proposes a task (name, project you can create in, due date, assignees, sub-task of this task). Nothing is created until you press Create task; it only runs where AI is turned on for the workspace.", "Sau khi bạn bình luận, AI xem bình luận có giao việc mới không và đề xuất tạo task (tên, project bạn có quyền tạo task, hạn, người phụ trách, là task con của task này). Chỉ tạo khi bạn bấm Tạo task; tính năng chỉ chạy khi workspace bật AI."],
           ["Drag a column header to reorder it; drag its edge to resize.", "Kéo tiêu đề cột để đổi vị trí; kéo mép cột để đổi độ rộng."],
-          ["Press + Add task at the bottom to add a row.", "Bấm + Thêm task ở cuối bảng để thêm dòng."],
+          ["Press + New task above the table to fill in a form with the table's columns, then Add (or Cancel); the task appears at the top. + Add task at the bottom still adds an empty row.", "Bấm + Task mới phía trên bảng để điền form gồm các cột của bảng rồi bấm Thêm (hoặc Huỷ); task mới nằm trên cùng. Nút + Thêm task ở cuối bảng vẫn thêm một dòng trống."],
+          ["Sub-tasks always sit right under their parent task, also when the table is grouped: they follow the parent's group. A sub-task's start and due dates must stay within its parent's dates.", "Task con luôn nằm ngay dưới task mẹ, kể cả khi bảng đang nhóm: task con đi theo nhóm của task mẹ. Ngày bắt đầu và hạn của task con phải nằm trong khoảng ngày của task mẹ."],
         ],
         tips: [["Freeze columns from the column menu: frozen columns and group names stay visible when you scroll sideways.", "Cố định cột từ menu của cột: cột cố định và tên nhóm vẫn hiện khi kéo ngang."]],
       },
@@ -270,6 +271,7 @@ export const HELP_TABS: HelpTab[] = [
         id: "gantt",
         title: ["Gantt view", "View Gantt"],
         body: ["A timeline of tasks to spot overlaps. Drag a bar to move it, drag its edge to change the duration, double-click to open the task.", "Dòng thời gian của task để thấy việc chồng chéo. Kéo thanh để dời, kéo mép để đổi thời lượng, nhấp đúp để mở task."],
+        tips: [["Filter, Sort and Group in the toolbar work here too; the Show buttons narrow the timeline quickly: with dates, this month, this quarter, overdue.", "Lọc, Sắp xếp và Nhóm trên thanh công cụ cũng áp dụng cho Gantt; các nút Hiển thị giúp lọc nhanh: có ngày, tháng này, quý này, quá hạn."]],
       },
       {
         id: "eisenhower",

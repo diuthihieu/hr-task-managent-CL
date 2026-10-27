@@ -263,7 +263,10 @@ export const RichCommentInput = forwardRef<RichCommentInputHandle, {
 
   return (
     <div className={cn("relative min-w-0 flex-1 rounded-lg border border-neutral-300 bg-white focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:border-neutral-700 dark:bg-neutral-900 dark:focus-within:ring-indigo-950", className)}>
-      <EditorContent editor={editor} />
+      {/* A long comment scrolls inside the box instead of pushing the send button / panel out of view. */}
+      <div className="max-h-[40vh] overflow-y-auto thin-scroll [overflow-wrap:anywhere]" data-testid={testId ? `${testId}-scroll` : undefined}>
+        <EditorContent editor={editor} />
+      </div>
       <div className="flex flex-wrap items-center gap-0.5 border-t border-neutral-200 px-1.5 py-1 dark:border-neutral-800" role="toolbar" aria-label={t("editor.toolbar")} data-testid={testId ? `${testId}-toolbar` : undefined}>
         {toolbarButton(t("fmt.bold"), editor.isActive("bold"), () => editor.chain().focus().toggleBold().run(), <Bold size={15} />)}
         {toolbarButton(t("fmt.italic"), editor.isActive("italic"), () => editor.chain().focus().toggleItalic().run(), <Italic size={15} />)}

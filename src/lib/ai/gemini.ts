@@ -1,6 +1,7 @@
 import "server-only";
 import { HttpError } from "../http-errors";
 import { rankModels, type ListedModel } from "./models";
+import { currentAiContext, recordAiUsage } from "./usage";
 
 // Minimal Gemini API client over REST (no SDK): generateContent and
 // streamGenerateContent (SSE). Configure with environment variables:
@@ -327,19 +328,37 @@ async function generateCollected(opts: GenerateOptions, total: number): Promise<
 /** One-shot generation. Calls with a long budget (> 60 s) are streamed and collected. */
 export async function generate(opts: GenerateOptions): Promise<{ text: string; model: string } & Usage> {
   await assertWorkspaceAi(opts.workspaceId);
-  if ((opts.timeBudgetMs ?? 0) > 60_000) return generateCollected(opts, opts.timeBudgetMs!);
+  if ((opts.timeBudgetMs ?? 0) > 60_000) {
+    const r = await generateCollected(opts, opts.timeBudgetMs!);
+    recordAiUsage({ workspaceId: opts.workspaceId, model: r.model, tokensIn: r.tokensIn, tokensOut: r.tokensOut });
+    return r;
+  }
   const { res, model } = await callWithFallback("generateContent", requestInit(opts), opts.timeBudgetMs);
   const body = (await res.json()) as GeminiResponse;
+  const tokensIn = body.usageMetadata?.promptTokenCount ?? null;
+  const tokensOut = body.usageMetadata?.candidatesTokenCount ?? null;
+  // Tokens are spent (and counted) even when the answer is then declined.
+  recordAiUsage({ workspaceId: opts.workspaceId, model, tokensIn, tokensOut });
   if (body.promptFeedback?.blockReason) throw new HttpError(400, `The AI declined this request (${body.promptFeedback.blockReason})`);
-  return { text: textOf(body), model, tokensIn: body.usageMetadata?.promptTokenCount ?? null, tokensOut: body.usageMetadata?.candidatesTokenCount ?? null };
+  return { text: textOf(body), model, tokensIn, tokensOut };
 }
 
 /** Streaming generation: yields text chunks; `usage` is filled in when the stream ends. */
 export async function streamGenerate(opts: GenerateOptions, usage: Usage, signal?: AbortSignal): Promise<AsyncGenerator<string>> {
   await assertWorkspaceAi(opts.workspaceId);
-  const { res } = await callWithFallback("streamGenerateContent", { ...requestInit(opts), signal });
+  const { res, model } = await callWithFallback("streamGenerateContent", { ...requestInit(opts), signal });
   if (!res.body) throw new HttpError(502, "The AI service returned an empty response");
-  return readStream(res.body, usage);
+  // The stream is read after the route returns, so the request context is captured now.
+  return countedStream(readStream(res.body, usage), usage, { workspaceId: opts.workspaceId, model, ctx: currentAiContext() });
+}
+
+/** Passes the chunks through and records the token usage once the stream ends (or is cut off). */
+async function* countedStream(chunks: AsyncGenerator<string>, usage: Usage, meta: { workspaceId: string | null; model: string; ctx: ReturnType<typeof currentAiContext> }): AsyncGenerator<string> {
+  try {
+    yield* chunks;
+  } finally {
+    recordAiUsage({ workspaceId: meta.workspaceId, model: meta.model, tokensIn: usage.tokensIn, tokensOut: usage.tokensOut, ctx: meta.ctx });
+  }
 }
 
 /** Parse Gemini's SSE stream into text chunks; fills `usage` from the final event. */

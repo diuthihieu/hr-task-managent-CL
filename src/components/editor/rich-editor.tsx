@@ -101,7 +101,8 @@ export function RichEditor({
       TaskList,
       TaskItem.configure({ nested: true }),
       Highlight,
-      Table.configure({ resizable: false }),
+      // Columns can be resized by dragging their right edge (widths are saved as colwidth).
+      Table.configure({ resizable: true, cellMinWidth: 60, lastColumnResizable: true }),
       TableRow,
       TableHeader,
       TableCell,

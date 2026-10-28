@@ -12,6 +12,8 @@ import { uuid } from "@/lib/validation";
 
 type P = { workspaceId: string };
 
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
  * Kudos: ?scope=wall (public letters, default) | received (mine, incl. private) | sent.
  * &userId= narrows the wall to one person's letters; &from=&to= by date.
@@ -23,6 +25,7 @@ export const GET = route<P>(async (req, { params }) => {
   const scope = url.searchParams.get("scope") ?? "wall";
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
+  if ((from && !DATE.test(from)) || (to && !DATE.test(to)) || [from, to].some((d) => d && Number.isNaN(new Date(`${d}T00:00:00Z`).getTime()))) throw badRequest("Dates must be YYYY-MM-DD");
   const rawUserId = url.searchParams.get("userId");
   const userId = rawUserId ? uuid.safeParse(rawUserId) : null;
   if (userId && !userId.success) throw badRequest("userId must be a valid id");

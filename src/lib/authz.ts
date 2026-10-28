@@ -322,6 +322,13 @@ export function errorResponse(e: unknown): Response {
     if (e.code === "P2002") return NextResponse.json({ error: "A record with this value already exists" }, { status: 409 });
     if (e.code === "P2003") return NextResponse.json({ error: "This item is still referenced by other data" }, { status: 409 });
     if (e.code === "P2025") return NextResponse.json({ error: "Not found" }, { status: 404 });
+    // A value that isn't a valid id for a uuid column.
+    if (e.code === "P2023") return NextResponse.json({ error: "Invalid id" }, { status: 400 });
+  }
+  if (e instanceof Prisma.PrismaClientValidationError) {
+    // e.g. an invalid date reached a query. Logged (it can also mean a query bug), never echoed: the message holds the query.
+    console.error(e);
+    return NextResponse.json({ error: "Invalid input" }, { status: 400 });
   }
   if (e instanceof Prisma.PrismaClientKnownRequestError || e instanceof Prisma.PrismaClientUnknownRequestError) {
     // Never echo raw database errors (they include row contents) - map them.

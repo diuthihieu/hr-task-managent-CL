@@ -2,15 +2,21 @@ import "server-only";
 import { z } from "zod";
 import type { Prisma } from "@prisma/client";
 
-export const rewardSchema = z.object({
+const rewardFields = z.object({
   name: z.string().trim().min(1).max(200),
   description: z.string().trim().max(2000).nullable().optional(),
   pointsCost: z.number().int().min(1).max(10_000_000),
   price: z.number().min(0).max(1e12).nullable().optional(),
-  currency: z.string().trim().min(1).max(8).default("VND"),
+  currency: z.string().trim().min(1).max(8),
   quantity: z.number().int().min(0).max(1_000_000),
-  active: z.boolean().default(true),
+  active: z.boolean(),
 });
+
+/** New rewards: VND and active unless said otherwise. */
+export const rewardSchema = rewardFields.extend({ currency: rewardFields.shape.currency.default("VND"), active: rewardFields.shape.active.default(true) });
+
+/** Edits change only the fields sent (.partial() would keep the defaults above and re-enable / reset the currency). */
+export const rewardPatchSchema = rewardFields.partial();
 
 export const REWARD_SELECT = {
   id: true,

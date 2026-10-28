@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { route, readJson, notFound, badRequest } from "@/lib/authz";
 import { recoContext } from "@/lib/recognition/route-helpers";
 import { notifyReachableRewards, requireRecognitionManager } from "@/lib/recognition/points";
-import { REWARD_SELECT, rewardSchema, serializeReward } from "@/lib/recognition/rewards";
+import { REWARD_SELECT, rewardPatchSchema, serializeReward } from "@/lib/recognition/rewards";
 
 type P = { rewardId: string };
 
@@ -18,7 +18,7 @@ async function managed(rewardId: string) {
 export const PATCH = route<P>(async (req, { params }) => {
   const { rewardId } = await params;
   const r = await managed(rewardId);
-  const body = rewardSchema.partial().parse(await readJson(req));
+  const body = rewardPatchSchema.parse(await readJson(req));
   if (body.quantity !== undefined && body.quantity < r.approvedCount) throw badRequest(`Stock can't be lower than the ${r.approvedCount} already approved`);
   const row = await prisma.reward.update({ where: { id: rewardId }, data: { ...body, price: body.price === undefined ? undefined : body.price }, select: REWARD_SELECT });
   await notifyReachableRewards(r.workspaceId);

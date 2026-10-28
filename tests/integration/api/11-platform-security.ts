@@ -541,3 +541,20 @@ test("forgot password: no mail → clear 503; a signed link resets once and sign
   assert.equal(await new Client().login("forgetful@integration.test", "OldPass123"), false);
   assert.ok(await new Client().login("forgetful@integration.test", winner));
 });
+
+test("malformed ids and dates are a 400 with a plain message, never a 500", async () => {
+  const checks: [string, Promise<{ status: number; body: unknown }>][] = [
+    ["workspace id", admin.get("/api/workspaces/not-a-uuid")],
+    ["public form id (signed out)", new Client().get("/api/public/forms/not-a-uuid")],
+    ["audit log ?before", admin.get(`/api/workspaces/${s.ws}/activity?before=garbage`)],
+    ["kudos ?from", admin.get(`/api/workspaces/${s.ws}/kudos?from=abc`)],
+    ["kudos ?to", admin.get(`/api/workspaces/${s.ws}/kudos?to=2026-13-99x`)],
+    ["decisions ?projectId", admin.get(`/api/workspaces/${s.ws}/decisions?projectId=nope`)],
+  ];
+  for (const [what, req] of checks) {
+    const r = await req;
+    assert.equal(r.status, 400, `${what}: ${r.status} ${JSON.stringify(r.body)}`);
+    assert.doesNotMatch(JSON.stringify(r.body), /prisma|invocation|SELECT/i, `${what}: no database details`);
+  }
+  assert.equal((await admin.get(`/api/workspaces/${s.ws}/activity?before=${encodeURIComponent(new Date().toISOString())}`)).status, 200, "a real date still works");
+});

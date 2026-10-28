@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { hiddenProjectIds, requireUser, requireWorkspaceRole, route } from "@/lib/authz";
+import { badRequest, hiddenProjectIds, requireUser, requireWorkspaceRole, route } from "@/lib/authz";
 import { serializeActivity } from "@/lib/activity-query";
 import { activityInProjects } from "@/lib/activity-hidden";
 
@@ -14,6 +14,7 @@ export const GET = route<P>(async (req, { params }) => {
   await requireWorkspaceRole(user, workspaceId, "admin");
   const url = new URL(req.url);
   const before = url.searchParams.get("before");
+  if (before && Number.isNaN(new Date(before).getTime())) throw badRequest("before must be a date");
   const entityType = url.searchParams.get("entityType");
   const take = Math.min(Number(url.searchParams.get("limit")) || 100, 200);
   const where: Prisma.ActivityLogWhereInput = { workspaceId, ...(entityType ? { entityType } : {}), ...(before ? { createdAt: { lt: new Date(before) } } : {}) };

@@ -19,6 +19,7 @@ import { prisma } from "./prisma";
 
 export { HttpError, unauthorized, forbidden, notFound, badRequest } from "./http-errors";
 import { HttpError, unauthorized, forbidden, notFound, badRequest } from "./http-errors";
+import { isCrossSiteWrite } from "./origin-check";
 import { featureOfPath, runWithAiContext, setAiContextUser } from "./ai/usage";
 import { roleAtLeast, supportAccess, wikiRoleAtLeast, type SessionUser, type WikiRoleName, type WorkspaceContext } from "./access";
 import { assertProjectCap, canManageProject, projectCaps } from "./project-permissions";
@@ -284,6 +285,8 @@ export function route<P = Record<string, string>>(handler: Handler<P>): Handler<
     } catch {}
     return runWithAiContext({ feature, userId: null }, async () => {
       try {
+        // Writes the browser marks as coming from another site never run (CSRF, see origin-check.ts).
+        if (isCrossSiteWrite(req)) throw forbidden("Cross-site request refused");
         return await handler(req, ctx);
       } catch (e) {
         return errorResponse(e);

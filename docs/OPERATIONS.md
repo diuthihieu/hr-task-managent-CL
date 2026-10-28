@@ -54,3 +54,9 @@ docker compose up -d app
 ```
 PostgreSQL is only published on 127.0.0.1. Put a TLS-terminating proxy in front of the app that overwrites
 `X-Forwarded-For`, and set `AUTH_URL` to the public origin.
+
+Signed-in writes (POST / PUT / PATCH / DELETE) are refused with 403 when the browser's `Origin` is another
+site. The Origin's host must match `X-Forwarded-Host` or `Host`, or the origin must equal `AUTH_URL` or be
+listed in `ALLOWED_ORIGINS` (comma-separated). nginx's `proxy_pass http://app:3000` rewrites `Host` to
+`app:3000` and sends no `X-Forwarded-Host` by default: add `proxy_set_header Host $host;` (or
+`X-Forwarded-Host`), or set `AUTH_URL`, otherwise every save is refused.

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfWikiPage, badRequest, forbidden, wikiRoleAtLeast } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfWikiPage, badRequest, forbidden, wikiRoleAtLeast, hiddenProjectIds } from "@/lib/authz";
 import { logActivity, diff } from "@/lib/activity";
 import { assertNoWikiCycle, serializeKnowledgeMeta, serializeWikiSummary, wikiSubtreeIds } from "@/lib/wiki";
 import { knowledgeMetaSchema, toDate } from "@/lib/brain/meta-schema";
@@ -104,7 +104,9 @@ export const PATCH = route<P>(async (req, { params }) => {
     const sources = body.content !== undefined || body.title !== undefined ? await refreshPageSources(tx, pageId) : after.sourceProjectIds;
     return { ...after, restrictedTo: await restrictingProjects(tx, sources) };
   });
-  return NextResponse.json({ ...(await fullPage(await loadPage(pageId), ctx.wikiRole ?? null)), restrictedTo: page.restrictedTo });
+  // The notice names only projects the editor can see: their own edit must not reveal a hidden project.
+  const hidden = await hiddenProjectIds(user);
+  return NextResponse.json({ ...(await fullPage(await loadPage(pageId), ctx.wikiRole ?? null)), restrictedTo: page.restrictedTo.filter((p) => !hidden.has(p.id)) });
 });
 
 /** Soft-deletes the page and its sub-pages (wiki editors). */

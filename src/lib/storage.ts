@@ -4,6 +4,9 @@
 
 import { put, get, del, copy } from "@vercel/blob";
 import { HttpError } from "./http-errors";
+import { safeContentType } from "./content-type";
+
+export { safeContentType };
 
 export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024; // Vercel function request body limit is 4.5 MB.
 export const MAX_CLIENT_UPLOAD_BYTES = 100 * 1024 * 1024;
@@ -99,23 +102,6 @@ export async function uploadAgentArtifact(opts: { workspaceId: string; runId: st
     if (/access|public|private/i.test(message)) throw new HttpError(503, `File storage is misconfigured: the Blob store does not accept ${mode} files`);
     throw storageError(error);
   }
-}
-
-/**
- * The type recorded for the blob. The browser's claim is only kept when it
- * matches the extension family; anything else is stored as a download
- * (application/octet-stream), so a renamed file can't be served as something active.
- */
-const EXT_TYPES: Record<string, RegExp> = {
-  pdf: /^application\/pdf$/, png: /^image\/png$/, jpg: /^image\/jpeg$/, jpeg: /^image\/jpeg$/, gif: /^image\/gif$/, webp: /^image\/webp$/,
-  txt: /^text\/plain/, csv: /^text\/(csv|plain)/, md: /^text\/(markdown|plain)/, json: /^application\/json/,
-  docx: /officedocument\.wordprocessingml/, xlsx: /officedocument\.spreadsheetml/, pptx: /officedocument\.presentationml/,
-  doc: /msword/, xls: /ms-excel/, ppt: /ms-powerpoint/, zip: /zip/, mp4: /^video\/mp4$/, mp3: /^audio\/mpeg$/,
-};
-export function safeContentType(file: { name: string; type: string }) {
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  const claimed = (file.type || "").toLowerCase();
-  return EXT_TYPES[ext]?.test(claimed) ? claimed : "application/octet-stream";
 }
 
 function storageError(e: unknown) {

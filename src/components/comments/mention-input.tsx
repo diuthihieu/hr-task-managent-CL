@@ -2,6 +2,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { AtSign } from "lucide-react";
 import { markdownToHtml } from "@/components/ai/markdown";
+import { swapTokens } from "@/lib/sanitized-dom";
 import { RichCommentInput } from "@/components/comments/rich-comment-input";
 import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
@@ -226,12 +227,22 @@ export function CommentBody({ body, className, markdown }: { body: string; class
     );
   }
   if (markdown) {
-    const esc = (x: string) => x.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
-    // Mentions become placeholders first so Markdown never sees their brackets, then turn into chips.
+    // Mentions become placeholders first so Markdown never sees their brackets, then turn into
+    // chips through the DOM (never by editing the sanitized string - see sanitized-dom.ts).
     const names: string[] = [];
     const normalizedBody = body.replace(/\*\*([^*\n]*?\S)\s+\*\*/g, "**$1** ").replace(/_([^_\n]*?\S)\s+_/g, "_$1_ ");
     const md = normalizedBody.replace(MENTION_RE, (_m, name: string) => `MENTIONTOKEN${names.push(name) - 1}ENDTOKEN`);
-    const html = markdownToHtml(md).replace(/MENTIONTOKEN(\d+)ENDTOKEN/g, (_m, i: string) => `<span class="rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-1 font-medium" data-testid="mention-chip">@${esc(names[Number(i)] ?? "")}</span>`);
+    const html = swapTokens(markdownToHtml(md), {
+      pattern: "MENTIONTOKEN(\\d+)ENDTOKEN",
+      text: (m) => `@${names[Number(m[1])] ?? ""}`,
+      node: (m, doc) => {
+        const chip = doc.createElement("span");
+        chip.className = "rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 px-1 font-medium";
+        chip.setAttribute("data-testid", "mention-chip");
+        chip.textContent = `@${names[Number(m[1])] ?? ""}`;
+        return chip;
+      },
+    });
     return <div className={cn("ai-md comment-md break-words", className)} dangerouslySetInnerHTML={{ __html: html }} />;
   }
   const parts: React.ReactNode[] = [];

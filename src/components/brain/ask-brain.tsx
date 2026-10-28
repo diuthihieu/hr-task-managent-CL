@@ -11,6 +11,7 @@ import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 import { markdownToHtml } from "@/components/ai/markdown";
+import { swapTokens } from "@/lib/sanitized-dom";
 import { LinkPicker, type LinkTarget } from "./link-picker";
 import type { MessageKey } from "@/lib/i18n/core";
 import { Meta, MetaChip, MetaStatus } from "@/components/ui/meta";
@@ -260,10 +261,19 @@ function Answer({ turn }: { turn: Turn }) {
   const sources = useMemo(() => turn.sources ?? [], [turn.sources]);
   // Turn [S3] into a link to source 3.
   const html = useMemo(() => {
-    const base = markdownToHtml(turn.content);
-    return base.replace(/\[S(\d{1,3})\]/g, (m, n) => {
-      const s = sources.find((x) => x.n === Number(n));
-      return s ? `<a class="brain-cite" href="#src-${n}" title="${s.title.replace(/"/g, "&quot;")}">[S${n}]</a>` : m;
+    return swapTokens(markdownToHtml(turn.content), {
+      pattern: "\\[S(\\d{1,3})\\]",
+      text: (m) => m[0],
+      node: (m, doc) => {
+        const s = sources.find((x) => x.n === Number(m[1]));
+        if (!s) return null;
+        const a = doc.createElement("a");
+        a.className = "brain-cite";
+        a.setAttribute("href", `#src-${m[1]}`);
+        a.setAttribute("title", s.title);
+        a.textContent = m[0];
+        return a;
+      },
     });
   }, [turn.content, sources]);
   return (

@@ -58,3 +58,9 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 /e2e/.auth/
+
+# Videos, slide decks and large documents live in Google Drive (README: Large files)
+/docs/**/*.mp4
+/docs/**/*.pptx
+/docs/woli-Huong-dan-su-dung-video.srt
+/docs/Huong-dan-Vibe-Coding-Claude-Code.docx

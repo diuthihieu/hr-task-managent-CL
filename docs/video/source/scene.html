@@ -1,0 +1,459 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root {
+    --o1: #ff4d12; --o2: #ff7a1a; --o3: #ffb03a;
+    --navy: #0b1220; --ink: #111827; --cream: #fff7ed;
+    --grad: linear-gradient(100deg, #ff4d12 0%, #ff8a1f 55%, #ffb63c 100%);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1080px; height: 1920px; overflow: hidden; background: #000; }
+  body { font-family: "Inter Display", "Inter", sans-serif; color: #fff; -webkit-font-smoothing: antialiased; }
+  #stage { position: absolute; inset: 0; overflow: hidden; }
+  .layer { position: absolute; inset: 0; }
+  .scene { position: absolute; inset: 0; display: none; overflow: hidden; }
+  canvas { position: absolute; inset: 0; }
+  .center { position: absolute; left: 0; right: 0; text-align: center; }
+  .kin { font-weight: 800; letter-spacing: -0.045em; line-height: 1.02; }
+  .w { display: inline-block; white-space: pre; will-change: transform, opacity, filter; }
+  .grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .glow { filter: drop-shadow(0 0 28px rgba(255, 122, 26, .55)); }
+  .chip { display: inline-flex; align-items: center; gap: 14px; padding: 16px 30px; border-radius: 999px; font-family: Inter; font-weight: 700; font-size: 34px; letter-spacing: -0.01em; }
+  /* phone */
+  .phone { position: absolute; width: 640px; height: 1310px; left: 50%; top: 50%; margin-left: -320px; margin-top: -655px; transform-style: preserve-3d; }
+  .phone .frame { position: absolute; inset: 0; border-radius: 104px; background: linear-gradient(135deg, #3a3f47 0%, #9aa1ab 18%, #2b2f35 40%, #6f767f 62%, #1f2227 82%, #7d848d 100%);
+    box-shadow: 0 80px 120px -30px rgba(0,0,0,.55), 0 40px 60px -20px rgba(0,0,0,.35), inset 0 0 0 2px rgba(255,255,255,.25); }
+  .phone .bezel { position: absolute; inset: 12px; border-radius: 93px; background: #050505; }
+  .phone .screen { position: absolute; inset: 26px; border-radius: 80px; overflow: hidden; background: #fff; }
+  .phone .status { position: absolute; left: 0; right: 0; top: 0; height: 74px; background: #fff; display: flex; align-items: center; justify-content: space-between; padding: 14px 50px 0 62px; font-family: Inter; font-weight: 700; font-size: 26px; color: #111; z-index: 3; }
+  .phone .island { position: absolute; top: 20px; left: 50%; width: 180px; height: 50px; margin-left: -90px; border-radius: 30px; background: #000; z-index: 5; }
+  .phone .shot { position: absolute; left: 0; top: 74px; width: 100%; height: auto; z-index: 1; }
+  .phone .shot2 { opacity: 0; }
+  .phone .glare { position: absolute; inset: 26px; border-radius: 80px; z-index: 6; pointer-events: none; background: linear-gradient(115deg, rgba(255,255,255,.22) 0%, rgba(255,255,255,0) 32%, rgba(255,255,255,0) 70%, rgba(255,255,255,.08) 100%); }
+  .phone .btn { position: absolute; background: linear-gradient(90deg, #2a2d33, #8b929b, #2a2d33); border-radius: 4px; }
+  .phone .overlay { position: absolute; inset: 0; z-index: 4; }
+  .tap { position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%; border: 6px solid rgba(255,122,26,.95); background: rgba(255,122,26,.18); z-index: 7; opacity: 0; }
+  .finger { position: absolute; width: 74px; height: 74px; margin: -37px 0 0 -37px; border-radius: 50%; background: radial-gradient(circle at 40% 35%, rgba(255,255,255,.95), rgba(235,235,240,.85)); box-shadow: 0 10px 30px rgba(0,0,0,.35); z-index: 8; opacity: 0; }
+  /* ios share sheet + home screen mocks */
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; height: 64%; background: #f2f2f7; border-radius: 40px 40px 0 0; box-shadow: 0 -20px 60px rgba(0,0,0,.25); font-family: Inter; color: #111; padding: 34px 30px; transform: translateY(105%); }
+  .sheet .apps { display: flex; gap: 26px; margin: 18px 4px 30px; }
+  .sheet .app { width: 96px; height: 96px; border-radius: 24px; }
+  .sheet .row { background: #fff; border-radius: 22px; padding: 26px 30px; font-size: 30px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .sheet .row.hl { box-shadow: 0 0 0 5px rgba(255,122,26,.9); }
+  .home { position: absolute; inset: 0; background: linear-gradient(160deg, #ffd8b0 0%, #ff9d5c 45%, #ff6a2a 100%); opacity: 0; padding: 170px 54px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 46px 34px; align-content: start; font-family: Inter; }
+  .home .ic { width: 112px; height: 112px; border-radius: 28px; background: rgba(255,255,255,.55); }
+  .home .lbl { font-size: 22px; color: #fff; text-align: center; margin-top: 10px; font-weight: 600; text-shadow: 0 1px 4px rgba(0,0,0,.3); }
+  .home .woli { background: #fff; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 30px rgba(0,0,0,.25); }
+  .home .woli img { width: 84%; }
+  .dl { position: absolute; left: 30px; right: 30px; top: 96px; background: rgba(30,30,34,.94); color: #fff; border-radius: 30px; padding: 26px 30px; font-family: Inter; font-size: 26px; transform: translateY(-160%); z-index: 6; }
+  .dl .bar { height: 10px; border-radius: 6px; background: rgba(255,255,255,.2); margin-top: 16px; overflow: hidden; }
+  .dl .bar i { display: block; height: 100%; width: 0; background: var(--grad); }
+  .dialog { position: absolute; left: 50px; right: 50px; top: 38%; background: #fff; border-radius: 34px; padding: 40px; font-family: Inter; color: #111; box-shadow: 0 30px 80px rgba(0,0,0,.35); opacity: 0; z-index: 6; }
+  .dialog b { font-size: 34px; display: block; margin-bottom: 14px; }
+  .dialog p { font-size: 26px; color: #555; line-height: 1.35; }
+  .dialog .acts { display: flex; justify-content: flex-end; gap: 46px; margin-top: 34px; font-size: 28px; font-weight: 700; color: #1a73e8; }
+  /* chaos cards */
+  .card { position: absolute; background: #fff; color: #111; border-radius: 26px; padding: 22px 26px; font-family: Inter; font-size: 26px; font-weight: 600; box-shadow: 0 30px 60px rgba(0,0,0,.45); white-space: nowrap; }
+  .card .badge { position: absolute; top: -16px; right: -16px; min-width: 46px; height: 46px; border-radius: 23px; background: #ef4444; color: #fff; font-size: 24px; display: flex; align-items: center; justify-content: center; padding: 0 10px; }
+  .steps { position: absolute; left: 70px; right: 70px; bottom: 120px; display: flex; flex-direction: column; gap: 18px; }
+  .step { display: flex; align-items: center; gap: 22px; padding: 20px 26px; border-radius: 26px; background: rgba(255,255,255,.75); color: #1f2937; font-family: Inter; font-weight: 700; font-size: 34px; box-shadow: 0 10px 30px rgba(17,24,39,.08); transition: none; }
+  .step .n { width: 56px; height: 56px; border-radius: 50%; background: #e5e7eb; color: #6b7280; display: flex; align-items: center; justify-content: center; font-size: 28px; flex: none; }
+  .step.on { background: #fff; box-shadow: 0 0 0 4px #ff7a1a, 0 20px 40px rgba(255,122,26,.25); }
+  .step.on .n { background: var(--grad); color: #fff; }
+  .step.done .n { background: #22c55e; color: #fff; }
+  #grain { mix-blend-mode: overlay; opacity: .22; }
+  #vignette { background: radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,.55) 100%); pointer-events: none; }
+  #flash { background: #fff; opacity: 0; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="layer" id="bg"></div>
+  <canvas id="fx" width="1080" height="1920"></canvas>
+  <div id="scenes"></div>
+  <canvas id="grain" width="540" height="960" style="width:1080px;height:1920px"></canvas>
+  <div class="layer" id="vignette"></div>
+  <div class="layer" id="flash"></div>
+</div>
+<script>
+const $ = (h) => { const d = document.createElement("div"); d.innerHTML = h.trim(); return d.firstChild; };
+const clamp = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const prog = (t, a, b) => clamp((t - a) / (b - a));
+const eo = (k) => 1 - Math.pow(1 - k, 3);
+const eio = (k) => (k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+const back = (k) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(k - 1, 3) + c1 * Math.pow(k - 1, 2); };
+function rand(seed) { let a = seed >>> 0; return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+const TL = window.TIMELINE;
+const S = Object.fromEntries(TL.scenes.map((s) => [s.key, s]));
+const scenesEl = document.getElementById("scenes");
+const bg = document.getElementById("bg");
+const fx = document.getElementById("fx").getContext("2d");
+const flash = document.getElementById("flash");
+
+/* word-by-word kinetic text */
+function words(text, cls = "") { return text.split(" ").map((w) => `<span class="w ${cls}">${w} </span>`).join(""); }
+function animWords(el, t, start, stagger = 0.09, dur = 0.42, mode = "up") {
+  el.querySelectorAll(".w").forEach((w, i) => {
+    const k = prog(t, start + i * stagger, start + i * stagger + dur);
+    const e = mode === "slam" ? back(k) : eo(k);
+    w.style.opacity = k > 0 ? Math.min(1, k * 1.6) : 0;
+    if (mode === "slam") w.style.transform = `scale(${lerp(1.7, 1, e)})`;
+    else w.style.transform = `translateY(${lerp(70, 0, e)}px)`;
+    w.style.filter = `blur(${lerp(18, 0, eo(k))}px)`;
+  });
+}
+
+/* realistic phone */
+function phone(src, opts = {}) {
+  const p = $(`<div class="phone">
+    <div class="btn" style="left:-7px;top:250px;width:9px;height:70px"></div>
+    <div class="btn" style="left:-7px;top:350px;width:9px;height:120px"></div>
+    <div class="btn" style="left:-7px;top:490px;width:9px;height:120px"></div>
+    <div class="btn" style="right:-7px;top:380px;width:9px;height:180px"></div>
+    <div class="frame"></div><div class="bezel"></div>
+    <div class="screen">
+      <div class="status"><span>9:41</span><span style="display:flex;gap:10px;align-items:center">
+        <svg width="34" height="22" viewBox="0 0 34 22"><rect x="0" y="14" width="6" height="8" rx="2" fill="#111"/><rect x="9" y="10" width="6" height="12" rx="2" fill="#111"/><rect x="18" y="5" width="6" height="17" rx="2" fill="#111"/><rect x="27" y="0" width="6" height="22" rx="2" fill="#111"/></svg>
+        <svg width="50" height="24" viewBox="0 0 50 24"><rect x="1" y="1" width="42" height="22" rx="7" fill="none" stroke="#111" stroke-width="2" opacity=".5"/><rect x="4" y="4" width="34" height="16" rx="4" fill="#111"/><rect x="45" y="8" width="4" height="8" rx="2" fill="#111" opacity=".5"/></svg></span></div>
+      <img class="shot" src="${src}" />
+      <img class="shot shot2" src="${opts.src2 || src}" />
+      <div class="overlay"></div>
+    </div>
+    <div class="island"></div>
+    <div class="glare"></div>
+    <div class="tap"></div><div class="finger"></div>
+  </div>`);
+  return p;
+}
+/* tap at a point given in screen fractions (0..1) */
+function tapAt(p, t, at, fx_, fy) {
+  const tap = p.querySelector(".tap"), finger = p.querySelector(".finger");
+  const x = 26 + fx_ * (640 - 52), y = 26 + 74 + fy * (1310 - 52 - 74);
+  const kf = prog(t, at - 0.35, at), kr = prog(t, at, at + 0.45), ko = prog(t, at + 0.25, at + 0.55);
+  finger.style.left = x + 30 * (1 - eo(kf)) + "px"; finger.style.top = y + 60 * (1 - eo(kf)) + "px";
+  finger.style.opacity = (kf > 0 ? eo(kf) : 0) * (1 - ko);
+  finger.style.transform = `scale(${t >= at && t < at + 0.12 ? 0.85 : 1})`;
+  tap.style.left = x + "px"; tap.style.top = y + "px";
+  tap.style.opacity = kr > 0 && kr < 1 ? 1 - kr : 0;
+  tap.style.transform = `scale(${lerp(0.3, 1.5, eo(kr))})`;
+}
+function resetTap(p) { p.querySelector(".tap").style.opacity = 0; p.querySelector(".finger").style.opacity = 0; }
+
+/* ---------------- scenes ---------------- */
+const scenes = [];
+function scene(key, build, update) {
+  const el = $(`<div class="scene" data-k="${key}"></div>`);
+  scenesEl.appendChild(el);
+  const ctx = build(el) || {};
+  scenes.push({ key, el, ctx, update, s: S[key] });
+}
+
+// 1. spark
+scene("spark", (el) => {
+  el.innerHTML = `<div class="center kin" style="top:1220px;font-size:88px" id="sp1">${words("Every great team")}</div>
+    <div class="center kin" style="top:1330px;font-size:100px" id="sp2">${words("starts with a")}<span class="w grad glow">spark.</span></div>`;
+  return { l1: el.querySelector("#sp1"), l2: el.querySelector("#sp2") };
+}, (c, t, d) => {
+  bg.style.background = "#030305";
+  animWords(c.l1, t, 0.55, 0.12);
+  animWords(c.l2, t, 1.25, 0.12);
+  const z = 1 + 0.03 * t + (t > d - 0.3 ? eio(prog(t, d - 0.3, d)) * 0.6 : 0);
+  c.l1.parentElement.style.transform = `scale(${z})`;
+  c.l1.parentElement.style.opacity = 1 - prog(t, d - 0.2, d);
+});
+// 2. believe
+scene("believe", (el) => {
+  el.innerHTML = `<div class="center kin" style="top:1080px;font-size:118px" id="b1">${words("An idea.")}</div>
+    <div class="center kin" style="top:1210px;font-size:118px" id="b2">${words("A plan.")}</div>
+    <div class="center kin" style="top:1340px;font-size:104px" id="b3">${words("People who")}<span class="w grad glow">believe.</span></div>`;
+  return { a: el.querySelector("#b1"), b: el.querySelector("#b2"), c: el.querySelector("#b3") };
+}, (c, t, d) => {
+  bg.style.background = "radial-gradient(ellipse at 50% 30%, #1b2440 0%, #070a14 70%)";
+  animWords(c.a, t, 0.25, 0.08, 0.35, "slam");
+  animWords(c.b, t, 0.95, 0.08, 0.35, "slam");
+  animWords(c.c, t, 1.6, 0.1, 0.38, "slam");
+  c.a.parentElement.style.opacity = 1 - prog(t, d - 0.2, d);
+  c.a.parentElement.style.transform = `scale(${1 + eio(prog(t, d - 0.3, d)) * 0.4})`;
+});
+// 3. scattered
+const chaos = [
+  ["💬 Chat · 37 unread", 37], ["📊 payroll_v7_FINAL(2).xlsx", 0], ["📧 Re: Re: Fwd: approvals", 12], ["🗂️ Tab 24 of 31", 0], ["📝 TODO.txt", 0],
+  ["📅 3 meetings overlap", 3], ["📎 where is the latest file?", 0], ["🔔 Reminder: deadline!", 5], ["💬 Ping? Any update?", 9], ["📊 headcount_report.xlsx", 0],
+  ["🗂️ Tab 31 of 31", 0], ["📧 URGENT!!", 21],
+];
+scene("scattered", (el) => {
+  const r = rand(11);
+  el.innerHTML = chaos.map(([txt, n], i) => `<div class="card" data-i="${i}" style="left:${60 + r() * 640}px;top:${600 + r() * 1150}px">${txt}${n ? `<span class="badge">${n}</span>` : ""}</div>`).join("") +
+    `<div class="center kin" style="top:420px;font-size:92px;z-index:5;text-shadow:0 6px 30px rgba(0,0,0,.8)" id="s1">${words("But work got")}<span class="w" style="color:#f87171">scattered.</span></div>
+     <div class="center kin" style="top:860px;font-size:150px;z-index:5" id="sw"></div>`;
+  return { cards: [...el.querySelectorAll(".card")], seeds: chaos.map((_, i) => rand(100 + i)), s1: el.querySelector("#s1"), sw: el.querySelector("#sw") };
+}, (c, t, d) => {
+  bg.style.background = "radial-gradient(ellipse at 50% 50%, #2a0f12 0%, #0a0507 75%)";
+  c.cards.forEach((card, i) => {
+    const k = eo(prog(t, i * 0.08, i * 0.08 + 0.5));
+    const ph = i * 1.7;
+    const dx = Math.sin(t * 1.8 + ph) * 26 + (t > 3 ? Math.sin(t * 40 + i) * 6 : 0), dy = Math.cos(t * 1.3 + ph) * 22;
+    card.style.opacity = k * 0.92;
+    card.style.transform = `translate(${dx}px,${dy}px) rotate(${Math.sin(ph) * 14 + Math.sin(t + ph) * 4}deg) scale(${lerp(0.6, 1, k) * (0.8 + (i % 3) * 0.12)})`;
+    card.style.filter = `blur(${(i % 4 === 0) ? 3 : 0}px)`;
+  });
+  animWords(c.s1, t, 0.15, 0.1);
+  const list = [["Chats.", 1.35], ["Spreadsheets.", 1.95], ["Endless tabs.", 2.55]];
+  let cur = null; for (const [w, at] of list) if (t >= at) cur = [w, at];
+  if (cur) { if (c.sw.dataset.w !== cur[0]) { c.sw.innerHTML = words(cur[0]); c.sw.dataset.w = cur[0]; } animWords(c.sw, t, cur[1], 0.05, 0.25, "slam"); c.sw.style.textShadow = "0 0 40px rgba(239,68,68,.6)"; }
+  else c.sw.innerHTML = "";
+});
+// 4. flow
+scene("flow", (el) => {
+  const r = rand(11);
+  el.innerHTML = chaos.map(([txt, n], i) => `<div class="card" style="left:${60 + r() * 640}px;top:${600 + r() * 1150}px">${txt}${n ? `<span class="badge">${n}</span>` : ""}</div>`).join("") +
+    `<svg style="position:absolute;inset:0" width="1080" height="1920"><defs><linearGradient id="rg" x1="0" x2="1"><stop offset="0" stop-color="#ff4d12"/><stop offset=".6" stop-color="#ff8a1f"/><stop offset="1" stop-color="#ffb63c"/></linearGradient>
+      <filter id="gl"><feGaussianBlur stdDeviation="14" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+      <path id="ribbon" d="M -100 1500 C 200 1300, 300 900, 540 960 S 900 700, 1200 420" fill="none" stroke="url(#rg)" stroke-width="54" stroke-linecap="round" filter="url(#gl)"/>
+      <path id="ribbon2" d="M -100 1650 C 250 1450, 380 1100, 600 1100 S 950 800, 1200 600" fill="none" stroke="url(#rg)" stroke-width="22" stroke-linecap="round" opacity=".6" filter="url(#gl)"/></svg>
+    <div class="center kin" style="top:430px;font-size:100px" id="f1">${words("What if everything")}</div>
+    <div class="center kin" style="top:560px;font-size:132px" id="f2">${words("just…")}<span class="w grad glow">flowed?</span></div>`;
+  const rb = el.querySelector("#ribbon"), rb2 = el.querySelector("#ribbon2");
+  return { cards: [...el.querySelectorAll(".card")], rb, rb2, L: 2400, f1: el.querySelector("#f1"), f2: el.querySelector("#f2") };
+}, (c, t, d) => {
+  const warm = prog(t, 0, d);
+  bg.style.background = `radial-gradient(ellipse at 50% 55%, rgba(255,122,26,${0.12 + 0.5 * warm}) 0%, #07070c 70%)`;
+  c.cards.forEach((card, i) => {
+    const k = eio(prog(t, 0.1 + i * 0.05, 1.6 + i * 0.05));
+    const rect = { x: parseFloat(card.style.left), y: parseFloat(card.style.top) };
+    const tx = (540 - rect.x - 150) * k, ty = (960 - rect.y) * k;
+    card.style.opacity = (1 - k) * 0.92;
+    card.style.transform = `translate(${tx}px,${ty}px) rotate(${(1 - k) * Math.sin(i * 1.7) * 14 + k * 360}deg) scale(${1 - k * 0.8})`;
+  });
+  const kr = eio(prog(t, 0.6, 2.4));
+  c.rb.setAttribute("stroke-dasharray", c.L); c.rb.setAttribute("stroke-dashoffset", c.L * (1 - kr));
+  c.rb2.setAttribute("stroke-dasharray", c.L); c.rb2.setAttribute("stroke-dashoffset", c.L * (1 - eio(prog(t, 0.9, 2.7))));
+  animWords(c.f1, t, 0.3, 0.1);
+  animWords(c.f2, t, 1.25, 0.16, 0.5);
+});
+// 5. introducing
+scene("introducing", (el) => {
+  el.innerHTML = `<img id="lg" src="assets/logo.png" style="position:absolute;left:50%;top:200px;width:360px;margin-left:-180px" />
+    <div id="ring" style="position:absolute;left:540px;top:300px;width:10px;height:10px;border-radius:50%;border:8px solid rgba(255,122,26,.7)"></div>
+    <div class="center" style="top:430px;font-family:Inter;font-weight:700;font-size:40px;letter-spacing:.32em;color:#9a3412" id="intro">INTRODUCING</div>
+    <div class="center kin" style="top:490px;font-size:156px;color:#0f172a" id="nm">${words("woli")}<span class="w grad">mobile</span></div>
+    <div class="center" style="top:690px;font-family:Inter;font-weight:600;font-size:46px;color:#334155" id="sub">${words("Your whole workspace. Now in your pocket.")}</div>`;
+  const p = phone("assets/shots/all.png");
+  el.appendChild(p);
+  const chips = ["✅ Tasks", "🎯 OKRs", "✨ AI", "📚 Wiki", "🏆 Recognition", "📊 Reports"].map((txt, i) => { const ch = $(`<div class="chip" style="position:absolute;background:#fff;color:#111827;box-shadow:0 20px 40px rgba(17,24,39,.12)">${txt}</div>`); el.appendChild(ch); return ch; });
+  return { p, chips, lg: el.querySelector("#lg"), ring: el.querySelector("#ring"), intro: el.querySelector("#intro"), nm: el.querySelector("#nm"), sub: el.querySelector("#sub") };
+}, (c, t, d) => {
+  bg.style.background = "radial-gradient(ellipse at 50% 20%, #ffffff 0%, #fff7ed 45%, #ffe2c4 100%)";
+  const kl = back(prog(t, 0.0, 0.6));
+  c.lg.style.transform = `scale(${lerp(0.3, 1, kl)}) rotate(${lerp(-12, 0, eo(prog(t, 0, .6)))}deg)`; c.lg.style.opacity = prog(t, 0, 0.15);
+  const kr = eo(prog(t, 0.05, 1.0));
+  c.ring.style.transform = `translate(-50%,-50%) scale(${lerp(1, 90, kr)})`; c.ring.style.opacity = 1 - kr;
+  c.intro.style.opacity = eo(prog(t, 0.4, 0.8)); c.intro.style.letterSpacing = lerp(0.6, 0.32, eo(prog(t, 0.4, 1.0))) + "em";
+  animWords(c.nm, t, 0.6, 0.18, 0.5, "slam");
+  animWords(c.sub, t, 2.0, 0.06, 0.4);
+  const kp = eo(prog(t, 1.4, 2.3));
+  const float = Math.sin(t * 1.6) * 8;
+  c.p.style.transform = `translateY(${lerp(1400, 470, kp) + float}px) rotateX(${lerp(40, 8, kp)}deg) rotateY(${lerp(-25, -6, kp) + Math.sin(t) * 3}deg) scale(.82)`;
+  c.p.style.opacity = prog(t, 1.4, 1.6);
+  c.chips.forEach((ch, i) => {
+    const k = back(prog(t, 2.6 + i * 0.12, 3.0 + i * 0.12));
+    const ang = (i / c.chips.length) * Math.PI * 2 + t * 0.35;
+    const x = 540 + Math.cos(ang) * 400 - 120, y = 1400 + Math.sin(ang) * 420;
+    ch.style.left = x + "px"; ch.style.top = y + "px"; ch.style.opacity = clamp(k); ch.style.transform = `scale(${k})`;
+    ch.style.zIndex = Math.sin(ang) > 0 ? 10 : 0;
+  });
+});
+// 6. ios install
+scene("ios", (el) => {
+  el.innerHTML = `<div class="center" style="top:80px"><span class="chip" style="background:#111827;color:#fff">📱 iPhone · iPad</span></div>
+    <div class="center kin" style="top:180px;font-size:100px;color:#0f172a">Install in <span class="grad">3 taps</span></div>
+    <div class="steps" id="st">
+      <div class="step"><span class="n">1</span>Open woli in Safari</div>
+      <div class="step"><span class="n">2</span>Tap Share <span style="font-size:38px">⬆︎</span></div>
+      <div class="step"><span class="n">3</span>Add to Home Screen <span style="font-size:38px">⊕</span></div></div>`;
+  const p = phone("assets/shots/install-ios.png");
+  p.querySelector(".overlay").innerHTML = `<div style="position:absolute;left:0;right:0;bottom:0;height:150px;background:rgba(246,246,248,.96);border-top:1px solid #ddd;font-family:Inter;color:#0a84ff;padding:16px 30px 0">
+      <div style="background:#e6e6eb;border-radius:18px;height:58px;display:flex;align-items:center;justify-content:center;color:#111;font-size:26px;font-weight:600">🔒 woli-work.vercel.app</div>
+      <div style="display:flex;justify-content:space-between;font-size:40px;padding:10px 20px 0"><span>‹</span><span style="opacity:.4">›</span><span id="shr">⬆︎</span><span>📖</span><span>⧉</span></div></div>
+    <div class="sheet"><div style="display:flex;gap:20px;align-items:center"><img src="assets/logo.png" style="width:86px;background:#fff;border-radius:20px;padding:12px"/><div><div style="font-weight:700;font-size:30px">woli</div><div style="color:#6b7280;font-size:24px">woli-work.vercel.app</div></div></div>
+    <div class="apps"><div class="app" style="background:#34c759"></div><div class="app" style="background:#0a84ff"></div><div class="app" style="background:#ffd60a"></div><div class="app" style="background:#bf5af2"></div></div>
+    <div class="row">Copy <span>⧉</span></div><div class="row" id="a2h">Add to Home Screen <span>⊕</span></div><div class="row">Add Bookmark <span>📖</span></div></div>
+    <div class="home">${Array.from({ length: 11 }, () => `<div><div class="ic"></div></div>`).join("")}<div><div class="ic woli" id="wi"><img src="assets/logo.png"/></div><div class="lbl">woli</div></div></div>`;
+  el.appendChild(p);
+  return { p, steps: [...el.querySelectorAll(".step")], sheet: p.querySelector(".sheet"), a2h: p.querySelector("#a2h"), home: p.querySelector(".home"), wi: p.querySelector("#wi") };
+}, (c, t, d) => {
+  bg.style.background = "radial-gradient(ellipse at 50% 40%, #ffffff 0%, #fff4e6 60%, #ffe0bf 100%)";
+  const kp = eo(prog(t, 0, 0.45));
+  c.p.style.transform = `translateY(${lerp(300, -150, kp) + Math.sin(t * 1.4) * 6}px) rotateY(${lerp(18, 0, kp)}deg) scale(.74)`;
+  c.p.style.opacity = prog(t, 0, 0.2);
+  const stage = t < 1.9 ? 0 : t < 3.6 ? 1 : 2;
+  c.steps.forEach((s, i) => { s.className = "step" + (i === stage ? " on" : i < stage ? " done" : ""); });
+  tapAt(c.p, t, t < 2.6 ? 1.9 : 3.6, t < 2.6 ? 0.5 : 0.45, t < 2.6 ? 0.955 : 0.62);
+  c.sheet.style.transform = `translateY(${lerp(105, 0, eo(prog(t, 2.0, 2.45)))}%)`;
+  c.a2h.className = "row" + (t > 3.45 ? " hl" : "");
+  const kh = eo(prog(t, 4.0, 4.35));
+  c.home.style.opacity = kh;
+  c.wi.style.transform = `scale(${back(prog(t, 4.35, 4.8))})`;
+});
+// 7. android install
+scene("android", (el) => {
+  el.innerHTML = `<div class="center" style="top:80px"><span class="chip" style="background:#0f9d58;color:#fff">🤖 Android</span></div>
+    <div class="center kin" style="top:180px;font-size:100px;color:#0f172a">Download <span class="grad">&amp; go</span></div>
+    <div class="steps"><div class="step"><span class="n">1</span>Download woli for Android</div><div class="step"><span class="n">2</span>Tap Install</div><div class="step"><span class="n">3</span>Open woli. Done!</div></div>`;
+  const p = phone("assets/shots/install-android.png");
+  p.querySelector(".island").style.cssText += ";width:44px;height:44px;margin-left:-22px;border-radius:50%";
+  p.querySelector(".overlay").innerHTML = `<div class="dl"><div style="display:flex;justify-content:space-between"><span>⬇️ woli-android-1.0.0.apk</span><span id="pc">0%</span></div><div class="bar"><i id="pb"></i></div></div>
+    <div class="dialog"><b>Install woli?</b><p>Do you want to install this app? It will update itself with every new version.</p><div class="acts"><span style="color:#5f6368">Cancel</span><span id="ins">Install</span></div></div>
+    <div class="home" style="background:linear-gradient(160deg,#cfe8ff 0%,#7fb4ff 50%,#3d6fe0 100%)">${Array.from({ length: 11 }, () => `<div><div class="ic" style="border-radius:50%"></div></div>`).join("")}<div><div class="ic woli" id="wi" style="border-radius:50%"><img src="assets/logo.png"/></div><div class="lbl">woli</div></div></div>`;
+  el.appendChild(p);
+  return { p, steps: [...el.querySelectorAll(".step")], dl: p.querySelector(".dl"), pb: p.querySelector("#pb"), pc: p.querySelector("#pc"), dialog: p.querySelector(".dialog"), home: p.querySelector(".home"), wi: p.querySelector("#wi") };
+}, (c, t, d) => {
+  bg.style.background = "radial-gradient(ellipse at 50% 40%, #ffffff 0%, #fff4e6 60%, #ffe0bf 100%)";
+  const kp = eo(prog(t, 0, 0.45));
+  c.p.style.transform = `translateY(${lerp(300, -150, kp) + Math.sin(t * 1.4) * 6}px) rotateY(${lerp(-18, 0, kp)}deg) scale(.74)`;
+  c.p.style.opacity = prog(t, 0, 0.2);
+  const stage = t < 1.6 ? 0 : t < 3.4 ? 1 : 2;
+  c.steps.forEach((s, i) => { s.className = "step" + (i === stage ? " on" : i < stage ? " done" : ""); });
+  tapAt(c.p, t, t < 2.5 ? 1.6 : 3.4, t < 2.5 ? window.TAPS["install-android"][0] : 0.78, t < 2.5 ? window.TAPS["install-android"][1] : 0.505);
+  const kd = eo(prog(t, 1.75, 2.05)), dlp = prog(t, 1.9, 2.8);
+  c.dl.style.transform = `translateY(${lerp(-160, 0, kd) - (t > 3.0 ? eo(prog(t, 3.0, 3.25)) * 180 : 0)}%)`;
+  c.pb.style.width = dlp * 100 + "%"; c.pc.textContent = Math.round(dlp * 100) + "%";
+  c.dialog.style.opacity = prog(t, 2.85, 3.05) * (1 - prog(t, 3.6, 3.8));
+  c.dialog.style.transform = `scale(${lerp(0.9, 1, eo(prog(t, 2.85, 3.1)))})`;
+  c.home.style.opacity = eo(prog(t, 3.9, 4.2));
+  c.wi.style.transform = `scale(${back(prog(t, 4.2, 4.65))})`;
+});
+// 8-14. feature tour
+const FEATS = [
+  ["all", "all.png", "Every feature,", "one tap away.", "All", window.TAPS.all],
+  ["day", "home.png", "Your day,", "prioritized.", "Home", window.TAPS.home],
+  ["matters", "mywork-matrix.png", "Know what", "matters most.", "My Work · Eisenhower", window.TAPS["mywork-matrix"]],
+  ["projects", "project.png", "Move every project", "forward.", "Projects", window.TAPS.project],
+  ["ai", "ai-typed.png", "Ask AI anything", "about your work.", "Workspace Intelligence", [0.9, window.TAPS["ai-typed"][1]]],
+  ["win", "recognition.png", "Celebrate", "every win.", "Recognition", window.TAPS.recognition],
+  ["miss", "inbox.png", "Never miss what", "needs you.", "Action center", window.TAPS.inbox],
+];
+FEATS.forEach(([key, shot, a, b, label, tp], idx) => {
+  scene(key, (el) => {
+    el.innerHTML = `<div class="center" style="top:120px"><span class="chip" style="background:rgba(255,255,255,.85);color:#9a3412;box-shadow:0 10px 30px rgba(255,122,26,.2)">${label}</span></div>
+      <div class="center kin" style="top:230px;font-size:96px;color:#0f172a" id="c1">${words(a)}</div>
+      <div class="center kin" style="top:336px;font-size:110px" id="c2">${words(b, "grad")}</div>`;
+    const p = phone("assets/shots/" + shot, key === "ai" ? { src2: "assets/shots/ai-typed.png" } : {});
+    if (key === "ai") p.querySelector(".shot").src = "assets/shots/ai.png";
+    el.appendChild(p);
+    return { p, c1: el.querySelector("#c1"), c2: el.querySelector("#c2"), dir: idx % 2 ? 1 : -1, tp, key };
+  }, (c, t, d) => {
+    bg.style.background = `radial-gradient(ellipse at ${30 + 40 * (idx % 2)}% 70%, #ffd2a6 0%, #fff7ed 45%, #ffffff 100%)`;
+    const ki = eo(prog(t, 0, 0.32)), ko = eio(prog(t, d - 0.22, d));
+    c.p.style.transform = `translate(${c.dir * lerp(700, 0, ki) - c.dir * 700 * ko}px, ${135 + Math.sin(t * 2) * 6}px) rotateY(${c.dir * lerp(35, 0, ki) - c.dir * 30 * ko + Math.sin(t * 1.5) * 2}deg) scale(${0.92 + 0.025 * t})`;
+    animWords(c.c1, t, 0.05, 0.06, 0.3);
+    animWords(c.c2, t, 0.18, 0.07, 0.32, "slam");
+    c.c1.parentElement.style.opacity = 1 - ko;
+    tapAt(c.p, t, 0.95, c.tp[0], c.tp[1]);
+    if (c.key === "ai") c.p.querySelector(".shot2").style.opacity = prog(t, 0.35, 0.6);
+  });
+});
+// 15. outro
+scene("outro", (el) => {
+  el.innerHTML = `<img id="lg" src="assets/logo.png" style="position:absolute;left:50%;top:520px;width:440px;margin-left:-220px" />
+    <div class="center kin" style="top:800px;font-size:190px;color:#fff" id="wm">woli</div>
+    <div class="center kin" style="top:1020px;font-size:96px" id="tg">${words("Work,")}<span class="w grad glow">in flow.</span></div>
+    <div class="center" style="top:1230px" id="cta"><span class="chip" style="background:var(--grad);color:#fff;font-size:44px;padding:26px 56px;box-shadow:0 20px 60px rgba(255,90,20,.45)">⬇ Download now</span></div>
+    <div class="center" style="top:1380px;display:flex;justify-content:center;gap:22px" id="pl"><span class="chip" style="background:rgba(255,255,255,.1);color:#fff;border:2px solid rgba(255,255,255,.25)">📱 iPhone</span><span class="chip" style="background:rgba(255,255,255,.1);color:#fff;border:2px solid rgba(255,255,255,.25)">🤖 Android</span></div>
+    <div class="center" style="top:1510px;font-family:Inter;font-weight:600;font-size:40px;color:#fdba74" id="url">woli-work.vercel.app</div>
+    <img id="ms" src="assets/mascot.png" style="position:absolute;width:300px;right:50px;top:1500px" />`;
+  return { lg: el.querySelector("#lg"), wm: el.querySelector("#wm"), tg: el.querySelector("#tg"), cta: el.querySelector("#cta"), pl: el.querySelector("#pl"), url: el.querySelector("#url"), ms: el.querySelector("#ms") };
+}, (c, t, d) => {
+  bg.style.background = `radial-gradient(ellipse at 50% 38%, rgba(255,110,30,${0.55 + 0.1 * Math.sin(t * 2)}) 0%, #1a0d08 45%, #07080d 80%)`;
+  const kl = back(prog(t, 0.05, 0.7));
+  c.lg.style.transform = `scale(${lerp(2.2, 1, eo(prog(t, 0.05, 0.7)))})`; c.lg.style.opacity = prog(t, 0.05, 0.3);
+  c.lg.style.filter = `drop-shadow(0 0 ${40 + 20 * Math.sin(t * 3)}px rgba(255,122,26,.7))`;
+  c.wm.style.opacity = eo(prog(t, 0.45, 0.9)); c.wm.style.letterSpacing = lerp(0.2, -0.045, eo(prog(t, 0.45, 1.1))) + "em";
+  animWords(c.tg, t, 1.0, 0.15, 0.45, "slam");
+  const kc = back(prog(t, 1.9, 2.3)); c.cta.style.transform = `scale(${kc})`; c.cta.style.opacity = clamp(kc);
+  c.pl.style.opacity = eo(prog(t, 2.3, 2.7)); c.pl.style.transform = `translateY(${lerp(40, 0, eo(prog(t, 2.3, 2.7)))}px)`;
+  c.url.style.opacity = eo(prog(t, 2.6, 3.0));
+  const km = eo(prog(t, 2.2, 2.9));
+  c.ms.style.transform = `translateX(${lerp(420, 0, km)}px) rotate(${Math.sin(t * 4) * 3}deg)`;
+  const fade = prog(t, d - 0.9, d);
+  c.lg.parentElement.style.opacity = 1 - fade;
+});
+
+/* ---------------- fx: particles / bokeh / grain ---------------- */
+const P = Array.from({ length: 70 }, (_, i) => { const r = rand(500 + i); return { x: r() * 1080, y: r() * 1920, s: 4 + r() * 22, v: 20 + r() * 70, ph: r() * 6.28, a: 0.15 + r() * 0.5 }; });
+function drawFx(t, key) {
+  fx.clearRect(0, 0, 1080, 1920);
+  const dark = ["spark", "believe", "scattered", "flow", "outro"].includes(key);
+  if (key === "spark") {
+    const k = eo(prog(t, 0.15, 1.6));
+    const g = fx.createRadialGradient(540, 860, 0, 540, 860, 40 + 900 * k);
+    g.addColorStop(0, `rgba(255,220,160,${0.95 * Math.min(1, k * 2)})`); g.addColorStop(0.08, `rgba(255,140,40,${0.8 * k})`); g.addColorStop(0.4, `rgba(255,90,20,${0.25 * k})`); g.addColorStop(1, "rgba(0,0,0,0)");
+    fx.fillStyle = g; fx.fillRect(0, 0, 1080, 1920);
+    fx.save(); fx.translate(540, 860); fx.rotate(t * 0.25);
+    for (let i = 0; i < 14; i++) { fx.rotate(Math.PI * 2 / 14); const gr = fx.createLinearGradient(0, 0, 0, -1100 * k); gr.addColorStop(0, `rgba(255,170,80,${0.22 * k})`); gr.addColorStop(1, "rgba(255,170,80,0)"); fx.fillStyle = gr; fx.beginPath(); fx.moveTo(-6, 0); fx.lineTo(-40 * k, -1100 * k); fx.lineTo(40 * k, -1100 * k); fx.lineTo(6, 0); fx.fill(); }
+    fx.restore();
+  }
+  if (key === "believe") {
+    // constellation: a team forming
+    const nodes = Array.from({ length: 16 }, (_, i) => { const r = rand(900 + i); return [140 + r() * 800, 300 + r() * 650]; });
+    const k = prog(t, 0, 3);
+    fx.strokeStyle = "rgba(255,150,70,.35)"; fx.lineWidth = 2;
+    nodes.forEach((a, i) => nodes.forEach((b, j) => { if (j > i && Math.hypot(a[0] - b[0], a[1] - b[1]) < 300 && (i + j) / 30 < k) { fx.beginPath(); fx.moveTo(a[0], a[1]); fx.lineTo(b[0], b[1]); fx.stroke(); } }));
+    nodes.forEach((a, i) => { if (i / 16 < k * 1.3) { fx.fillStyle = "rgba(255,170,90,.95)"; fx.beginPath(); fx.arc(a[0], a[1] + Math.sin(t * 2 + i) * 6, 9, 0, 7); fx.fill(); fx.fillStyle = "rgba(255,140,60,.18)"; fx.beginPath(); fx.arc(a[0], a[1] + Math.sin(t * 2 + i) * 6, 30, 0, 7); fx.fill(); } });
+  }
+  // bokeh / dust
+  for (const p of P) {
+    const y = (p.y - t * p.v + 1920 * 4) % 1920, x = p.x + Math.sin(t * 0.6 + p.ph) * 30;
+    const col = dark ? `rgba(255,${140 + (p.s * 3) % 80},70,${p.a * (key === "scattered" ? 0.25 : 0.6)})` : `rgba(255,150,60,${p.a * 0.28})`;
+    const g = fx.createRadialGradient(x, y, 0, x, y, p.s * (dark ? 1.6 : 2.4));
+    g.addColorStop(0, col); g.addColorStop(1, "rgba(0,0,0,0)");
+    fx.fillStyle = g; fx.beginPath(); fx.arc(x, y, p.s * (dark ? 1.6 : 2.4), 0, 7); fx.fill();
+  }
+  // moving light leak
+  const lx = 540 + Math.sin(t * 0.4) * 500, ly = 300 + Math.cos(t * 0.3) * 200;
+  const lk = fx.createRadialGradient(lx, ly, 0, lx, ly, 700);
+  lk.addColorStop(0, dark ? "rgba(255,120,40,.16)" : "rgba(255,160,80,.14)"); lk.addColorStop(1, "rgba(0,0,0,0)");
+  fx.fillStyle = lk; fx.fillRect(0, 0, 1080, 1920);
+}
+const gctx = document.getElementById("grain").getContext("2d");
+const gimg = gctx.createImageData(540, 960);
+function drawGrain(frame) {
+  const r = rand(frame * 7919 + 13), d = gimg.data;
+  for (let i = 0; i < d.length; i += 4) { const v = (r() * 255) | 0; d[i] = d[i + 1] = d[i + 2] = v; d[i + 3] = 255; }
+  gctx.putImageData(gimg, 0, 0);
+}
+
+/* ---------------- render(t) ---------------- */
+window.render = function (t, frame) {
+  let active = null;
+  for (const sc of scenes) {
+    const on = t >= sc.s.start && t < sc.s.end;
+    sc.el.style.display = on ? "block" : "none";
+    if (on) active = sc;
+  }
+  if (!active) active = scenes[scenes.length - 1];
+  active.el.style.display = "block";
+  const lt = t - active.s.start, d = active.s.end - active.s.start;
+  active.update(active.ctx, lt, d);
+  drawFx(lt, active.key);
+  drawGrain(frame);
+  document.getElementById("grain").style.opacity = ["spark", "believe", "scattered", "flow", "outro"].includes(active.key) ? 0.26 : 0.12;
+  // flashes: drop and outro impacts, quick cut flashes in the tour
+  let f = 0;
+  const near = (a, w) => clamp(1 - Math.abs(t - a) / w);
+  f = Math.max(f, t < S.introducing.start ? Math.pow(prog(t, S.introducing.start - 0.45, S.introducing.start), 2) : near(S.introducing.start, 0.35));
+  f = Math.max(f, t >= S.outro.start ? 1 - prog(t, S.outro.start, S.outro.start + 0.4) : 0);
+  for (const k of ["all", "day", "matters", "projects", "ai", "win", "miss"]) f = Math.max(f, 0.35 * near(S[k].start, 0.07));
+  f = Math.max(f, 0.25 * near(S.believe.start, 0.08), 0.25 * near(S.scattered.start, 0.08));
+  flash.style.opacity = f;
+  // final fade to black
+  document.getElementById("stage").style.filter = `brightness(${1 - prog(t, TL.total - 0.7, TL.total)})`;
+};
+window.ready = Promise.all([...document.images].map((im) => im.decode().catch(() => {})));
+</script>
+</body>
+</html>

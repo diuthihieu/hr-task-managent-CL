@@ -15,6 +15,8 @@ psql "$MAINT_URL" -qc "DROP DATABASE IF EXISTS \"$DB_NAME\" WITH (FORCE);" -c "C
 export DATABASE_URL="$TEST_DATABASE_URL" DIRECT_URL="$TEST_DATABASE_URL"
 export AUTH_SECRET="${AUTH_SECRET:-integration-test-secret-integration-test-secret}" AUTH_TRUST_HOST=true
 export DESKTOP_RELEASE_TOKEN="$(head -c 48 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 48)"
+# Web Push on, with a throwaway key pair (deliveries to real push services just fail offline).
+eval "$(node -e 'const k=require("web-push").generateVAPIDKeys();console.log(`export VAPID_PUBLIC_KEY=${k.publicKey} VAPID_PRIVATE_KEY=${k.privateKey} VAPID_SUBJECT=mailto:it@integration.test`)')"
 export ADMIN_EMAIL=admin@integration.test ADMIN_PASSWORD=Bootstrap123 ADMIN_NAME="Integration Admin"
 unset BLOB_READ_WRITE_TOKEN
 # AI calls go to a local Gemini stub (no real key or network needed). The configured

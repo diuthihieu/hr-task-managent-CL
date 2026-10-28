@@ -10,6 +10,7 @@ import { cn, initials } from "@/lib/utils";
 import type { MessageKey, TFunction } from "@/lib/i18n/core";
 import { DEFAULT_NOTIFY_SETTINGS, notifyGroupOf, playRingtone, type NotifySettings } from "@/lib/notification-prefs";
 import { AvatarImg } from "@/components/ui/avatar-img";
+import { ensurePushSubscription, pushActive } from "./web-push";
 import { Meta, MetaChip } from "@/components/ui/meta";
 
 export interface NotificationItem {
@@ -211,7 +212,9 @@ export function NotificationBell({ className, align = "start" }: { className?: s
       const listed = new Set(r.items.map((n) => n.id));
       const toPop = fresh.filter((n) => listed.has(n.id)).filter(allowed(prefs.popupOff));
       const background = typeof document !== "undefined" && document.hidden;
-      const toNative = background && "Notification" in window && Notification.permission === "granted" ? fresh.filter(allowed(prefs.nativeOff)) : [];
+      // With Web Push on this device the service worker raises system notifications (also while woli is
+      // closed), so the tab does not raise its own copy.
+      const toNative = background && !pushActive() && "Notification" in window && Notification.permission === "granted" ? fresh.filter(allowed(prefs.nativeOff)) : [];
       if (toPop.length) {
         setPopups((prev) => [...toPop.slice(0, 3), ...prev].slice(0, 4));
         for (const n of toPop) setTimeout(() => setPopups((prev) => prev.filter((x) => x.id !== n.id)), POPUP_MS);
@@ -241,11 +244,18 @@ export function NotificationBell({ className, align = "start" }: { className?: s
     // eslint-disable-next-line react-hooks/set-state-in-effect -- browser-only value, unknown during SSR
     if (typeof window !== "undefined" && "Notification" in window) setPermission(Notification.permission);
     const id = setInterval(load, POLL_MS);
+    // Web Push: register this device once notifications are allowed; a push refreshes the bell right away.
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") void ensurePushSubscription();
+    const onSwMessage = (e: MessageEvent) => {
+      if ((e.data as { type?: string } | null)?.type === "woli:push") void load();
+    };
+    navigator.serviceWorker?.addEventListener("message", onSwMessage);
     const onFocus = () => load();
     window.addEventListener("focus", onFocus);
     return () => {
       clearInterval(id);
       window.removeEventListener("focus", onFocus);
+      navigator.serviceWorker?.removeEventListener("message", onSwMessage);
     };
   }, [load]);
 
@@ -259,7 +269,9 @@ export function NotificationBell({ className, align = "start" }: { className?: s
 
   async function enableNative() {
     if (!("Notification" in window)) return;
-    setPermission(await Notification.requestPermission());
+    const p = await Notification.requestPermission();
+    setPermission(p);
+    if (p === "granted") void ensurePushSubscription();
   }
 
   // Groups switched off for the app (Settings -> Notifications) are not in the bell; the Action center keeps them.

@@ -11,7 +11,7 @@ import { FocusDock } from "@/components/focus/focus-mode";
 import { DoneCheckDialog } from "@/components/tasks/done-check-dialog";
 import { AgentSuggestionPopup } from "@/components/agent-work/agent-suggestion-popup";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { signOut } from "next-auth/react";
+import { signOutAndUnsubscribe } from "@/components/notifications/web-push";
 import {
   DndContext,
   closestCenter,
@@ -624,7 +624,7 @@ export function WorkspaceShell({
                   {theme === "dark" ? t("nav.lightMode") : t("nav.darkMode")}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => signOut({ callbackUrl: "/" })}>
+                <DropdownMenuItem onSelect={() => signOutAndUnsubscribe({ callbackUrl: "/" })}>
                   <LogOut size={14} /> {t("auth.signOut")}
                 </DropdownMenuItem>
               </DropdownMenuContent>

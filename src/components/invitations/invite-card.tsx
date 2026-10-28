@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { signOut } from "next-auth/react";
+import { signOutAndUnsubscribe } from "@/components/notifications/web-push";
 import { Building2, Check, Loader2, MailWarning, Users, X } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
@@ -82,7 +82,7 @@ export function InviteCard({ token, user, invite }: { token: string; user: { nam
                 <p className="flex items-start gap-2">
                   <MailWarning size={16} className="shrink-0 mt-0.5" /> {t("inv.wrongAccount", { invited: invite.email ?? "", current: user.email })}
                 </p>
-                <Button size="sm" variant="secondary" className="mt-3" onClick={() => signOut({ callbackUrl: `/?auth=login&callbackUrl=${encodeURIComponent(`/invite/${token}`)}` })}>
+                <Button size="sm" variant="secondary" className="mt-3" onClick={() => signOutAndUnsubscribe({ callbackUrl: `/?auth=login&callbackUrl=${encodeURIComponent(`/invite/${token}`)}` })}>
                   {t("inv.switchAccount")}
                 </Button>
               </div>

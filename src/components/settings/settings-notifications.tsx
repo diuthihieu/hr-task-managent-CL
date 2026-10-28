@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import { fetchInbox, useInbox } from "@/components/notifications/notification-bell";
 import { DEFAULT_NOTIFY_SETTINGS, NOTIFY_GROUP_KEYS, RINGTONES, playRingtone, type NotifyGroup, type NotifySettings, type Ringtone } from "@/lib/notification-prefs";
 import type { MessageKey } from "@/lib/i18n/core";
+import { ensurePushSubscription } from "@/components/notifications/web-push";
 import { SettingsSection } from "./settings-shell";
 
 export function SettingsNotifications() {
@@ -87,7 +88,11 @@ export function SettingsNotifications() {
               {permission === "granted" ? t("notifset.perm.granted") : permission === "denied" ? t("notifset.perm.denied") : permission === "unsupported" ? t("notifset.perm.unsupported") : t("notifset.perm.default")}
             </span>
             {permission === "default" && (
-              <Button size="sm" onClick={async () => setPermission(await Notification.requestPermission())} data-testid="notif-allow">
+              <Button size="sm" onClick={async () => {
+                const p = await Notification.requestPermission();
+                setPermission(p);
+                if (p === "granted") void ensurePushSubscription();
+              }} data-testid="notif-allow">
                 {t("notifset.perm.allow")}
               </Button>
             )}

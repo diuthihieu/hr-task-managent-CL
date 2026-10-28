@@ -2224,6 +2224,37 @@ test("notification settings: per-group pop-up / device switches and a ringtone, 
   await prisma.notification.delete({ where: { id: mention.id } });
 });
 
+test("web push: devices register with the browsers' push services only; notifications still work with push on", async () => {
+  const cfg = await viewer.get<{ enabled: boolean; publicKey: string | null; devices: number }>("/api/account/push");
+  assert.equal(cfg.status, 200);
+  assert.equal(cfg.body.enabled, true);
+  assert.match(cfg.body.publicKey ?? "", /^[A-Za-z0-9_-]{80,}$/, "the VAPID public key browsers subscribe with");
+  const keys = { p256dh: "B".repeat(87), auth: "A".repeat(22) };
+  // Only browser push services: never an arbitrary host the server would then POST to.
+  for (const endpoint of ["https://evil.example.com/push", "http://fcm.googleapis.com/fcm/send/x", "https://fcm.googleapis.com:8443/x", "https://localhost/x", "not a url"])
+    assert.equal((await viewer.post("/api/account/push", { endpoint, keys })).status, 400, endpoint);
+  const endpoint = "https://fcm.googleapis.com/fcm/send/integration-device-1";
+  assert.equal((await viewer.post("/api/account/push", { endpoint, keys })).status, 201);
+  assert.equal((await viewer.post("/api/account/push", { endpoint, keys })).status, 201, "re-registering is idempotent");
+  assert.equal(await prisma.pushSubscription.count({ where: { endpoint } }), 1);
+  // The same browser signing in as someone else moves the device to them.
+  assert.equal((await contributor.post("/api/account/push", { endpoint, keys })).status, 201);
+  assert.equal((await prisma.pushSubscription.findUniqueOrThrow({ where: { endpoint } })).userId, s.contributorId);
+  // A mention through the app (queued for push; delivery to the push service fails offline) still works.
+  const before = await prisma.notification.count({ where: { userId: s.contributorId, type: "mention" } });
+  const c = await admin.post(`/api/tasks/${s.task1}/comments`, { body: `Push test @[Contributor](${s.contributorId})` });
+  assert.equal(c.status, 201, JSON.stringify(c.body));
+  assert.equal(await prisma.notification.count({ where: { userId: s.contributorId, type: "mention" } }), before + 1);
+  await new Promise((r) => setTimeout(r, 1500)); // let the after-response push attempt run
+  assert.equal((await contributor.get("/api/notifications")).status, 200, "the server keeps serving after a failed delivery");
+  // Only the owner removes a device.
+  await viewer.req("DELETE", "/api/account/push", { endpoint });
+  assert.equal(await prisma.pushSubscription.count({ where: { endpoint } }), 1, "someone else's device stays");
+  await contributor.req("DELETE", "/api/account/push", { endpoint });
+  assert.equal(await prisma.pushSubscription.count({ where: { endpoint } }), 0);
+  assert.equal((await new Client().get("/api/account/push")).status, 401);
+});
+
 test("invite links and invitations for people without an account: accept, decline, revoke, replace", async () => {
   const ws = await admin.post<{ id: string }>("/api/workspaces", { name: "Invite Co" });
   // Join link: off by default; admins turn it on and pick the role.

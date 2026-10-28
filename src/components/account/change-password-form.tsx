@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { signOut } from "next-auth/react";
+import { signOutAndUnsubscribe } from "@/components/notifications/web-push";
 import { KeyRound } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
@@ -59,7 +59,7 @@ export function ChangePasswordForm({ email, forced }: { email: string; forced: b
       </div>
       <div className="flex items-center justify-between pt-2">
         {forced ? (
-          <button type="button" onClick={() => signOut({ callbackUrl: "/" })} className="text-sm text-neutral-500 hover:underline">{t("auth.signOut")}</button>
+          <button type="button" onClick={() => signOutAndUnsubscribe({ callbackUrl: "/" })} className="text-sm text-neutral-500 hover:underline">{t("auth.signOut")}</button>
         ) : (
           <button type="button" onClick={() => router.back()} className="text-sm text-neutral-500 hover:underline">{t("common.cancel")}</button>
         )}

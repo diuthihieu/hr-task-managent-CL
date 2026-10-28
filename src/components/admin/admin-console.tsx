@@ -1,7 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { signOut } from "next-auth/react";
+import { signOutAndUnsubscribe } from "@/components/notifications/web-push";
 import { ShieldCheck, UserPlus, Plus, Copy, ArrowLeft, MoreHorizontal, KeyRound, MailCheck, UserX, UserCheck, Trash2, Crown } from "lucide-react";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
@@ -105,7 +105,7 @@ export function AdminConsole({ currentUserId }: { currentUserId: string }) {
         <span className="font-semibold text-neutral-900 dark:text-neutral-50">{tr("adm.title")}</span>
         <div className="ml-auto flex items-center gap-3">
           <Link href="/account/password" className="text-neutral-500 hover:underline">{tr("nav.changePassword")}</Link>
-          <button onClick={() => signOut({ callbackUrl: "/" })} className="text-neutral-500 hover:underline">{tr("auth.signOut")}</button>
+          <button onClick={() => signOutAndUnsubscribe({ callbackUrl: "/" })} className="text-neutral-500 hover:underline">{tr("auth.signOut")}</button>
         </div>
       </header>
 

@@ -18,6 +18,7 @@ import { getLatestRelease, DEFAULT_PLATFORM } from "@/lib/desktop-releases";
 import { AuthCard } from "@/components/landing/auth-card";
 import { LocaleSwitch } from "@/components/landing/locale-switch";
 import { IntroVideo } from "@/components/landing/intro-video";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 
 export const dynamic = "force-dynamic";
 
@@ -41,9 +42,10 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
 
 // Public home page: sign in / sign up on top, then the how-to guide, the
 // benefits and the Windows download. Signed-in users go to their workspaces.
-export default async function HomePage({ searchParams }: { searchParams: Promise<{ auth?: string; callbackUrl?: string; ws?: string; error?: string }> }) {
-  const [{ auth, callbackUrl, ws, error }, user] = await Promise.all([searchParams, getSessionUser()]);
-  if (user) redirect(callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//") ? callbackUrl : "/workspaces");
+export default async function HomePage({ searchParams }: { searchParams: Promise<{ auth?: string; callbackUrl?: string | string[]; ws?: string; error?: string }> }) {
+  const [{ auth, callbackUrl: rawCallback, ws, error }, user] = await Promise.all([searchParams, getSessionUser()]);
+  const callbackUrl = safeRedirectPath(rawCallback);
+  if (user) redirect(callbackUrl);
   const { t, locale } = await getServerT();
   const [latest, invited] = await Promise.all([
     getLatestRelease(DEFAULT_PLATFORM, "stable").catch(() => null),
@@ -51,7 +53,7 @@ export default async function HomePage({ searchParams }: { searchParams: Promise
   ]);
   // The waving mascot greets visitors; once they ask to sign in / sign up (or
   // arrive from a workspace link) the form takes its place.
-  const showAuth = Boolean(auth || ws || error || callbackUrl);
+  const showAuth = Boolean(auth || ws || error || rawCallback);
   const date = (d: Date) => d.toLocaleDateString(locale === "vi" ? "vi-VN" : "en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
 
   const features = [

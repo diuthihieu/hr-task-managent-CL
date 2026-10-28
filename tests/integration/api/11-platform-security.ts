@@ -477,6 +477,18 @@ test("security: stolen sessions die on reset, sign-in is throttled, public forms
   assert.equal((await prisma.task.findUniqueOrThrow({ where: { id: t.id } })).actualMinutes, t.actualMinutes, "actual time unchanged");
   assert.equal((await viewer.patch(`/api/focus/${f.body.id}`, { action: "complete", completeTask: true })).status, 400, "ended sessions can't be reused");
 
+  // After sign-in, ?callbackUrl= only ever leads to a page of this site.
+  const home = (q: string) => fetch(`${BASE}/?${q}`, { redirect: "manual", headers: { cookie: viewer.cookieHeader() } });
+  for (const evil of ["%2F%5Cexample.com", "%2F%09%2Fexample.com", "%2F%2Fexample.com", "https%3A%2F%2Fexample.com"]) {
+    const r = await home(`callbackUrl=${evil}`);
+    assert.ok([303, 307, 308].includes(r.status), `${evil}: ${r.status}`);
+    assert.equal(new URL(r.headers.get("location")!, BASE).href, `${BASE}/workspaces`, `${evil} stays on the site`);
+  }
+  const inApp = await home("callbackUrl=%2Finvite%2Fabc");
+  assert.equal(new URL(inApp.headers.get("location")!, BASE).pathname, "/invite/abc", "an in-app path is kept");
+  const twice = await home("callbackUrl=a&callbackUrl=b");
+  assert.ok(twice.status < 500, `a repeated parameter doesn't break the page (${twice.status})`);
+
   // Security headers on every page.
   const page = await fetch(`${BASE}/`);
   assert.equal(page.headers.get("x-content-type-options"), "nosniff");

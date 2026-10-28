@@ -126,7 +126,7 @@ export function EisenhowerView({
         />
       </div>
       <DndContext sensors={sensors} onDragStart={(e) => setActiveId(String(e.active.id))} onDragEnd={handleDragEnd} onDragCancel={() => setActiveId(null)}>
-        <div className="flex-1 grid grid-cols-2 grid-rows-2 gap-2.5 p-2.5 overflow-auto">
+        <div className="flex-1 grid grid-cols-1 auto-rows-[minmax(14rem,65dvh)] sm:grid-cols-2 sm:grid-rows-2 gap-2.5 p-2.5 overflow-auto">
           {QUADRANTS.map((q) => (
             <QuadrantColumn
               key={q.key}
@@ -252,7 +252,7 @@ function EisenhowerCard({
       )}
     >
       <RecordOpenButtons onOpen={onOpen} onOpenPage={onOpenPage} className={cn("absolute top-1.5 right-1.5 bg-white/90 dark:bg-neutral-900/90 rounded", revealOn.card)} />
-      <div className="text-sm font-medium text-neutral-900 dark:text-neutral-50 pr-10 mb-1.5">{title || "(untitled)"}</div>
+      <div className="text-sm font-medium text-neutral-900 dark:text-neutral-50 pr-10 mb-1.5 break-words line-clamp-3">{title || "(untitled)"}</div>
       <div className="space-y-1">
         {cardFieldIds.map((fid) => {
           const field = fields.find((f) => f.id === fid);

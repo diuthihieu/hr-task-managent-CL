@@ -147,6 +147,16 @@ export function GridView(props: GridViewProps) {
   const [dragging, setDragging] = useState(false);
   const dragRef = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
+  /** Width of the grid's visible area; on a phone frozen columns must leave room to see the others. */
+  const [viewWidth, setViewWidth] = useState(0);
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => setViewWidth(el.clientWidth));
+    ro.observe(el);
+    setViewWidth(el.clientWidth);
+    return () => ro.disconnect();
+  }, []);
 
   useEffect(() => {
     const stop = () => {
@@ -192,8 +202,17 @@ export function GridView(props: GridViewProps) {
     window.addEventListener("mouseup", onUp);
   }
 
+  // On narrow screens (phones) the frozen columns together take at most about half of the view and
+  // no column is wider than the view, so the other fields stay reachable by scrolling sideways.
+  const narrow = viewWidth > 0 && viewWidth < 768;
+  const frozenIds = new Set(visibleFields.slice(0, frozenCount).map((f) => f.id));
+  const frozenCap = Math.max(120, Math.floor(((viewWidth - 36) * 0.55) / Math.max(1, frozenIds.size)));
+  // Phones: rows grow to fit, so a long task name wraps inside its narrower column instead of being cut.
+  const rowHeight = narrow ? "auto" : props.rowHeight;
   function widthOf(field: FieldRow) {
-    return columnWidths[field.id] ?? (field.isPrimary ? PRIMARY_WIDTH : DEFAULT_WIDTH);
+    const w = columnWidths[field.id] ?? (field.isPrimary ? PRIMARY_WIDTH : DEFAULT_WIDTH);
+    if (!narrow) return w;
+    return Math.min(w, frozenIds.has(field.id) ? frozenCap : Math.max(120, viewWidth - 72));
   }
 
   const allIds = flatRecords.map((r) => r.id);
@@ -721,6 +740,7 @@ export function GridView(props: GridViewProps) {
                   })
                 }
                 {...props}
+                rowHeight={rowHeight}
                 treeRows={groupTrees.get(group.key) ?? []}
                 visibleFields={visibleFields}
                 widthOf={widthOf}
@@ -730,11 +750,11 @@ export function GridView(props: GridViewProps) {
           ) : props.reorderable ? (
             <SortableContext items={flatTree.map((r) => r.record.id)} strategy={verticalListSortingStrategy}>
               {flatTree.map((r) => (
-                <Row key={r.record.id} record={r.record} depth={r.depth} childCount={r.childCount} {...props} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />
+                <Row key={r.record.id} record={r.record} depth={r.depth} childCount={r.childCount} {...props} rowHeight={rowHeight} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />
               ))}
             </SortableContext>
           ) : (
-            flatTree.map((r) => <Row key={r.record.id} record={r.record} depth={r.depth} childCount={r.childCount} {...props} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />)
+            flatTree.map((r) => <Row key={r.record.id} record={r.record} depth={r.depth} childCount={r.childCount} {...props} rowHeight={rowHeight} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />)
           )}
         </DndContext>
       </div>
@@ -1014,7 +1034,7 @@ function Row({
                   <ListTree size={13} />
                 </button>
               )}
-              <div className={cn("flex-1 overflow-hidden", autoFit ? "" : "h-full", field.isPrimary && childCount > 0 && "[&_input]:font-semibold [&_textarea]:font-semibold", field.isPrimary && depth > 0 && "[&_input]:text-neutral-700 [&_textarea]:text-neutral-700 dark:[&_input]:text-neutral-300 dark:[&_textarea]:text-neutral-300")}>
+              <div className={cn("flex-1 overflow-hidden", autoFit ? "" : "h-full", field.isPrimary && autoFit && "pr-7", field.isPrimary && childCount > 0 && "[&_input]:font-semibold [&_textarea]:font-semibold", field.isPrimary && depth > 0 && "[&_input]:text-neutral-700 [&_textarea]:text-neutral-700 dark:[&_input]:text-neutral-300 dark:[&_textarea]:text-neutral-300")}>
                 <Cell
                   field={field}
                   value={value}

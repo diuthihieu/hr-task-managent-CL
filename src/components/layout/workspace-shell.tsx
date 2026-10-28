@@ -286,7 +286,7 @@ export function WorkspaceShell({
   const wikiOpenNow = wikiOpen ?? (isWikiHome || !!activeWikiId);
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-neutral-50 dark:bg-neutral-950 text-sm">
+    <div className="flex h-screen h-dvh w-full overflow-hidden bg-neutral-50 dark:bg-neutral-950 text-sm">
       {/* Sidebar */}
       {navOpen && <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setNavOpen(false)} data-testid="nav-backdrop" />}
       <aside

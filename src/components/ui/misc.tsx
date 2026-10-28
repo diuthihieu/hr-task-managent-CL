@@ -49,12 +49,12 @@ export function Switch({ checked, onCheckedChange }: { checked: boolean; onCheck
 
 export const Tabs = RTabs.Root;
 export const TabsList = ({ className, ...props }: React.ComponentProps<typeof RTabs.List>) => (
-  <RTabs.List className={cn("flex items-center gap-0.5", className)} {...props} />
+  <RTabs.List className={cn("flex items-center gap-0.5 overflow-x-auto no-scrollbar", className)} {...props} />
 );
 export const TabsTrigger = ({ className, ...props }: React.ComponentProps<typeof RTabs.Trigger>) => (
   <RTabs.Trigger
     className={cn(
-      "px-3 py-1.5 text-sm rounded-md text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-100 data-[state=active]:bg-neutral-100 dark:data-[state=active]:bg-neutral-800 data-[state=active]:text-neutral-900 dark:data-[state=active]:text-neutral-50 font-medium",
+      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap px-3 py-1.5 text-sm rounded-md text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-100 data-[state=active]:bg-neutral-100 dark:data-[state=active]:bg-neutral-800 data-[state=active]:text-neutral-900 dark:data-[state=active]:text-neutral-50 font-medium",
       className
     )}
     {...props}

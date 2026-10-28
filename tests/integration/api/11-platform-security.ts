@@ -408,11 +408,23 @@ test("security: stolen sessions die on reset, sign-in is throttled, public forms
   // Session revocation: an admin password reset kills every existing cookie of that account.
   const before = await outsider.get("/api/workspaces");
   assert.equal(before.status, 200);
+  const stolen = outsider.clone();
   const reset = await admin.patch<{ temporaryPassword: string }>(`/api/admin/users/${s.outsiderId}`, { resetPassword: true });
   assert.equal(reset.status, 200);
   assert.equal((await outsider.get("/api/workspaces")).status, 401, "the old cookie no longer works");
+  // The revoked cookie can't be revived or extended through the session endpoint.
+  const revived = await stolen.updateSession({});
+  assert.ok(!revived.body?.user, "POST /api/auth/session returns no session for a revoked cookie");
+  assert.equal((await stolen.get("/api/workspaces")).status, 401, "POST /api/auth/session doesn't revive a revoked cookie");
+  const extended = await outsider.clone().get<{ user?: unknown } | null>("/api/auth/session");
+  assert.ok(!extended.body?.user, "GET /api/auth/session doesn't re-sign a revoked cookie");
   assert.ok(await outsider.login("outsider@integration.test", reset.body.temporaryPassword));
+  const copy = outsider.clone();
   assert.equal((await outsider.post("/api/account/password", { currentPassword: reset.body.temporaryPassword, newPassword: "Outsider456" })).status, 200);
+  assert.equal((await outsider.get("/api/workspaces")).status, 200, "the device that changed its password stays signed in");
+  assert.equal((await copy.updateSession({ svProof: "forged.proof" })).status, 200);
+  assert.equal((await copy.get("/api/workspaces")).status, 401, "a forged refresh proof is ignored");
+  assert.equal((await stolen.get("/api/workspaces")).status, 401);
 
   // Sign-in throttling is per account and shared by all instances (database counters).
   const victim = new Client();
@@ -495,6 +507,8 @@ test("forgot password: no mail → clear 503; a signed link resets once and sign
   const after = await prisma.user.findUniqueOrThrow({ where: { id: u.id }, select: { emailVerifiedAt: true } });
   assert.ok(after.emailVerifiedAt, "opening the emailed link proves the address");
   assert.equal((await other.get("/api/account/profile")).status, 401, "other devices are signed out");
+  await other.updateSession({});
+  assert.equal((await other.get("/api/account/profile")).status, 401, "and can't sign back in through POST /api/auth/session");
   assert.equal(await new Client().login("forgetful@integration.test", "OldPass123"), false);
   assert.ok(await new Client().login("forgetful@integration.test", winner));
 });

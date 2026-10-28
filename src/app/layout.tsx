@@ -37,7 +37,10 @@ export const viewport: Viewport = { themeColor: "#f97316", width: "device-width"
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const prefs = await getRequestPrefs();
-  const marketing = (await headers()).get("x-woli-marketing") === "1";
+  const requestHeaders = await headers();
+  const marketing = requestHeaders.get("x-woli-marketing") === "1";
+  // Set by src/proxy.ts for every page (Content-Security-Policy nonce).
+  const nonce = requestHeaders.get("x-nonce") ?? undefined;
   const { locale, themeMode } = prefs;
   const accent = marketing ? "orange" : prefs.accent;
   const tone = marketing ? "neutral" : prefs.tone;
@@ -49,6 +52,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <head>
         {/* "System" mode: pick light/dark before first paint so there is no flash. */}
         <script
+          nonce={nonce}
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var d=document.documentElement;if(d.dataset.themeMode==="system"&&matchMedia("(prefers-color-scheme: dark)").matches)d.classList.add("dark")}catch(e){}})()`,
           }}

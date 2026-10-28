@@ -104,7 +104,7 @@ export async function unlinkedMentions(access: BrainAccess, base: string, page: 
   const title = page.title.trim();
   if (title.length < 4) return [];
   const pages = await prisma.wikiPage.findMany({
-    where: { ...access.page, id: { not: page.id }, content: { contains: title, mode: "insensitive" }, NOT: { content: { contains: page.id } } },
+    where: { AND: [access.page, { id: { not: page.id }, content: { contains: title, mode: "insensitive" }, NOT: { content: { contains: page.id } } }] },
     select: { id: true, title: true, wikiId: true, content: true, wiki: { select: { name: true } } },
     take: 20,
     orderBy: { updatedAt: "desc" },

@@ -42,7 +42,7 @@ export async function journalDay(access: BrainAccess, base: string, date: string
       select: { id: true, title: true, wikiId: true, createdAt: true, eventDate: true, wiki: { select: { name: true } } },
       take: 50,
     }),
-    prisma.decision.findMany({ where: { ...access.decision, OR: [{ decidedAt: dateOnly }, { createdAt: inDay }], AND: [{ OR: [{ createdById: me }, { ownerId: me }, { people: { some: { userId: me } } }] }] }, select: { id: true, title: true, createdAt: true, project: { select: { name: true } } }, take: 50 }),
+    prisma.decision.findMany({ where: { AND: [access.decision, { OR: [{ decidedAt: dateOnly }, { createdAt: inDay }] }, { OR: [{ createdById: me }, { ownerId: me }, { people: { some: { userId: me } } }] }] }, select: { id: true, title: true, createdAt: true, project: { select: { name: true } } }, take: 50 }),
     // Learning / notes: pages I wrote or edited that day (other than meetings).
     prisma.wikiPage.findMany({
       where: { ...access.page, kind: { not: "meeting" }, OR: [{ createdById: me, createdAt: inDay }, { updatedById: me, updatedAt: inDay }] },

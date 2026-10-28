@@ -127,7 +127,7 @@ export async function forYou(access: BrainAccess, base: string, now = new Date()
     prisma.wikiPage.findMany({ where: { ...access.page, createdById: me, status: "draft", sourceType: "ai_generated" }, select: { id: true, title: true, wikiId: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: 3 }),
     Promise.resolve(myTasks.filter((t) => !related.some((r) => r.because.includes(t.title)) && !parseContentLinks(t.content).some((l) => l.type === "wiki")).length),
     prisma.wikiPage.findMany({
-      where: { ...access.page, updatedAt: { gte: new Date(now.getTime() - 7 * 86400000) }, NOT: { updatedById: me } },
+      where: { AND: [access.page, { updatedAt: { gte: new Date(now.getTime() - 7 * 86400000) }, NOT: { updatedById: me } }] },
       select: { id: true, title: true, wikiId: true, kind: true, updatedAt: true, createdAt: true, updatedBy: { select: { name: true } } },
       orderBy: { updatedAt: "desc" },
       take: 8,

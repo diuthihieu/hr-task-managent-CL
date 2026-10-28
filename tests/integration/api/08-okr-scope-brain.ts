@@ -186,7 +186,24 @@ test("second brain: [[links]], backlinks, block links, tags, related, versions a
   await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId] });
   const vb = (await viewer.get<Conn>(`/api/wiki/${a.body.id}/connections`)).body.backlinks;
   assert.ok(vb.some((x) => x.id === b.body.id) && !vb.some((x) => x.id === secret.body.id));
+  // Nor as an unlinked mention, in "For you" activity, or a decision about that project in their journal.
+  const mention = await admin.post<{ id: string }>(`/api/wikis/${W}/pages`, { title: "Other project plan", content: "<p>Other project: cut 30% of staff. Read the probation policy first.</p>" });
+  assert.equal(mention.status, 201);
+  const today = new Date().toISOString().slice(0, 10);
+  const hiddenDecision = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/decisions`, { title: "Other project layoffs approved", projectId: s.otherProject, people: [s.viewerId], decidedAt: today });
+  assert.equal(hiddenDecision.status, 201, JSON.stringify(hiddenDecision.body));
+  type ForYou = { activity: { id: string }[] };
+  type Journal = { decisions: { id: string }[] };
+  const seen = async () => ({
+    unlinked: (await viewer.get<Conn>(`/api/wiki/${a.body.id}/connections`)).body.unlinked.some((x) => x.id === mention.body.id),
+    activity: (await viewer.get<ForYou>(`/api/workspaces/${s.ws}/brain/for-you`)).body.activity.some((x) => x.id === mention.body.id),
+    decision: (await viewer.get<Journal>(`/api/workspaces/${s.ws}/journal?date=${today}`)).body.decisions.some((x) => x.id === hiddenDecision.body.id),
+  });
+  assert.deepEqual(await seen(), { unlinked: false, activity: false, decision: false }, "nothing about the hidden project leaks through the Second Brain");
   await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
+  assert.deepEqual(await seen(), { unlinked: true, activity: true, decision: true }, "and it all shows again once the project is visible");
+  await admin.del(`/api/wiki/${mention.body.id}`);
+  await admin.del(`/api/decisions/${hiddenDecision.body.id}`);
 
   // Temporal knowledge: a new version supersedes the old one, which stays as history.
   const v2 = await admin.post<{ id: string }>(`/api/wiki/${c.body.id}/new-version`, {});

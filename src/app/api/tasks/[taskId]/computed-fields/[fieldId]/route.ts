@@ -1,5 +1,4 @@
 import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
 import { NextResponse } from "next/server";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -9,17 +8,9 @@ import { taskContext } from "@/lib/ai/actions";
 import { rateLimit } from "@/lib/rate-limit";
 import { logActivity } from "@/lib/activity";
 import type { FieldConfig } from "@/lib/field-types";
+import { getPublicHttps, privateAddress } from "@/lib/net-guard";
 
 type P = { taskId: string; fieldId: string };
-
-function privateAddress(ip: string) {
-  if (isIP(ip) === 4) {
-    const [a, b] = ip.split(".").map(Number);
-    return a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || a >= 224;
-  }
-  const n = ip.toLowerCase();
-  return n === "::1" || n === "::" || n.startsWith("fc") || n.startsWith("fd") || n.startsWith("fe80:") || n.startsWith("::ffff:10.") || n.startsWith("::ffff:127.") || n.startsWith("::ffff:192.168.");
-}
 
 async function safeApiUrl(template: string, taskId: string, projectId: string) {
   const rendered = template.replaceAll("{taskId}", encodeURIComponent(taskId)).replaceAll("{projectId}", encodeURIComponent(projectId));
@@ -33,7 +24,9 @@ async function safeApiUrl(template: string, taskId: string, projectId: string) {
   const allowed = (process.env.API_FIELD_ALLOWED_HOSTS ?? "").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
   if (!allowed.length) throw new HttpError(503, "API Result is disabled until API_FIELD_ALLOWED_HOSTS is configured");
   if (!allowed.includes(url.hostname.toLowerCase())) throw new HttpError(403, "This API hostname is not allow-listed");
-  const addresses = await lookup(url.hostname, { all: true, verbatim: true });
+  // Checked here too: an IP-literal host never goes through the connect-time lookup.
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  const addresses = await lookup(host, { all: true, verbatim: true });
   if (!addresses.length || addresses.some((a) => privateAddress(a.address))) throw new HttpError(403, "API Result cannot connect to private or local network addresses");
   return url;
 }
@@ -76,14 +69,19 @@ export const POST = route<P>(async (_req, { params }) => {
   } else {
     if (!config.apiUrl?.trim()) throw badRequest("Configure an HTTPS URL for this API Result field first");
     const url = await safeApiUrl(config.apiUrl, taskId, task.projectId);
-    const response = await fetch(url, { method: "GET", headers: { Accept: "application/json" }, redirect: "error", cache: "no-store", signal: AbortSignal.timeout(10_000) });
-    if (!response.ok) throw new HttpError(502, `API Result returned HTTP ${response.status}`);
-    const declared = Number(response.headers.get("content-length") ?? 0);
-    if (declared > 64 * 1024) throw new HttpError(502, "API Result response is larger than 64 KB");
-    const bytes = await response.arrayBuffer();
-    if (bytes.byteLength > 64 * 1024) throw new HttpError(502, "API Result response is larger than 64 KB");
+    // The IP is checked again at connect time (DNS rebinding); no redirects, 64 KB, 10 s.
+    let response: { status: number; body: Buffer };
     try {
-      value = jsonPath(JSON.parse(new TextDecoder().decode(bytes)), config.apiJsonPath);
+      response = await getPublicHttps(url, { maxBytes: 64 * 1024, timeoutMs: 10_000 });
+    } catch (e) {
+      const code = (e as { code?: string }).code;
+      if (code === "EPRIVATE") throw new HttpError(403, "API Result cannot connect to private or local network addresses");
+      if (code === "ETOOLARGE") throw new HttpError(502, "API Result response is larger than 64 KB");
+      throw new HttpError(502, "API Result could not be reached");
+    }
+    if (response.status < 200 || response.status >= 300) throw new HttpError(502, `API Result returned HTTP ${response.status}`);
+    try {
+      value = jsonPath(JSON.parse(response.body.toString("utf8")), config.apiJsonPath);
     } catch {
       throw new HttpError(502, "API Result did not return valid JSON");
     }

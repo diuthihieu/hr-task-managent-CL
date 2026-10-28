@@ -53,6 +53,12 @@ export async function layoutProblems(page: Page): Promise<string[]> {
       if (r.width === 0 || r.height === 0 || r.bottom < 0 || r.top > window.innerHeight) continue;
       const s = getComputedStyle(el);
       if (s.visibility === "hidden" || s.opacity === "0" || /truncate|line-clamp/.test(String(el.className))) continue;
+      // Text clipped by the element's own box (e.g. a fixed-width nowrap label with overflow hidden and no ellipsis).
+      const ownText = [...el.childNodes].some((n) => n.nodeType === 3 && (n.textContent || "").trim());
+      if (ownText && /(hidden|clip)/.test(s.overflowX) && s.textOverflow !== "ellipsis" && el.scrollWidth > el.clientWidth + 1) {
+        bad.push(`CUT ${label(el)} own text ${el.scrollWidth}/${el.clientWidth} "${(el.textContent || "").trim().slice(0, 30)}"`);
+        continue;
+      }
       // Cut = past the edge of the nearest clipping box, or past the screen with nothing above to scroll it into view.
       let clip = Infinity;
       let scrolls = false;

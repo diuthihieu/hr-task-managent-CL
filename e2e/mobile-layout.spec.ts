@@ -46,11 +46,11 @@ test("My work tabs fit the phone", async ({ page, seed }) => {
   await page.goto(`/w/${seed.slug}/my-work`);
   await page.waitForLoadState("networkidle");
   const failures: string[] = [];
-  for (const tab of ["tasks", "eisenhower", "okrs", "deadlines"]) {
-    const t = page.locator(`[role=tab][id$="${tab}"]`);
-    if (!(await t.count())) continue;
-    await t.click();
+  for (const tab of ["capture", "tasks", "okrs", "krs", "eisenhower", "deadlines"]) {
+    await page.locator(`[role=tab][id$="-${tab}"]`).click();
     await page.waitForLoadState("networkidle");
+    // The seeded tasks are assigned to this user: the check must run on real rows, not an empty list.
+    if (tab === "tasks") await expect(page.getByText("Soạn email hướng dẫn nhân viên", { exact: false }).first()).toBeVisible();
     for (const problem of await layoutProblems(page)) failures.push(`${tab}: ${problem}`);
   }
   expect(failures).toEqual([]);

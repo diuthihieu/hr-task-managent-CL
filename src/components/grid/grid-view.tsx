@@ -202,17 +202,23 @@ export function GridView(props: GridViewProps) {
     window.addEventListener("mouseup", onUp);
   }
 
-  // On narrow screens (phones) the frozen columns together take at most about half of the view and
+  // On narrow screens (phones) the frozen columns together take at most about 60% of the view and
   // no column is wider than the view, so the other fields stay reachable by scrolling sideways.
   const narrow = viewWidth > 0 && viewWidth < 768;
-  const frozenIds = new Set(visibleFields.slice(0, frozenCount).map((f) => f.id));
-  const frozenCap = Math.max(120, Math.floor(((viewWidth - 36) * 0.55) / Math.max(1, frozenIds.size)));
+  // The task-name column keeps room for its indent, expand toggle and open buttons (at least 180px);
+  // other frozen columns share what is left of the budget (at least 90px each).
+  const frozenFields = visibleFields.slice(0, frozenCount);
+  const frozenBudget = Math.floor((viewWidth - 36) * 0.6);
+  const otherFrozen = frozenFields.filter((f) => !f.isPrimary).length;
+  const primaryCap = Math.max(180, frozenBudget - otherFrozen * 90);
+  const otherCap = Math.max(90, Math.floor((frozenBudget - (frozenFields.some((f) => f.isPrimary) ? primaryCap : 0)) / Math.max(1, otherFrozen)));
   // Phones: rows grow to fit, so a long task name wraps inside its narrower column instead of being cut.
   const rowHeight = narrow ? "auto" : props.rowHeight;
   function widthOf(field: FieldRow) {
     const w = columnWidths[field.id] ?? (field.isPrimary ? PRIMARY_WIDTH : DEFAULT_WIDTH);
     if (!narrow) return w;
-    return Math.min(w, frozenIds.has(field.id) ? frozenCap : Math.max(120, viewWidth - 72));
+    const frozen = frozenFields.some((f) => f.id === field.id);
+    return Math.min(w, frozen ? (field.isPrimary ? primaryCap : otherCap) : Math.max(120, viewWidth - 72));
   }
 
   const allIds = flatRecords.map((r) => r.id);
@@ -1026,7 +1032,7 @@ function Row({
                   type="button"
                   onClick={() => interactions.tree.addSubtask(record.id)}
                   // Floats over the cell's right edge (on row hover) so it never takes room from the title.
-                  className={cn("absolute right-1 z-[7] flex h-6 w-6 items-center justify-center rounded border border-neutral-200 bg-white text-neutral-500 shadow-sm hover:text-indigo-600 dark:border-neutral-700 dark:bg-neutral-900", autoFit ? "top-1.5" : "top-1/2 -translate-y-1/2", revealOn.row)}
+                  className={cn("absolute right-1 z-[7] flex max-md:hidden h-6 w-6 items-center justify-center rounded border border-neutral-200 bg-white text-neutral-500 shadow-sm hover:text-indigo-600 dark:border-neutral-700 dark:bg-neutral-900", autoFit ? "top-1.5" : "top-1/2 -translate-y-1/2", revealOn.row)}
                   title={t("grid.addSubtask")}
                   aria-label={t("grid.addSubtask")}
                   data-testid="add-subtask"
@@ -1034,7 +1040,7 @@ function Row({
                   <ListTree size={13} />
                 </button>
               )}
-              <div className={cn("flex-1 overflow-hidden", autoFit ? "" : "h-full", field.isPrimary && autoFit && "pr-7", field.isPrimary && childCount > 0 && "[&_input]:font-semibold [&_textarea]:font-semibold", field.isPrimary && depth > 0 && "[&_input]:text-neutral-700 [&_textarea]:text-neutral-700 dark:[&_input]:text-neutral-300 dark:[&_textarea]:text-neutral-300")}>
+              <div className={cn("flex-1 overflow-hidden", autoFit ? "" : "h-full", field.isPrimary && autoFit && "md:pr-7", field.isPrimary && childCount > 0 && "[&_input]:font-semibold [&_textarea]:font-semibold", field.isPrimary && depth > 0 && "[&_input]:text-neutral-700 [&_textarea]:text-neutral-700 dark:[&_input]:text-neutral-300 dark:[&_textarea]:text-neutral-300")}>
                 <Cell
                   field={field}
                   value={value}

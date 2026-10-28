@@ -105,7 +105,7 @@ database or in production.
 |---|---|
 | `npm run dev` / `build` / `start` | Next.js dev server / production build / serve |
 | `npm test` | Unit tests: formula engine, query engine, OKR math |
-| `npm run test:e2e` | Playwright browser suite (needs `DATABASE_URL`; starts the app itself): readiness and sign-in smoke tests, the service worker's push / click handling, and on iPhone + Android viewports every main screen checked for sideways scrolling, cut-off or squeezed text, plus the phone tab bar, menu and pinch-zoom lock |
+| `npm run test:e2e` | Playwright browser suite (needs `DATABASE_URL`; starts the app itself): readiness and sign-in smoke tests, the service worker's push / click handling, on iPhone + Android viewports every main screen checked for sideways scrolling, cut-off or squeezed text, plus the phone tab bar, menu and pinch-zoom lock, and on a desktop screen the task grid (editing each kind of cell, sub-tasks, inserting / deleting rows, the side panel, the frozen name column) |
 | `npm run test:integration` | Creates a throwaway database, applies migrations, starts the built app and runs HTTP tests for auth, roles, constraints, triggers, soft delete and activity logs (run `npm run build` first). One ordered scenario split into chapters under `tests/integration/api/` |
 | `npm run lint` | ESLint |
 | `npm run db:migrate` | `prisma migrate deploy` |

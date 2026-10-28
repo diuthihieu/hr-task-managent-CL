@@ -18,6 +18,8 @@ export default defineConfig({
   projects: [
     { name: "setup", testMatch: /global\.setup\.ts/ },
     { name: "chromium", testMatch: /(production-smoke|service-worker)\.spec\.ts/, use: { ...devices["Desktop Chrome"] } },
+    // Browser-only checks (no sign-in); also runnable without a server: playwright.dom.config.ts.
+    { name: "dom", testMatch: /dom-.*\.spec\.ts/, use: { ...devices["Desktop Chrome"] } },
     { name: "desktop", testMatch: /(grid|desktop)-.*\.spec\.ts/, dependencies: ["setup"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
     { name: "iphone", testMatch: /mobile-.*\.spec\.ts/, dependencies: ["setup"], use: { ...devices["iPhone 14"], browserName: "chromium" } },
     { name: "android", testMatch: /mobile-.*\.spec\.ts/, dependencies: ["setup"], use: { ...devices["Pixel 7"] } },

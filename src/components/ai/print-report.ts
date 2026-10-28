@@ -48,9 +48,9 @@ const STYLE = `
   footer { margin-top: 28px; padding-top: 8px; border-top: 1px solid #e5e7eb; font-size: 8pt; color: #9ca3af; }
 `;
 
-function sanitizeChart(markup: string): string {
-  if (typeof window === "undefined") return "";
-  return DOMPurify.sanitize(markup, { USE_PROFILES: { svg: true, svgFilters: true, html: true }, FORBID_TAGS: ["script", "style", "foreignObject", "iframe", "form", "input", "button", "a", "image", "use"], FORBID_ATTR: ["style", "href", "xlink:href"] });
+/** The chart snapshot as sanitized DOM nodes (never as a string spliced into other HTML). */
+function sanitizeChart(markup: string): DocumentFragment {
+  return DOMPurify.sanitize(markup, { USE_PROFILES: { svg: true, svgFilters: true, html: true }, FORBID_TAGS: ["script", "style", "foreignObject", "iframe", "form", "input", "button", "a", "image", "use"], FORBID_ATTR: ["style", "href", "xlink:href"], RETURN_DOM_FRAGMENT: true });
 }
 
 /** Markdown + chart snapshots → a complete, printable HTML document. */
@@ -62,10 +62,27 @@ export function buildReportHtml(opts: { markdown: string; charts?: ReportChart[]
   const placed: string[] = [];
   const md = opts.markdown.replace(/^\s*\[\[chart:([A-Za-z0-9_-]{1,64})\]\]\s*$/gm, (_m, id: string) => (charts.has(id) ? `\n\nWOLICHART${placed.push(id) - 1}WOLICHART\n\n` : ""));
   let body = markdownToHtml(md);
-  body = body.replace(/<p>WOLICHART(\d+)WOLICHART<\/p>/g, (_m, n: string) => {
-    const c = charts.get(placed[Number(n)]);
-    return c ? `<figure class="chart"><figcaption>${esc(c.title)}</figcaption>${sanitizeChart(c.svg)}</figure>` : "";
-  });
+  if (placed.length && typeof document !== "undefined") {
+    // Each placeholder paragraph becomes a figure built through the DOM.
+    const tpl = document.createElement("template");
+    tpl.innerHTML = body;
+    for (const p of Array.from(tpl.content.querySelectorAll("p"))) {
+      const n = /^WOLICHART(\d+)WOLICHART$/.exec(p.textContent?.trim() ?? "")?.[1];
+      if (n === undefined) continue;
+      const c = charts.get(placed[Number(n)]);
+      if (!c) {
+        p.remove();
+        continue;
+      }
+      const figure = document.createElement("figure");
+      figure.className = "chart";
+      const caption = document.createElement("figcaption");
+      caption.textContent = c.title;
+      figure.append(caption, sanitizeChart(c.svg));
+      p.replaceWith(figure);
+    }
+    body = tpl.innerHTML;
+  }
   const date = (opts.date ?? new Date()).toLocaleString(opts.locale === "vi" ? "vi-VN" : "en-GB", { dateStyle: "long", timeStyle: "short" });
   return `<!doctype html><html lang="${opts.locale}"><head><meta charset="utf-8"><title>${esc(opts.title)}</title><style>${STYLE}</style></head><body>
 <header>${opts.logoUrl ? `<img src="${esc(opts.logoUrl)}" alt="">` : ""}<span class="ws">${esc(opts.workspace)}</span>

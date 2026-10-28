@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
-import { requireUser, route, readJson, notFound, badRequest } from "@/lib/authz";
-import { quickTaskAction } from "@/lib/task-quick";
+import { requireUser, route, readJson } from "@/lib/authz";
+import { actOnNotification } from "@/server/notifications/actions";
 
 type P = { notificationId: string };
 
@@ -20,24 +19,6 @@ const schema = z.object({
 export const PATCH = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { notificationId } = await params;
-  const body = schema.parse(await readJson(req));
-  const n = await prisma.notification.findFirst({ where: { id: notificationId, userId: user.id } });
-  if (!n) throw notFound("Notification");
-
-  if (body.completeTask) {
-    if (!n.taskId) throw badRequest("This notification has no task");
-    await quickTaskAction(user, n.taskId, "complete", "the action center");
-  }
-
-  const now = new Date();
-  await prisma.notification.update({
-    where: { id: n.id },
-    data: {
-      ...(body.read !== undefined ? { readAt: body.read ? (n.readAt ?? now) : null } : {}),
-      ...(body.snoozeUntil !== undefined ? { snoozedUntil: body.snoozeUntil ? new Date(body.snoozeUntil) : null, readAt: n.readAt ?? now } : {}),
-      ...(body.actioned !== undefined ? { actionedAt: body.actioned ? now : null, readAt: n.readAt ?? now } : {}),
-      ...(body.completeTask ? { actionedAt: now, readAt: n.readAt ?? now } : {}),
-    },
-  });
+  await actOnNotification(user, notificationId, schema.parse(await readJson(req)));
   return NextResponse.json({ ok: true });
 });

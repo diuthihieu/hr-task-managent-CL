@@ -10,7 +10,7 @@ import { markdownToHtml } from "@/components/ai/markdown";
 import { cn } from "@/lib/utils";
 import type { MessageKey } from "@/lib/i18n/core";
 import { api } from "@/lib/api-client";
-import { Card, EmptyNote, ItemRow } from "./brain-hub";
+import { Card, EmptyNote, ItemRow } from "./hub-ui";
 
 interface Week {
   weekStart: string;

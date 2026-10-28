@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api-client";
 import { cn, formatDate } from "@/lib/utils";
-import { Card, EmptyNote, ItemRow } from "./brain-hub";
+import { Card, EmptyNote, ItemRow } from "./hub-ui";
 import type { MessageKey } from "@/lib/i18n/core";
 import { Meta } from "@/components/ui/meta";
 

@@ -11,7 +11,7 @@ import { toast } from "@/components/ui/toast";
 import { RichEditor, type SaveState } from "@/components/editor/rich-editor";
 import { Markdown } from "@/components/ai/markdown";
 import { api } from "@/lib/api-client";
-import { Card } from "./brain-hub";
+import { Card } from "./hub-ui";
 import { cn } from "@/lib/utils";
 import type { MessageKey } from "@/lib/i18n/core";
 

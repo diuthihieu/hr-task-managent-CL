@@ -12,7 +12,7 @@
 //   (set temporarily) and every workspace opened that way is audit-logged.
 
 import { NextResponse } from "next/server";
-import { Prisma, type SystemRole, type WorkspaceRole } from "@prisma/client";
+import { Prisma, type WorkspaceRole } from "@prisma/client";
 import { ZodError } from "zod";
 import { auth } from "./auth";
 import { prisma } from "./prisma";
@@ -20,17 +20,10 @@ import { prisma } from "./prisma";
 export { HttpError, unauthorized, forbidden, notFound, badRequest } from "./http-errors";
 import { HttpError, unauthorized, forbidden, notFound, badRequest } from "./http-errors";
 import { featureOfPath, runWithAiContext, setAiContextUser } from "./ai/usage";
+import { roleAtLeast, supportAccess, wikiRoleAtLeast, type SessionUser, type WikiRoleName, type WorkspaceContext } from "./access";
+import { assertProjectCap, canManageProject, projectCaps } from "./project-permissions";
 
-export interface SessionUser {
-  id: string;
-  email: string;
-  name: string;
-  systemRole: SystemRole;
-  mustChangePassword: boolean;
-  avatarColor: string;
-  locale: string;
-  emailVerifiedAt: Date | null;
-}
+export { roleAtLeast, supportAccess, wikiRoleAtLeast, type SessionUser, type WikiRoleName, type WorkspaceContext } from "./access";
 
 export async function getSessionUser(): Promise<SessionUser | null> {
   const session = await auth();
@@ -65,18 +58,6 @@ export async function requireAdmin(): Promise<SessionUser> {
   return user;
 }
 
-/** Break-glass support mode: system admins act as owners everywhere while ADMIN_SUPPORT_ACCESS=1. */
-export function supportAccess(user: Pick<SessionUser, "systemRole">): boolean {
-  return user.systemRole === "ADMIN" && process.env.ADMIN_SUPPORT_ACCESS === "1";
-}
-
-const ROLE_RANK: Record<WorkspaceRole, number> = { viewer: 0, contributor: 1, editor: 2, admin: 3, owner: 4 };
-
-export function roleAtLeast(role: WorkspaceRole | null | undefined, min: WorkspaceRole): boolean {
-  if (!role) return false;
-  return ROLE_RANK[role] >= ROLE_RANK[min];
-}
-
 /** The caller's effective role in a workspace, or null if they have no access. */
 export async function effectiveRole(user: SessionUser, workspaceId: string): Promise<WorkspaceRole | null> {
   const workspace = await prisma.workspace.findFirst({ where: { id: workspaceId, deletedAt: null }, select: { id: true } });
@@ -94,17 +75,6 @@ export async function effectiveRole(user: SessionUser, workspaceId: string): Pro
     select: { role: true },
   });
   return m?.role ?? null;
-}
-
-export interface WorkspaceContext {
-  user: SessionUser;
-  workspaceId: string;
-  role: WorkspaceRole;
-  /** Set when the request targets something that lives inside a project. */
-  projectId?: string;
-  /** Set when the request targets something inside a wiki; `wikiRole` is the caller's role there. */
-  wikiId?: string;
-  wikiRole?: WikiRoleName;
 }
 
 /** What a resource resolves to: its workspace, plus its project when it has one. */
@@ -232,10 +202,6 @@ export async function workspaceOfCategory(categoryId: string): Promise<Scope | n
 // Wikis: workspace-level knowledge spaces with their own access rule.
 // ---------------------------------------------------------------------------
 
-export type WikiRoleName = "viewer" | "editor" | "manager";
-const WIKI_RANK: Record<WikiRoleName, number> = { viewer: 0, editor: 1, manager: 2 };
-export const wikiRoleAtLeast = (r: WikiRoleName | null | undefined, min: WikiRoleName) => !!r && WIKI_RANK[r] >= WIKI_RANK[min];
-
 /**
  * The caller's role in a wiki, or null when they can't see it.
  * Workspace owners/admins and the wiki's creator manage it; explicit members
@@ -248,7 +214,7 @@ export async function wikiRoleOf(user: SessionUser, wikiId: string, workspaceRol
   if (roleAtLeast(workspaceRole, "admin") || w.createdById === user.id) return "manager";
   const explicit = w.members[0]?.role as WikiRoleName | undefined;
   const implied: WikiRoleName | undefined = w.access === "workspace" ? (w.defaultRole as WikiRoleName) : undefined;
-  let r: WikiRoleName | undefined = explicit && implied ? (WIKI_RANK[explicit] >= WIKI_RANK[implied] ? explicit : implied) : (explicit ?? implied);
+  let r: WikiRoleName | undefined = explicit && implied ? (wikiRoleAtLeast(explicit, implied) ? explicit : implied) : (explicit ?? implied);
   if (!r) return null;
   if (workspaceRole === "viewer" && r !== "manager") r = "viewer";
   return r;
@@ -273,7 +239,6 @@ export function visibleWikiWhere(user: SessionUser, role: WorkspaceRole) {
  * owners/admins step in only when the project has no active owner.
  */
 export async function assertCanManageProject(ctx: WorkspaceContext, projectId: string) {
-  const { canManageProject } = await import("./project-permissions");
   if (!(await canManageProject(ctx, projectId))) throw forbidden("Only the project owner can do this");
 }
 
@@ -290,7 +255,6 @@ export async function assertCanEditTask(ctx: WorkspaceContext, taskId: string) {
     select: { projectId: true, createdById: true, assignees: { where: { userId: ctx.user.id }, select: { userId: true } } },
   });
   if (!task) throw notFound("Task");
-  const { projectCaps } = await import("./project-permissions");
   const caps = await projectCaps(ctx, task.projectId);
   if (caps.has("task.edit_all")) return;
   const own = task.createdById === ctx.user.id || task.assignees.length > 0;
@@ -302,7 +266,6 @@ export async function assertCanEditTask(ctx: WorkspaceContext, taskId: string) {
 export async function assertCanDeleteTask(ctx: WorkspaceContext, taskId: string) {
   await assertCanEditTask(ctx, taskId);
   const task = await prisma.task.findUniqueOrThrow({ where: { id: taskId }, select: { projectId: true } });
-  const { assertProjectCap } = await import("./project-permissions");
   await assertProjectCap(ctx, task.projectId, "task.delete");
 }
 

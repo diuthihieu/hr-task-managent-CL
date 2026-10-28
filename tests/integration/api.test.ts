@@ -19,6 +19,7 @@ import "./api/09-recognition-notifications";
 import "./api/10-workspaces-projects";
 import "./api/11-platform-security";
 import "./api/12-permission-matrix";
+import "./api/13-maintenance";
 
 test.after(async () => {
   await prisma.$disconnect();

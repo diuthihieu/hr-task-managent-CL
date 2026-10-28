@@ -2,7 +2,7 @@
 // dependency join rows and custom-field value rows, validated and written in the caller's transaction.
 import { Prisma, type CustomFieldType } from "@prisma/client";
 import { badRequest } from "@/lib/http-errors";
-import { objectiveVisibility } from "@/lib/okr-write";
+import { objectiveVisibility, projectVisibility } from "@/lib/okr-write";
 import { PRIORITIES, READ_ONLY_SYS, SYS, assertUuids, fromDateOnly, isUuid, okrTargetToken, toDateOnly, toIdArray, toIdOrNull, toNumber, toTimestamp } from "./values";
 import { TASK_INCLUDE, customValueOut } from "./read";
 import { parseRecurrence, spawnNextOccurrence } from "./recurrence";
@@ -250,6 +250,10 @@ export async function applyTaskPatch(
         const prev = before.dependencies.map((d) => d.dependsOnTaskId);
         const added = ids.filter((d) => !prev.includes(d));
         const removed = prev.filter((d) => !ids.includes(d));
+        // New links only to tasks the actor can see (same answer as an unknown id); links someone else made stay.
+        if (added.length && (await tx.task.count({ where: { id: { in: added }, project: { deletedAt: null, ...(await projectVisibility(tx, actorId)) } } })) !== added.length) {
+          throw badRequest("Dependencies must be tasks in this workspace");
+        }
         if (added.length) await assertNoDependencyCycle(tx, taskId, added);
         if (removed.length) await tx.taskDependency.deleteMany({ where: { taskId, dependsOnTaskId: { in: removed } } });
         if (added.length) await tx.taskDependency.createMany({ data: added.map((d) => ({ taskId, dependsOnTaskId: d, createdById: actorId })) });

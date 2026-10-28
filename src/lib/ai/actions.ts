@@ -59,7 +59,8 @@ export const ACTION_INSTRUCTIONS: Record<AiActionName, string> = {
   home_risks: "Review the user's risks: overdue and soon-due work, blocked tasks, tasks without dates or estimates, captured ideas (Put all things on) that are still not planned or past their planned date, work waiting on others, and objectives/key results behind pace. Rank the risks and give one concrete action for each.",
 };
 
-export async function taskContext(taskId: string) {
+/** The task as text for AI actions, limited to what `user` may see (dependencies in hidden projects are left out). */
+export async function taskContext(taskId: string, user: SessionUser) {
   const t = await prisma.task.findUniqueOrThrow({
     where: { id: taskId },
     select: {
@@ -82,7 +83,7 @@ export async function taskContext(taskId: string) {
       objective: { select: { title: true } },
       parentTask: { select: { title: true } },
       subtasks: { where: { deletedAt: null }, select: { title: true, progress: true, status: { select: { name: true } } } },
-      dependencies: { select: { dependsOn: { select: { title: true, dueDate: true, status: { select: { name: true, category: true } } } } } },
+      dependencies: { where: { dependsOn: { project: visibleProjectWhere(user) } }, select: { dependsOn: { select: { title: true, dueDate: true, status: { select: { name: true, category: true } } } } } },
       comments: { where: { deletedAt: null }, orderBy: { createdAt: "asc" }, take: 40, select: { body: true, createdAt: true, author: { select: { name: true } } } },
     },
   });

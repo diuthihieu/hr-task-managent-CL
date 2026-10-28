@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "../prisma";
 import { taskContext } from "../ai/actions";
+import type { SessionUser } from "../authz";
 import { stripMentions } from "../mentions";
 import { htmlToText } from "../ai/extract";
 
@@ -17,9 +18,9 @@ function historyLines(rows: { createdAt: Date; action: string; summary: string |
   });
 }
 
-export async function taskRetroContext(taskId: string) {
+export async function taskRetroContext(taskId: string, user: SessionUser) {
   const [base, history, files, decisions] = await Promise.all([
-    taskContext(taskId),
+    taskContext(taskId, user),
     prisma.activityLog.findMany({ where: { entityType: "task", entityId: taskId }, orderBy: { createdAt: "asc" }, take: 120, select: { createdAt: true, action: true, summary: true, changes: true, actor: { select: { name: true } } } }),
     prisma.attachment.findMany({ where: { taskId, deletedAt: null }, select: { fileName: true, createdAt: true, extractedText: true } }),
     prisma.decision.findMany({ where: { taskId, deletedAt: null }, select: { title: true, reason: true } }),

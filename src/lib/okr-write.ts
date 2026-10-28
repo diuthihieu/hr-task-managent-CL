@@ -5,10 +5,16 @@ type Tx = Prisma.TransactionClient;
 
 /** Objectives the actor can see: workspace-level ones, and those of projects not hidden from them. */
 export async function objectiveVisibility(tx: Tx, actorId: string | null | undefined): Promise<Prisma.ObjectiveWhereInput> {
+  const project = await projectVisibility(tx, actorId);
+  return Object.keys(project).length ? { OR: [{ projectId: null }, { project }] } : {};
+}
+
+/** Projects the actor may see (all of them for system work and admin support access). */
+export async function projectVisibility(tx: Tx, actorId: string | null | undefined): Promise<Prisma.ProjectWhereInput> {
   if (!actorId) return {};
   const actor = await tx.user.findUnique({ where: { id: actorId }, select: { systemRole: true } });
   if (actor?.systemRole === "ADMIN" && process.env.ADMIN_SUPPORT_ACCESS === "1") return {};
-  return { OR: [{ projectId: null }, { project: { hiddenMembers: { none: { userId: actorId } } } }] };
+  return { hiddenMembers: { none: { userId: actorId } } };
 }
 
 /**

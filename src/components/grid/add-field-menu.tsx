@@ -12,7 +12,7 @@ export function AddFieldButton({ onSelect }: { onSelect: (type: string) => void 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center justify-center h-8 w-full text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800" title={t("fe.addCustom")}>
+        <button data-testid="add-field" className="flex items-center justify-center h-8 w-full text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-neutral-100 dark:hover:bg-neutral-800" title={t("fe.addCustom")}>
           <Plus size={15} />
         </button>
       </DropdownMenuTrigger>
@@ -25,7 +25,7 @@ export function AddFieldButton({ onSelect }: { onSelect: (type: string) => void 
               {i > 0 && <DropdownMenuSeparator />}
               <DropdownMenuLabel>{t(`fc.${cat}` as MessageKey)}</DropdownMenuLabel>
               {items.map((f) => (
-                <DropdownMenuItem key={f.type} onSelect={() => onSelect(f.type)}>
+                <DropdownMenuItem key={f.type} onSelect={() => onSelect(f.type)} data-testid={`add-field-${f.type}`}>
                   <span className="flex-1">{t(`ft.${f.type}` as MessageKey)}</span>
                 </DropdownMenuItem>
               ))}

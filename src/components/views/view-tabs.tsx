@@ -116,7 +116,7 @@ export function ViewTabs({
       {canCreate && (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <button className="flex items-center gap-1 h-7 px-2 rounded-md text-sm text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-900 ml-1">
+          <button data-testid="add-view" className="flex items-center gap-1 h-7 px-2 rounded-md text-sm text-neutral-400 hover:bg-neutral-50 dark:hover:bg-neutral-900 ml-1">
             <Plus size={14} /> {t("nav.addView")}
           </button>
         </DropdownMenuTrigger>
@@ -172,6 +172,7 @@ function ViewTab({
     return (
       <input
         autoFocus
+        data-testid="view-rename-input"
         value={renameValue}
         onChange={(e) => onRenameValueChange(e.target.value)}
         onBlur={onCommitRename}
@@ -186,6 +187,8 @@ function ViewTab({
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className={cn("group flex items-center rounded-md shrink-0", isDragging && "opacity-50 z-10 relative")}
+      data-testid="view-tab"
+      data-view-id={view.id}
       {...attributes}
       {...listeners}
     >
@@ -205,22 +208,23 @@ function ViewTab({
         <DropdownMenuTrigger asChild>
           <button
             onClick={(e) => e.stopPropagation()}
+            data-testid="view-tab-menu"
             className={cn("h-7 w-5 flex items-center justify-center text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200", active ? "opacity-100" : "opacity-0 group-hover:opacity-100")}
           >
             <MoreHorizontal size={13} />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent>
-          {canManage && <DropdownMenuItem onSelect={onStartRename}>
+          {canManage && <DropdownMenuItem onSelect={onStartRename} data-testid="view-rename">
             <Pencil size={13} /> {t("common.rename")}
           </DropdownMenuItem>}
-          {canManage && <DropdownMenuItem onSelect={onDuplicate}>
+          {canManage && <DropdownMenuItem onSelect={onDuplicate} data-testid="view-duplicate">
             <Copy size={13} /> {t("common.duplicate")}
           </DropdownMenuItem>}
           {canDelete && (
             <>
               {canManage && <DropdownMenuSeparator />}
-              <DropdownMenuItem onSelect={onDelete} className="text-red-600 dark:text-red-400">
+              <DropdownMenuItem onSelect={onDelete} className="text-red-600 dark:text-red-400" data-testid="view-delete">
                 <Trash2 size={13} /> {t("common.delete")}
               </DropdownMenuItem>
             </>

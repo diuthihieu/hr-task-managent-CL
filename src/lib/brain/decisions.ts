@@ -4,6 +4,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../prisma";
 import { badRequest, notFound, requireWorkspaceRole, workspaceOfObjective, workspaceOfProject, workspaceOfTask, workspaceOfWikiPage, type SessionUser } from "../authz";
 import { entityHref } from "./links-core";
+import type { BrainAccess } from "./access";
 import { uuid } from "../validation";
 
 const date = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use YYYY-MM-DD");
@@ -47,7 +48,8 @@ export const DECISION_INCLUDE = {
 
 type Row = Prisma.DecisionGetPayload<{ include: typeof DECISION_INCLUDE }>;
 
-export function serializeDecision(r: Row, base: string) {
+/** Ids among the rows' supersede links that the viewer may see (see visibleDecisionLinks). */
+export function serializeDecision(r: Row, base: string, visibleLinks: Set<string>) {
   const live = <T extends { deletedAt: Date | null }>(x: T | null) => (x && !x.deletedAt ? x : null);
   const page = live(r.wikiPage);
   const task = live(r.task);
@@ -74,14 +76,22 @@ export function serializeDecision(r: Row, base: string) {
     objective: objective ? { id: objective.id, title: objective.title, href: entityHref(base, { type: "objective", id: objective.id }) } : null,
     people: r.people.map((p) => p.user),
     createdBy: r.createdBy,
-    supersedes: live(r.supersedes) ? { id: r.supersedes!.id, title: r.supersedes!.title } : null,
-    supersededBy: live(r.supersededBy) ? { id: r.supersededBy!.id, title: r.supersededBy!.title } : null,
+    supersedes: live(r.supersedes) && visibleLinks.has(r.supersedes!.id) ? { id: r.supersedes!.id, title: r.supersedes!.title } : null,
+    supersededBy: live(r.supersededBy) && visibleLinks.has(r.supersededBy!.id) ? { id: r.supersededBy!.id, title: r.supersededBy!.title } : null,
     href: entityHref(base, { type: "decision", id: r.id }),
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
   };
 }
 export type DecisionDto = ReturnType<typeof serializeDecision>;
+
+/** A linked (superseded / superseding) decision is shown only when the viewer may see it too. */
+export async function visibleDecisionLinks(access: BrainAccess, rows: Row[]): Promise<Set<string>> {
+  const ids = [...new Set(rows.flatMap((r) => [r.supersedes?.id, r.supersededBy?.id]).filter((x): x is string => !!x))];
+  if (!ids.length) return new Set();
+  const seen = await prisma.decision.findMany({ where: { AND: [access.decision, { id: { in: ids } }] }, select: { id: true } });
+  return new Set(seen.map((x) => x.id));
+}
 
 /** Every reference must be something the caller can see, in the same workspace. */
 export async function assertDecisionRefs(user: SessionUser, workspaceId: string, b: DecisionInput) {
@@ -126,8 +136,9 @@ export function decisionData(b: DecisionInput) {
 }
 
 /** Marks the older decision superseded (valid until the day before the new one). */
-export async function supersede(tx: Prisma.TransactionClient, workspaceId: string, newId: string, oldId: string, decidedAt: Date) {
-  const old = await tx.decision.findFirst({ where: { id: oldId, workspaceId, deletedAt: null }, select: { id: true, validFrom: true, supersededBy: { select: { id: true } } } });
+export async function supersede(tx: Prisma.TransactionClient, access: BrainAccess, newId: string, oldId: string, decidedAt: Date) {
+  // Only a decision the caller may see (a hidden one answers like a missing one).
+  const old = await tx.decision.findFirst({ where: { AND: [access.decision, { id: oldId }] }, select: { id: true, validFrom: true, supersededBy: { select: { id: true } } } });
   if (!old) throw notFound("Decision");
   if (old.supersededBy && old.supersededBy.id !== newId) throw badRequest("That decision was already superseded by another one");
   await tx.decision.update({ where: { id: newId }, data: { supersedesId: oldId } });

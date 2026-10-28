@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { brainAccess } from "@/lib/brain/access";
-import { DECISION_INCLUDE, assertDecisionRefs, decisionData, decisionSchema, serializeDecision, supersede } from "@/lib/brain/decisions";
+import { DECISION_INCLUDE, assertDecisionRefs, decisionData, decisionSchema, serializeDecision, supersede, visibleDecisionLinks } from "@/lib/brain/decisions";
 
 type P = { workspaceId: string };
 
@@ -31,13 +31,15 @@ export const GET = route<P>(async (req, { params }) => {
     prisma.decision.findMany({ where, include: DECISION_INCLUDE, orderBy: [{ decidedAt: "desc" }, { createdAt: "desc" }], take: 300 }),
     prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { slug: true } }),
   ]);
-  return NextResponse.json(rows.map((r) => serializeDecision(r, `/w/${ws.slug}`)));
+  const links = await visibleDecisionLinks(access, rows);
+  return NextResponse.json(rows.map((r) => serializeDecision(r, `/w/${ws.slug}`, links)));
 });
 
 export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { workspaceId } = await params;
-  await requireWorkspaceRole(user, workspaceId, "contributor");
+  const ctx = await requireWorkspaceRole(user, workspaceId, "contributor");
+  const access = await brainAccess(user, workspaceId, ctx.role);
   const body = decisionSchema.parse(await readJson(req));
   await assertDecisionRefs(user, workspaceId, body);
   const ws = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { slug: true } });
@@ -45,9 +47,9 @@ export const POST = route<P>(async (req, { params }) => {
     // The person recording it owns it unless someone else is named.
     const created = await tx.decision.create({ data: { ...decisionData(body), ownerId: body.ownerId === undefined ? user.id : body.ownerId, supersedesId: undefined, workspaceId, createdById: user.id }, select: { id: true, decidedAt: true, title: true } });
     if (body.people?.length) await tx.decisionPerson.createMany({ data: [...new Set(body.people)].map((userId) => ({ decisionId: created.id, userId })) });
-    if (body.supersedesId) await supersede(tx, workspaceId, created.id, body.supersedesId, created.decidedAt);
+    if (body.supersedesId) await supersede(tx, access, created.id, body.supersedesId, created.decidedAt);
     await logActivity(tx, { workspaceId, actorId: user.id, entityType: "decision", entityId: created.id, action: "created", summary: `Recorded decision "${created.title}"` });
     return tx.decision.findUniqueOrThrow({ where: { id: created.id }, include: DECISION_INCLUDE });
   });
-  return NextResponse.json(serializeDecision(row, `/w/${ws.slug}`), { status: 201 });
+  return NextResponse.json(serializeDecision(row, `/w/${ws.slug}`, await visibleDecisionLinks(access, [row])), { status: 201 });
 });

@@ -1,6 +1,6 @@
 # ADR 0001: Route handlers stay thin; domain logic lives in `src/server/<domain>/`
 
-- Status: accepted (2026-10-28). First domain moved: notifications.
+- Status: accepted (2026-10-28). Domains moved so far: notifications; tasks (core: values, read, write, recurrence, create / edit / delete / restore). `src/lib/task-grid.ts` re-exports `src/server/tasks` so its 21 importers keep working while they move.
 - Context: 165 of 192 API route files queried Prisma directly, mixing input parsing, permission checks and business rules. The same rule (for example, which notifications are muted) was hard to find, test or reuse.
 
 ## Decision

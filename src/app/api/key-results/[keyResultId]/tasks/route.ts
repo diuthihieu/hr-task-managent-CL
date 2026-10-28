@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfKeyResult, badRequest, hiddenProjectIds, visibleProjectWhere } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfKeyResult, badRequest, hiddenProjectIds, visibleProjectWhere, assertCanEditTask } from "@/lib/authz";
+import { assertProjectCap } from "@/lib/project-permissions";
 import { logActivity } from "@/lib/activity";
 import { resolveObjectives, OBJECTIVE_INCLUDE } from "@/lib/okr-resolver";
 import { uuid } from "@/lib/validation";
@@ -34,7 +35,12 @@ export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { keyResultId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfKeyResult(keyResultId), "editor");
+  // Same rights as editing the key result (project OKRs) and the task itself.
+  if (ctx.projectId) await assertProjectCap(ctx, ctx.projectId, "okr.manage");
   const body = z.object({ taskId: uuid, weight: z.number().positive().max(1000).optional() }).parse(await readJson(req));
+  const visible = await prisma.task.findFirst({ where: { id: body.taskId, workspaceId: ctx.workspaceId, deletedAt: null, project: visibleProjectWhere(user) }, select: { id: true } });
+  if (!visible) throw badRequest("Task not found in this workspace");
+  await assertCanEditTask(ctx, body.taskId);
   const objective = await prisma.$transaction(async (tx) => {
     const task = await tx.task.findFirst({ where: { id: body.taskId, workspaceId: ctx.workspaceId, deletedAt: null, project: visibleProjectWhere(user) } });
     if (!task) throw badRequest("Task not found in this workspace");

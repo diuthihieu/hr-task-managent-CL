@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfProject, notFound } from "@/lib/authz";
 import { assertProjectCap } from "@/lib/project-permissions";
-import { notifyTaskCreated } from "@/lib/notifications";
-import { logActivity } from "@/lib/activity";
-import { loadProjectGrid, loadProjectGridPage, createTask, loadTaskRecord } from "@/lib/task-grid";
+import { loadProjectGrid, loadProjectGridPage } from "@/server/tasks/read";
+import { createTaskInProject } from "@/server/tasks/mutations";
 
 type P = { projectId: string };
 
@@ -36,12 +34,6 @@ export const POST = route<P>(async (req, { params }) => {
   const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "contributor");
   await assertProjectCap(ctx, projectId, "task.create");
   const { data } = createSchema.parse(await readJson(req));
-  const record = await prisma.$transaction(async (tx) => {
-    const taskId = await createTask(tx, { projectId, workspaceId: ctx.workspaceId, actorId: user.id, data });
-    await notifyTaskCreated(tx, taskId, user.id);
-    const rec = await loadTaskRecord(taskId, tx);
-    await logActivity(tx, { workspaceId: ctx.workspaceId, actorId: user.id, entityType: "task", entityId: taskId, action: "created", summary: `Created task "${rec?.data.sys_title}"` });
-    return rec;
-  });
+  const record = await createTaskInProject(ctx, projectId, data);
   return NextResponse.json(record, { status: 201 });
 });

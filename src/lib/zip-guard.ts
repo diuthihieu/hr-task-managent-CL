@@ -1,6 +1,9 @@
-// Checks an Office / ZIP file's central directory BEFORE anything unpacks it:
-// bounded entry count, total expanded size and compression ratio, so a
-// crafted archive ("zip bomb") can't exhaust memory or CPU. Pure, no deps.
+// Checks an Office / ZIP file BEFORE a parser unpacks it: bounded entry count,
+// total expanded size and compression ratio, so a crafted archive ("zip bomb")
+// can't exhaust memory or CPU. It reads the archive the way JSZip (and so
+// mammoth) does, and expands every part with a cap to learn its real size:
+// the sizes a file declares can lie (BUG-22). Node built-ins only.
+import { inflateRawSync } from "node:zlib";
 
 export interface ZipLimits {
   maxEntries: number;
@@ -12,7 +15,13 @@ export const DEFAULT_ZIP_LIMITS: ZipLimits = { maxEntries: 2000, maxTotalBytes: 
 
 export class ZipRejected extends Error {}
 
-export function assertSafeZip(buf: Uint8Array, limits: ZipLimits = DEFAULT_ZIP_LIMITS) {
+export interface ZipEntryInfo {
+  name: string;
+  /** Real expanded size (checked by expanding it). */
+  size: number;
+}
+
+export function assertSafeZip(buf: Uint8Array, limits: ZipLimits = DEFAULT_ZIP_LIMITS): ZipEntryInfo[] {
   const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   // End of central directory: last 22..65557 bytes.
   let eocd = -1;
@@ -29,17 +38,74 @@ export function assertSafeZip(buf: Uint8Array, limits: ZipLimits = DEFAULT_ZIP_L
   if (entries === 0xffff || cdSize === 0xffffffff || cdOffset === 0xffffffff) throw new ZipRejected("ZIP64 archives are not supported");
   if (entries > limits.maxEntries) throw new ZipRejected("The file contains too many parts");
   if (cdOffset + cdSize > buf.length) throw new ZipRejected("Corrupted file");
+  // JSZip treats anything before the declared directory as prepended data and shifts every
+  // offset; Office files never have any, so the directory must end right at the end record.
+  if (cdOffset + cdSize !== eocd) throw new ZipRejected("Corrupted file");
+  const out: ZipEntryInfo[] = [];
   let p = cdOffset;
   let total = 0;
   for (let n = 0; n < entries; n++) {
     if (p + 46 > buf.length || dv.getUint32(p, true) !== 0x02014b50) throw new ZipRejected("Corrupted file");
+    const method = dv.getUint16(p + 10, true);
     const compressed = dv.getUint32(p + 20, true);
-    const size = dv.getUint32(p + 24, true);
-    if (compressed === 0xffffffff || size === 0xffffffff) throw new ZipRejected("ZIP64 archives are not supported");
+    const declared = dv.getUint32(p + 24, true);
+    const nameLength = dv.getUint16(p + 28, true);
+    const extraLength = dv.getUint16(p + 30, true);
+    const localOffset = dv.getUint32(p + 42, true);
+    if (compressed === 0xffffffff || declared === 0xffffffff || localOffset === 0xffffffff) throw new ZipRejected("ZIP64 archives are not supported");
+    const name = new TextDecoder().decode(buf.subarray(p + 46, p + 46 + nameLength));
+    // The part's data, found through its local header (what JSZip reads).
+    if (localOffset + 30 > cdOffset || dv.getUint32(localOffset, true) !== 0x04034b50) throw new ZipRejected("Corrupted file");
+    const localNameLength = dv.getUint16(localOffset + 26, true);
+    const localExtraLength = dv.getUint16(localOffset + 28, true);
+    // JSZip names a part from its local header (and a Unicode-path extra field can rename it):
+    // the name checked here must be the one the parser will use.
+    const localName = new TextDecoder().decode(buf.subarray(localOffset + 30, localOffset + 30 + localNameLength));
+    if (localName !== name) throw new ZipRejected("Corrupted file");
+    if (hasExtraField(dv, p + 46 + nameLength, extraLength, 0x7075) || hasExtraField(dv, localOffset + 30 + localNameLength, localExtraLength, 0x7075)) throw new ZipRejected("Unsupported file name encoding in this file");
+    const start = localOffset + 30 + localNameLength + localExtraLength;
+    if (start + compressed > cdOffset) throw new ZipRejected("Corrupted file");
+    const size = realSize(buf.subarray(start, start + compressed), method, limits.maxEntryBytes);
     if (size > limits.maxEntryBytes) throw new ZipRejected("A part of the file is too large once expanded");
+    if (size !== declared) throw new ZipRejected("Corrupted file");
     if (size > 1024 * 1024 && size / Math.max(1, compressed) > limits.maxRatio) throw new ZipRejected("The file is compressed suspiciously well (possible zip bomb)");
     total += size;
     if (total > limits.maxTotalBytes) throw new ZipRejected("The file is too large once expanded");
-    p += 46 + dv.getUint16(p + 28, true) + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
+    out.push({ name, size });
+    p += 46 + nameLength + extraLength + dv.getUint16(p + 32, true);
   }
+  // No directory records beyond the count in the end record (JSZip would read them too).
+  if (p !== cdOffset + cdSize) throw new ZipRejected("Corrupted file");
+  return out;
+}
+
+/** Whether the extra-field block at [start, start + length) holds a field with this id. */
+function hasExtraField(dv: DataView, start: number, length: number, id: number): boolean {
+  const end = Math.min(start + length, dv.byteLength);
+  for (let q = start; q + 4 <= end; q += 4 + dv.getUint16(q + 2, true)) {
+    if (dv.getUint16(q, true) === id) return true;
+  }
+  return false;
+}
+
+/** Expanded size of one part, never expanding more than `max` + 1 bytes (enough to tell it's too large). */
+function realSize(data: Uint8Array, method: number, max: number): number {
+  if (method === 0) return data.length;
+  if (method !== 8) throw new ZipRejected("Unsupported compression in this file");
+  try {
+    return inflateRawSync(data, { maxOutputLength: max + 1 }).length;
+  } catch (e) {
+    if (e instanceof RangeError || (e as { code?: string }).code === "ERR_BUFFER_TOO_LARGE") throw new ZipRejected("A part of the file is too large once expanded");
+    throw new ZipRejected("Corrupted file");
+  }
+}
+
+/** Parsers build the XML tree in memory (tens of times its size), so previews take at most 5 MB of XML. */
+export const MAX_PREVIEW_XML_BYTES = 5 * 1024 * 1024;
+
+export function assertOfficePreviewable(buf: Uint8Array): ZipEntryInfo[] {
+  const entries = assertSafeZip(buf);
+  const xml = entries.filter((e) => /\.(xml|rels)$/i.test(e.name)).reduce((s, e) => s + e.size, 0);
+  if (xml > MAX_PREVIEW_XML_BYTES) throw new ZipRejected("This file is too large to preview - download it instead");
+  return entries;
 }

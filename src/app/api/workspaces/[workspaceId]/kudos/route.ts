@@ -23,14 +23,23 @@ export const GET = route<P>(async (req, { params }) => {
   const scope = url.searchParams.get("scope") ?? "wall";
   const from = url.searchParams.get("from");
   const to = url.searchParams.get("to");
+  const rawUserId = url.searchParams.get("userId");
+  const userId = rawUserId ? uuid.safeParse(rawUserId) : null;
+  if (userId && !userId.success) throw badRequest("userId must be a valid id");
+  const scopeWhere: Prisma.KudosWhereInput =
+    scope === "received" ? { toId: user.id } : scope === "sent" ? { fromId: user.id } : { OR: [{ isPublic: true }, { toId: user.id }, { fromId: user.id }] };
+  // Conditions are combined with AND (never spread): a later key must not override the access rule.
+  // "received" always means letters to the caller, so ?userId= only narrows the wall and "sent".
   const where: Prisma.KudosWhereInput = {
     workspaceId,
     deletedAt: null,
-    ...(scope === "received" ? { toId: user.id } : scope === "sent" ? { fromId: user.id } : { OR: [{ isPublic: true }, { toId: user.id }, { fromId: user.id }] }),
-    ...(url.searchParams.get("userId") ? { toId: url.searchParams.get("userId")! } : {}),
     ...(from || to ? { createdAt: { ...(from ? { gte: new Date(`${from}T00:00:00Z`) } : {}), ...(to ? { lt: new Date(new Date(`${to}T00:00:00Z`).getTime() + 86400000) } : {}) } } : {}),
-    // Letters tied to a project/task the viewer can't see stay private to sender & receiver.
-    AND: [{ OR: [{ projectId: null }, { project: visibleProjectWhere(user) }, { toId: user.id }, { fromId: user.id }] }],
+    AND: [
+      scopeWhere,
+      ...(scope !== "received" && userId?.success ? [{ toId: userId.data }] : []),
+      // Letters tied to a project/task the viewer can't see stay private to sender & receiver.
+      { OR: [{ projectId: null }, { project: visibleProjectWhere(user) }, { toId: user.id }, { fromId: user.id }] },
+    ],
   };
   const [rows, stats] = await Promise.all([
     prisma.kudos.findMany({ where, include: KUDOS_INCLUDE, orderBy: { createdAt: "desc" }, take: 200 }),

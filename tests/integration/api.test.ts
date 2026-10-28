@@ -2673,6 +2673,32 @@ test("phone app (PWA): manifest, icons, service worker, offline page and build i
   assert.ok(((await v.json()) as { buildId: string }).buildId.length > 0);
   const page = await (await get("/")).text();
   assert.ok(page.includes('rel="manifest"') && page.includes("apple-mobile-web-app-capable"), "pages link the manifest and the iOS app tags");
+
+  // Android app: Digital Asset Links for the TWA, and APK releases registered as platform "android".
+  const links = (await (await get("/.well-known/assetlinks.json")).json()) as { target: { namespace: string; package_name: string; sha256_cert_fingerprints: string[] } }[];
+  assert.equal(links[0].target.namespace, "android_app");
+  assert.equal(links[0].target.package_name, "vn.woli.app");
+  assert.match(links[0].target.sha256_cert_fingerprints[0], /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/);
+  const launch = await fetch(`${BASE}/android-app?v=1.0.0`, { redirect: "manual" });
+  assert.equal(launch.status, 200, "the app's start address is public (it continues to sign-in itself)");
+  assert.equal((await get("/api/desktop/releases/latest?platform=android")).status, 404, "no APK yet");
+  const apk = await admin.post("/api/desktop/releases", { version: "1.0.0", platform: "android", installerUrl: "https://github.com/diuthihieu/hr-task-managent-CL/releases/download/android-v1.0.0/woli-android-1.0.0.apk", installerFileName: "woli-android-1.0.0.apk", installerSizeBytes: 2_000_000, sha256: "a".repeat(64), minOsVersion: "Android 7.0+" });
+  assert.equal(apk.status, 201, JSON.stringify(apk.body));
+  try {
+    const latest = (await (await get("/api/desktop/releases/latest?platform=android")).json()) as { version: string; platform: string };
+    assert.equal(latest.version, "1.0.0");
+    assert.equal(latest.platform, "android");
+    const dl = await fetch(`${BASE}/api/desktop/download/latest?platform=android`, { redirect: "manual" });
+    assert.equal(dl.status, 302);
+    assert.match(dl.headers.get("location") ?? "", /woli-android-1\.0\.0\.apk$/);
+    // The Windows download is unaffected by the Android release.
+    const win = await fetch(`${BASE}/api/desktop/download/latest`, { redirect: "manual" });
+    assert.doesNotMatch(win.headers.get("location") ?? "", /\.apk$/);
+    // The desktop updater never serves the APK.
+    assert.equal((await get("/api/desktop/update/android/x/0.1.0")).status, 204);
+  } finally {
+    await prisma.desktopRelease.deleteMany({ where: { platform: "android" } });
+  }
 });
 
 test("sub-task dates stay inside the parent task's dates; a parent cannot shrink past its sub-tasks", async () => {

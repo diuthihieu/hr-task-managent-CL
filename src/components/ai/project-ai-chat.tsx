@@ -93,7 +93,7 @@ export function ProjectAiChat({
       <button
         onClick={() => open()}
         className={cn(
-          "fixed z-40 bottom-4 right-4 flex items-center justify-center gap-2 rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 transition-all ring-4 ring-white dark:ring-neutral-950",
+          "fixed z-40 bottom-[calc(1rem+var(--app-bottom))] right-4 flex items-center justify-center gap-2 rounded-full bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-500 transition-all ring-4 ring-white dark:ring-neutral-950",
           minimized ? "h-14 w-14" : "h-12 pl-4 pr-5"
         )}
         title={t("intake.launcher")}
@@ -113,7 +113,7 @@ export function ProjectAiChat({
     <div
       className={cn(
         "fixed z-40 flex flex-col bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 overflow-hidden",
-        sidebar ? "top-0 right-0 h-full w-full sm:w-[420px] border-l shadow-2xl" : "bottom-4 right-4 left-4 sm:left-auto sm:w-[360px] h-[min(540px,calc(100vh-2rem))] rounded-t-2xl rounded-b-xl border shadow-2xl"
+        sidebar ? "top-0 right-0 h-full w-full sm:w-[420px] border-l shadow-2xl" : "bottom-[calc(1rem+var(--app-bottom))] right-4 left-4 sm:left-auto sm:w-[360px] h-[min(540px,calc(100vh-2rem-var(--app-bottom)))] rounded-t-2xl rounded-b-xl border shadow-2xl"
       )}
       role="dialog"
       aria-label={t("intake.title")}

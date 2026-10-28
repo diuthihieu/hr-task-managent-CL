@@ -59,7 +59,7 @@ export function AgentSuggestionPopup({ workspaceId, workspaceSlug }: { workspace
 
   if (!suggestion) return null;
   return (
-    <aside className="fixed z-[80] bottom-5 right-5 w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-indigo-200 dark:border-indigo-900 bg-white dark:bg-neutral-900 shadow-2xl p-4" role="dialog" aria-label={t("agent.popup.title")} data-testid="agent-suggestion-popup">
+    <aside className="fixed z-[80] bottom-[calc(1.25rem+var(--app-bottom))] right-5 w-[min(26rem,calc(100vw-2rem))] rounded-2xl border border-indigo-200 dark:border-indigo-900 bg-white dark:bg-neutral-900 shadow-2xl p-4" role="dialog" aria-label={t("agent.popup.title")} data-testid="agent-suggestion-popup">
       <div className="flex items-start gap-3">
         <div className="h-9 w-9 shrink-0 rounded-full bg-indigo-600 text-white flex items-center justify-center"><Bot size={17} /></div>
         <div className="flex-1 min-w-0"><div className="flex items-center gap-2"><h2 className="font-semibold text-sm">{t("agent.popup.title")}</h2><MetaStatus className="bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">{Math.round(suggestion.confidence * 100)}%</MetaStatus></div><p className="text-sm font-medium mt-2">{suggestion.task.title}</p><p className="text-xs text-neutral-500 mt-1">{suggestion.reason}</p><div className="flex gap-1 mt-2"><MetaChip>{suggestion.task.project.name}</MetaChip><MetaChip>{suggestion.skill.name}</MetaChip></div></div>

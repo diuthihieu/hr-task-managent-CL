@@ -8,7 +8,11 @@ import type { DesktopRelease, ReleaseChannel } from "@prisma/client";
 import { prisma } from "./prisma";
 
 export const DEFAULT_PLATFORM = "windows-x86_64";
-export const PLATFORMS = ["windows-x86_64"] as const;
+/** Platforms the Tauri desktop updater serves. */
+export const DESKTOP_PLATFORMS = ["windows-x86_64"] as const;
+/** Every platform a release can be registered for: the desktop app and the Android app (APK). */
+export const PLATFORMS = [...DESKTOP_PLATFORMS, "android"] as const;
+export const ANDROID_PLATFORM = "android";
 export const DESKTOP_UA_TOKEN = "BaseworkDesktop";
 
 // ---------------------------------------------------------------------------

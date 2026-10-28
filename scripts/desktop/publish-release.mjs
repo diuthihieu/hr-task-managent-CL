@@ -10,6 +10,7 @@
 //   INSTALLER_URL          public https URL of that installer
 // Optional:
 //   UPDATER_SIG_PATH       .sig file produced by Tauri (enables auto-update for this release)
+//   RELEASE_PLATFORM       windows-x86_64 (default) or android (the Android app's APK)
 //   RELEASE_NOTES, RELEASE_CHANNEL (stable|beta), MIN_OS_VERSION
 import { createHash } from "node:crypto";
 import { readFileSync, statSync, existsSync } from "node:fs";
@@ -34,7 +35,7 @@ const bytes = readFileSync(installerPath);
 const sigPath = process.env.UPDATER_SIG_PATH;
 const body = {
   version,
-  platform: "windows-x86_64",
+  platform: process.env.RELEASE_PLATFORM || "windows-x86_64",
   channel: process.env.RELEASE_CHANNEL || "stable",
   installerUrl,
   installerFileName: basename(installerPath),
@@ -55,4 +56,4 @@ if (!res.ok) {
   console.error(`Registering release failed: HTTP ${res.status} ${text}`);
   process.exit(1);
 }
-console.log(`Registered Basework Desktop v${version} (${body.installerFileName}, sha256 ${body.sha256}${body.updaterSignature ? ", signed for auto-update" : ""})`);
+console.log(`Registered ${body.platform} v${version} (${body.installerFileName}, sha256 ${body.sha256}${body.updaterSignature ? ", signed for auto-update" : ""})`);

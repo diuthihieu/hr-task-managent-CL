@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Woli" parent="Theme.AppCompat.Light.NoActionBar">
+        <item name="android:windowBackground">@color/navigationBar</item>
+        <item name="android:statusBarColor">@color/statusBar</item>
+    </style>
+</resources>

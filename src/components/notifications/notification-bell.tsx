@@ -262,7 +262,7 @@ export function NotificationBell({ className, align = "start" }: { className?: s
   return (
     <>
     {popups.length > 0 && (
-      <div className="fixed z-[70] bottom-4 right-4 left-4 sm:left-auto sm:w-96 flex flex-col gap-2" role="status" aria-live="polite" data-testid="notif-popups">
+      <div className="fixed z-[70] bottom-[calc(1rem+var(--app-bottom))] right-4 left-4 sm:left-auto sm:w-96 flex flex-col gap-2" role="status" aria-live="polite" data-testid="notif-popups">
         {popups.map((n) => n.type === "kudos" ? (
           <button
             key={n.id}

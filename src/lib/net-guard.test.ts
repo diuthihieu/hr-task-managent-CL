@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { privateAddress, guardedLookup, getPublicHttps } from "./net-guard";
+import { Readable } from "node:stream";
+import { brotliCompressSync, deflateSync, gzipSync } from "node:zlib";
+import { privateAddress, guardedLookup, getPublicHttps, readBody } from "./net-guard";
 
 // One address inside each blocked range, IPv4 also as IPv4-mapped IPv6 (dotted and hex).
 const V4 = ["0.1.2.3", "10.0.0.1", "100.64.0.1", "100.127.255.254", "127.0.0.1", "169.254.169.254", "172.16.0.1", "172.31.255.255", "192.0.0.8", "192.168.1.1", "198.18.0.1", "198.19.255.255", "224.0.0.1", "239.255.255.255", "240.0.0.1", "255.255.255.255"];
@@ -33,4 +35,19 @@ test("the connect-time lookup refuses a name that resolves to a private address 
 
 test("the real request checks the address when it connects (a name resolving to loopback never connects)", async () => {
   await assert.rejects(getPublicHttps(new URL("https://localhost:9/"), { maxBytes: 1024, timeoutMs: 5000 }), (e: { code?: string }) => e.code === "EPRIVATE");
+});
+
+test("compressed responses are decoded, and the size cap applies to the decoded body", async () => {
+  const json = Buffer.from(JSON.stringify({ value: 42, label: "ok" }));
+  const body = (bytes: Buffer) => Readable.from([bytes.subarray(0, 5), bytes.subarray(5)]);
+  for (const [encoding, packed] of [["gzip", gzipSync(json)], ["GZIP", gzipSync(json)], ["deflate", deflateSync(json)], ["br", brotliCompressSync(json)], ["identity", json], [undefined, json]] as const) {
+    assert.deepEqual(JSON.parse((await readBody(body(packed), encoding, 1024)).toString("utf8")), { value: 42, label: "ok" }, String(encoding));
+  }
+  // A 1 MB body that compresses to ~1 KB must still be refused with a 64 KB cap.
+  const bomb = gzipSync(Buffer.alloc(1024 * 1024, " "));
+  assert.ok(bomb.length < 64 * 1024);
+  await assert.rejects(readBody(body(bomb), "gzip", 64 * 1024), (e: { code?: string }) => e.code === "ETOOLARGE");
+  await assert.rejects(readBody(body(json), "identity", 10), (e: { code?: string }) => e.code === "ETOOLARGE");
+  await assert.rejects(readBody(body(json), "compress", 1024), (e: { code?: string }) => e.code === "EENCODING");
+  await assert.rejects(readBody(body(Buffer.from("not gzip at all")), "gzip", 1024), (e: { code?: string }) => typeof e.code === "string");
 });

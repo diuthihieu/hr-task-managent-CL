@@ -7,6 +7,8 @@
 // IPv6-only network that reaches IPv4 hosts through NAT64 can't call them.
 import { BlockList, isIP } from "node:net";
 import type { LookupAddress } from "node:dns";
+import type { Readable } from "node:stream";
+import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 
 const blocked = new BlockList();
 for (const [net, prefix] of [
@@ -50,6 +52,42 @@ export function guardedLookup(resolve: Resolver) {
   };
 }
 
+const decoders: Record<string, () => NodeJS.ReadWriteStream> = { gzip: createGunzip, "x-gzip": createGunzip, deflate: createInflate, br: createBrotliDecompress };
+
+/**
+ * Read a response body, decoded per its Content-Encoding (node:https, unlike
+ * fetch, doesn't decompress), refusing it once the decoded size passes
+ * `maxBytes` (so a small compressed body can't expand past the cap).
+ */
+export function readBody(res: Readable, contentEncoding: string | undefined, maxBytes: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const encoding = (contentEncoding ?? "").trim().toLowerCase();
+    let stream: Readable = res;
+    if (encoding && encoding !== "identity") {
+      const make = decoders[encoding];
+      if (!make) {
+        res.destroy();
+        return reject(Object.assign(new Error(`unsupported Content-Encoding "${encoding}"`), { code: "EENCODING" }));
+      }
+      const decoder = make();
+      res.on("error", reject);
+      stream = res.pipe(decoder) as unknown as Readable;
+    }
+    const chunks: Buffer[] = [];
+    let size = 0;
+    stream.on("data", (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > maxBytes) {
+        res.destroy();
+        stream.destroy();
+        reject(Object.assign(new Error("response too large"), { code: "ETOOLARGE" }));
+      } else chunks.push(chunk);
+    });
+    stream.on("end", () => resolve(Buffer.concat(chunks)));
+    stream.on("error", (e: NodeJS.ErrnoException) => reject(e.code === "ETOOLARGE" ? e : Object.assign(e, { code: e.code ?? "EDECODE" })));
+  });
+}
+
 /**
  * GET a JSON-ish body from a public HTTPS host, checking the IP at connect time
  * (guardedLookup), without connection reuse (a pooled socket would skip the
@@ -60,19 +98,10 @@ export async function getPublicHttps(url: URL, { maxBytes, timeoutMs }: { maxByt
   return new Promise((resolve, reject) => {
     const req = request(
       url,
-      { method: "GET", headers: { Accept: "application/json" }, agent: false, lookup: guardedLookup(lookup as Resolver) as never, signal: AbortSignal.timeout(timeoutMs) },
+      { method: "GET", headers: { Accept: "application/json", "Accept-Encoding": "gzip, deflate, br" }, agent: false, lookup: guardedLookup(lookup as Resolver) as never, signal: AbortSignal.timeout(timeoutMs) },
       (res) => {
-        const chunks: Buffer[] = [];
-        let size = 0;
-        res.on("data", (chunk: Buffer) => {
-          size += chunk.length;
-          if (size > maxBytes) {
-            res.destroy();
-            reject(Object.assign(new Error("response too large"), { code: "ETOOLARGE" }));
-          } else chunks.push(chunk);
-        });
-        res.on("end", () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
-        res.on("error", reject);
+        const encoding = res.headers["content-encoding"];
+        readBody(res, Array.isArray(encoding) ? encoding.join(",") : encoding, maxBytes).then((body) => resolve({ status: res.statusCode ?? 0, body }), reject);
       }
     );
     req.on("error", reject);

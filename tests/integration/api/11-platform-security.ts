@@ -343,6 +343,10 @@ test("project owner ranks above the workspace owner; hand-over with checks; role
     assert.equal(put.status, 200, JSON.stringify(put.body));
     assert.equal((await admin.post(`/api/projects/${proj}/tasks`, { data: { sys_title: "Owner blocked" } })).status, 403, "workspace owner narrowed inside the project");
     assert.equal((await admin.patch(`/api/projects/${proj}`, { description: "x" })).status, 403);
+    // Restoring a deleted task needs the same right as deleting it.
+    const binned = (await contributor.post<{ id: string }>(`/api/projects/${proj}/tasks`, { data: { sys_title: "Binned by Casey" } })).body.id;
+    assert.equal((await contributor.del(`/api/tasks/${binned}`)).status, 204);
+    assert.equal((await admin.post(`/api/tasks/${binned}/restore`)).status, 403, "a narrowed workspace owner can't restore");
     const viewId = (await prisma.view.findFirstOrThrow({ where: { projectId: proj } })).id;
     await contributor.post(`/api/projects/${proj}/views`, { name: "Second", type: "kanban" });
     const other = (await prisma.view.findFirstOrThrow({ where: { projectId: proj, id: { not: viewId } } })).id;
@@ -354,6 +358,10 @@ test("project owner ranks above the workspace owner; hand-over with checks; role
     assert.equal((await contributor.put(`/api/projects/${proj}/permissions`, { changes: [{ userId: s.contributorId, permissions: [] }] })).status, 400, "the project owner stays full");
     assert.equal((await contributor.put(`/api/projects/${proj}/permissions`, { changes: [{ userId: adminId, hidden: true }] })).status, 200);
     assert.equal((await admin.get(`/api/projects/${proj}`)).status, 404, "hidden from the workspace owner");
+    const restored = await admin.post<{ id?: string; title?: string }>(`/api/tasks/${binned}/restore`);
+    assert.equal(restored.status, 404, "a task of a hidden project can't be restored (nor its record read)");
+    assert.equal(restored.body.title, undefined);
+    assert.ok((await prisma.task.findUniqueOrThrow({ where: { id: binned } })).deletedAt, "still deleted");
 
     // Recovery: workspace admins hand over a member's projects (e.g. a leaver).
     assert.equal((await admin.post(`/api/workspaces/${s.ws}/members/${s.contributorId}/handover`, { toUserId: adminId })).status, 200);

@@ -73,7 +73,7 @@ export async function softDeleteTask(ctx: WorkspaceContext, taskId: string) {
 
 /** A deleted task in a live project (to restore it), or null. */
 export async function findDeletedTask(taskId: string) {
-  return prisma.task.findFirst({ where: { id: taskId, deletedAt: { not: null }, project: { deletedAt: null } }, select: { workspaceId: true, title: true } });
+  return prisma.task.findFirst({ where: { id: taskId, deletedAt: { not: null }, project: { deletedAt: null } }, select: { workspaceId: true, projectId: true, title: true } });
 }
 
 export async function restoreTask(ctx: WorkspaceContext, taskId: string, title: string) {

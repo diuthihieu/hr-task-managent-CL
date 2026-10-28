@@ -2202,6 +2202,21 @@ test("notification settings: per-group pop-up / device switches and a ringtone, 
   const mentions = await viewer.get<Full>("/api/notifications?view=todo&types=mention");
   assert.ok(mentions.body.items.length >= 1 && mentions.body.items.every((x) => x.type === "mention"));
   assert.equal((await viewer.get("/api/notifications?types=nope;drop")).status, 200, "odd type filters are ignored, not errors");
+  // Switched off in the app but still allowed on the device: the poll still carries them for system notifications.
+  type Dev = { items: { id: string; type: string }[]; deviceItems: { id: string; type: string }[]; rewardReachable: number };
+  const dev = await viewer.get<Dev>("/api/notifications");
+  assert.ok(dev.body.deviceItems.some((x) => x.type === "task_updated") && dev.body.deviceItems.every((x) => ["task_updated", "task_status", "ai_suggestion"].includes(x.type)), "device-only items for system notifications");
+  assert.ok(!dev.body.items.some((x) => x.type === "task_updated"), "but not listed in the bell");
+  await viewer.put("/api/account/notification-settings", { popupOff: ["updates", "ai"], nativeOff: ["updates"] });
+  assert.equal((await viewer.get<Dev>("/api/notifications")).body.deviceItems.length, 0, "off on the device too: nothing to raise");
+  // "You can redeem a reward" AI notices belong to Recognition: listed and counted there, not under AI.
+  const rr = await prisma.notification.create({ data: { userId, type: "ai_suggestion", title: "You can redeem a reward", workspaceId: s.ws, data: { kind: "reward_reachable", points: 120, cost: 100 } } });
+  const recChip = await viewer.get<Dev>("/api/notifications?types=kudos,kudos_reaction,reward_request,reward_result");
+  assert.ok(recChip.body.items.some((x) => x.id === rr.id), "in the Recognition chip");
+  assert.ok(!(await viewer.get<Dev>("/api/notifications?types=ai_suggestion")).body.items.some((x) => x.id === rr.id), "not in the AI chip");
+  assert.ok((await viewer.get<Dev>("/api/notifications")).body.items.some((x) => x.id === rr.id), "AI muted, Recognition on: still in the bell");
+  assert.ok((await viewer.get<Dev>("/api/notifications")).body.rewardReachable >= 1);
+  await prisma.notification.delete({ where: { id: rr.id } });
   // Switching updates back on counts them again.
   await viewer.put("/api/account/notification-settings", { popupOff: [] });
   assert.equal((await viewer.get<Inbox>("/api/notifications")).body.unread, before.body.unreadAll + 3 + 121);

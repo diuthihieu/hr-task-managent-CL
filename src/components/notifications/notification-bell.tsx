@@ -47,7 +47,7 @@ interface InboxState {
 export const useInbox = create<InboxState>((set) => ({ items: [], unread: 0, loaded: false, set: (p) => set(p) }));
 
 export async function fetchInbox() {
-  const r = await api.get<{ unread: number; items: NotificationItem[] }>("/api/notifications");
+  const r = await api.get<{ unread: number; items: NotificationItem[]; deviceItems?: NotificationItem[] }>("/api/notifications");
   useInbox.getState().set({ items: r.items, unread: r.unread, loaded: true });
   return r;
 }
@@ -198,15 +198,18 @@ export function NotificationBell({ className, align = "start" }: { className?: s
     try {
       const r = await fetchInbox();
       // Pop-ups (in the app) and native notifications (when the tab is in the
-      // background) only for items that arrived after the first load.
-      const fresh = seen.current ? r.items.filter((n) => !n.read && !seen.current!.has(n.id)) : [];
+      // background) only for items that arrived after the first load. Groups switched off in the app but
+      // allowed on the device come separately (deviceItems): they can reach the device, never the bell.
+      const pool = [...r.items, ...(r.deviceItems ?? [])];
+      const fresh = seen.current ? pool.filter((n) => !n.read && !seen.current!.has(n.id)) : [];
       // The user's choices (Settings -> Notifications): which groups pop up, which reach the device, which sound.
       const prefs = useInbox.getState().settings ?? DEFAULT_NOTIFY_SETTINGS;
       const allowed = (off: string[]) => (n: NotificationItem) => {
         const g = notifyGroupOf(n);
         return !g || !off.includes(g);
       };
-      const toPop = fresh.filter(allowed(prefs.popupOff));
+      const listed = new Set(r.items.map((n) => n.id));
+      const toPop = fresh.filter((n) => listed.has(n.id)).filter(allowed(prefs.popupOff));
       const background = typeof document !== "undefined" && document.hidden;
       const toNative = background && "Notification" in window && Notification.permission === "granted" ? fresh.filter(allowed(prefs.nativeOff)) : [];
       if (toPop.length) {
@@ -223,7 +226,7 @@ export function NotificationBell({ className, align = "start" }: { className?: s
           };
         }
       }
-      seen.current = new Set(r.items.map((n) => n.id));
+      seen.current = new Set(pool.map((n) => n.id));
     } catch {
       // Offline or signed out: keep the last state, try again on the next tick.
     }

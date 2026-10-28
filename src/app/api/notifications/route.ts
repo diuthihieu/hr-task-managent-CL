@@ -63,11 +63,22 @@ export const GET = route(async (req) => {
       ...(url.searchParams.get("unread") === "1" ? [{ readAt: null }] : []),
     ],
   };
-  const me = await prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { notifyPopupOff: true } });
+  const me = await prisma.user.findUniqueOrThrow({ where: { id: user.id }, select: { notifyPopupOff: true, notifyNativeOff: true } });
   const off = new Set(me.notifyPopupOff as NotifyGroup[]);
+  // Groups switched off in the app but still allowed on the device: the bell's poll gets their newest unread
+  // items separately (`deviceItems`), only to raise system notifications - never listed, never counted.
+  const deviceOnly = [...off].filter((g) => !(me.notifyNativeOff as NotifyGroup[]).includes(g));
   const types = (url.searchParams.get("types") ?? "").split(",").map((t) => t.trim()).filter((t) => /^[a-z_]{1,40}$/.test(t)).slice(0, 20);
+  // A chip's types, with "you can redeem a reward" AI notices listed under Recognition rather than AI.
+  const typeWhere: Prisma.NotificationWhereInput = {
+    OR: [
+      { type: { in: types.filter((t) => t !== "ai_suggestion") } },
+      ...(types.includes("ai_suggestion") ? [{ type: "ai_suggestion", OR: [{ data: { equals: Prisma.AnyNull } }, { NOT: REWARD_REACHABLE }] }] : []),
+      ...(types.includes("kudos") ? [REWARD_REACHABLE] : []),
+    ],
+  };
   const where: Prisma.NotificationWhereInput = types.length
-    ? { AND: [viewWhere, { type: { in: types } }] }
+    ? { AND: [viewWhere, typeWhere] }
     : off.size
       ? { AND: [viewWhere, { NOT: inGroups([...off]) }] }
       : viewWhere;
@@ -75,44 +86,54 @@ export const GET = route(async (req) => {
     const g = notifyGroupOf(n);
     return !!g && off.has(g);
   };
-  const [items, unreadRows, byType] = await Promise.all([
+  const include = {
+    actor: { select: { id: true, name: true, avatarColor: true } },
+    workspace: { select: { name: true } },
+    project: { select: { name: true } },
+    task: { select: { id: true, deletedAt: true, status: { select: { category: true } } } },
+  } satisfies Prisma.NotificationInclude;
+  const [items, unreadRows, byType, rewardReachable, deviceRows] = await Promise.all([
     prisma.notification.findMany({
       where,
       orderBy: { createdAt: "desc" },
       take: 100,
-      include: {
-        actor: { select: { id: true, name: true, avatarColor: true } },
-        workspace: { select: { name: true } },
-        project: { select: { name: true } },
-        task: { select: { id: true, deletedAt: true, status: { select: { category: true } } } },
-      },
+      include,
     }),
     prisma.notification.findMany({ where: { userId: user.id, readAt: null, AND: [live, notSnoozed] }, select: { type: true, data: true }, take: 10_000 }),
     prisma.notification.groupBy({ by: ["type"], where: viewWhere, _count: { _all: true } }),
+    prisma.notification.count({ where: { AND: [viewWhere, REWARD_REACHABLE] } }),
+    !types.length && view === "all" && deviceOnly.length
+      ? prisma.notification.findMany({ where: { AND: [viewWhere, { readAt: null }, inGroups(deviceOnly)] }, orderBy: { createdAt: "desc" }, take: 20, include })
+      : Promise.resolve([]),
   ]);
+  type Row = (typeof items)[number];
+  const serialize = (n: Row) => ({
+    muted: isMuted(n),
+    id: n.id,
+    type: n.type,
+    title: n.title,
+    body: n.body,
+    data: n.data,
+    link: n.link,
+    read: Boolean(n.readAt),
+    actioned: Boolean(n.actionedAt),
+    snoozedUntil: n.snoozedUntil && n.snoozedUntil > now ? n.snoozedUntil.toISOString() : null,
+    createdAt: n.createdAt.toISOString(),
+    actor: n.actor,
+    workspaceId: n.workspaceId,
+    workspaceName: n.workspace?.name ?? null,
+    projectName: n.project?.name ?? null,
+    taskId: n.task && !n.task.deletedAt ? n.task.id : null,
+    taskOpen: n.task ? !n.task.deletedAt && (n.task.status.category === "todo" || n.task.status.category === "in_progress") : false,
+  });
   return NextResponse.json({
     unread: unreadRows.filter((n) => !isMuted(n)).length,
     unreadAll: unreadRows.length,
     typeCounts: Object.fromEntries(byType.map((r) => [r.type, r._count._all])),
+    /** Of the ai_suggestion count, the "you can redeem a reward" notices (they belong to recognition). */
+    rewardReachable,
     mutedGroups: [...off],
-    items: items.map((n) => ({
-      muted: isMuted(n),
-      id: n.id,
-      type: n.type,
-      title: n.title,
-      body: n.body,
-      data: n.data,
-      link: n.link,
-      read: Boolean(n.readAt),
-      actioned: Boolean(n.actionedAt),
-      snoozedUntil: n.snoozedUntil && n.snoozedUntil > now ? n.snoozedUntil.toISOString() : null,
-      createdAt: n.createdAt.toISOString(),
-      actor: n.actor,
-      workspaceId: n.workspaceId,
-      workspaceName: n.workspace?.name ?? null,
-      projectName: n.project?.name ?? null,
-      taskId: n.task && !n.task.deletedAt ? n.task.id : null,
-      taskOpen: n.task ? !n.task.deletedAt && (n.task.status.category === "todo" || n.task.status.category === "in_progress") : false,
-    })),
+    deviceItems: deviceRows.map(serialize),
+    items: items.map(serialize),
   });
 });

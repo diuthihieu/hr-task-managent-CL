@@ -7,6 +7,7 @@ import { prisma } from "./prisma";
 import { randomAvatarColor } from "./passwords";
 import { clientIp, rateLimit, resetRateLimit } from "./rate-limit";
 import { readMicrosoftIdentity, singleTenantIssuer, type MicrosoftClaims } from "./microsoft-identity";
+import { verifySessionRefresh } from "./session-refresh";
 
 /** Too many attempts: the sign-in form shows "try again later" instead of "wrong password". */
 class RateLimited extends CredentialsSignin {
@@ -140,7 +141,7 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
       await logSecurityEvent(user.id, "sign_in", "Signed in with Google");
       return true;
     },
-    async jwt({ token, user, account, trigger, profile }) {
+    async jwt({ token, user, account, trigger, profile, session }) {
       // The session version is copied into the cookie at sign-in; bumping it in the
       // database (password change / reset, deactivation) invalidates older cookies.
       if (account?.provider === "microsoft-entra-id") {
@@ -159,9 +160,24 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
       } else if (user) {
         token.id = user.id;
         token.sv = (await prisma.user.findUnique({ where: { id: user.id! }, select: { sessionVersion: true } }))?.sessionVersion ?? 0;
-      } else if (trigger === "update" && token.id) {
-        // Re-issued for the current device right after its own password change.
-        token.sv = (await prisma.user.findUnique({ where: { id: token.id as string }, select: { sessionVersion: true } }))?.sessionVersion ?? 0;
+      } else if (token.id) {
+        // Every later read (GET /api/auth/session re-signs the cookie; POST is the
+        // browser's update()) checks the version again, so a revoked cookie is
+        // dropped instead of being extended or revived.
+        let current: number | undefined;
+        try {
+          current = (await prisma.user.findUnique({ where: { id: token.id as string }, select: { sessionVersion: true } }))?.sessionVersion ?? -1;
+        } catch (e) {
+          // Database unreachable: keep the cookie as it is (authz refuses it anyway without the database).
+          console.error("[auth] could not check the session version", e);
+          return token;
+        }
+        if (current !== token.sv) {
+          // Only the device that just changed its own password gets the new version, via a server-minted proof.
+          const proof = (session as { svProof?: unknown } | undefined)?.svProof;
+          if (trigger !== "update" || !verifySessionRefresh(proof, token.id as string, current)) return null;
+          token.sv = current;
+        }
       }
       return token;
     },

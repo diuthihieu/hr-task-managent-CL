@@ -54,6 +54,21 @@ export class Client {
     return { status: res.status, body: parsed as T };
   }
 
+  /** A second client holding a copy of this one's cookies (a stolen or copied session). */
+  clone() {
+    const c = new Client();
+    for (const [k, v] of this.cookies) c.cookies.set(k, v);
+    return c;
+  }
+
+  /** POST /api/auth/session - what the browser's update() does. */
+  async updateSession(data: unknown = {}) {
+    const csrfRes = await fetch(`${BASE}/api/auth/csrf`, { headers: { cookie: this.cookieHeader() } });
+    this.store(csrfRes);
+    const { csrfToken } = (await csrfRes.json()) as { csrfToken: string };
+    return this.post<{ user?: unknown } | null>("/api/auth/session", { csrfToken, data });
+  }
+
   get<T = unknown>(path: string) {
     return this.req<T>("GET", path);
   }

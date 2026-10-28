@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, route, readJson, badRequest, HttpError } from "@/lib/authz";
 import { rateLimit } from "@/lib/rate-limit";
 import { unstable_update } from "@/lib/auth";
+import { sessionRefreshProof } from "@/lib/session-refresh";
 import { logActivity } from "@/lib/activity";
 import { assertPasswordPolicy, hashPassword } from "@/lib/passwords";
 
@@ -20,11 +21,13 @@ export const POST = route(async (req) => {
   if (row.passwordHash !== null && !(await bcrypt.compare(body.currentPassword, row.passwordHash))) throw badRequest("Current password is incorrect");
   if (body.currentPassword === newPassword) throw badRequest("New password must be different");
   const passwordHash = await hashPassword(newPassword);
-  await prisma.$transaction(async (tx) => {
+  const { sessionVersion } = await prisma.$transaction(async (tx) => {
     // New session version: every other device is signed out; this one gets a fresh cookie below.
-    await tx.user.update({ where: { id: user.id }, data: { passwordHash, mustChangePassword: false, sessionVersion: { increment: 1 }, updatedById: user.id } });
+    const updated = await tx.user.update({ where: { id: user.id }, data: { passwordHash, mustChangePassword: false, sessionVersion: { increment: 1 }, updatedById: user.id }, select: { sessionVersion: true } });
     await logActivity(tx, { workspaceId: null, actorId: user.id, entityType: "user", entityId: user.id, action: "password_changed", summary: "Changed own password" });
+    return updated;
   });
-  await unstable_update({});
+  // The proof is read by the jwt callback (auth.ts); it isn't part of the Session type.
+  await unstable_update({ svProof: sessionRefreshProof(user.id, sessionVersion) } as Parameters<typeof unstable_update>[0]);
   return NextResponse.json({ ok: true });
 });

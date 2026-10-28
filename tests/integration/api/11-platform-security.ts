@@ -362,10 +362,19 @@ test("project owner ranks above the workspace owner; hand-over with checks; role
     assert.equal(restored.status, 404, "a task of a hidden project can't be restored (nor its record read)");
     assert.equal(restored.body.title, undefined);
     assert.ok((await prisma.task.findUniqueOrThrow({ where: { id: binned } })).deletedAt, "still deleted");
+    // The workspace audit log leaves out what happened inside the hidden project.
+    type Log = { entityId: string; summary: string | null }[];
+    const mentionsBinned = (rows: Log) => rows.filter((r) => r.entityId === binned || r.summary?.includes("Binned by Casey")).length;
+    const hiddenLog = await admin.get<Log>(`/api/workspaces/${s.ws}/activity?limit=200`);
+    assert.equal(hiddenLog.status, 200);
+    assert.equal(mentionsBinned(hiddenLog.body), 0, "no audit rows about a hidden project's tasks");
+    assert.ok(!hiddenLog.body.some((r) => r.entityId === proj), "nor about the hidden project itself");
+    assert.ok(hiddenLog.body.length > 0, "the rest of the log is still there");
 
     // Recovery: workspace admins hand over a member's projects (e.g. a leaver).
     assert.equal((await admin.post(`/api/workspaces/${s.ws}/members/${s.contributorId}/handover`, { toUserId: adminId })).status, 200);
     assert.equal((await admin.get(`/api/projects/${proj}`)).status, 200, "the new owner sees it again");
+    assert.ok(mentionsBinned((await admin.get<Log>(`/api/workspaces/${s.ws}/activity?limit=200`)).body) >= 2, "and its audit rows are back");
   } finally {
     await prisma.projectMemberPermission.deleteMany({ where: { projectId: proj } });
     await prisma.projectHiddenMember.deleteMany({ where: { projectId: proj } });

@@ -79,6 +79,22 @@ test("recognition: thank-you letters notify, open, stay private when asked, and 
   assert.ok(wall.body.items.some((x) => x.id === k.body.id) && !wall.body.items.some((x) => x.id === priv.body.id));
   const mine = await contributor.get<{ items: { id: string }[] }>(`/api/workspaces/${s.ws}/kudos?scope=received`);
   assert.ok(mine.body.items.some((x) => x.id === priv.body.id), "the receiver keeps every letter");
+  // BUG-01: ?userId= must never widen "received" to someone else's letters (it used to override toId).
+  type KD = { id: string; from: { id: string }; to: { id: string } };
+  const snoop = await viewer.get<{ items: KD[] }>(`/api/workspaces/${s.ws}/kudos?scope=received&userId=${s.contributorId}`);
+  assert.equal(snoop.status, 200);
+  assert.ok(!snoop.body.items.some((x) => x.id === priv.body.id), "another member's private letter stays private");
+  assert.ok(snoop.body.items.every((x) => x.to.id === s.viewerId), "received means letters to the caller");
+  // The wall narrowed to one person shows public letters from others, never private ones (regression guard).
+  const k2 = await admin.post<K>(`/api/workspaces/${s.ws}/kudos`, { toId: s.contributorId, title: "Great onboarding week", message: "Thanks for the smooth onboarding of the new hires!", isPublic: true });
+  assert.equal(k2.status, 201, JSON.stringify(k2.body));
+  const wallOf = await viewer.get<{ items: KD[] }>(`/api/workspaces/${s.ws}/kudos?scope=wall&userId=${s.contributorId}`);
+  assert.ok(wallOf.body.items.some((x) => x.id === k2.body.id) && !wallOf.body.items.some((x) => x.id === priv.body.id));
+  // "sent" narrowed to one person: only my letters to them (regression guard).
+  const sentTo = await viewer.get<{ items: KD[] }>(`/api/workspaces/${s.ws}/kudos?scope=sent&userId=${s.contributorId}`);
+  assert.ok(sentTo.body.items.length > 0 && sentTo.body.items.every((x) => x.from.id === s.viewerId && x.to.id === s.contributorId));
+  // A malformed id is a 400, not a 500.
+  assert.equal((await viewer.get(`/api/workspaces/${s.ws}/kudos?userId=abc`)).status, 400);
   assert.equal((await contributor.del(`/api/kudos/${k.body.id}`)).status, 403, "only the sender can withdraw");
 
   // AI helps write the letter (draft only).

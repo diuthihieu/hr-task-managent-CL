@@ -1,39 +1,43 @@
 "use client";
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
 import * as RDialog from "@radix-ui/react-dialog";
-import { FolderKanban, Home, Inbox, ListChecks, Menu, Plus, X } from "lucide-react";
+import { Award, FolderKanban, Home, LayoutGrid, Plus, Sparkles, X } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
-import { useInbox } from "@/components/notifications/notification-bell";
+import { useRecognitionUnread } from "@/components/notifications/notification-bell";
 import { ProjectIcon } from "@/components/projects/project-icon";
 import { cn } from "@/lib/utils";
 
-export type MobileTab = "home" | "myWork" | "projects" | "inbox" | null;
+export type MobileTab = "all" | "home" | "ai" | "projects" | "recognition" | null;
 
 /**
- * Phone / tablet navigation: tabs at the bottom of the screen like a native app (Home, My work,
- * Projects, Action center, More). "Projects" opens a sheet with the projects; "More" opens the full
- * menu (the sidebar drawer). Hidden from the lg breakpoint up, where the sidebar is always shown.
+ * Phone / tablet navigation: tabs at the bottom of the screen like a native app (All, Home, Workspace
+ * Intelligence, Projects, Recognition). "All" lists every feature of the menu by group and is the first
+ * screen when the app opens; "Projects" opens a sheet with the projects; the full menu opens from the
+ * top-left corner. Hidden from the lg breakpoint up, where the sidebar is always shown.
  */
 export function MobileTabBar({
   workspaceSlug,
+  workspaceId,
   active,
   projects,
   activeProjectId,
   canCreateProject,
   onNewProject,
-  onMore,
 }: {
   workspaceSlug: string;
+  workspaceId: string;
   active: MobileTab;
   projects: { id: string; name: string; icon: string | null }[];
   activeProjectId?: string;
   canCreateProject: boolean;
   onNewProject: () => void;
-  onMore: () => void;
 }) {
   const { t } = useT();
-  const unread = useInbox((s) => s.unread);
+  const pathname = usePathname();
+  const router = useRouter();
+  const recognitionUnread = useRecognitionUnread(workspaceId);
   const [projectsOpen, setProjectsOpen] = useState(false);
 
   // Fixed elements (AI button, toasts, pop-ups) sit above the bar while it is shown.
@@ -57,6 +61,17 @@ export function MobileTabBar({
   }, []);
 
   const base = `/w/${workspaceSlug}`;
+
+  // Opening the app on a phone lands on "All" (once per app session; Home stays reachable from its tab).
+  useEffect(() => {
+    try {
+      const first = !sessionStorage.getItem("woli.mobileLanded");
+      sessionStorage.setItem("woli.mobileLanded", "1");
+      if (first && pathname === base && window.matchMedia("(max-width: 1023.98px)").matches) router.replace(`${base}/apps`);
+    } catch {}
+    // Only on the first render of the shell.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const item = (on: boolean) =>
     cn("relative flex flex-1 flex-col items-center justify-center gap-0.5 pt-1.5 pb-1 text-[10.5px] font-medium", on ? "text-indigo-600 dark:text-indigo-300" : "text-neutral-500 dark:text-neutral-400");
   const bar = (on: boolean) => (on ? <span className="absolute top-0 h-0.5 w-8 rounded-full bg-indigo-600 dark:bg-indigo-400" aria-hidden /> : null);
@@ -70,37 +85,38 @@ export function MobileTabBar({
         data-testid="mobile-tab-bar"
       >
         <div className="flex h-14 items-stretch">
+          <Link href={`${base}/apps`} className={item(active === "all")} aria-current={active === "all" ? "page" : undefined} data-testid="tab-all">
+            {bar(active === "all")}
+            <LayoutGrid size={20} strokeWidth={active === "all" ? 2.2 : 1.8} />
+            {t("tab.all")}
+          </Link>
           <Link href={base} className={item(active === "home")} aria-current={active === "home" ? "page" : undefined} data-testid="tab-home">
             {bar(active === "home")}
             <Home size={20} strokeWidth={active === "home" ? 2.2 : 1.8} />
             {t("nav.home")}
           </Link>
-          <Link href={`${base}/my-work`} className={item(active === "myWork")} aria-current={active === "myWork" ? "page" : undefined} data-testid="tab-my-work">
-            {bar(active === "myWork")}
-            <ListChecks size={20} strokeWidth={active === "myWork" ? 2.2 : 1.8} />
-            {t("tab.myWork")}
+          <Link href={`${base}/ai`} className={item(active === "ai")} aria-current={active === "ai" ? "page" : undefined} data-testid="tab-ai">
+            {bar(active === "ai")}
+            <Sparkles size={20} strokeWidth={active === "ai" ? 2.2 : 1.8} />
+            {t("tab.ai")}
           </Link>
           <button type="button" onClick={() => setProjectsOpen(true)} className={item(active === "projects")} data-testid="tab-projects">
             {bar(active === "projects")}
             <FolderKanban size={20} strokeWidth={active === "projects" ? 2.2 : 1.8} />
             {t("nav.projects")}
           </button>
-          <Link href={`${base}/inbox`} className={item(active === "inbox")} aria-current={active === "inbox" ? "page" : undefined} data-testid="tab-inbox">
-            {bar(active === "inbox")}
+          <Link href={`${base}/recognition`} className={item(active === "recognition")} aria-current={active === "recognition" ? "page" : undefined} data-testid="tab-recognition">
+            {bar(active === "recognition")}
             <span className="relative">
-              <Inbox size={20} strokeWidth={active === "inbox" ? 2.2 : 1.8} />
-              {unread > 0 ? (
-                <span className="absolute -right-2.5 -top-1.5 min-w-4 rounded-full bg-rose-500 px-1 text-center text-[9.5px] font-semibold leading-4 text-white" data-testid="tab-inbox-badge">
-                  {unread > 99 ? "99+" : unread}
+              <Award size={20} strokeWidth={active === "recognition" ? 2.2 : 1.8} />
+              {recognitionUnread > 0 ? (
+                <span className="absolute -right-2.5 -top-1.5 min-w-4 rounded-full bg-rose-500 px-1 text-center text-[9.5px] font-semibold leading-4 text-white" data-testid="tab-recognition-badge">
+                  {recognitionUnread > 99 ? "99+" : recognitionUnread}
                 </span>
               ) : null}
             </span>
-            {t("tab.inbox")}
+            {t("nav.recognition")}
           </Link>
-          <button type="button" onClick={onMore} className={item(false)} data-testid="tab-more">
-            <Menu size={20} strokeWidth={1.8} />
-            {t("tab.more")}
-          </button>
         </div>
       </nav>
 

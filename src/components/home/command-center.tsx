@@ -333,7 +333,8 @@ export function CommandCenter({
         <span className="h-11 w-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0">
           <Sun size={20} />
         </span>
-        <div className="min-w-0 flex-1">
+        {/* At least 12rem wide: on a phone the buttons wrap below instead of squeezing the text. */}
+        <div className="min-w-[12rem] flex-1">
           <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600">{t("cc.focusToday")}</div>
           {focus ? (
             <>

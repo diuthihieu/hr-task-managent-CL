@@ -160,9 +160,10 @@ export function InboxView() {
 
   return (
     <div className="flex-1 overflow-y-auto thin-scroll">
-      <div className="max-w-4xl mx-auto p-6" data-testid="action-center">
+      <div className="max-w-4xl mx-auto p-4 sm:p-6" data-testid="action-center">
         <div className="flex flex-wrap items-center gap-3 mb-4">
-          <div className="flex-1 min-w-0">
+          {/* Phones: the title takes its own line and the controls wrap below it. */}
+          <div className="basis-full sm:basis-0 sm:flex-1 min-w-0">
             <h1 className="text-xl font-semibold text-neutral-900 dark:text-neutral-50">{t("ac.title")}</h1>
             <p className="text-sm text-neutral-500">{t("ac.subtitle")}</p>
           </div>
@@ -194,7 +195,7 @@ export function InboxView() {
             </div>
           )}
           {shown.map((n) => (
-            <div key={n.id} className={cn("group flex gap-3 px-4 py-3", !n.read && "bg-indigo-50/30 dark:bg-indigo-950/10")} data-testid="ac-item">
+            <div key={n.id} className={cn("group flex flex-wrap sm:flex-nowrap gap-x-3 gap-y-1 px-4 py-3", !n.read && "bg-indigo-50/30 dark:bg-indigo-950/10")} data-testid="ac-item">
               {n.actor ? (
                 <span className="relative overflow-hidden h-9 w-9 rounded-full text-white text-[11px] font-semibold flex items-center justify-center shrink-0" style={{ backgroundColor: n.actor.avatarColor }}>
                   {initials(n.actor.name)}
@@ -209,9 +210,9 @@ export function InboxView() {
                   <Clock size={15} />
                 </span>
               )}
-              <button onClick={() => open(n)} className="flex-1 min-w-0 text-left">
+              <button onClick={() => open(n)} className="flex-1 min-w-0 basis-[calc(100%-3rem)] sm:basis-auto text-left">
                 <span className="block text-xs text-neutral-500">{describeNotification(n, t)}</span>
-                <span className="block text-sm font-semibold text-neutral-800 dark:text-neutral-100 truncate">{notificationTitle(n, t)}</span>
+                <span className="block text-sm font-semibold text-neutral-800 dark:text-neutral-100 line-clamp-2 sm:truncate break-words">{notificationTitle(n, t)}</span>
                 {n.body && <span className="block text-xs text-neutral-500 line-clamp-2">{n.body}</span>}
                 <Meta className="mt-1">
                   {n.projectName && <MetaChip>{n.projectName}</MetaChip>}
@@ -220,7 +221,8 @@ export function InboxView() {
                   {n.snoozedUntil && <MetaItem icon={AlarmClockOff} className="text-amber-600">{t("ac.snoozedUntil", { when: new Date(n.snoozedUntil).toLocaleString() })}</MetaItem>}
                 </Meta>
               </button>
-              <div className="flex items-start gap-1 shrink-0">
+              {/* Phones: the actions sit under the text (right-aligned) so the title keeps the full width. */}
+              <div className="flex items-start justify-end gap-1 shrink-0 w-full sm:w-auto">
                 <ActionButton icon={ExternalLink} label={t("ac.open")} onClick={() => open(n)} />
                 {n.type === "task_assigned" && !n.actioned && <ActionButton icon={UserCheck} label={t("ac.accept")} onClick={() => act(n, { actioned: true }, "ac.accepted")} testId="ac-accept" />}
                 {n.taskOpen && (n.type === "task_assigned" || n.type === "task_due_soon" || n.type === "task_overdue" || n.type === "task_due_changed" || n.type === "mention") && (

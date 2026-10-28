@@ -18,6 +18,7 @@ import "./api/08-okr-scope-brain";
 import "./api/09-recognition-notifications";
 import "./api/10-workspaces-projects";
 import "./api/11-platform-security";
+import "./api/12-permission-matrix";
 
 test.after(async () => {
   await prisma.$disconnect();

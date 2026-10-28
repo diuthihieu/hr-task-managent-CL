@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
-import { Card, EmptyNote } from "./brain-hub";
+import { Card, EmptyNote } from "./hub-ui";
 import type { MessageKey } from "@/lib/i18n/core";
 
 interface Issue {

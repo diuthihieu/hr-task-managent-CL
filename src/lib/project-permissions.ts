@@ -1,7 +1,8 @@
 import "server-only";
 import type { WorkspaceRole } from "@prisma/client";
 import { prisma } from "./prisma";
-import { forbidden, supportAccess, type WorkspaceContext } from "./authz";
+import { supportAccess, type WorkspaceContext } from "./access";
+import { forbidden } from "./http-errors";
 import { effectiveCaps, PROJECT_CAPS, type ProjectCap } from "./project-caps";
 import { canDeleteView } from "./view-permissions";
 

@@ -10,10 +10,6 @@ export function applyAccent(name: string) {
   document.documentElement.dataset.accent = name;
 }
 
-export function currentAccent(): string {
-  return (typeof document !== "undefined" ? document.documentElement.dataset.accent : undefined) ?? "indigo";
-}
-
 export function applyThemeMode(mode: string, dark: boolean) {
   document.documentElement.dataset.themeMode = mode;
   document.documentElement.classList.toggle("dark", dark);

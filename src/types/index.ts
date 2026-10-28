@@ -62,19 +62,6 @@ export interface ProjectRow {
   order: number;
 }
 
-export interface WorkspaceRow {
-  id: string;
-  name: string;
-  slug: string;
-}
-
-export interface WorkspaceMemberRow {
-  id: string;
-  userId: string;
-  role: WorkspaceRoleName;
-  user: { id: string; name: string; email: string; avatarColor: string; isActive?: boolean };
-}
-
 export interface StatusRow {
   id: string;
   name: string;

@@ -7,15 +7,6 @@
 export const TIME_BUCKETS = ["today", "this_week", "this_month", "this_quarter", "later", "unscheduled"] as const;
 export type TimeBucket = (typeof TIME_BUCKETS)[number];
 
-export const TIME_BUCKET_LABELS: Record<TimeBucket, string> = {
-  today: "Today",
-  this_week: "This Week",
-  this_month: "This Month",
-  this_quarter: "This Quarter",
-  later: "Later",
-  unscheduled: "Unplanned",
-};
-
 /** Normalized radial distance (0-1) of each ring (orbit) from the "Now" center; unscheduled dots sit outside the outermost ring. */
 export const TIME_BUCKET_DISTANCE: Record<TimeBucket, number> = {
   today: 0.2,

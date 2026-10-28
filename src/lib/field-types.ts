@@ -101,30 +101,9 @@ export const CREATABLE_CUSTOM_FIELD_TYPE_IDS = CUSTOM_FIELD_TYPE_IDS.filter((typ
 
 export const FIELD_TYPE_MAP = Object.fromEntries(FIELD_TYPES.map((f) => [f.type, f]));
 
-export const FIELD_CATEGORY_LABELS: Record<FieldCategory, string> = {
-  basic: "Basic",
-  selection: "Selection",
-  people: "People",
-  contact: "Contact",
-  files: "Files",
-  calculated: "Calculated",
-  relational: "Relational",
-  system: "System",
-  action: "Action",
-};
-
 export function getFieldType(type: string): FieldTypeDef {
   return FIELD_TYPE_MAP[type] ?? FIELD_TYPES[0];
 }
-
-export const STATUS_OPTIONS_DEFAULT = [
-  { id: "not_started", label: "Not Started", color: "#94a3b8" },
-  { id: "in_progress", label: "In Progress", color: "#3b82f6" },
-  { id: "pending", label: "Pending", color: "#eab308" },
-  { id: "blocked", label: "Blocked", color: "#ef4444" },
-  { id: "done", label: "Done", color: "#22c55e" },
-  { id: "cancelled", label: "Cancelled", color: "#64748b" },
-];
 
 export const PRIORITY_OPTIONS_DEFAULT = [
   { id: "low", label: "Low", color: "#94a3b8" },
@@ -235,26 +214,6 @@ export const NUMERIC_LIKE_TYPES = ["number", "integer", "percent", "currency", "
 export const SELECT_SINGLE_TYPES = ["single_select", "status", "importance", "urgency"];
 export const SELECT_MULTI_TYPES = ["multi_select"];
 export const DATE_LIKE_TYPES = ["date", "datetime"];
-
-export function carryOverConfig(oldType: string, newType: string, oldConfig: FieldConfig): FieldConfig {
-  // Importance/Urgency have a fixed, load-bearing vocabulary - never let an
-  // arbitrary options list from the old type overwrite it.
-  if (newType === "importance") return { options: IMPORTANCE_OPTIONS };
-  if (newType === "urgency") return { options: URGENCY_OPTIONS };
-
-  const bothSelectLike = [...SELECT_SINGLE_TYPES, ...SELECT_MULTI_TYPES];
-  if (bothSelectLike.includes(oldType) && bothSelectLike.includes(newType)) {
-    return { options: oldConfig.options };
-  }
-  if (NUMERIC_LIKE_TYPES.includes(oldType) && NUMERIC_LIKE_TYPES.includes(newType)) {
-    return {
-      currencySymbol: oldConfig.currencySymbol,
-      precision: oldConfig.precision,
-      maxRating: oldConfig.maxRating,
-    };
-  }
-  return {};
-}
 
 export function migrateFieldValue(oldType: string, newType: string, value: unknown, oldConfig: FieldConfig): unknown {
   if (oldType === newType || value === null || value === undefined) return value;

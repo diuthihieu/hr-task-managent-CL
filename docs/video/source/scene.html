@@ -20,7 +20,7 @@
   .w { display: inline-block; white-space: pre; will-change: transform, opacity, filter; }
   .grad { background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .glow { filter: drop-shadow(0 0 28px rgba(255, 122, 26, .55)); }
-  .chip { display: inline-flex; align-items: center; gap: 14px; padding: 16px 30px; border-radius: 999px; font-family: Inter; font-weight: 700; font-size: 34px; letter-spacing: -0.01em; }
+  .chip { display: inline-flex; align-items: center; gap: 14px; white-space: nowrap; padding: 16px 30px; border-radius: 999px; font-family: Inter; font-weight: 700; font-size: 34px; letter-spacing: -0.01em; }
   /* phone */
   .phone { position: absolute; width: 640px; height: 1310px; left: 50%; top: 50%; margin-left: -320px; margin-top: -655px; transform-style: preserve-3d; }
   .phone .frame { position: absolute; inset: 0; border-radius: 104px; background: linear-gradient(135deg, #3a3f47 0%, #9aa1ab 18%, #2b2f35 40%, #6f767f 62%, #1f2227 82%, #7d848d 100%);
@@ -179,59 +179,103 @@ scene("believe", (el) => {
   c.a.parentElement.style.opacity = 1 - prog(t, d - 0.2, d);
   c.a.parentElement.style.transform = `scale(${1 + eio(prog(t, d - 0.3, d)) * 0.4})`;
 });
-// 3. scattered
-const chaos = [
-  ["💬 Chat · 37 unread", 37], ["📊 payroll_v7_FINAL(2).xlsx", 0], ["📧 Re: Re: Fwd: approvals", 12], ["🗂️ Tab 24 of 31", 0], ["📝 TODO.txt", 0],
-  ["📅 3 meetings overlap", 3], ["📎 where is the latest file?", 0], ["🔔 Reminder: deadline!", 5], ["💬 Ping? Any update?", 9], ["📊 headcount_report.xlsx", 0],
-  ["🗂️ Tab 31 of 31", 0], ["📧 URGENT!!", 21],
-];
+// 3 + 4. scattered -> flowed: one phone shared by both scenes, driven by the same clock (T = 0 at 7.5 s),
+// so the cut between them is seamless. Chats, a broken spreadsheet and endless tabs stack up on the
+// phone; then everything freezes, folds into a deck, shrinks to an orange dot and bursts into a ribbon.
+let stackN = 0;
+function buildStack(el) {
+  const id = ++stackN; // gradient / filter ids must be unique per copy (a hidden scene's gradient does not paint)
+  const p = phone("data:image/gif;base64,R0lGODlhAQABAAAAACw=");
+  p.querySelector(".screen").style.background = "#f3f4f6";
+  const bubbles = [["Where is the latest file?", 0], ["payroll_v7_FINAL(2).xlsx ?", 1], ["Any update?? 🙏", 0], ["Ping", 1], ["Meeting moved again", 0], ["Who owns this?", 1]];
+  const cells = Array.from({ length: 60 }, (_, i) => { const err = [7, 15, 22, 31, 38, 46, 53].includes(i); return `<div style="height:58px;border:1px solid #e5e7eb;font-size:20px;display:flex;align-items:center;justify-content:center;${err ? "background:#fee2e2;color:#dc2626;font-weight:700" : "color:#9ca3af"}">${err ? (i % 2 ? "#REF!" : "ERROR") : (i * 37) % 900}</div>`; }).join("");
+  p.querySelector(".overlay").innerHTML = `
+    <div class="ly" id="lchat" style="position:absolute;left:22px;right:22px;top:100px;height:1020px;border-radius:34px;background:#fff;box-shadow:0 20px 50px rgba(0,0,0,.18);overflow:hidden;font-family:Inter;color:#111">
+      <div style="padding:26px 28px;border-bottom:1px solid #eee;font-weight:700;font-size:30px;display:flex;justify-content:space-between">💬 Team chat <span id="cnt" style="background:#ef4444;color:#fff;border-radius:20px;padding:2px 14px;font-size:24px">37</span></div>
+      ${bubbles.map(([b, me], i) => `<div class="bb" style="margin:22px 26px;display:flex;justify-content:${me ? "flex-end" : "flex-start"}"><span style="max-width:78%;padding:18px 24px;border-radius:26px;font-size:27px;font-weight:600;${me ? "background:#ff7a1a;color:#fff" : "background:#f1f5f9"}">${b}</span></div>`).join("")}
+    </div>
+    <div class="ly" id="lsheet" style="position:absolute;left:22px;right:22px;top:100px;height:1020px;border-radius:34px;background:#fff;box-shadow:0 20px 50px rgba(0,0,0,.22);overflow:hidden;font-family:Inter;color:#111">
+      <div style="padding:24px 28px;background:#107c41;color:#fff;font-weight:700;font-size:28px">📊 payroll_v7_FINAL(2).xlsx</div>
+      <div style="display:grid;grid-template-columns:repeat(6,1fr)">${cells}</div>
+    </div>
+    <div class="ly" id="ltabs" style="position:absolute;left:22px;right:22px;top:100px;height:1020px;border-radius:34px;background:#fff;box-shadow:0 20px 50px rgba(0,0,0,.25);overflow:hidden;font-family:Inter;color:#111">
+      <div id="tabrow" style="display:flex;gap:4px;padding:14px 10px 0;background:#e5e7eb;height:70px;overflow:hidden"></div>
+      <div style="padding:30px"><div style="height:44px;border-radius:22px;background:#f1f5f9;margin-bottom:30px"></div>${Array.from({ length: 7 }, (_, i) => `<div style="height:26px;border-radius:13px;background:#eef0f3;margin:22px 0;width:${90 - (i * 13) % 40}%"></div>`).join("")}</div>
+      <div id="tabcount" style="position:absolute;right:26px;bottom:26px;background:#111;color:#fff;border-radius:22px;padding:8px 20px;font-weight:700;font-size:28px">3 tabs</div>
+    </div>
+`;
+  el.appendChild(p);
+  const dot = $(`<div style="position:absolute;left:540px;top:1130px;width:90px;height:90px;margin:-45px 0 0 -45px;border-radius:50%;background:radial-gradient(circle at 35% 30%,#ffd08a,#ff7a1a 55%,#ff4d12);box-shadow:0 0 60px 20px rgba(255,122,26,.6);opacity:0;z-index:4"></div>`);
+  el.appendChild(dot);
+  const banners = Array.from({ length: 4 }, (_, i) => { const b = $(`<div style="position:absolute;left:250px;width:580px;padding:22px 28px;border-radius:28px;background:rgba(255,255,255,.96);color:#111;font-family:Inter;font-weight:600;font-size:26px;box-shadow:0 20px 50px rgba(0,0,0,.35);opacity:0">${["💬 Linh: Any update?", "📧 Re: Re: Fwd: approvals", "🔔 Deadline in 1 hour", "💬 Minh: Ping 🙏"][i]}</div>`); el.appendChild(b); return b; });
+  const svg = $(`<svg style="position:absolute;inset:0" width="1080" height="1920"><defs><linearGradient id="rg2-${id}" x1="0" x2="1"><stop offset="0" stop-color="#ff4d12"/><stop offset=".6" stop-color="#ff8a1f"/><stop offset="1" stop-color="#ffb63c"/></linearGradient>
+      <filter id="gl2-${id}"><feGaussianBlur stdDeviation="14" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+      <path id="rbA" d="M 540 1130 C 700 1040, 760 860, 900 760 S 1100 640, 1240 560" fill="none" stroke="url(#rg2-${id})" stroke-width="58" stroke-linecap="round" filter="url(#gl2-${id})"/>
+      <path id="rbB" d="M 540 1130 C 380 1220, 320 1400, 180 1500 S -20 1620, -160 1700" fill="none" stroke="url(#rg2-${id})" stroke-width="58" stroke-linecap="round" filter="url(#gl2-${id})"/></svg>`);
+  el.appendChild(svg);
+  return { p, banners, chat: p.querySelector("#lchat"), sheet: p.querySelector("#lsheet"), tabs: p.querySelector("#ltabs"), tabrow: p.querySelector("#tabrow"), tabcount: p.querySelector("#tabcount"), cnt: p.querySelector("#cnt"), bbs: [...p.querySelectorAll(".bb")], dot, rbA: svg.querySelector("#rbA"), rbB: svg.querySelector("#rbB"), tabsShown: -1 };
+}
+function updateStack(c, T) {
+  // T: 0..7.5 (scattered 0..3.75, flowed 3.75..7.5)
+  const freeze = T >= 3.75 ? 3.75 : T;          // the mess stops moving at the cut ("What if…")
+  const fold = eio(prog(T, 4.1, 4.95));          // layers fold into one deck
+  const shrink = eio(prog(T, 4.75, 5.25));       // deck + phone shrink into the dot
+  const shake = T > 2.9 && T < 3.75 ? Math.sin(T * 70) * 7 * prog(T, 2.9, 3.2) : 0;
+  const rise = eo(prog(T, 0, 0.6));
+  c.p.style.opacity = (1 - prog(T, 5.0, 5.3));
+  c.p.style.transform = `translate(${shake}px, ${lerp(500, 150, rise)}px) scale(${0.74 * (1 - 0.85 * shrink)}) rotateZ(${shake * 0.15}deg)`;
+  // layers: chats (1.35), spreadsheet (1.95), tabs (2.55); each new one pushes the previous back
+  const L = [[c.chat, 1.2], [c.sheet, 1.85], [c.tabs, 2.45]];
+  L.forEach(([ly, at], i) => {
+    const kin = eo(prog(freeze, at, at + 0.35));
+    const behind = L.slice(i + 1).reduce((n, [, a]) => n + eo(prog(freeze, a, a + 0.35)), 0);
+    const y = lerp(260, 0, kin) - behind * 70, sc = 1 - behind * 0.06, rot = (i - 1) * 3 * (1 - fold);
+    ly.style.opacity = kin;
+    ly.style.transform = `translateY(${lerp(y, i * 6 - 6, fold)}px) scale(${lerp(sc, 0.9 + i * 0.02, fold)}) rotate(${rot}deg)`;
+    ly.style.filter = `brightness(${lerp(1 - behind * 0.28, 1, fold)})`;
+  });
+  c.bbs.forEach((b, i) => { b.style.opacity = prog(freeze, 1.25 + i * 0.12, 1.4 + i * 0.12); });
+  c.cnt.textContent = String(37 + Math.floor(prog(freeze, 1.3, 3.6) * 12));
+  const ntabs = 3 + Math.floor(prog(freeze, 2.5, 3.5) * 28);
+  if (ntabs !== c.tabsShown) { c.tabsShown = ntabs; c.tabrow.innerHTML = Array.from({ length: ntabs }, () => `<div style="flex:1;min-width:0;height:56px;border-radius:14px 14px 0 0;background:#fff;opacity:.9"></div>`).join(""); c.tabcount.textContent = ntabs + " tabs"; }
+  // notification banners drop in from the top while the chat is up
+  c.banners.forEach((b, i) => {
+    const at = 1.45 + i * 0.5, k = eo(prog(freeze, at, at + 0.25)), out = prog(T, 3.8, 4.2);
+    b.style.top = 690 + i * 28 + "px"; b.style.left = 250 + (i % 2 ? 30 : -30) + "px"; b.style.zIndex = 6;
+    b.style.opacity = k * (1 - prog(freeze, at + 0.9, at + 1.2)) * (1 - out);
+    b.style.transform = `translateY(${lerp(-120, 0, k)}px)`;
+  });
+  // the dot: appears as the deck vanishes, pops, then bursts into the ribbon
+  const kd = prog(T, 4.95, 5.25), pop = back(prog(T, 5.25, 5.6));
+  c.dot.style.opacity = T < 6.4 ? clamp(kd * 2) : 1 - prog(T, 6.4, 6.8);
+  c.dot.style.transform = `scale(${T < 5.25 ? lerp(0.2, 1, kd) : lerp(1.6, 1, clamp(pop))})`;
+  // the phone's screen centre = where the dot sits; ribbons start there
+  const kr = eio(prog(T, 5.45, 6.9));
+  for (const rb of [c.rbA, c.rbB]) { rb.setAttribute("stroke-dasharray", 2000); rb.setAttribute("stroke-dashoffset", 2000 * (1 - kr)); rb.style.opacity = T < 5.45 ? 0 : 1; }
+}
 scene("scattered", (el) => {
-  const r = rand(11);
-  el.innerHTML = chaos.map(([txt, n], i) => `<div class="card" data-i="${i}" style="left:${60 + r() * 640}px;top:${600 + r() * 1150}px">${txt}${n ? `<span class="badge">${n}</span>` : ""}</div>`).join("") +
-    `<div class="center kin" style="top:420px;font-size:92px;z-index:5;text-shadow:0 6px 30px rgba(0,0,0,.8)" id="s1">${words("But work got")}<span class="w" style="color:#f87171">scattered.</span></div>
-     <div class="center kin" style="top:860px;font-size:150px;z-index:5" id="sw"></div>`;
-  return { cards: [...el.querySelectorAll(".card")], seeds: chaos.map((_, i) => rand(100 + i)), s1: el.querySelector("#s1"), sw: el.querySelector("#sw") };
+  const st = buildStack(el);
+  el.insertAdjacentHTML("beforeend", `<div class="center kin" style="top:250px;font-size:92px" id="s1">${words("But work got")}<span class="w" style="color:#f87171">scattered.</span></div>
+     <div class="center" style="top:385px;font-family:Inter;font-weight:700;font-size:58px;color:#fca5a5;letter-spacing:-0.02em" id="sw"></div>`);
+  return { st, s1: el.querySelector("#s1"), sw: el.querySelector("#sw") };
 }, (c, t, d) => {
-  bg.style.background = "radial-gradient(ellipse at 50% 50%, #2a0f12 0%, #0a0507 75%)";
-  c.cards.forEach((card, i) => {
-    const k = eo(prog(t, i * 0.08, i * 0.08 + 0.5));
-    const ph = i * 1.7;
-    const dx = Math.sin(t * 1.8 + ph) * 26 + (t > 3 ? Math.sin(t * 40 + i) * 6 : 0), dy = Math.cos(t * 1.3 + ph) * 22;
-    card.style.opacity = k * 0.92;
-    card.style.transform = `translate(${dx}px,${dy}px) rotate(${Math.sin(ph) * 14 + Math.sin(t + ph) * 4}deg) scale(${lerp(0.6, 1, k) * (0.8 + (i % 3) * 0.12)})`;
-    card.style.filter = `blur(${(i % 4 === 0) ? 3 : 0}px)`;
-  });
+  bg.style.background = "radial-gradient(ellipse at 50% 55%, #2a1012 0%, #0a0507 75%)";
+  updateStack(c.st, t);
   animWords(c.s1, t, 0.15, 0.1);
-  const list = [["Chats.", 1.35], ["Spreadsheets.", 1.95], ["Endless tabs.", 2.55]];
-  let cur = null; for (const [w, at] of list) if (t >= at) cur = [w, at];
-  if (cur) { if (c.sw.dataset.w !== cur[0]) { c.sw.innerHTML = words(cur[0]); c.sw.dataset.w = cur[0]; } animWords(c.sw, t, cur[1], 0.05, 0.25, "slam"); c.sw.style.textShadow = "0 0 40px rgba(239,68,68,.6)"; }
-  else c.sw.innerHTML = "";
+  const list = [["Chats.", 1.35], ["Chats. Spreadsheets.", 1.95], ["Chats. Spreadsheets. Endless tabs.", 2.55]];
+  let cur = ""; for (const [w, at] of list) if (t >= at) cur = w;
+  c.sw.textContent = cur;
+  c.s1.style.opacity = 1 - prog(t, d - 0.3, d); c.sw.style.opacity = 1 - prog(t, d - 0.3, d);
 });
-// 4. flow
 scene("flow", (el) => {
-  const r = rand(11);
-  el.innerHTML = chaos.map(([txt, n], i) => `<div class="card" style="left:${60 + r() * 640}px;top:${600 + r() * 1150}px">${txt}${n ? `<span class="badge">${n}</span>` : ""}</div>`).join("") +
-    `<svg style="position:absolute;inset:0" width="1080" height="1920"><defs><linearGradient id="rg" x1="0" x2="1"><stop offset="0" stop-color="#ff4d12"/><stop offset=".6" stop-color="#ff8a1f"/><stop offset="1" stop-color="#ffb63c"/></linearGradient>
-      <filter id="gl"><feGaussianBlur stdDeviation="14" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-      <path id="ribbon" d="M -100 1500 C 200 1300, 300 900, 540 960 S 900 700, 1200 420" fill="none" stroke="url(#rg)" stroke-width="54" stroke-linecap="round" filter="url(#gl)"/>
-      <path id="ribbon2" d="M -100 1650 C 250 1450, 380 1100, 600 1100 S 950 800, 1200 600" fill="none" stroke="url(#rg)" stroke-width="22" stroke-linecap="round" opacity=".6" filter="url(#gl)"/></svg>
-    <div class="center kin" style="top:430px;font-size:100px" id="f1">${words("What if everything")}</div>
-    <div class="center kin" style="top:560px;font-size:132px" id="f2">${words("just…")}<span class="w grad glow">flowed?</span></div>`;
-  const rb = el.querySelector("#ribbon"), rb2 = el.querySelector("#ribbon2");
-  return { cards: [...el.querySelectorAll(".card")], rb, rb2, L: 2400, f1: el.querySelector("#f1"), f2: el.querySelector("#f2") };
+  const st = buildStack(el);
+  el.insertAdjacentHTML("beforeend", `<div class="center kin" style="top:250px;font-size:100px" id="f1">${words("What if everything")}</div>
+    <div class="center kin" style="top:380px;font-size:132px" id="f2">${words("just…")}<span class="w grad glow">flowed?</span></div>`);
+  return { st, f1: el.querySelector("#f1"), f2: el.querySelector("#f2") };
 }, (c, t, d) => {
-  const warm = prog(t, 0, d);
-  bg.style.background = `radial-gradient(ellipse at 50% 55%, rgba(255,122,26,${0.12 + 0.5 * warm}) 0%, #07070c 70%)`;
-  c.cards.forEach((card, i) => {
-    const k = eio(prog(t, 0.1 + i * 0.05, 1.6 + i * 0.05));
-    const rect = { x: parseFloat(card.style.left), y: parseFloat(card.style.top) };
-    const tx = (540 - rect.x - 150) * k, ty = (960 - rect.y) * k;
-    card.style.opacity = (1 - k) * 0.92;
-    card.style.transform = `translate(${tx}px,${ty}px) rotate(${(1 - k) * Math.sin(i * 1.7) * 14 + k * 360}deg) scale(${1 - k * 0.8})`;
-  });
-  const kr = eio(prog(t, 0.6, 2.4));
-  c.rb.setAttribute("stroke-dasharray", c.L); c.rb.setAttribute("stroke-dashoffset", c.L * (1 - kr));
-  c.rb2.setAttribute("stroke-dasharray", c.L); c.rb2.setAttribute("stroke-dashoffset", c.L * (1 - eio(prog(t, 0.9, 2.7))));
+  const warm = eio(prog(t, 0.6, d));
+  bg.style.background = `radial-gradient(ellipse at 50% 58%, rgba(255,122,26,${0.1 + 0.55 * warm}) 0%, ${warm > 0.01 ? "#0b0708" : "#0a0507"} 72%)`;
+  updateStack(c.st, 3.75 + t);
   animWords(c.f1, t, 0.3, 0.1);
   animWords(c.f2, t, 1.25, 0.16, 0.5);
 });
@@ -262,7 +306,8 @@ scene("introducing", (el) => {
   c.chips.forEach((ch, i) => {
     const k = back(prog(t, 2.6 + i * 0.12, 3.0 + i * 0.12));
     const ang = (i / c.chips.length) * Math.PI * 2 + t * 0.35;
-    const x = 540 + Math.cos(ang) * 400 - 120, y = 1400 + Math.sin(ang) * 420;
+    const w = ch.offsetWidth || 240;
+    const x = clamp(540 + Math.cos(ang) * 400 - w / 2, 28, 1080 - 28 - w), y = 1400 + Math.sin(ang) * 420;
     ch.style.left = x + "px"; ch.style.top = y + "px"; ch.style.opacity = clamp(k); ch.style.transform = `scale(${k})`;
     ch.style.zIndex = Math.sin(ang) > 0 ? 10 : 0;
   });

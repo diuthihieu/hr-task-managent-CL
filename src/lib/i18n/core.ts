@@ -5,7 +5,6 @@
 import { MESSAGES } from "./messages";
 
 export type Locale = "vi" | "en";
-export const LOCALES: Locale[] = ["vi", "en"];
 export type MessageKey = keyof typeof MESSAGES;
 export type TFunction = (key: MessageKey, vars?: Record<string, string | number>) => string;
 

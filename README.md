@@ -147,17 +147,22 @@ prisma/
   bootstrap-admin.ts            first admin, idempotent
   seed.ts                       DEV-ONLY sample data (guarded)
 src/
-  app/api/                      route handlers, one folder per resource
+  app/api/                      route handlers, one folder per resource (thin: validate, check access, call a service)
   app/(app)/                    signed-in pages (workspace, project, OKRs, settings, admin)
+  server/<domain>/              domain services: notifications, tasks (values, read, write, recurrence, mutations)
+  lib/access.ts                 the access model's plain parts (roles, support access, request context)
   lib/authz.ts                  session → active user → workspace role checks
-  lib/task-grid.ts              tasks ⇄ field/record adapter used by all views
+  lib/project-permissions.ts    per-project rights (owner, delegated capabilities)
+  lib/task-grid.ts              tasks ⇄ field/record adapter used by all views (re-exports server/tasks)
   lib/activity.ts               activity log writer (same transaction as the change)
   lib/storage.ts                Vercel Blob upload/download/delete
   lib/rich-text.ts              allow-list sanitizer for record/wiki page HTML
-  lib/i18n/                     message table (English + Vietnamese side by side)
+  lib/i18n/messages/            UI text by app area (English + Vietnamese side by side)
   lib/theme-colors.ts           accent palettes (see app/accent-palettes.css)
   lib/validation.ts             zod schemas for request bodies
   components/                   views (grid, kanban, ...), OKR, admin, settings
-tests/integration/              HTTP tests against a real database
+tests/integration/              HTTP tests against a real database (one ordered scenario, chapters in api/)
+e2e/                            Playwright: phone layouts, app shell, desktop grid / views / sidebar, service worker
 docs/DATABASE.md                ERD, constraints, indexes, risks
+docs/adr/                       architecture decisions (service layer, Web Push hook)
 ```

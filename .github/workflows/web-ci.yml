@@ -49,6 +49,8 @@ jobs:
         run: npx eslint src tests e2e playwright.config.ts --max-warnings=0
       - name: Type check
         run: npx tsc --noEmit -p .
+      - name: No circular imports
+        run: npx --yes madge@8.0.0 --circular --extensions ts,tsx --ts-config tsconfig.json src
       - name: Unit tests
         run: npm test
       - name: Migrations apply cleanly and match the schema

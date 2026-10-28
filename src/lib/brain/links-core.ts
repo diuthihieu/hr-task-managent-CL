@@ -28,7 +28,6 @@ const RULES: [RegExp, EntityType, (m: RegExpExecArray) => string][] = [
   [new RegExp(`/api/attachments/(${UUID})/`, "i"), "file", (m) => m[1]],
   [new RegExp(`[?&]focus=person:(${UUID})`, "i"), "person", (m) => m[1]],
 ];
-export const BLOCK_ID_RE = /^[a-z0-9]{6,16}$/;
 
 const decode = (s: string) => s.replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 const stripTags = (s: string) => decode(s.replace(/<[^>]*>/g, "")).replace(/\s+/g, " ").trim();

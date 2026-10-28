@@ -26,8 +26,6 @@ interface MemberRow {
   lockedReason: "admin" | "creator" | null;
 }
 
-export const WIKI_COLORS = ["#f97316", "#ef4444", "#ec4899", "#8b5cf6", "#6366f1", "#0ea5e9", "#14b8a6", "#22c55e", "#eab308", "#64748b"];
-
 /** Wiki settings + access: who can open it and with which role. Read-only for non-managers. */
 export function WikiShareDialog({ wiki, onClose }: { wiki: WikiRow; workspaceId: string; onClose: () => void }) {
   const { t } = useT();

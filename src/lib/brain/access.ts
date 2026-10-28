@@ -8,6 +8,11 @@ import { visiblePageWhere } from "../wiki-sources";
 // (backlinks, related content, health, resurfacing, journal, Ask My Brain).
 // Same rules as the rest of the app: hidden projects, restricted wikis and
 // pages that quote a hidden project.
+//
+// These filters carry NOT (page) and AND (decision) keys. Add conditions with
+// { AND: [access.page, { ... }] } whenever they use NOT, AND or OR - spreading
+// ...access.page and writing one of those keys again silently drops the rule
+// (guarded by access-spread.test.ts).
 
 export interface BrainAccess {
   workspaceId: string;

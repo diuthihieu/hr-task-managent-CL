@@ -2,6 +2,7 @@
 
 import { upload } from "@vercel/blob/client";
 import type { AttachmentRow } from "@/types";
+import { safeContentType } from "@/lib/content-type";
 
 const DIRECT_THRESHOLD = 4 * 1024 * 1024;
 
@@ -25,11 +26,13 @@ export async function uploadTaskAttachment(taskId: string, file: File): Promise<
   const tokenPathResponse = await fetch(`/api/tasks/${taskId}/upload-path`);
   if (!tokenPathResponse.ok) throw await responseError(tokenPathResponse);
   const { pathname, access } = await tokenPathResponse.json() as { pathname: string; access: "public" | "private" };
+  // The server only allows the type that matches the extension, so send exactly that.
+  const contentType = safeContentType({ name: safeName, type: file.type });
   const blob = await upload(`${pathname}${safeName}`, file, {
     access,
     handleUploadUrl: "/api/uploads/task",
-    clientPayload: JSON.stringify({ taskId, fileName: safeName, contentType: file.type || "application/octet-stream", sizeBytes: file.size }),
-    contentType: file.type || "application/octet-stream",
+    clientPayload: JSON.stringify({ taskId, fileName: safeName, contentType, sizeBytes: file.size }),
+    contentType,
     multipart: true,
   });
   for (let attempt = 0; attempt < 8; attempt++) {

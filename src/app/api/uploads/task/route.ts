@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
+import { head } from "@vercel/blob";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, assertCanEditTask, route, workspaceOfTask, badRequest } from "@/lib/authz";
@@ -7,6 +8,7 @@ import { assertClientUploadAllowed, assertUploadQuota, safeFileName } from "@/li
 import { logActivity } from "@/lib/activity";
 import { notifyTaskDetail } from "@/lib/notifications";
 import { readTaskFiles } from "@/lib/ai/task-files";
+import { attachmentDataFromUpload, clientTokenOptions } from "@/lib/upload-meta";
 
 export const maxDuration = 120;
 
@@ -47,9 +49,9 @@ export const POST = route(async (req) => {
       const prefix = `workspaces/${ctx.workspaceId}/tasks/${payload.taskId}/`;
       if (!pathname.startsWith(prefix) || pathname !== `${prefix}${payload.fileName}`) throw badRequest("Invalid upload pathname");
       const tokenPayload: TokenPayload = { ...payload, workspaceId: ctx.workspaceId, uploadedById: user.id };
+      // Blob only accepts the type checked against the extension (and serves the blob with it).
       return {
-        allowedContentTypes: [payload.contentType],
-        maximumSizeInBytes: payload.sizeBytes,
+        ...clientTokenOptions(payload),
         addRandomSuffix: true,
         tokenPayload: JSON.stringify(tokenPayload),
       };
@@ -61,27 +63,18 @@ export const POST = route(async (req) => {
       if (!blob.pathname.startsWith(prefix)) throw badRequest("Upload path does not match task");
       const existing = await prisma.attachment.findUnique({ where: { storageKey: blob.pathname }, select: { id: true } });
       if (existing) return;
-      const extractedText = payload.sizeBytes <= 4 * 1024 * 1024
+      // Recorded with the checked type and the stored blob's real size, not what the browser declared.
+      const data = attachmentDataFromUpload(payload, blob, await head(blob.url), process.env.BLOB_ACCESS === "public" ? "vercel_blob_public" : "vercel_blob");
+      const extractedText = data.sizeBytes <= 4 * 1024 * 1024
         ? (await readTaskFiles(
-            [{ id: blob.pathname, fileName: payload.fileName, contentType: payload.contentType, sizeBytes: payload.sizeBytes, storageProvider: process.env.BLOB_ACCESS === "public" ? "vercel_blob_public" : "vercel_blob", url: blob.url }],
+            [{ id: blob.pathname, fileName: data.fileName, contentType: data.contentType, sizeBytes: data.sizeBytes, storageProvider: data.storageProvider, url: blob.url }],
             payload.workspaceId,
             { maxFiles: 1, maxChars: 300_000, logLabel: "task-upload" }
           ))[0]?.text ?? null
         : null;
       try {
         await prisma.$transaction(async (tx) => {
-          await tx.attachment.create({ data: {
-            workspaceId: payload.workspaceId,
-            taskId: payload.taskId,
-            fileName: payload.fileName,
-            contentType: payload.contentType,
-            sizeBytes: payload.sizeBytes,
-            storageProvider: process.env.BLOB_ACCESS === "public" ? "vercel_blob_public" : "vercel_blob",
-            storageKey: blob.pathname,
-            url: blob.url,
-            uploadedById: payload.uploadedById,
-            extractedText,
-          } });
+          await tx.attachment.create({ data: { ...data, extractedText } });
           await logActivity(tx, { workspaceId: payload.workspaceId, actorId: payload.uploadedById, entityType: "task", entityId: payload.taskId, action: "updated", summary: `Attached "${payload.fileName}"` });
           await notifyTaskDetail(tx, payload.taskId, payload.uploadedById, "attachments");
         });

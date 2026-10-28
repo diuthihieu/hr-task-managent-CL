@@ -11,8 +11,8 @@ Files:
 |---|---|---|
 | 0:00–0:03.7 | Spark of light in the dark (brand) | "Every great team starts with a spark." |
 | 0:03.7–0:07.5 | Team constellation forming | "An idea. A plan. People who believe." |
-| 0:07.5–0:11.2 | Chaos: chats, spreadsheets, tabs | "But work got scattered. Chats. Spreadsheets. Endless tabs." |
-| 0:11.2–0:15.0 | Everything pulled into an orange ribbon (build-up) | "What if everything... just flowed?" |
+| 0:07.5–0:11.2 | One phone, too many windows: a team chat with buzzing notifications, then a broken spreadsheet (#REF!), then tabs multiplying to 31, each stacking on top of the last | "But work got scattered. Chats. Spreadsheets. Endless tabs." |
+| 0:11.2–0:15.0 | Everything freezes, folds into a deck, shrinks into an orange dot, which pops and bursts into an orange ribbon (build-up) | "What if everything... just flowed?" |
 | 0:15.0–0:20.6 | **Drop**: woli logo, "Introducing woli mobile", phone | "Introducing woli mobile. Your whole workspace, now in your pocket." |
 | 0:20.6–0:26.2 | iPhone install: Safari, then Share, then Add to Home Screen | "On iPhone: open woli in Safari, tap Share, then Add to Home Screen." |
 | 0:26.2–0:31.9 | Android install: Download, then Install, then Open | "On Android: tap Download for Android, install, and you're in." |

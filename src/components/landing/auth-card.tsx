@@ -7,6 +7,7 @@ import { toast } from "@/components/ui/toast";
 import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { safeRedirectPath } from "@/lib/safe-redirect";
 
 type Mode = "login" | "register" | "forgot";
 
@@ -26,7 +27,7 @@ export function AuthCard({ initialMode = "login", callbackUrl = "/workspaces", g
   const socialEnabled = googleEnabled || microsoftEnabled;
   const [forgotState, setForgotState] = useState<"idle" | "sent" | "unavailable">("idle");
   // Only same-site paths are allowed as a post-login destination.
-  const target = callbackUrl.startsWith("/") && !callbackUrl.startsWith("//") ? callbackUrl : "/workspaces";
+  const target = safeRedirectPath(callbackUrl);
 
   useEffect(() => {
     if (!socialEnabled) return;

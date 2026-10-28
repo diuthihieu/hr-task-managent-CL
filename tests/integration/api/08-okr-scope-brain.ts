@@ -291,6 +291,22 @@ test("second brain: highlight -> task (recurring, OKR), reminder, decisions, gra
   await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId] });
   assert.equal((await viewer.get(`/api/decisions/${other.body.id}`)).status, 404, "decisions of hidden projects are hidden");
   assert.ok(!(await viewer.get<{ id: string }[]>(`/api/workspaces/${s.ws}/decisions`)).body.some((x) => x.id === other.body.id));
+  // Nor can they be superseded by someone they're hidden from, or show up as a visible decision's link.
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId, s.contributorId] });
+  const before = (await prisma.decision.findUniqueOrThrow({ where: { id: other.body.id } })).status;
+  const sneaky = await contributor.post<{ id?: string }>(`/api/workspaces/${s.ws}/decisions`, { title: "x", supersedesId: other.body.id });
+  assert.equal(sneaky.status, 404, "a hidden decision can't be superseded");
+  assert.equal((await prisma.decision.findUniqueOrThrow({ where: { id: other.body.id } })).status, before, "and keeps its status");
+  assert.equal(await prisma.decision.count({ where: { title: "x", workspaceId: s.ws, deletedAt: null } }), 0, "nothing half-created");
+  const plan = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/decisions`, { title: "Other project plan", projectId: s.otherProject });
+  const followUp = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/decisions`, { title: "Visible follow-up", projectId: s.project, supersedesId: plan.body.id });
+  assert.equal(followUp.status, 201, JSON.stringify(followUp.body));
+  type Linked = { id: string; supersedes: { title: string } | null; supersededBy: { title: string } | null };
+  assert.equal((await viewer.get<Linked>(`/api/decisions/${followUp.body.id}`)).body.supersedes, null, "the hidden predecessor's title isn't shown");
+  assert.equal((await viewer.get<Linked[]>(`/api/workspaces/${s.ws}/decisions`)).body.find((x) => x.id === followUp.body.id)?.supersedes, null, "not in the list either");
+  assert.equal((await admin.get<Linked>(`/api/decisions/${followUp.body.id}`)).body.supersedes?.title, "Other project plan", "people who see both still get the link");
+  await admin.del(`/api/decisions/${followUp.body.id}`);
+  await admin.del(`/api/decisions/${plan.body.id}`);
   await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
   const pageDecisions = (await admin.get<{ backlinks: { type: string; id: string }[] }>(`/api/wiki/${A}/connections`)).body.backlinks.filter((x) => x.type === "decision");
   assert.ok(pageDecisions.some((x) => x.id === d1.body.id), "decisions recorded from a page are its backlinks");

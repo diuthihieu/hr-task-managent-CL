@@ -81,8 +81,13 @@ export function isRecognitionNotification(n: NotificationItem) {
 }
 
 /** Unread Recognition notifications for one workspace (sidebar badge). */
+/** Unread recognition notifications (kudos, rewards) in this workspace. */
+export function useRecognitionUnread(workspaceId: string): number {
+  return useInbox((s) => s.items.filter((x) => !x.read && !isMuted(x, s.settings) && isRecognitionNotification(x) && (!x.workspaceId || x.workspaceId === workspaceId)).length);
+}
+
 export function RecognitionCount({ workspaceId }: { workspaceId: string }) {
-  const n = useInbox((s) => s.items.filter((x) => !x.read && !isMuted(x, s.settings) && isRecognitionNotification(x) && (!x.workspaceId || x.workspaceId === workspaceId)).length);
+  const n = useRecognitionUnread(workspaceId);
   if (!n) return null;
   return <span className="min-w-5 h-5 px-1.5 rounded-full bg-rose-500 text-white text-[11px] font-semibold leading-5 text-center" data-testid="nav-recognition-count">{n > 99 ? "99+" : n}</span>;
 }

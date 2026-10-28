@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { MobileAppButton } from "@/components/pwa/mobile-app-prompt";
 import { MobileTabBar } from "@/components/layout/mobile-tab-bar";
+import { ShellNavContext, type ShellNav } from "@/components/layout/shell-context";
 import { NotificationBell, RecognitionCount, UnreadCount } from "@/components/notifications/notification-bell";
 import { WorkspaceAvatar } from "@/components/workspaces/workspace-avatar";
 import { emitViewsChanged } from "@/lib/view-events";
@@ -280,12 +281,25 @@ export function WorkspaceShell({
   const isWikiHome = pathname.endsWith("/wiki");
   const isBrain = pathname.includes(`/w/${workspace.slug}/brain`);
   const isRecognition = pathname.includes(`/w/${workspace.slug}/recognition`);
+  const isApps = pathname === `/w/${workspace.slug}/apps`;
   const isAi = pathname.includes("/ai");
   const isAgentWork = pathname.includes("/agent-work");
   const okrActive = isTeamOkrs || isMyOkrs || isOkrDashboard || isOkrDetail;
   const wikiOpenNow = wikiOpen ?? (isWikiHome || !!activeWikiId);
 
+  const shellNav: ShellNav = {
+    workspace: { id: workspace.id, name: workspace.name, slug: workspace.slug },
+    projects,
+    wikis,
+    canCreateProject,
+    isAdmin,
+    newProject: () => setNewProjectOpen(true),
+    openPreferences: () => setPrefsOpen(true),
+    openSearch: () => setSearchOpen(true),
+  };
+
   return (
+    <ShellNavContext.Provider value={shellNav}>
     <div className="flex h-screen h-dvh w-full overflow-hidden bg-neutral-50 dark:bg-neutral-950 text-sm">
       {/* Sidebar */}
       {navOpen && <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setNavOpen(false)} data-testid="nav-backdrop" />}
@@ -547,8 +561,8 @@ export function WorkspaceShell({
       {/* Main column: global top bar, then each page renders its own header */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <header className="h-14 shrink-0 flex items-center gap-2 sm:gap-3 px-2 sm:px-5 border-b border-neutral-200/80 dark:border-neutral-800 bg-white dark:bg-neutral-900">
-          {/* Phones / tablets use the bottom tabs ("More" opens this menu); the button stays for wide tablets in landscape. */}
-          <button onClick={() => setNavOpen(true)} className="hidden md:block lg:hidden rounded-md p-2 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800" aria-label={t("nav.menu")} data-testid="nav-open">
+          {/* Phones / tablets: the full menu opens from the top-left corner (the bottom tabs hold the main pages). */}
+          <button onClick={() => setNavOpen(true)} className="lg:hidden shrink-0 rounded-md p-2 text-neutral-600 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800" aria-label={t("nav.menu")} data-testid="nav-open">
             <Menu size={18} />
           </button>
           <button
@@ -620,12 +634,12 @@ export function WorkspaceShell({
         <div className="flex-1 flex flex-col overflow-hidden min-w-0">{children}</div>
         <MobileTabBar
           workspaceSlug={workspace.slug}
-          active={isHome ? "home" : isMyWork ? "myWork" : isInbox ? "inbox" : activeProjectId ? "projects" : null}
+          active={isApps ? "all" : isHome ? "home" : isAi ? "ai" : isRecognition ? "recognition" : activeProjectId ? "projects" : null}
           projects={projects}
           activeProjectId={activeProjectId}
           canCreateProject={canCreateProject}
           onNewProject={() => setNewProjectOpen(true)}
-          onMore={() => setNavOpen(true)}
+          workspaceId={workspace.id}
         />
       </div>
 
@@ -637,6 +651,7 @@ export function WorkspaceShell({
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} workspaceId={workspace.id} workspaceSlug={workspace.slug} />
       <AgentSuggestionPopup workspaceId={workspace.id} workspaceSlug={workspace.slug} />
     </div>
+    </ShellNavContext.Provider>
   );
 }
 

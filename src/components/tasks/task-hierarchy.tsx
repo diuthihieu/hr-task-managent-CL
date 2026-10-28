@@ -245,10 +245,10 @@ export function TaskHierarchy({
               }}
               maxLength={200}
               placeholder={t("th.newSubtask")}
-              className="h-8 flex-1 rounded-md border border-neutral-200 bg-white px-2 text-sm outline-none focus:border-indigo-400 dark:border-neutral-800 dark:bg-neutral-900"
+              className="h-8 min-w-0 flex-1 rounded-md border border-neutral-200 bg-white px-2 text-sm outline-none focus:border-indigo-400 dark:border-neutral-800 dark:bg-neutral-900"
               data-testid="th-new-subtask"
             />
-            <button type="button" onClick={() => void add()} disabled={!draft.trim() || adding} className="inline-flex h-8 items-center gap-1 rounded-md border border-neutral-200 px-2 text-xs text-neutral-600 hover:bg-neutral-50 disabled:opacity-40 dark:border-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-800" data-testid="th-add-subtask">
+            <button type="button" onClick={() => void add()} disabled={!draft.trim() || adding} className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md border border-neutral-200 px-2 text-xs text-neutral-600 hover:bg-neutral-50 disabled:opacity-40 dark:border-neutral-800 dark:text-neutral-300 dark:hover:bg-neutral-800" data-testid="th-add-subtask">
               <Plus size={12} /> {t("th.add")}
             </button>
           </div>

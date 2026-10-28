@@ -57,6 +57,15 @@ test("wiki pages that quote a hidden project are hidden too - in the UI, search 
   assert.equal((await viewer.get(`/api/wiki/${report.body.id}/comments`)).status, 404);
   const own = await admin.get<{ restrictedTo: { name: string }[] }>(`/api/wiki/${report.body.id}`);
   assert.deepEqual(own.body.restrictedTo.map((p) => p.name), ["Other project"], "people who can see it get a notice");
+  // ...but an editor hidden from the project doesn't learn its name (or that a phrase matches it) by saving a page.
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId, s.contributorId] });
+  const note = await admin.post<{ id: string }>(`/api/wikis/${wiki.body.id}/pages`, { title: "Scratch note", content: "<p>Nothing here.</p>" });
+  const saved = await contributor.patch<{ restrictedTo: { id: string; name: string }[] }>(`/api/wiki/${note.body.id}`, { content: "<p>Ask about Other project.</p>" });
+  assert.equal(saved.status, 200, JSON.stringify(saved.body));
+  assert.ok(!saved.body.restrictedTo.some((p) => p.name === "Other project" || p.id === s.otherProject), "the hidden project isn't named back to the editor");
+  assert.deepEqual((await admin.get<{ restrictedTo: { name: string }[] }>(`/api/wiki/${note.body.id}`)).body.restrictedTo.map((p) => p.name), ["Other project"], "the page itself is still restricted");
+  await admin.del(`/api/wiki/${note.body.id}`);
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.viewerId] });
 
   await prisma.aiMessage.deleteMany({ where: { conversation: { userId: s.viewerId } } }); // reset the daily quota used up earlier
   assert.equal((await ask(viewer, { kind: "assistant", workspaceId: s.ws, message: "report on Other project" })).status, 200);

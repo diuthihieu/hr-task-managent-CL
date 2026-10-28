@@ -11,7 +11,7 @@ import { assertOfficePreviewable, assertSafeZip, MAX_PREVIEW_XML_BYTES, ZipRejec
 // Hand-built archives (BUG-22): the guard must read a ZIP the way JSZip / mammoth do,
 // and check the real expanded sizes, not the sizes the file claims.
 
-type Entry = { name: string; data: Buffer; declared?: number };
+type Entry = { name: string; data: Buffer; declared?: number; stored?: boolean; localName?: string };
 const u16 = (n: number) => Buffer.from([n & 0xff, (n >> 8) & 0xff]);
 const u32 = (n: number) => {
   const b = Buffer.alloc(4);
@@ -26,11 +26,13 @@ function parts(entries: Entry[], base = 0) {
   let offset = base;
   for (const e of entries) {
     const name = Buffer.from(e.name);
-    const packed = deflateRawSync(e.data);
+    const localName = Buffer.from(e.localName ?? e.name);
+    const method = e.stored ? 0 : 8;
+    const packed = e.stored ? e.data : deflateRawSync(e.data);
     const size = e.declared ?? e.data.length;
     const crc = crc32(e.data);
-    const local = Buffer.concat([u32(0x04034b50), u16(20), u16(0), u16(8), u16(0), u16(0), u32(crc), u32(packed.length), u32(size), u16(name.length), u16(0), name, packed]);
-    central.push(Buffer.concat([u32(0x02014b50), u16(20), u16(20), u16(0), u16(8), u16(0), u16(0), u32(crc), u32(packed.length), u32(size), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset), name]));
+    const local = Buffer.concat([u32(0x04034b50), u16(20), u16(0), u16(method), u16(0), u16(0), u32(crc), u32(packed.length), u32(size), u16(localName.length), u16(0), localName, packed]);
+    central.push(Buffer.concat([u32(0x02014b50), u16(20), u16(20), u16(0), u16(method), u16(0), u16(0), u32(crc), u32(packed.length), u32(size), u16(name.length), u16(0), u16(0), u16(0), u16(0), u32(0), u32(offset), name]));
     locals.push(local);
     offset += local.length;
   }
@@ -70,6 +72,28 @@ test("zip guard: directory records beyond the count in the end record are reject
   const { locals, central } = parts(docxEntries(HUGE));
   const file = Buffer.concat([locals, central, eocd(1, central.length, locals.length)]);
   assert.throws(() => assertSafeZip(file), ZipRejected);
+});
+
+test("zip guard: a part named differently in its local header than in the directory is rejected", () => {
+  // JSZip (so mammoth) takes the local header's name: word/document.xml would be parsed but budgeted as .bin.
+  const entries = docxEntries(Buffer.from("<w:document/>")).map((e) => (e.name === "word/document.xml" ? { ...e, name: "word/document.bin", localName: "word/document.xml" } : e));
+  const { locals, central } = parts(entries);
+  assert.throws(() => assertSafeZip(Buffer.concat([locals, central, eocd(3, central.length, locals.length)])), ZipRejected);
+});
+
+test("zip guard: the per-part size limit holds for stored and deflated parts alike", () => {
+  const big = Buffer.alloc(40 * 1024 * 1024, 7);
+  for (const stored of [true, false]) {
+    const { locals, central } = parts([{ name: "big.bin", data: big, stored }]);
+    assert.throws(() => assertSafeZip(Buffer.concat([locals, central, eocd(1, central.length, locals.length)])), /too large once expanded/, `stored=${stored}`);
+  }
+  const limits = { maxEntries: 10, maxTotalBytes: 1e9, maxEntryBytes: 1000, maxRatio: 1e9 };
+  const at = (n: number) => {
+    const { locals, central } = parts([{ name: "a.bin", data: Buffer.alloc(n, 1) }]);
+    return Buffer.concat([locals, central, eocd(1, central.length, locals.length)]);
+  };
+  assert.doesNotThrow(() => assertSafeZip(at(1000), limits), "exactly the limit");
+  assert.throws(() => assertSafeZip(at(1001), limits), /too large once expanded/, "one byte over");
 });
 
 test("zip guard: real Office files made by docx, xlsx and pptxgenjs still pass", async () => {

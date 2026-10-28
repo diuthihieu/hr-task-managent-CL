@@ -50,27 +50,45 @@ export function assertSafeZip(buf: Uint8Array, limits: ZipLimits = DEFAULT_ZIP_L
     const compressed = dv.getUint32(p + 20, true);
     const declared = dv.getUint32(p + 24, true);
     const nameLength = dv.getUint16(p + 28, true);
+    const extraLength = dv.getUint16(p + 30, true);
     const localOffset = dv.getUint32(p + 42, true);
     if (compressed === 0xffffffff || declared === 0xffffffff || localOffset === 0xffffffff) throw new ZipRejected("ZIP64 archives are not supported");
     const name = new TextDecoder().decode(buf.subarray(p + 46, p + 46 + nameLength));
     // The part's data, found through its local header (what JSZip reads).
     if (localOffset + 30 > cdOffset || dv.getUint32(localOffset, true) !== 0x04034b50) throw new ZipRejected("Corrupted file");
-    const start = localOffset + 30 + dv.getUint16(localOffset + 26, true) + dv.getUint16(localOffset + 28, true);
+    const localNameLength = dv.getUint16(localOffset + 26, true);
+    const localExtraLength = dv.getUint16(localOffset + 28, true);
+    // JSZip names a part from its local header (and a Unicode-path extra field can rename it):
+    // the name checked here must be the one the parser will use.
+    const localName = new TextDecoder().decode(buf.subarray(localOffset + 30, localOffset + 30 + localNameLength));
+    if (localName !== name) throw new ZipRejected("Corrupted file");
+    if (hasExtraField(dv, p + 46 + nameLength, extraLength, 0x7075) || hasExtraField(dv, localOffset + 30 + localNameLength, localExtraLength, 0x7075)) throw new ZipRejected("Unsupported file name encoding in this file");
+    const start = localOffset + 30 + localNameLength + localExtraLength;
     if (start + compressed > cdOffset) throw new ZipRejected("Corrupted file");
     const size = realSize(buf.subarray(start, start + compressed), method, limits.maxEntryBytes);
+    if (size > limits.maxEntryBytes) throw new ZipRejected("A part of the file is too large once expanded");
     if (size !== declared) throw new ZipRejected("Corrupted file");
     if (size > 1024 * 1024 && size / Math.max(1, compressed) > limits.maxRatio) throw new ZipRejected("The file is compressed suspiciously well (possible zip bomb)");
     total += size;
     if (total > limits.maxTotalBytes) throw new ZipRejected("The file is too large once expanded");
     out.push({ name, size });
-    p += 46 + nameLength + dv.getUint16(p + 30, true) + dv.getUint16(p + 32, true);
+    p += 46 + nameLength + extraLength + dv.getUint16(p + 32, true);
   }
   // No directory records beyond the count in the end record (JSZip would read them too).
   if (p !== cdOffset + cdSize) throw new ZipRejected("Corrupted file");
   return out;
 }
 
-/** Expanded size of one part, never expanding more than `max` bytes. */
+/** Whether the extra-field block at [start, start + length) holds a field with this id. */
+function hasExtraField(dv: DataView, start: number, length: number, id: number): boolean {
+  const end = Math.min(start + length, dv.byteLength);
+  for (let q = start; q + 4 <= end; q += 4 + dv.getUint16(q + 2, true)) {
+    if (dv.getUint16(q, true) === id) return true;
+  }
+  return false;
+}
+
+/** Expanded size of one part, never expanding more than `max` + 1 bytes (enough to tell it's too large). */
 function realSize(data: Uint8Array, method: number, max: number): number {
   if (method === 0) return data.length;
   if (method !== 8) throw new ZipRejected("Unsupported compression in this file");

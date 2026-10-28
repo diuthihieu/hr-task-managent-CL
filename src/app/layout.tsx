@@ -31,7 +31,9 @@ export const metadata: Metadata = {
   formatDetection: { telephone: false },
 };
 
-export const viewport: Viewport = { themeColor: "#f97316" };
+// Like a native app: the screen does not pinch-zoom (and iOS does not zoom into a focused field);
+// text grows with the phone's own text-size setting and the app's Text size / Display size instead.
+export const viewport: Viewport = { themeColor: "#f97316", width: "device-width", initialScale: 1, maximumScale: 1, userScalable: false };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const prefs = await getRequestPrefs();

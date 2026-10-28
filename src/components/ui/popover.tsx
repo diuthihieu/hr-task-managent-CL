@@ -12,8 +12,10 @@ export function PopoverContent({ className, ...props }: React.ComponentProps<typ
       <RPopover.Content
         sideOffset={6}
         align="start"
+        collisionPadding={8}
         className={cn(
-          "z-50 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 shadow-lg focus:outline-none",
+          // Never wider than the screen (phones, large text): content wraps inside instead of overflowing.
+          "z-50 max-w-[calc(100vw-1rem)] rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 p-3 shadow-lg focus:outline-none",
           className
         )}
         {...props}

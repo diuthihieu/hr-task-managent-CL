@@ -39,7 +39,21 @@ export function MobileTabBar({
   // Fixed elements (AI button, toasts, pop-ups) sit above the bar while it is shown.
   useEffect(() => {
     document.body.classList.add("has-bottom-nav");
-    return () => document.body.classList.remove("has-bottom-nav");
+    // iOS scrolls the whole page up to show a focused field above the keyboard and may leave it there
+    // after the keyboard closes, pushing the tabs off screen: put the page back once typing ends.
+    const reset = () =>
+      window.setTimeout(() => {
+        const el = document.activeElement;
+        const typing = el instanceof HTMLElement && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+        if (!typing && (window.scrollY !== 0 || document.documentElement.scrollTop !== 0)) window.scrollTo(0, 0);
+      }, 120);
+    document.addEventListener("focusout", reset);
+    window.visualViewport?.addEventListener("resize", reset);
+    return () => {
+      document.body.classList.remove("has-bottom-nav");
+      document.removeEventListener("focusout", reset);
+      window.visualViewport?.removeEventListener("resize", reset);
+    };
   }, []);
 
   const base = `/w/${workspaceSlug}`;

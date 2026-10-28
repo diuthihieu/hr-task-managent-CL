@@ -519,7 +519,8 @@ body {
    layouts. Text size multiplies text only: the --text-* theme tokens, body text,
    and the few fixed-pixel sizes used across the app. Keep in sync with
    FONT_SIZES / DISPLAY_SIZES in src/lib/theme-colors.ts. */
-:root { --font-scale: 1; --ui-scale: 1; }
+/* --os-font-scale: the phone's own text size (iOS Dynamic Type, measured by PwaClient), 1 elsewhere. */
+:root { --font-scale: 1; --ui-scale: 1; --os-font-scale: 1; --fs: calc(var(--font-scale) * var(--os-font-scale)); }
 :root[data-font-size="sm"] { --font-scale: 0.92; }
 :root[data-font-size="lg"] { --font-scale: 1.12; }
 :root[data-font-size="xl"] { --font-scale: 1.25; }
@@ -528,26 +529,26 @@ body {
 :root[data-display="large"] { --ui-scale: 1.2; }
 html { font-size: calc(100% * var(--ui-scale)); }
 :root {
-  --text-xs: calc(0.75rem * var(--font-scale));
-  --text-sm: calc(0.875rem * var(--font-scale));
-  --text-base: calc(1rem * var(--font-scale));
-  --text-lg: calc(1.125rem * var(--font-scale));
-  --text-xl: calc(1.25rem * var(--font-scale));
-  --text-2xl: calc(1.5rem * var(--font-scale));
-  --text-3xl: calc(1.875rem * var(--font-scale));
-  --text-4xl: calc(2.25rem * var(--font-scale));
-  --text-5xl: calc(3rem * var(--font-scale));
-  --text-6xl: calc(3.75rem * var(--font-scale));
+  --text-xs: calc(0.75rem * var(--fs));
+  --text-sm: calc(0.875rem * var(--fs));
+  --text-base: calc(1rem * var(--fs));
+  --text-lg: calc(1.125rem * var(--fs));
+  --text-xl: calc(1.25rem * var(--fs));
+  --text-2xl: calc(1.5rem * var(--fs));
+  --text-3xl: calc(1.875rem * var(--fs));
+  --text-4xl: calc(2.25rem * var(--fs));
+  --text-5xl: calc(3rem * var(--fs));
+  --text-6xl: calc(3.75rem * var(--fs));
 }
-body { font-size: calc(1rem * var(--font-scale)); }
-.text-\[8px\] { font-size: calc(8px * var(--ui-scale) * var(--font-scale)); }
-.text-\[9px\] { font-size: calc(9px * var(--ui-scale) * var(--font-scale)); }
-.text-\[10px\] { font-size: calc(10px * var(--ui-scale) * var(--font-scale)); }
-.text-\[11px\] { font-size: calc(11px * var(--ui-scale) * var(--font-scale)); }
-.text-\[12px\] { font-size: calc(12px * var(--ui-scale) * var(--font-scale)); }
-.text-\[13px\] { font-size: calc(13px * var(--ui-scale) * var(--font-scale)); }
-.text-\[15px\] { font-size: calc(15px * var(--ui-scale) * var(--font-scale)); }
-.text-\[22px\] { font-size: calc(22px * var(--ui-scale) * var(--font-scale)); }
+body { font-size: calc(1rem * var(--fs)); }
+.text-\[8px\] { font-size: calc(8px * var(--ui-scale) * var(--fs)); }
+.text-\[9px\] { font-size: calc(9px * var(--ui-scale) * var(--fs)); }
+.text-\[10px\] { font-size: calc(10px * var(--ui-scale) * var(--fs)); }
+.text-\[11px\] { font-size: calc(11px * var(--ui-scale) * var(--fs)); }
+.text-\[12px\] { font-size: calc(12px * var(--ui-scale) * var(--fs)); }
+.text-\[13px\] { font-size: calc(13px * var(--ui-scale) * var(--fs)); }
+.text-\[15px\] { font-size: calc(15px * var(--ui-scale) * var(--fs)); }
+.text-\[22px\] { font-size: calc(22px * var(--ui-scale) * var(--fs)); }
 
 /* Block links (#b-<id>): the target block flashes when opened. */
 .block-flash {
@@ -627,4 +628,22 @@ body { font-size: calc(1rem * var(--font-scale)); }
   body.has-bottom-nav {
     --app-bottom: calc(3.5rem + env(safe-area-inset-bottom));
   }
+  /* The app shell fills the screen; only its panels scroll, so the page itself never shifts (e.g. when
+     the phone keyboard opens) and the header and bottom tabs stay put. */
+  html:has(body.has-bottom-nav),
+  body.has-bottom-nav {
+    height: 100%;
+    overflow: hidden;
+  }
 }
+
+/* Native-app feel on phones and tablets: no pinch / double-tap zoom (scrolling still works) and no
+   horizontal page scroll - wide content (tables, boards) scrolls inside its own box. */
+@media (pointer: coarse) {
+  html, body { touch-action: pan-x pan-y; overscroll-behavior: none; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+}
+
+/* Horizontal scrollers (tab strips) without a visible scrollbar. */
+.no-scrollbar { scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }

@@ -21,6 +21,8 @@ import { parseBlockConfig } from "@/lib/dashboard-engine";
 import type { FieldRow } from "@/types";
 import { useT } from "@/components/i18n-provider";
 import { DashboardTabs } from "./dashboard-tabs";
+import { useMediaQuery } from "@/lib/use-media-query";
+import { cn } from "@/lib/utils";
 
 const GridLayout = WidthProvider(RGL);
 
@@ -62,6 +64,8 @@ export function DashboardWorkspace({
   const [loading, setLoading] = useState(true);
   const widgetData = useRef(new Map<string, DataResponse>());
   const gridRef = useRef<HTMLDivElement>(null);
+  /** Phones: cards stacked full width instead of the 12-column canvas. */
+  const narrow = useMediaQuery("(max-width: 767.98px)");
   // AI narrative input: a snapshot of the other widgets, refreshed (debounced) as their data arrives.
   const [narrativeData, setNarrativeData] = useState("");
   const narrativeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -236,14 +240,34 @@ export function DashboardWorkspace({
   }
   if (!dashboard) return null;
 
+  const renderCard = (block: (typeof dashboard.blocks)[number]) => (
+    <WidgetCard
+      block={block}
+      canEdit={canEdit}
+      slicers={slicers}
+      crossFilter={crossFilter?.filter ?? null}
+      fieldNameLookup={fieldNameLookup}
+      onEdit={() => setWidgetDialog({ open: true, block })}
+      onDelete={() => deleteWidget(block.id)}
+      onCrossFilter={(point) => handleCrossFilterClick(block, point)}
+      crossFilterActive={crossFilter?.sourceBlockId === block.id ? crossFilter.filter.label : null}
+      onData={(d) => {
+        widgetData.current.set(block.id, d);
+        queueNarrative();
+      }}
+      narrative={block.type === "narrative" ? <AiNarrative targetKind="dashboard" targetId={dashboardId} data={narrativeData} instruction={parseBlockConfig(block.config).prompt} /> : undefined}
+      onSegmentClick={(segment) => openSegment(block, segment)}
+    />
+  );
+
   const layout: Layout[] = dashboard.blocks.map((b) => ({ i: b.id, x: b.x, y: b.y, w: b.w, h: b.h, minW: 2, minH: 2 }));
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex items-center gap-1.5 h-12 px-4 border-b border-neutral-200 dark:border-neutral-800 shrink-0 text-sm">
-        <span className="text-neutral-400">{breadcrumb.workspace}</span>
-        <ChevronRight size={13} className="text-neutral-300" />
-        <LayoutDashboard size={14} className="text-indigo-500" />
+        <span className="hidden sm:inline text-neutral-400 truncate max-w-[12rem]">{breadcrumb.workspace}</span>
+        <ChevronRight size={13} className="hidden sm:inline text-neutral-300 shrink-0" />
+        <LayoutDashboard size={14} className="text-indigo-500 shrink-0" />
         {renaming ? (
           <input
             autoFocus
@@ -255,7 +279,7 @@ export function DashboardWorkspace({
           />
         ) : (
           <span
-            className={canEdit ? "font-medium text-neutral-800 dark:text-neutral-100 cursor-text" : "font-medium text-neutral-800 dark:text-neutral-100"}
+            className={cn("font-medium text-neutral-800 dark:text-neutral-100 truncate min-w-[5rem] shrink", canEdit && "cursor-text")}
             onDoubleClick={() => {
               if (!canEdit) return;
               setNameDraft(dashboard.name);
@@ -265,7 +289,7 @@ export function DashboardWorkspace({
             {dashboard.name}
           </span>
         )}
-        <div className="ml-auto flex items-center gap-1.5">
+        <div className="ml-auto flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
           {dashboard.blocks.length > 0 && <AiDashboardActions dashboardId={dashboardId} getData={snapshot} />}
           {dashboard.blocks.length > 0 && <AiReportButton workspaceId={workspaceId} targetKind="dashboard" targetId={dashboardId} getData={snapshot} getCharts={() => captureCharts(gridRef.current)} />}
           <ReportLibraryButton workspaceId={workspaceId} dashboardId={dashboardId} />
@@ -331,6 +355,16 @@ export function DashboardWorkspace({
         ) : (
           <div ref={gridRef}>
           <p className="px-1 pb-1 text-[11px] text-neutral-400">{t("seg.hint")}</p>
+          {narrow ? (
+            // Phones: one card per row at full width, in reading order (the saved layout is untouched).
+            <div className="space-y-2.5" data-testid="dashboard-stack">
+              {[...dashboard.blocks].sort((a, b) => a.y - b.y || a.x - b.x).map((block) => (
+                <div key={block.id} style={{ height: Math.max(block.h, 6) * 42 - 10 }} data-report-chart data-chart-id={block.id} data-chart-title={block.title}>
+                  {renderCard(block)}
+                </div>
+              ))}
+            </div>
+          ) : (
           <GridLayout
             className="layout woli-grid"
             layout={layout}
@@ -347,26 +381,11 @@ export function DashboardWorkspace({
           >
             {dashboard.blocks.map((block) => (
               <div key={block.id} data-report-chart data-chart-id={block.id} data-chart-title={block.title}>
-                <WidgetCard
-                  block={block}
-                  canEdit={canEdit}
-                  slicers={slicers}
-                  crossFilter={crossFilter?.filter ?? null}
-                  fieldNameLookup={fieldNameLookup}
-                  onEdit={() => setWidgetDialog({ open: true, block })}
-                  onDelete={() => deleteWidget(block.id)}
-                  onCrossFilter={(point) => handleCrossFilterClick(block, point)}
-                  crossFilterActive={crossFilter?.sourceBlockId === block.id ? crossFilter.filter.label : null}
-                  onData={(d) => {
-                    widgetData.current.set(block.id, d);
-                    queueNarrative();
-                  }}
-                  narrative={block.type === "narrative" ? <AiNarrative targetKind="dashboard" targetId={dashboardId} data={narrativeData} instruction={parseBlockConfig(block.config).prompt} /> : undefined}
-                  onSegmentClick={(segment) => openSegment(block, segment)}
-                />
+                {renderCard(block)}
               </div>
             ))}
           </GridLayout>
+          )}
           </div>
         )}
       </div>

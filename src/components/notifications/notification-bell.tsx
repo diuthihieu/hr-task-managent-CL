@@ -313,9 +313,9 @@ export function NotificationBell({ className, align = "start" }: { className?: s
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-96 p-0" align={align}>
-        <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-100 dark:border-neutral-800">
-          <span className="font-semibold text-sm text-neutral-900 dark:text-neutral-50 flex-1">{t("notif.title")}</span>
+      <PopoverContent className="w-96 p-0 flex flex-col max-h-[min(36rem,calc(var(--radix-popover-content-available-height)-var(--app-bottom)))]" align={align} data-testid="notif-panel">
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-100 dark:border-neutral-800 shrink-0">
+          <span className="font-semibold text-sm text-neutral-900 dark:text-neutral-50 flex-1 min-w-0 truncate">{t("notif.title")}</span>
           {(["all", "unread"] as const).map((f) => (
             <button key={f} onClick={() => setFilter(f)} className={cn("text-xs rounded px-1.5 py-0.5", filter === f ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300" : "text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800")}>
               {t(`notif.filter.${f}`)}
@@ -326,11 +326,11 @@ export function NotificationBell({ className, align = "start" }: { className?: s
           </button>
         </div>
         {permission === "default" && (
-          <button onClick={enableNative} className="w-full flex items-center gap-2 px-3 py-2 text-xs text-indigo-700 dark:text-indigo-300 bg-indigo-50/60 dark:bg-indigo-950/40 hover:bg-indigo-50">
+          <button onClick={enableNative} className="w-full shrink-0 flex items-center gap-2 px-3 py-2 text-xs text-indigo-700 dark:text-indigo-300 bg-indigo-50/60 dark:bg-indigo-950/40 hover:bg-indigo-50">
             <BellRing size={13} /> {t("notif.enableNative")}
           </button>
         )}
-        <div className="max-h-[420px] overflow-y-auto thin-scroll divide-y divide-neutral-100 dark:divide-neutral-800">
+        <div className="flex-1 min-h-0 overflow-y-auto thin-scroll divide-y divide-neutral-100 dark:divide-neutral-800">
           {shown.length === 0 && <div className="px-3 py-8 text-center text-xs text-neutral-400">{t("notif.empty")}</div>}
           {shown.map((n) => (
             <NotificationRow key={n.id} n={n} onOpen={() => openItem(n)} />

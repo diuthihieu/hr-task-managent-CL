@@ -81,6 +81,33 @@ export function PwaClient() {
       .catch(() => {});
   }, []);
 
+  // Native-app feel: iOS ignores user-scalable=no, so block its pinch gestures here (scrolling and
+  // taps are untouched). The phone's own text size (iOS Settings > Display & Brightness > Text Size)
+  // still applies: measured from the system body font (17px at the default size) and fed to the CSS.
+  useEffect(() => {
+    const stop = (e: Event) => e.preventDefault();
+    const pinch = (e: TouchEvent) => {
+      if ((e as TouchEvent & { scale?: number }).scale !== undefined && (e as TouchEvent & { scale: number }).scale !== 1) e.preventDefault();
+    };
+    document.addEventListener("gesturestart", stop);
+    document.addEventListener("gesturechange", stop);
+    document.addEventListener("touchmove", pinch, { passive: false });
+    // Phones/tablets only: on a Mac the same font is 13px and is not a text-size choice.
+    if (window.matchMedia?.("(pointer: coarse)").matches && CSS.supports?.("font", "-apple-system-body")) {
+      const probe = document.createElement("span");
+      probe.style.cssText = "font:-apple-system-body;position:absolute;visibility:hidden;pointer-events:none";
+      document.body.appendChild(probe);
+      const px = parseFloat(getComputedStyle(probe).fontSize);
+      probe.remove();
+      if (px > 0) document.documentElement.style.setProperty("--os-font-scale", String(Math.min(1.6, Math.max(0.85, px / 17))));
+    }
+    return () => {
+      document.removeEventListener("gesturestart", stop);
+      document.removeEventListener("gesturechange", stop);
+      document.removeEventListener("touchmove", pinch);
+    };
+  }, []);
+
   useEffect(() => {
     const set = usePwa.getState().set;
     set({ installed: runningAsApp() || usePwa.getState().installed });

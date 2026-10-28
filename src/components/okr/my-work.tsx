@@ -85,12 +85,13 @@ export function MyWork({ workspaceId, workspaceSlug }: { workspaceId: string; wo
               <Link
                 key={task.taskId}
                 href={`/w/${workspaceSlug}/p/${task.projectId}/t/${task.taskId}`}
-                className="flex items-center gap-3 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 hover:border-neutral-300 dark:hover:border-neutral-700"
+                className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 hover:border-neutral-300 dark:hover:border-neutral-700"
+                data-testid="mw-task"
               >
-                <span className="flex-1 min-w-0 truncate text-sm text-neutral-800 dark:text-neutral-100">{task.title || t("common.untitled")}</span>
-                <MetaChip className="shrink-0">{task.projectName}</MetaChip>
+                <span className="basis-full sm:basis-0 sm:flex-1 min-w-0 line-clamp-2 sm:truncate text-sm text-neutral-800 dark:text-neutral-100">{task.title || t("common.untitled")}</span>
+                <MetaChip className="min-w-0">{task.projectName}</MetaChip>
                 {task.status && <MetaStatus className="shrink-0">{task.status}</MetaStatus>}
-                <div className="w-20 shrink-0"><ProgressBar value={task.progress} height={4} /></div>
+                <div className="w-16 sm:w-20 shrink-0"><ProgressBar value={task.progress} height={4} /></div>
                 {task.contributesToOkr && (
                   <span title={t("mw.contributes")} className="shrink-0">
                     <Target size={12} className="text-indigo-500" />
@@ -106,8 +107,8 @@ export function MyWork({ workspaceId, workspaceSlug }: { workspaceId: string; wo
           <div className="space-y-1.5">
             {data.objectives.length === 0 && <p className="text-sm text-neutral-400">{t("mw.noOkrs")}</p>}
             {data.objectives.map((o) => (
-              <Link key={o.id} href={`/w/${workspaceSlug}/okrs/${o.id}`} className="flex items-center gap-3 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 hover:border-neutral-300 dark:hover:border-neutral-700">
-                <span className="flex-1 min-w-0 truncate text-sm text-neutral-800 dark:text-neutral-100">{o.title}</span>
+              <Link key={o.id} href={`/w/${workspaceSlug}/okrs/${o.id}`} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 hover:border-neutral-300 dark:hover:border-neutral-700">
+                <span className="basis-full sm:basis-0 sm:flex-1 min-w-0 line-clamp-2 sm:truncate text-sm text-neutral-800 dark:text-neutral-100">{o.title}</span>
                 <div className="w-24 shrink-0"><ProgressBar value={o.progress} /></div>
                 <PctLabel label={t("okr.progressShort")} value={o.progress} className="text-xs" />
                 <StatusBadge status={o.status} />
@@ -121,8 +122,8 @@ export function MyWork({ workspaceId, workspaceSlug }: { workspaceId: string; wo
           <div className="space-y-1.5">
             {data.keyResults.length === 0 && <p className="text-sm text-neutral-400">{t("mw.noKrs")}</p>}
             {data.keyResults.map((k) => (
-              <Link key={k.id} href={`/w/${workspaceSlug}/okrs/${k.objectiveId}`} className="flex items-center gap-3 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 hover:border-neutral-300 dark:hover:border-neutral-700">
-                <div className="flex-1 min-w-0">
+              <Link key={k.id} href={`/w/${workspaceSlug}/okrs/${k.objectiveId}`} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-3 py-2 hover:border-neutral-300 dark:hover:border-neutral-700">
+                <div className="basis-full sm:basis-0 sm:flex-1 min-w-0">
                   <div className="truncate text-sm text-neutral-800 dark:text-neutral-100">{k.title}</div>
                   <div className="truncate text-[11px] text-neutral-400">{k.objectiveTitle}</div>
                 </div>
@@ -133,18 +134,19 @@ export function MyWork({ workspaceId, workspaceSlug }: { workspaceId: string; wo
           </div>
         </TabsContent>
 
-        <TabsContent value="eisenhower" className="flex-1 overflow-hidden p-3">
-          <div className="h-full grid grid-cols-2 grid-rows-2 gap-2.5">
+        {/* Phones: the four quadrants one under the other (page scrolls); wider screens: 2 x 2. */}
+        <TabsContent value="eisenhower" className="flex-1 overflow-y-auto sm:overflow-hidden thin-scroll p-3 flex flex-col">
+          <div className="grid grid-cols-1 gap-2.5 sm:flex-1 sm:min-h-0 sm:grid-cols-2 sm:grid-rows-2">
             {QUADRANTS.map((q) => (
-              <div key={q.key} className="flex flex-col rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden min-h-0" style={{ backgroundColor: `${q.accent}0a` }}>
-                <div className="flex items-center gap-2 px-3 h-9 shrink-0 border-b" style={{ borderColor: `${q.accent}33` }}>
-                  <span className="text-xs font-semibold" style={{ color: q.accent }}>{t(q.title)}</span>
-                  <span className="text-[10px] text-neutral-400">{t(q.subtitle)}</span>
-                  <span className="ml-auto text-xs text-neutral-400">{quadrantTasks.get(q.key)?.length ?? 0}</span>
+              <div key={q.key} className="flex flex-col rounded-lg border border-neutral-200 dark:border-neutral-800 overflow-hidden min-h-0" style={{ backgroundColor: `${q.accent}0a` }} data-testid="mw-quadrant">
+                <div className="flex items-center gap-2 px-3 py-2 min-h-9 shrink-0 border-b" style={{ borderColor: `${q.accent}33` }}>
+                  <span className="text-xs font-semibold shrink-0" style={{ color: q.accent }}>{t(q.title)}</span>
+                  <span className="text-[10px] text-neutral-400 min-w-0 truncate">{t(q.subtitle)}</span>
+                  <span className="ml-auto text-xs text-neutral-400 shrink-0">{quadrantTasks.get(q.key)?.length ?? 0}</span>
                 </div>
-                <div className="flex-1 overflow-y-auto thin-scroll p-1.5 space-y-1.5">
+                <div className="flex-1 sm:overflow-y-auto thin-scroll p-1.5 space-y-1.5">
                   {(quadrantTasks.get(q.key) ?? []).map((t) => (
-                    <Link key={t.taskId} href={`/w/${workspaceSlug}/p/${t.projectId}?record=${t.taskId}`} className="block rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2 py-1.5 text-xs hover:border-neutral-300 dark:hover:border-neutral-700 truncate">
+                    <Link key={t.taskId} href={`/w/${workspaceSlug}/p/${t.projectId}?record=${t.taskId}`} className="block rounded-md border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 px-2 py-1.5 text-xs hover:border-neutral-300 dark:hover:border-neutral-700 line-clamp-2 break-words">
                       {t.title || "(untitled)"}
                     </Link>
                   ))}
@@ -152,7 +154,7 @@ export function MyWork({ workspaceId, workspaceSlug }: { workspaceId: string; wo
               </div>
             ))}
           </div>
-          <p className="text-[11px] text-neutral-400 mt-2">{t("mw.matrixHint")}</p>
+          <p className="text-[11px] text-neutral-400 mt-2 shrink-0">{t("mw.matrixHint")}</p>
         </TabsContent>
 
         <TabsContent value="deadlines" className="flex-1 overflow-y-auto thin-scroll p-4">

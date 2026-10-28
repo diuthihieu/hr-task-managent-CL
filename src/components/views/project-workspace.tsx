@@ -609,7 +609,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         projectName={breadcrumb.project}
         right={
           <>
-            <span>{t("project.tasksCount", { count: records.length })}</span><MetaStatus className="ml-2">{t(`role.${table.myRole}` as MessageKey)}</MetaStatus>
+            <span className="whitespace-nowrap">{t("project.tasksCount", { count: records.length })}</span><MetaStatus className="ml-2 hidden sm:inline-flex whitespace-nowrap">{t(`role.${table.myRole}` as MessageKey)}</MetaStatus>
           </>
         }
       />

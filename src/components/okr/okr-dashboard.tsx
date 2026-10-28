@@ -58,8 +58,8 @@ export function OkrDashboard({ workspaceId, workspaceSlug }: { workspaceId: stri
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
       <div className="flex items-center gap-2 px-4 h-12 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
-        <h1 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">{t("nav.okrDashboard")}</h1>
-        <div className="ml-auto flex items-center gap-1.5">
+        <h1 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50 shrink-0">{t("nav.okrDashboard")}</h1>
+        <div className="ml-auto flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar [&>*]:shrink-0">
           <Select className="w-32" value={filters.ownerId} onValueChange={(v) => setFilters((f) => ({ ...f, ownerId: v }))} options={[{ value: "", label: t("okr.allOwners") }, ...members.map((m) => ({ value: m.id, label: m.name }))]} />
           <Select className="w-28" value={filters.status} onValueChange={(v) => setFilters((f) => ({ ...f, status: v }))} options={[{ value: "", label: t("okr.allStatus") }, ...Object.entries(statusLabels).map(([value, label]) => ({ value, label }))]} />
           <CycleFilter value={cycle} onChange={setCycle} />

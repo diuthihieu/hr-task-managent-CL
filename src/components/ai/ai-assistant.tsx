@@ -91,11 +91,11 @@ export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: {
         </div>
       </aside>
       <main className="flex-1 flex flex-col min-w-0 bg-neutral-50 dark:bg-neutral-950">
-        <div className="h-12 shrink-0 px-6 flex items-center gap-2 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
+        <div className="h-12 shrink-0 px-3 sm:px-6 flex items-center gap-2 border-b border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900">
           <Sparkles size={16} className="text-indigo-600" />
           <h1 className="text-sm font-semibold text-neutral-900 dark:text-neutral-50">{t("nav.ai")}</h1>
-          <MetaChip className="ml-1">{workspaceName}</MetaChip>
-          <div className="ml-auto flex rounded-lg bg-neutral-100 dark:bg-neutral-800 p-0.5 text-xs font-medium" role="tablist">
+          <MetaChip className="ml-1 hidden sm:inline-flex">{workspaceName}</MetaChip>
+          <div className="ml-auto flex shrink-0 rounded-lg bg-neutral-100 dark:bg-neutral-800 p-0.5 text-xs font-medium whitespace-nowrap" role="tablist">
             {(["ask", "task"] as const).map((m) => (
               <button key={m} role="tab" aria-selected={mode === m} onClick={() => setMode(m)} className={cn("inline-flex items-center gap-1.5 h-7 px-2.5 rounded-md", mode === m ? "bg-white dark:bg-neutral-900 text-indigo-700 dark:text-indigo-300 shadow-sm" : "text-neutral-500 hover:text-neutral-800 dark:hover:text-neutral-200")} data-testid={`ai-mode-${m}`}>
                 {m === "ask" ? <MessageSquare size={13} /> : <ListPlus size={13} />}

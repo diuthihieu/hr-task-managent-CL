@@ -35,6 +35,15 @@ export const PATCH = route<P>(async (req, { params }) => {
   const objective = await prisma.$transaction(async (tx) => {
     await assertObjectiveRefs(tx, ctx.workspaceId, body, objectiveId, user.id);
     const before = await tx.objective.findUniqueOrThrow({ where: { id: objectiveId } });
+    // An alignment to a key result of a project hidden from the editor reads as "none" to them,
+    // so the null their edit form sends back keeps it instead of silently removing it.
+    if (body.parentKeyResultId === null && before.parentKeyResultId) {
+      const parent = await tx.keyResult.findUnique({ where: { id: before.parentKeyResultId }, select: { objective: { select: { projectId: true } } } });
+      if (parent?.objective.projectId && (await hiddenProjectIds(user)).has(parent.objective.projectId)) {
+        body.parentKeyResultId = undefined;
+        body.parentObjectiveId = undefined;
+      }
+    }
     if (body.contributorIds) {
       await tx.objectiveContributor.deleteMany({ where: { objectiveId } });
       if (body.contributorIds.length) await tx.objectiveContributor.createMany({ data: body.contributorIds.map((userId) => ({ objectiveId, userId })) });

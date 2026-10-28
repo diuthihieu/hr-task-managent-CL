@@ -150,6 +150,10 @@ test("OKR links never reach into a project hidden from the user, and linking nee
     assert.ok(!v1.childObjectives.some((c) => c.id === o2), "a hidden project's objective isn't listed as a child");
     assert.ok(!v1.keyResults[0].tasks.some((t) => t.taskId === hiddenTask), "nor its task");
     assert.equal((await contributor.get<Obj>(`/api/objectives/${o4}`)).body.parentKeyResult, null, "a hidden parent key result isn't shown");
+    // The edit dialog sends back the "no parent" it was shown: that must not drop the hidden alignment.
+    assert.equal((await contributor.patch(`/api/objectives/${o4}`, { title: "Workspace goal O4 (renamed)", parentKeyResultId: null })).status, 200);
+    const o4Row = await prisma.objective.findUniqueOrThrow({ where: { id: o4 } });
+    assert.deepEqual([o4Row.title, o4Row.parentKeyResultId], ["Workspace goal O4 (renamed)", k3], "editing keeps the alignment the editor can't see");
     assert.equal((await contributor.del(`/api/key-results/${k1}/tasks/${hiddenTask}`)).status, 404, "a hidden task can't be unlinked");
     assert.equal((await prisma.task.findUniqueOrThrow({ where: { id: hiddenTask } })).keyResultId, k1, "and stays linked");
 

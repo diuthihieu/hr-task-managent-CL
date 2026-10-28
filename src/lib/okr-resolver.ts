@@ -18,7 +18,7 @@ const TASK_INCLUDE = {
 
 export const OBJECTIVE_INCLUDE = {
   project: { select: { id: true, name: true, color: true } },
-  parentKeyResult: { select: { id: true, title: true, objectiveId: true, objective: { select: { title: true } } } },
+  parentKeyResult: { select: { id: true, title: true, objectiveId: true, objective: { select: { title: true, projectId: true } } } },
   tasks: {
     where: { deletedAt: null, keyResultId: null, project: { deletedAt: null } },
     orderBy: { createdAt: "asc" },
@@ -36,7 +36,7 @@ export const OBJECTIVE_INCLUDE = {
         orderBy: { createdAt: "asc" },
         include: TASK_INCLUDE,
       },
-      childObjectives: { where: { deletedAt: null }, select: { id: true, title: true, parentKeyResultId: true, owner: USER } },
+      childObjectives: { where: { deletedAt: null }, select: { id: true, title: true, projectId: true, parentKeyResultId: true, owner: USER } },
     },
   },
 } satisfies Prisma.ObjectiveInclude;
@@ -66,7 +66,8 @@ const lite = (u: { id: string; name: string; avatarColor: string } | null | unde
 
 /**
  * `hidden` lists projects hidden from the viewer: their tasks still count
- * toward progress (the numbers stay truthful) but aren't listed by title.
+ * toward progress (the numbers stay truthful) but aren't listed by title, and
+ * objectives of those projects don't show up as a child or parent alignment.
  */
 export function resolveObjectives(objectives: ObjectiveWithIncludes[], hidden: Set<string> = new Set()): ObjectiveRow[] {
   const shown = (rows: KeyResultTaskRow[], src: { id: string; projectId: string }[]) => rows.filter((r) => !hidden.has(src.find((t) => t.id === r.id)!.projectId));
@@ -119,11 +120,11 @@ export function resolveObjectives(objectives: ObjectiveWithIncludes[], hidden: S
       projectId: o.projectId,
       project: o.project,
       parentObjectiveId: o.parentObjectiveId,
-      parentKeyResult: o.parentKeyResult
+      parentKeyResult: o.parentKeyResult && !(o.parentKeyResult.objective.projectId && hidden.has(o.parentKeyResult.objective.projectId))
         ? { id: o.parentKeyResult.id, title: o.parentKeyResult.title, objectiveId: o.parentKeyResult.objectiveId, objectiveTitle: o.parentKeyResult.objective.title }
         : null,
       tasks: shown(directTasks, o.tasks),
-      childObjectives: o.keyResults.flatMap((kr) => kr.childObjectives.map((c) => ({ id: c.id, title: c.title, parentKeyResultId: kr.id, owner: lite(c.owner) }))),
+      childObjectives: o.keyResults.flatMap((kr) => kr.childObjectives.filter((c) => !(c.projectId && hidden.has(c.projectId))).map((c) => ({ id: c.id, title: c.title, parentKeyResultId: kr.id, owner: lite(c.owner) }))),
       title: o.title,
       description: o.description,
       owner: lite(o.owner),

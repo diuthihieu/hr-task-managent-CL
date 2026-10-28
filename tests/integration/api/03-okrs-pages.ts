@@ -121,6 +121,53 @@ test("cascading OKRs: a key result can become another person's objective", async
   assert.equal(after.deletedAt, null);
 });
 
+test("OKR links never reach into a project hidden from the user, and linking needs the right to edit the task", async () => {
+  const where = { workspaceId_userId: { workspaceId: s.ws, userId: s.contributorId } };
+  const original = (await prisma.workspaceMember.findUniqueOrThrow({ where })).role;
+  await prisma.workspaceMember.update({ where, data: { role: "editor" } });
+  const objectives: string[] = [];
+  const goal = async (body: Record<string, unknown>) => {
+    const o = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/objectives`, body);
+    assert.equal(o.status, 201, JSON.stringify(o.body));
+    objectives.push(o.body.id);
+    return o.body.id;
+  };
+  const kr = async (objectiveId: string, title: string) => (await admin.post<{ keyResults: { id: string; title: string }[] }>(`/api/objectives/${objectiveId}/key-results`, { title })).body.keyResults.find((k) => k.title === title)!.id;
+  const hiddenTask = (await admin.post<{ id: string }>(`/api/projects/${s.otherProject}/tasks`, { data: { sys_title: "Hidden OKR task" } })).body.id;
+  const narrowed = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Narrowed OKR project" })).body.id;
+  try {
+    const o1 = await goal({ title: "Workspace goal O1" });
+    const k1 = await kr(o1, "K1 linked work");
+    assert.equal((await admin.post(`/api/key-results/${k1}/tasks`, { taskId: hiddenTask })).status, 201);
+    const o2 = await goal({ title: "Hidden child O2", projectId: s.otherProject, parentKeyResultId: k1 });
+    const o3 = await goal({ title: "Hidden goal O3", projectId: s.otherProject });
+    const k3 = await kr(o3, "K3 hidden");
+    const o4 = await goal({ title: "Workspace goal O4", parentKeyResultId: k3 });
+    await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.contributorId] });
+
+    type Obj = { childObjectives: { id: string }[]; parentKeyResult: { id: string; objectiveTitle: string } | null; keyResults: { id: string; tasks: { taskId: string }[] }[] };
+    const v1 = (await contributor.get<Obj>(`/api/objectives/${o1}`)).body;
+    assert.ok(!v1.childObjectives.some((c) => c.id === o2), "a hidden project's objective isn't listed as a child");
+    assert.ok(!v1.keyResults[0].tasks.some((t) => t.taskId === hiddenTask), "nor its task");
+    assert.equal((await contributor.get<Obj>(`/api/objectives/${o4}`)).body.parentKeyResult, null, "a hidden parent key result isn't shown");
+    assert.equal((await contributor.del(`/api/key-results/${k1}/tasks/${hiddenTask}`)).status, 404, "a hidden task can't be unlinked");
+    assert.equal((await prisma.task.findUniqueOrThrow({ where: { id: hiddenTask } })).keyResultId, k1, "and stays linked");
+
+    // Linking a task needs the right to edit it.
+    const t = (await admin.post<{ id: string }>(`/api/projects/${narrowed}/tasks`, { data: { sys_title: "Narrowed task" } })).body.id;
+    assert.equal((await admin.put(`/api/projects/${narrowed}/permissions`, { changes: [{ userId: s.contributorId, permissions: ["task.comment"] }] })).status, 200);
+    assert.equal((await contributor.post(`/api/key-results/${k1}/tasks`, { taskId: t })).status, 403, "a narrowed editor can't re-link the task");
+    assert.equal((await prisma.task.findUniqueOrThrow({ where: { id: t } })).keyResultId, null);
+  } finally {
+    await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
+    await prisma.workspaceMember.update({ where, data: { role: original } });
+    for (const id of objectives.reverse()) await admin.del(`/api/objectives/${id}`);
+    await admin.del(`/api/tasks/${hiddenTask}`);
+    await prisma.projectMemberPermission.deleteMany({ where: { projectId: narrowed } });
+    await admin.del(`/api/projects/${narrowed}`);
+  }
+});
+
 test("record pages and wiki pages store sanitized rich content", async () => {
   const evil = '<p onclick="steal()">Hello <strong>team</strong><script>alert(1)</script><img src="https://evil.example/x.png"><a href="javascript:alert(1)">x</a></p><ul data-type="taskList"><li data-type="taskItem" data-checked="true"><label><input type="checkbox" checked></label><div><p>Done</p></div></li></ul>';
   const put = await contributor.put<{ content: string }>(`/api/tasks/${s.task1}/content`, { content: evil });

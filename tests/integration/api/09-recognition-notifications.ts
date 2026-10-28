@@ -166,6 +166,14 @@ test("recognition: reward catalog, redemption with reserved points, approval and
   assert.equal((await viewer.del(`/api/rewards/${dayOff.id}/image`)).status, 403, "members can't remove pictures");
   assert.equal((await contributor.del(`/api/rewards/${dayOff.id}/image`)).status, 204);
   assert.equal((await viewer.get<{ id: string; imageUrl: string | null }[]>(`/api/workspaces/${s.ws}/rewards`)).body.find((x) => x.id === dayOff.id)?.imageUrl, null);
+  // Editing only sends what changed: a disabled reward stays off and keeps its currency.
+  const usd = await contributor.post<{ id: string }>(`/api/workspaces/${s.ws}/rewards`, { name: "Conference ticket", pointsCost: 9_000_000, price: 300, currency: "USD", quantity: 1 });
+  assert.equal(usd.status, 201, JSON.stringify(usd.body));
+  const off = await contributor.patch<{ active: boolean; currency: string }>(`/api/rewards/${usd.body.id}`, { active: false });
+  assert.deepEqual([off.status, off.body.active, off.body.currency], [200, false, "USD"], "switching it off keeps USD");
+  const renamed = await contributor.patch<{ active: boolean; currency: string }>(`/api/rewards/${usd.body.id}`, { name: "Conference ticket (2027)" });
+  assert.deepEqual([renamed.body.active, renamed.body.currency], [false, "USD"], "renaming doesn't switch it back on");
+  assert.equal((await contributor.del(`/api/rewards/${usd.body.id}`)).status, 204);
   // Edit in place.
   const edited = await contributor.patch<{ name: string; description: string; price: number }>(`/api/rewards/${dayOff.id}`, { name: "Extra day off (1 day)", description: "Book it with your manager", price: 1500000 });
   assert.equal(edited.status, 200);

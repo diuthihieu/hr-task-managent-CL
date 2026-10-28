@@ -64,7 +64,7 @@ export const POST = route<P>(async (_req, { params }) => {
   if (field.type === "ai_field") {
     if (!aiConfigured()) throw new HttpError(503, "AI is not configured on this server (GEMINI_API_KEY missing)");
     if (!config.aiPrompt?.trim()) throw badRequest("Configure an AI prompt for this field first");
-    const context = await taskContext(taskId);
+    const context = await taskContext(taskId, user);
     const result = await generate({
       workspaceId: ctx.workspaceId,
       system: "Compute one task field from the supplied task context. Follow the field instruction exactly. Return only the field value, with no preamble or Markdown fence.",

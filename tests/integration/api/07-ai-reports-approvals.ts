@@ -26,6 +26,38 @@ test("embedded AI actions: grounded in the target, personalized, and never outsi
   assert.equal((await action(admin, { action: "dash_explain", targetId: s.project, targetKind: "project" })).status, 400, "dashboard actions need the chart data");
 });
 
+test("task dependencies never reach into a project hidden from the editor (write, AI context, Home)", async () => {
+  const secret = await admin.post<{ id: string }>(`/api/projects/${s.otherProject}/tasks`, { data: { sys_title: "Secret blocker for merger" } });
+  assert.equal(secret.status, 201);
+  const mine = await contributor.post<{ id: string }>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Contributor task with deps", sys_assignees: [s.contributorId] } });
+  assert.equal(mine.status, 201, JSON.stringify(mine.body));
+  await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [s.contributorId] });
+  try {
+    // A hidden task's id answers exactly like an id that doesn't exist.
+    const missing = await contributor.patch<{ error: string }>(`/api/tasks/${mine.body.id}`, { data: { sys_depends_on: [crypto.randomUUID()] } });
+    const hidden = await contributor.patch<{ error: string }>(`/api/tasks/${mine.body.id}`, { data: { sys_depends_on: [secret.body.id] } });
+    assert.equal(missing.status, 400);
+    assert.deepEqual([hidden.status, hidden.body.error], [missing.status, missing.body.error], "a hidden task can't be linked, and its existence isn't revealed");
+
+    // Someone who sees both projects links them: the hidden title still stays out of the editor's AI context and Home.
+    assert.equal((await admin.patch(`/api/tasks/${mine.body.id}`, { data: { sys_depends_on: [secret.body.id] } })).status, 200);
+    const blockers = await action(contributor, { action: "task_blockers", targetId: mine.body.id });
+    assert.equal(blockers.status, 200, blockers.text);
+    assert.doesNotMatch((await lastModelRequest()).body.systemInstruction!.parts[0].text, /Secret blocker for merger/, "not in the AI context");
+    const slug = (await contributor.get<{ slug: string }>(`/api/workspaces/${s.ws}`)).body.slug;
+    const home = await fetch(`${BASE}/w/${slug}`, { headers: { cookie: contributor.cookieHeader() } });
+    assert.equal(home.status, 200);
+    assert.doesNotMatch(await home.text(), /Secret blocker for merger/, "not on Home");
+
+    // Keeping a dependency someone else made while adding a visible one still works.
+    assert.equal((await contributor.patch(`/api/tasks/${mine.body.id}`, { data: { sys_depends_on: [secret.body.id, s.task2] } })).status, 200);
+  } finally {
+    await admin.put(`/api/projects/${s.otherProject}/visibility`, { hiddenUserIds: [] });
+    await admin.del(`/api/tasks/${mine.body.id}`);
+    await admin.del(`/api/tasks/${secret.body.id}`);
+  }
+});
+
 test("AI dashboard builder: only valid chart specs over real fields are kept", async () => {
   const rep = await admin.post<{ widgets: { id: string; type: string; dimensionFieldId?: string; layout: { x: number; y: number; w: number; h: number } }[] }>("/api/ai/build-widgets", { target: "report", projectId: s.project, prompt: "status overview and workload" });
   assert.equal(rep.status, 200, JSON.stringify(rep.body));

@@ -48,7 +48,7 @@ export const POST = route(async (req) => {
     projectId = ctx.projectId ?? null;
     taskId = body.targetId;
     originType = "task";
-    data = await taskContext(body.targetId);
+    data = await taskContext(body.targetId, user);
   } else if (kind === "okr") {
     const ctx = await requireWorkspaceRole(user, await workspaceOfObjective(body.targetId), "viewer");
     workspaceId = ctx.workspaceId;

@@ -27,7 +27,7 @@ export const POST = route(async (req) => {
   if (body.taskId) {
     const t = await prisma.task.findUniqueOrThrow({ where: { id: body.taskId }, select: { title: true, status: { select: { category: true } } } });
     if (t.status.category !== "done") throw badRequest("The task isn't finished yet");
-    data = await taskRetroContext(body.taskId);
+    data = await taskRetroContext(body.taskId, user);
     label = t.title;
   } else {
     data = await projectRetroContext(body.projectId!);

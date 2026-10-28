@@ -50,7 +50,7 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
     project: { select: { name: true, color: true, icon: true } },
     status: { select: { name: true, color: true, category: true } },
     assignees: { select: { user: { select: { id: true, name: true } } } },
-    dependencies: { select: { dependsOn: { select: { title: true, deletedAt: true, status: { select: { category: true } } } } } },
+    dependencies: { where: { dependsOn: { project: visible } }, select: { dependsOn: { select: { title: true, deletedAt: true, status: { select: { category: true } } } } } },
   } as const;
   const focusFrom = new Date(today.getTime() - 6 * 86400000);
   const [projects, projectCounts, doneCounts, myDone, myTasks, waitingTasks, myOkrs, activity, focusRows, layout] = await Promise.all([

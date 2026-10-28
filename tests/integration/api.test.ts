@@ -2181,11 +2181,78 @@ test("notification settings: per-group pop-up / device switches and a ringtone, 
   const after = await viewer.get<Inbox>("/api/notifications");
   assert.equal(after.body.unreadAll, before.body.unreadAll + 3, "all three are kept");
   assert.equal(after.body.unread, before.body.unread + 1, "only the comment counts: updates are switched off");
-  assert.ok(after.body.items.filter((x) => x.type === "task_updated" || x.type === "task_status").every((x) => x.muted));
-  assert.ok(after.body.items.filter((x) => x.type === "task_comment").every((x) => !x.muted));
+  assert.ok(!after.body.items.some((x) => x.type === "task_updated" || x.type === "task_status"), "switched-off groups are not listed");
+  assert.ok(after.body.items.some((x) => x.type === "task_comment"));
+  // ...but an Action center chip still shows them on request.
+  const chip = await viewer.get<Inbox>("/api/notifications?types=task_status,task_updated");
+  assert.ok(chip.body.items.length >= 2 && chip.body.items.every((x) => x.type === "task_status" || x.type === "task_updated"));
+  assert.ok(chip.body.items.every((x) => x.muted), "flagged as switched off");
+
+  // A busy day of switched-off updates never pushes a mention out of the 100-item list (production bug:
+  // replies with @mentions popped up but were missing from the bell and the Action center).
+  const mention = await prisma.notification.create({ data: { userId, type: "mention", title: "Tam mentioned you", workspaceId: s.ws, createdAt: new Date(Date.now() - 60_000) } });
+  await prisma.notification.createMany({ data: Array.from({ length: 120 }, (_, i) => ({ userId, type: "task_updated", title: `Update ${i}`, workspaceId: s.ws })) });
+  type Full = { unread: number; items: { id: string; type: string; muted: boolean }[]; typeCounts: Record<string, number>; mutedGroups: string[] };
+  const busy = await viewer.get<Full>("/api/notifications");
+  assert.ok(busy.body.items.some((x) => x.id === mention.id), "the mention is still in the bell");
+  assert.equal(busy.body.typeCounts.task_updated >= 121, true, "counts are not capped at 100");
+  assert.deepEqual(busy.body.mutedGroups.sort(), ["ai", "updates"]);
+  const todo = await viewer.get<Full>("/api/notifications?view=todo");
+  assert.ok(todo.body.items.some((x) => x.id === mention.id), "and in the Action center");
+  const mentions = await viewer.get<Full>("/api/notifications?view=todo&types=mention");
+  assert.ok(mentions.body.items.length >= 1 && mentions.body.items.every((x) => x.type === "mention"));
+  assert.equal((await viewer.get("/api/notifications?types=nope;drop")).status, 200, "odd type filters are ignored, not errors");
+  // Switched off in the app but still allowed on the device: the poll still carries them for system notifications.
+  type Dev = { items: { id: string; type: string }[]; deviceItems: { id: string; type: string }[]; rewardReachable: number };
+  const dev = await viewer.get<Dev>("/api/notifications");
+  assert.ok(dev.body.deviceItems.some((x) => x.type === "task_updated") && dev.body.deviceItems.every((x) => ["task_updated", "task_status", "ai_suggestion"].includes(x.type)), "device-only items for system notifications");
+  assert.ok(!dev.body.items.some((x) => x.type === "task_updated"), "but not listed in the bell");
+  await viewer.put("/api/account/notification-settings", { popupOff: ["updates", "ai"], nativeOff: ["updates"] });
+  assert.equal((await viewer.get<Dev>("/api/notifications")).body.deviceItems.length, 0, "off on the device too: nothing to raise");
+  // "You can redeem a reward" AI notices belong to Recognition: listed and counted there, not under AI.
+  const rr = await prisma.notification.create({ data: { userId, type: "ai_suggestion", title: "You can redeem a reward", workspaceId: s.ws, data: { kind: "reward_reachable", points: 120, cost: 100 } } });
+  const recChip = await viewer.get<Dev>("/api/notifications?types=kudos,kudos_reaction,reward_request,reward_result");
+  assert.ok(recChip.body.items.some((x) => x.id === rr.id), "in the Recognition chip");
+  assert.ok(!(await viewer.get<Dev>("/api/notifications?types=ai_suggestion")).body.items.some((x) => x.id === rr.id), "not in the AI chip");
+  assert.ok((await viewer.get<Dev>("/api/notifications")).body.items.some((x) => x.id === rr.id), "AI muted, Recognition on: still in the bell");
+  assert.ok((await viewer.get<Dev>("/api/notifications")).body.rewardReachable >= 1);
+  await prisma.notification.delete({ where: { id: rr.id } });
   // Switching updates back on counts them again.
   await viewer.put("/api/account/notification-settings", { popupOff: [] });
-  assert.equal((await viewer.get<Inbox>("/api/notifications")).body.unread, before.body.unreadAll + 3);
+  assert.equal((await viewer.get<Inbox>("/api/notifications")).body.unread, before.body.unreadAll + 3 + 121);
+  await prisma.notification.deleteMany({ where: { userId, title: { startsWith: "Update " } } });
+  await prisma.notification.delete({ where: { id: mention.id } });
+});
+
+test("web push: devices register with the browsers' push services only; notifications still work with push on", async () => {
+  const cfg = await viewer.get<{ enabled: boolean; publicKey: string | null; devices: number }>("/api/account/push");
+  assert.equal(cfg.status, 200);
+  assert.equal(cfg.body.enabled, true);
+  assert.match(cfg.body.publicKey ?? "", /^[A-Za-z0-9_-]{80,}$/, "the VAPID public key browsers subscribe with");
+  const keys = { p256dh: "B".repeat(87), auth: "A".repeat(22) };
+  // Only browser push services: never an arbitrary host the server would then POST to.
+  for (const endpoint of ["https://evil.example.com/push", "http://fcm.googleapis.com/fcm/send/x", "https://fcm.googleapis.com:8443/x", "https://localhost/x", "not a url"])
+    assert.equal((await viewer.post("/api/account/push", { endpoint, keys })).status, 400, endpoint);
+  const endpoint = "https://fcm.googleapis.com/fcm/send/integration-device-1";
+  assert.equal((await viewer.post("/api/account/push", { endpoint, keys })).status, 201);
+  assert.equal((await viewer.post("/api/account/push", { endpoint, keys })).status, 201, "re-registering is idempotent");
+  assert.equal(await prisma.pushSubscription.count({ where: { endpoint } }), 1);
+  // The same browser signing in as someone else moves the device to them.
+  assert.equal((await contributor.post("/api/account/push", { endpoint, keys })).status, 201);
+  assert.equal((await prisma.pushSubscription.findUniqueOrThrow({ where: { endpoint } })).userId, s.contributorId);
+  // A mention through the app (queued for push; delivery to the push service fails offline) still works.
+  const before = await prisma.notification.count({ where: { userId: s.contributorId, type: "mention" } });
+  const c = await admin.post(`/api/tasks/${s.task1}/comments`, { body: `Push test @[Contributor](${s.contributorId})` });
+  assert.equal(c.status, 201, JSON.stringify(c.body));
+  assert.equal(await prisma.notification.count({ where: { userId: s.contributorId, type: "mention" } }), before + 1);
+  await new Promise((r) => setTimeout(r, 1500)); // let the after-response push attempt run
+  assert.equal((await contributor.get("/api/notifications")).status, 200, "the server keeps serving after a failed delivery");
+  // Only the owner removes a device.
+  await viewer.req("DELETE", "/api/account/push", { endpoint });
+  assert.equal(await prisma.pushSubscription.count({ where: { endpoint } }), 1, "someone else's device stays");
+  await contributor.req("DELETE", "/api/account/push", { endpoint });
+  assert.equal(await prisma.pushSubscription.count({ where: { endpoint } }), 0);
+  assert.equal((await new Client().get("/api/account/push")).status, 401);
 });
 
 test("invite links and invitations for people without an account: accept, decline, revoke, replace", async () => {

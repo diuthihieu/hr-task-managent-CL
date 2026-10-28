@@ -347,6 +347,7 @@ model User {
   knowledgeDocs         KnowledgeDoc[]
   aiConversations       AiConversation[]
   aiUsageEvents         AiUsageEvent[]
+  pushSubscriptions     PushSubscription[]
   savedReports          SavedReport[]
   aiSettingsUpdated     WikiAiSettings[]
   wikisCreated          Wiki[]                    @relation("WikiCreatedByUser")
@@ -2454,4 +2455,22 @@ model FocusRun {
 
   @@index([sessionId, startedAt])
   @@map("focus_runs")
+}
+
+/// A browser / installed app (PWA, Android app) that receives Web Push notifications for a user, so
+/// notifications reach the device while woli is closed. One row per push endpoint.
+model PushSubscription {
+  id         String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  endpoint   String    @unique @db.VarChar(1000)
+  p256dh     String    @db.VarChar(200)
+  auth       String    @db.VarChar(100)
+  userAgent  String?   @map("user_agent") @db.VarChar(300)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastUsedAt DateTime? @map("last_used_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_subscriptions")
 }

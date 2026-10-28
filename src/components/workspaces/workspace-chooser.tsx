@@ -3,7 +3,7 @@ import { NotificationBell } from "@/components/notifications/notification-bell";
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { signOut } from "next-auth/react";
+import { signOutAndUnsubscribe } from "@/components/notifications/web-push";
 import { Plus, Building2, LogOut, Palette, KeyRound, ShieldCheck, MoreHorizontal, DoorOpen, MonitorDown, ChevronRight } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { Button } from "@/components/ui/button";
@@ -130,7 +130,7 @@ export function WorkspaceChooser({ user, workspaces, invites = [] }: { user: { i
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => signOut({ callbackUrl: "/" })}>
+                <DropdownMenuItem onSelect={() => signOutAndUnsubscribe({ callbackUrl: "/" })}>
                   <LogOut size={14} /> {t("auth.signOut")}
                 </DropdownMenuItem>
               </DropdownMenuContent>

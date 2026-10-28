@@ -13,6 +13,7 @@ import { describeNotification, fetchInbox, markAllRead, notificationTitle, timeA
 import { AvatarImg } from "@/components/ui/avatar-img";
 import { Meta, MetaChip, MetaItem } from "@/components/ui/meta";
 import { Clock3 } from "lucide-react";
+import { NOTIFY_GROUPS, type NotifyGroup } from "@/lib/notification-prefs";
 
 type View = "todo" | "all" | "snoozed";
 const GROUPS: { key: string; types: string[] }[] = [
@@ -55,27 +56,42 @@ export function InboxView() {
   const [view, setView] = useState<View>("todo");
   const [group, setGroup] = useState("all");
   const [items, setItems] = useState<NotificationItem[]>([]);
+  const [typeCounts, setTypeCounts] = useState<Record<string, number>>({});
+  const [mutedGroups, setMutedGroups] = useState<NotifyGroup[]>([]);
   const [loaded, setLoaded] = useState(false);
 
+  // The server filters: "All" leaves out the groups switched off in the app (Settings -> Notifications),
+  // a group chip asks for exactly its types (muted or not), and the counts cover the whole view.
   const load = useCallback(async () => {
     try {
-      const r = await api.get<{ items: NotificationItem[] }>(`/api/notifications?view=${view}`);
+      const types = GROUPS.find((x) => x.key === group)?.types ?? [];
+      const r = await api.get<{ items: NotificationItem[]; typeCounts?: Record<string, number>; mutedGroups?: NotifyGroup[] }>(
+        `/api/notifications?view=${view}${types.length ? `&types=${types.join(",")}` : ""}`
+      );
       setItems(r.items);
+      setTypeCounts(r.typeCounts ?? {});
+      setMutedGroups(r.mutedGroups ?? []);
     } finally {
       setLoaded(true);
     }
-  }, [view]);
+  }, [view, group]);
 
   useEffect(() => {
      
     load();
   }, [load]);
 
-  const counts = useMemo(() => Object.fromEntries(GROUPS.map((g) => [g.key, g.types.length ? items.filter((n) => g.types.includes(n.type)).length : items.length])), [items]);
+  const mutedTypes = useMemo(() => new Set(NOTIFY_GROUPS.filter((g) => mutedGroups.includes(g.key)).flatMap((g) => g.types as readonly string[])), [mutedGroups]);
+  const counts = useMemo(() => {
+    const sum = (types: string[]) => types.reduce((n, ty) => n + (typeCounts[ty] ?? 0), 0);
+    const all = Object.entries(typeCounts).reduce((n, [ty, c]) => n + (mutedTypes.has(ty) ? 0 : c), 0);
+    return Object.fromEntries(GROUPS.map((g) => [g.key, g.types.length ? sum(g.types) : all]));
+  }, [typeCounts, mutedTypes]);
   const shown = useMemo(() => {
     const g = GROUPS.find((x) => x.key === group)!;
     return g.types.length ? items.filter((n) => g.types.includes(n.type)) : items;
   }, [items, group]);
+  const mutedLabels = GROUPS.filter((g) => g.types.length && g.types.every((ty) => mutedTypes.has(ty))).map((g) => t(`ac.group.${g.key}` as MessageKey));
 
   async function act(n: NotificationItem, body: Record<string, unknown>, okKey?: MessageKey) {
     try {
@@ -187,6 +203,9 @@ export function InboxView() {
           ))}
         </div>
 
+        {group === "all" && mutedLabels.length > 0 && (
+          <p className="text-[11px] text-neutral-400 mb-2" data-testid="ac-muted-hint">{t("ac.mutedHint", { groups: mutedLabels.join(", ") })}</p>
+        )}
         <div className="rounded-xl border border-neutral-200 dark:border-neutral-800 bg-white dark:bg-neutral-900 divide-y divide-neutral-100 dark:divide-neutral-800 overflow-hidden">
           {loaded && shown.length === 0 && (
             <div className="py-16 flex flex-col items-center gap-2 text-neutral-400">

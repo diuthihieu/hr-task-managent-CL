@@ -1734,6 +1734,7 @@ export const MESSAGES = {
   "snooze.3h": ["In 3 hours", "3 giờ nữa"],
   "snooze.tomorrow": ["Tomorrow 9:00", "9:00 sáng mai"],
   "snooze.nextWeek": ["Next Monday 9:00", "9:00 thứ Hai tới"],
+  "ac.mutedHint": ["Switched off in the app (Settings > Notifications), so not listed here: {groups}. Tap a group to see it.", "Đã tắt trong app (Cài đặt > Thông báo) nên không hiện ở đây: {groups}. Bấm vào nhóm để xem."],
   "ac.note": ["Snoozed items come back to 'To do' at the chosen time.", "Việc tạm hoãn sẽ quay lại mục 'Cần xử lý' đúng giờ đã chọn."],
   "focus.start": ["Start focus", "Bắt đầu tập trung"],
   "focus.inFocus": ["In focus", "Đang tập trung"],

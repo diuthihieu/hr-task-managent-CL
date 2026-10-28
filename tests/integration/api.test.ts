@@ -2181,11 +2181,32 @@ test("notification settings: per-group pop-up / device switches and a ringtone, 
   const after = await viewer.get<Inbox>("/api/notifications");
   assert.equal(after.body.unreadAll, before.body.unreadAll + 3, "all three are kept");
   assert.equal(after.body.unread, before.body.unread + 1, "only the comment counts: updates are switched off");
-  assert.ok(after.body.items.filter((x) => x.type === "task_updated" || x.type === "task_status").every((x) => x.muted));
-  assert.ok(after.body.items.filter((x) => x.type === "task_comment").every((x) => !x.muted));
+  assert.ok(!after.body.items.some((x) => x.type === "task_updated" || x.type === "task_status"), "switched-off groups are not listed");
+  assert.ok(after.body.items.some((x) => x.type === "task_comment"));
+  // ...but an Action center chip still shows them on request.
+  const chip = await viewer.get<Inbox>("/api/notifications?types=task_status,task_updated");
+  assert.ok(chip.body.items.length >= 2 && chip.body.items.every((x) => x.type === "task_status" || x.type === "task_updated"));
+  assert.ok(chip.body.items.every((x) => x.muted), "flagged as switched off");
+
+  // A busy day of switched-off updates never pushes a mention out of the 100-item list (production bug:
+  // replies with @mentions popped up but were missing from the bell and the Action center).
+  const mention = await prisma.notification.create({ data: { userId, type: "mention", title: "Tam mentioned you", workspaceId: s.ws, createdAt: new Date(Date.now() - 60_000) } });
+  await prisma.notification.createMany({ data: Array.from({ length: 120 }, (_, i) => ({ userId, type: "task_updated", title: `Update ${i}`, workspaceId: s.ws })) });
+  type Full = { unread: number; items: { id: string; type: string; muted: boolean }[]; typeCounts: Record<string, number>; mutedGroups: string[] };
+  const busy = await viewer.get<Full>("/api/notifications");
+  assert.ok(busy.body.items.some((x) => x.id === mention.id), "the mention is still in the bell");
+  assert.equal(busy.body.typeCounts.task_updated >= 121, true, "counts are not capped at 100");
+  assert.deepEqual(busy.body.mutedGroups.sort(), ["ai", "updates"]);
+  const todo = await viewer.get<Full>("/api/notifications?view=todo");
+  assert.ok(todo.body.items.some((x) => x.id === mention.id), "and in the Action center");
+  const mentions = await viewer.get<Full>("/api/notifications?view=todo&types=mention");
+  assert.ok(mentions.body.items.length >= 1 && mentions.body.items.every((x) => x.type === "mention"));
+  assert.equal((await viewer.get("/api/notifications?types=nope;drop")).status, 200, "odd type filters are ignored, not errors");
   // Switching updates back on counts them again.
   await viewer.put("/api/account/notification-settings", { popupOff: [] });
-  assert.equal((await viewer.get<Inbox>("/api/notifications")).body.unread, before.body.unreadAll + 3);
+  assert.equal((await viewer.get<Inbox>("/api/notifications")).body.unread, before.body.unreadAll + 3 + 121);
+  await prisma.notification.deleteMany({ where: { userId, title: { startsWith: "Update " } } });
+  await prisma.notification.delete({ where: { id: mention.id } });
 });
 
 test("invite links and invitations for people without an account: accept, decline, revoke, replace", async () => {

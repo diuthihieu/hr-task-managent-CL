@@ -498,7 +498,7 @@ test("security: stolen sessions die on reset, sign-in is throttled, public forms
   assert.equal(health.status, 200);
   assert.deepEqual(Object.keys(await health.json()).sort(), ["db", "ms", "status"]);
 
-  // The audit log can't be edited or deleted, even with the app's database credentials.
+  // The audit log can't be edited or deleted by application code (triggers). They don't stop someone holding the database owner's credentials.
   const row = await prisma.activityLog.findFirstOrThrow();
   await assert.rejects(prisma.activityLog.delete({ where: { id: row.id } }), /append-only/);
 });

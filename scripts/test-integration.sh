@@ -19,6 +19,8 @@ export DESKTOP_RELEASE_TOKEN="$(head -c 48 /dev/urandom | base64 | tr -dc A-Za-z
 eval "$(node -e 'const k=require("web-push").generateVAPIDKeys();console.log(`export VAPID_PUBLIC_KEY=${k.publicKey} VAPID_PRIVATE_KEY=${k.privateKey} VAPID_SUBJECT=mailto:it@integration.test`)')"
 export ADMIN_EMAIL=admin@integration.test ADMIN_PASSWORD=Bootstrap123 ADMIN_NAME="Integration Admin"
 export CRON_SECRET=integration-cron-secret
+# Small batches so the archive test proves the cron loops over several of them.
+export ACTIVITY_LOG_ARCHIVE_BATCH=100
 # New accounts only for these domains (production default: empty = open sign-up).
 export SIGNUP_ALLOWED_DOMAINS=integration.test
 # Behind nginx: only X-Real-IP is trusted (the test client sends it).

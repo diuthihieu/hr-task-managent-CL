@@ -8,6 +8,22 @@ app ships with no pre-loaded business data.
 - Database design, ER diagram, constraints, indexes and risks: **[docs/DATABASE.md](docs/DATABASE.md)**
 - Windows desktop app (Tauri), releases and auto-updates: **[docs/DESKTOP.md](docs/DESKTOP.md)**
 - Schema: [`prisma/schema.prisma`](prisma/schema.prisma) · Migrations: [`prisma/migrations/`](prisma/migrations)
+- Videos and large documents (kept out of git): see [Large files](#large-files)
+
+## Large files
+
+Videos, slide decks and large documents live in the team Google Drive folder
+([woli – videos & documents](https://drive.google.com/drive/folders/1_GzfXFTj2l_T5Tm9a7Cu7-pwPy0KhHaD)),
+not in git, so cloning and CI stay fast. `.gitignore` keeps them out; put new
+ones in the folder and link them here.
+
+| What | File | Size |
+|---|---|---|
+| User guide video (Vietnamese) | [woli-Huong-dan-su-dung-video.mp4](https://drive.google.com/file/d/1PTUfSdQN0lgrrC9mKD_lqrmkgb0fs81y/view) | 27 MB |
+| Subtitles for the user guide video | [woli-Huong-dan-su-dung-video.srt](https://drive.google.com/file/d/1TcpIYKXBtp8xZ2FAppWc-EmoowYjXkHg/view) | 8 KB |
+| User guide slides | [woli-Huong-dan-su-dung.pptx](https://drive.google.com/file/d/1dEyfoRRQ5ATAX10AMlC4WuapYt5jnIXj/view) | 17 MB |
+| Mobile launch video (9:16) | [woli-mobile-launch-9x16.mp4](https://drive.google.com/file/d/1oUr2K-9TzsvMlxqHETvQhawdIL3CQI9g/view) | 19 MB |
+| Vibe coding with Claude Code guide | [Huong-dan-Vibe-Coding-Claude-Code.docx](https://drive.google.com/file/d/1NgsSumkLnnVg33-CnqQ_hnV7zOfyQ6G3/view) | 5 MB |
 
 ## Access model
 

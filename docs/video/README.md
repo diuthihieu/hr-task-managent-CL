@@ -1,8 +1,8 @@
 # woli mobile – launch video (9:16, 52.5 s)
 
 Files:
-- `woli-mobile-launch-9x16.mp4`: 1080×1920, 30 fps, H.264 (CRF 25) + AAC 192 kbps, about 20 MB, ready to post.
-  The CRF 18 master (about 90 MB) is not committed, to keep the repository small. Rebuild it from `source/` if needed.
+- [`woli-mobile-launch-9x16.mp4`](https://drive.google.com/file/d/1oUr2K-9TzsvMlxqHETvQhawdIL3CQI9g/view) (on Google Drive, not in git): 1080×1920, 30 fps, H.264 (CRF 25) + AAC 192 kbps, about 20 MB, ready to post.
+  The CRF 18 master (about 90 MB) is not kept anywhere, to save space. Rebuild it from `source/` if needed.
 - `source/`: everything needed to rebuild the video (see "Rebuild" below).
 
 ## Structure and voice-over (English)

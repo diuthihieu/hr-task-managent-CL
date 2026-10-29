@@ -27,6 +27,7 @@ import "./api/17-ai-caps";
 import "./api/18-invite-limits";
 import "./api/19-client-ip";
 import "./api/20-admin-powers";
+import "./api/21-owner-races";
 
 test.after(async () => {
   // BUG-13: no shared bucket for an unknown address (one stranger would lock everyone out), and no "...:null" keys.

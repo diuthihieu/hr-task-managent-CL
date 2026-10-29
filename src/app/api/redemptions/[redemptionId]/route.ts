@@ -24,7 +24,11 @@ export const PATCH = route<P>(async (req, { params }) => {
   if (red.status !== "pending") throw badRequest("This request was already decided");
   if (body.action === "cancel") {
     if (red.userId !== user.id) throw forbidden("Only the requester can cancel");
-  } else await requireRecognitionManager(user, red.workspaceId, ctx.role);
+  } else {
+    await requireRecognitionManager(user, red.workspaceId, ctx.role);
+    // Rewards can carry money value: someone else decides a manager's own request (BUG-32); they cancel to withdraw it.
+    if (red.userId === user.id) throw forbidden("Someone else must decide your own request - you can cancel it instead");
+  }
 
   await prisma.$transaction(async (tx) => {
     if (body.action === "approve") {

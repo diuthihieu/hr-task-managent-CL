@@ -114,6 +114,9 @@ Open http://localhost:3000, sign up, create a workspace and a project (with
 its categories and, optionally, objectives). Teammates sign up themselves and
 you add them in Settings → Members & roles.
 
+Self-hosting in production (Docker, reverse proxy, `TRUSTED_PROXY`, `AUTH_URL`): see
+[docs/OPERATIONS.md](docs/OPERATIONS.md) "Self-hosting".
+
 Optional, local only: `npm run db:seed` loads a small, clearly-labelled
 `[DEV]` sample workspace for UI work. It refuses to run against a non-local
 database or in production.

@@ -60,8 +60,23 @@ AUTH_SECRET=$(openssl rand -base64 32) POSTGRES_PASSWORD=$(openssl rand -hex 16)
 docker compose run --rm migrate        # after a backup, on every upgrade
 docker compose up -d app
 ```
-PostgreSQL is only published on 127.0.0.1. Put a TLS-terminating proxy in front of the app that overwrites
-`X-Forwarded-For`, and set `AUTH_URL` to the public origin.
+PostgreSQL is only published on 127.0.0.1. Put a TLS-terminating proxy in front of the app and set `AUTH_URL`
+to the public origin.
+
+Client addresses (per-IP rate limits for sign-in, sign-up, password reset and public forms) come only from a
+proxy named in `TRUSTED_PROXY`; any header a client sends itself is ignored:
+- `TRUSTED_PROXY=nginx`: only `X-Real-IP` is read. Configure `proxy_set_header X-Real-IP $remote_addr;` (it
+  overwrites what the client sent). Never use `$proxy_add_x_forwarded_for`: its first entry is client-controlled.
+  If a CDN or load balancer sits in front of nginx, `$remote_addr` is the CDN's address: set `set_real_ip_from`
+  and `real_ip_header` first. Caddy and Traefik append to `X-Forwarded-For` by default: configure them to set
+  `X-Real-IP` from the connection address. In this mode port 3000 must not be reachable from outside (publish
+  it as `"127.0.0.1:3000:3000"` or keep it on the Docker network), or anyone could call the app directly with a
+  made-up `X-Real-IP`.
+- `TRUSTED_PROXY=none` (the default outside Vercel): no address is known. Per-IP limits are skipped and only the
+  per-account / per-form limits apply; sign-up uses one shared limit (`REGISTER_GLOBAL_PER_HOUR`, default 100),
+  which a stranger could fill to pause new sign-ups (existing accounts are unaffected). The server logs a
+  warning at start-up until `TRUSTED_PROXY` is set.
+- On Vercel (`VERCEL` set) the default is `vercel`: the platform's `X-Vercel-Forwarded-For` / `X-Real-IP`.
 
 Signed-in writes (POST / PUT / PATCH / DELETE) are refused with 403 when the browser's `Origin` is another
 site. The Origin's host must match `X-Forwarded-Host` or `Host`, or the origin must equal `AUTH_URL` or be

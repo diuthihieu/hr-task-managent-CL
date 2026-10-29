@@ -5,7 +5,7 @@ import { route, readJson, HttpError } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { assertPasswordPolicy, hashPassword, randomAvatarColor } from "@/lib/passwords";
 import { emailSchema, nameSchema } from "@/lib/validation";
-import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { rateLimit, rateLimitByIp } from "@/lib/rate-limit";
 import { sendVerificationEmail } from "@/lib/email-verification";
 import { appOrigin } from "@/lib/app-origin";
 import { signupDomainAllowed } from "@/lib/signup-policy";
@@ -26,7 +26,8 @@ const schema = z.object({
  * email before it can create or join a workspace.
  */
 export const POST = route(async (req) => {
-  if (!(await rateLimit(`register:${clientIp(req)}`, 10, 60 * 60 * 1000))) throw new HttpError(429, "Too many sign-up attempts. Try again later.");
+  // Unknown address (self-hosted without TRUSTED_PROXY): one shared sign-up limit, since per-address limits don't stop mass sign-up.
+  if (!(await rateLimitByIp(req, "register", 10, 60 * 60 * 1000, { key: "register:global", limit: Number(process.env.REGISTER_GLOBAL_PER_HOUR) || 100, windowMs: 60 * 60 * 1000 }))) throw new HttpError(429, "Too many sign-up attempts. Try again later.");
   const body = schema.parse(await readJson(req));
   const password = assertPasswordPolicy(body.password);
   if (!(await rateLimit(`register-email:${body.email}`, 5, 24 * 3600_000))) throw new HttpError(429, "Too many sign-up attempts. Try again later.");

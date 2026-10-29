@@ -21,6 +21,8 @@ export ADMIN_EMAIL=admin@integration.test ADMIN_PASSWORD=Bootstrap123 ADMIN_NAME
 export CRON_SECRET=integration-cron-secret
 # New accounts only for these domains (production default: empty = open sign-up).
 export SIGNUP_ALLOWED_DOMAINS=integration.test
+# Behind nginx: only X-Real-IP is trusted (the test client sends it).
+export TRUSTED_PROXY=nginx
 unset BLOB_READ_WRITE_TOKEN
 # AI calls go to a local Gemini stub (no real key or network needed). The configured
 # models are "retired", so every call also exercises model discovery.

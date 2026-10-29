@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "./prisma";
+import { readClientIp, resolveProxyMode } from "./client-ip";
 
 // Fixed-window rate limiter shared by every server instance: one atomic
 // upsert per hit in the rate_limits table. Keys should combine the account
@@ -46,11 +47,29 @@ export async function resetRateLimit(key: string) {
 }
 
 /**
- * Best available client address. On Vercel `x-vercel-forwarded-for` / `x-real-ip`
- * are set by the platform (not the client). Behind another proxy, make sure it
- * overwrites X-Forwarded-For; account-based keys can't be spoofed either way.
+ * The client address from the trusted proxy's header (see client-ip.ts and
+ * TRUSTED_PROXY), or null when it can't be known. For logs; rate limits go
+ * through rateLimitByIp so an unknown address never becomes a shared key.
  */
-export function clientIp(req: Request | { headers: Headers }): string {
-  const h = req.headers;
-  return (h.get("x-vercel-forwarded-for")?.split(",")[0] || h.get("x-real-ip") || h.get("x-forwarded-for")?.split(",")[0] || "unknown").trim().slice(0, 64);
+export function clientIp(req: Request | { headers: Headers }): string | null {
+  return readClientIp(req.headers, resolveProxyMode());
+}
+
+/**
+ * Per-IP limit. When the address is unknown, `onUnknown` decides: "skip" (the
+ * route's other limits still apply - never one bucket for everyone, which a
+ * single stranger could fill to lock everybody out), or a separate shared limit
+ * for the rare place where that is the lesser evil (mass sign-up).
+ */
+export async function rateLimitByIp(
+  req: Request | { headers: Headers },
+  prefix: string,
+  limit: number,
+  windowMs: number,
+  onUnknown: "skip" | { key: string; limit: number; windowMs: number }
+): Promise<boolean> {
+  const ip = clientIp(req);
+  if (ip) return rateLimit(`${prefix}:${ip}`, limit, windowMs);
+  if (onUnknown === "skip") return true;
+  return rateLimit(onUnknown.key, onUnknown.limit, onUnknown.windowMs);
 }

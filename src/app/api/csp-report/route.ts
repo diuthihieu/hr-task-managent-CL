@@ -1,4 +1,4 @@
-import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { rateLimitByIp } from "@/lib/rate-limit";
 
 // Content-Security-Policy violation reports (src/proxy.ts, Report-Only for now).
 // Public and fed by anyone, so: POST only, small bodies, short fields, one log
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
     return new Response(null, { status: 400 });
   }
   // Same answer either way; over the limit, reports are just not logged.
-  if (!(await rateLimit(`csp-report:${clientIp(req)}`, 60, 60_000))) return new Response(null, { status: 204 });
+  if (!(await rateLimitByIp(req, "csp-report", 60, 60_000, { key: "csp-report:any", limit: 600, windowMs: 60_000 }))) return new Response(null, { status: 204 });
   // application/csp-report: { "csp-report": {...} }; application/reports+json: [{ type, body }].
   const reports = Array.isArray(parsed) ? parsed.slice(0, 10).map((r) => (r as { body?: unknown })?.body) : [(parsed as { "csp-report"?: unknown })?.["csp-report"]];
   for (const r of reports) {

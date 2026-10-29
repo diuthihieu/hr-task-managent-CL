@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { route, readJson, HttpError } from "@/lib/authz";
-import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { rateLimitByIp } from "@/lib/rate-limit";
 import { assertPasswordPolicy, hashPassword } from "@/lib/passwords";
 import { userForResetToken } from "@/lib/password-reset";
 import { logSecurityEvent } from "@/lib/auth";
@@ -12,7 +12,7 @@ const schema = z.object({ token: z.string().max(2000), password: z.string() });
 
 /** Sets the new password from a valid link; every signed-in device is signed out. */
 export const POST = route(async (req) => {
-  if (!(await rateLimit(`pw-reset-confirm:${clientIp(req)}`, 20, 3600_000))) throw new HttpError(429, "Too many attempts - try again later");
+  if (!(await rateLimitByIp(req, "pw-reset-confirm", 20, 3600_000, "skip"))) throw new HttpError(429, "Too many attempts - try again later");
   const body = schema.parse(await readJson(req));
   const password = assertPasswordPolicy(body.password);
   const user = await userForResetToken(body.token);

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, badRequest, notFound } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, badRequest, forbidden, notFound } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { PROJECT_OWNER_ROLES, ownedProjectsWhere } from "@/lib/member-roles";
 
@@ -28,13 +28,21 @@ export const GET = route<P>(async (_req, { params }) => {
 
 /**
  * Hand over everything a member owns (e.g. someone leaving or changing role):
- * their projects, objectives and key results get the new owner. Admins only.
+ * their projects, objectives and key results get the new owner. Admins may do
+ * it once the member is deactivated or has left; while the member is active
+ * only the workspace owner may (BUG-31) - otherwise an admin could take back a
+ * project its owner hid from them. Owners hand over a single project through
+ * /projects/{id}/owner as before.
  */
 export const POST = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { workspaceId, userId } = await params;
-  await requireWorkspaceRole(user, workspaceId, "admin");
+  const ctx = await requireWorkspaceRole(user, workspaceId, "admin");
   const { toUserId } = schema.parse(await readJson(req));
+  if (ctx.role !== "owner") {
+    const source = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId } }, select: { user: { select: { isActive: true, deletedAt: true } } } });
+    if (source && source.user.isActive && !source.user.deletedAt) throw forbidden("Only the workspace owner can hand over an active member's work - deactivate or remove the member first");
+  }
   if (toUserId === userId) throw badRequest("Choose another member");
   const to = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId: toUserId } }, include: { user: { select: { name: true, isActive: true } } } });
   if (!to) throw notFound("Member");

@@ -56,7 +56,13 @@ export const PATCH = route<{ userId: string }>(async (req, { params }) => {
     if (body.name && body.name !== target.name) await log("updated", `Renamed ${target.name} to ${body.name}`);
     if (body.systemRole && body.systemRole !== target.systemRole) await log("role_changed", `${target.email}: ${target.systemRole} to ${body.systemRole}`);
     if (body.isActive !== undefined && body.isActive !== target.isActive) await log(body.isActive ? "activated" : "deactivated", `${body.isActive ? "Reactivated" : "Deactivated"} ${target.email}`);
-    if (temporaryPassword) await log("password_reset", `Reset password for ${target.email}`);
+    if (temporaryPassword) {
+      await log("password_reset", `Reset password for ${target.email}`);
+      // ...and in each of their workspaces, so the workspace's admins see it too (BUG-31).
+      const memberships = await tx.workspaceMember.findMany({ where: { userId, workspace: { deletedAt: null } }, select: { workspaceId: true } });
+      for (const m of memberships)
+        await logActivity(tx, { workspaceId: m.workspaceId, actorId: admin.id, entityType: "user", entityId: userId, action: "password_reset", summary: `System admin ${admin.email} reset the password of ${target.email}` });
+    }
     if (body.verifyEmail && !target.emailVerifiedAt) await log("updated", `Verified email ${target.email}`);
   });
   return NextResponse.json({ ok: true, temporaryPassword });

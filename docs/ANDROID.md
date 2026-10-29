@@ -61,6 +61,26 @@ After a reviewer approves the `release` environment, the signed build runs.
 Pull requests that touch `mobile/android` build an unsigned debug APK (workflow artifact) to check the
 code; they never see the signing key.
 
+## Links from other apps
+
+The launcher has to be exported, so any app on the phone can start woli with a URL. The app opens only
+`https://<appHost>/...` (same host, default port); any other URL is ignored and the start page opens
+instead (`WoliLauncherActivity`, BUG-35). This matters most in the web-view fallback, which has no
+address bar. To check on an emulator or phone (ideally with Chrome disabled, so the fallback is used):
+
+```bash
+# Foreign page -> woli start page
+adb shell am start -n vn.woli.app/com.google.androidbrowserhelper.trusted.LauncherActivity \
+  -a android.intent.action.VIEW -d https://example.com/
+# woli deep link -> that page
+adb shell am start -n vn.woli.app/com.google.androidbrowserhelper.trusted.LauncherActivity \
+  -a android.intent.action.VIEW -d "https://<appHost>/w/<workspaceId>"
+```
+
+`com.google.androidbrowserhelper.trusted.LauncherActivity` is now an alias of `WoliLauncherActivity`
+that keeps the component name of earlier versions, so home-screen icons survive the update. The URL
+rule is unit-tested (`LaunchUrlPolicyTest`, run by pull-request builds).
+
 ## iPhone / iPad
 
 Apple only distributes apps through the App Store / TestFlight (Apple Developer account, review). iPhone

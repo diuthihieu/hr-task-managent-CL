@@ -14,16 +14,27 @@
         <!-- Proves to Chrome that this app may open the woli site full screen (matches /.well-known/assetlinks.json). -->
         <meta-data android:name="asset_statements" android:resource="@string/assetStatements" />
 
+        <!-- The launcher. Only woli's own https pages are opened from an incoming link; anything else
+             falls back to the start page (BUG-35). Not exported: other apps reach it through the alias. -->
         <activity
-            android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
-            android:exported="true"
+            android:name=".WoliLauncherActivity"
+            android:exported="false"
             android:label="@string/appName">
             <meta-data android:name="android.support.customtabs.trusted.DEFAULT_URL" android:value="@string/launchUrl" />
             <meta-data android:name="android.support.customtabs.trusted.STATUS_BAR_COLOR" android:resource="@color/statusBar" />
             <meta-data android:name="android.support.customtabs.trusted.NAVIGATION_BAR_COLOR" android:resource="@color/navigationBar" />
             <!-- Phones without Chrome (or another TWA browser) open woli in a built-in web view instead. -->
             <meta-data android:name="android.support.customtabs.trusted.FALLBACK_STRATEGY" android:value="webview" />
+        </activity>
 
+        <!-- Keeps the component name of earlier versions, so home-screen icons still work after an update.
+             It must be exported to be the launcher and to receive woli links. -->
+        <!-- nosemgrep: java.android.security.exported_activity.exported_activity -->
+        <activity-alias
+            android:name="com.google.androidbrowserhelper.trusted.LauncherActivity"
+            android:targetActivity=".WoliLauncherActivity"
+            android:exported="true"
+            android:label="@string/appName">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
@@ -36,7 +47,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" android:host="${hostName}" />
             </intent-filter>
-        </activity>
+        </activity-alias>
 
         <activity android:name="com.google.androidbrowserhelper.trusted.FocusActivity" />
         <activity

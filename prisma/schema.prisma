@@ -347,6 +347,7 @@ model User {
   knowledgeDocs         KnowledgeDoc[]
   aiConversations       AiConversation[]
   aiUsageEvents         AiUsageEvent[]
+  aiUsageMonthly        AiUsageMonthly[]
   pushSubscriptions     PushSubscription[]
   savedReports          SavedReport[]
   aiSettingsUpdated     WikiAiSettings[]
@@ -432,6 +433,7 @@ model Workspace {
   knowledgeDocs       KnowledgeDoc[]
   aiConversations     AiConversation[]
   aiUsageEvents       AiUsageEvent[]
+  aiUsageMonthly      AiUsageMonthly[]
   savedReports        SavedReport[]
   wikis               Wiki[]
   decisions           Decision[]
@@ -887,6 +889,8 @@ model ActivityLogArchive {
   action      String   @db.VarChar(40)
   summary     String?
   changes     Json?
+  ip          String?  @db.VarChar(64)
+  userAgent   String?  @map("user_agent") @db.VarChar(300)
   createdAt   DateTime @map("created_at") @db.Timestamptz(6)
   archivedAt  DateTime @default(now()) @map("archived_at") @db.Timestamptz(6)
 
@@ -1352,6 +1356,30 @@ model AiUsageEvent {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@map("ai_usage_events")
+}
+
+/// Monthly totals of ai_usage_events rows older than AI_USAGE_RETENTION_DAYS, kept
+/// when the raw rows are deleted (all-time figures = this table + ai_usage_events).
+/// `key` = month|workspace|user|feature|model, for the roll-up's upsert.
+model AiUsageMonthly {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key         String    @unique @db.VarChar(400)
+  month       DateTime  @db.Date
+  workspaceId String?   @map("workspace_id") @db.Uuid
+  userId      String?   @map("user_id") @db.Uuid
+  feature     String    @db.VarChar(160)
+  model       String?   @db.VarChar(80)
+  requests    Int       @default(0)
+  tokensIn    BigInt    @default(0) @map("tokens_in")
+  tokensOut   BigInt    @default(0) @map("tokens_out")
+  /// Latest call rolled into this row (keeps "last AI use" once the raw rows are gone).
+  lastAt      DateTime? @map("last_at") @db.Timestamptz(6)
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, month])
+  @@map("ai_usage_monthly")
 }
 
 enum AiConversationKind {

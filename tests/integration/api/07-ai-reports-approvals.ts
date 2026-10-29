@@ -140,8 +140,9 @@ test("wiki comments: mentions, replies, delete rights, and the wiki AI reads the
   assert.equal(reply.status, 201);
   assert.equal((await outsider.get(`/api/wiki/${page.body.id}/comments`)).status, 404);
   assert.equal((await contributor.del(`/api/wiki-comments/${c.body.id}`)).status, 403, "not the author, not a manager");
-  const list = await viewer.get<unknown[]>(`/api/wiki/${page.body.id}/comments`);
-  assert.equal(list.body.length, 2);
+  const list = await viewer.get<{ items: unknown[]; nextCursor: string | null }>(`/api/wiki/${page.body.id}/comments`);
+  assert.equal(list.body.items.length, 2);
+  assert.equal(list.body.nextCursor, null);
   const r = await ask(admin, { kind: "wiki", wikiId: s.wiki, message: "What does the discussion say about sick leave?" });
   assert.equal(r.status, 200, r.text);
   assert.match((await lastModelRequest()).body.systemInstruction!.parts[0].text, /certificate after 2 days/, "comments are part of the wiki's knowledge");

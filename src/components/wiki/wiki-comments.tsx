@@ -1,6 +1,6 @@
 "use client";
 import { prependMention } from "@/lib/mentions";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { MessageSquare, Paperclip, Send, Trash2, X, CornerDownRight, Loader2, FileText } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
@@ -10,6 +10,8 @@ import { MentionInput, CommentBody } from "@/components/comments/mention-input";
 import { AttachmentViewer } from "@/components/attachments/attachment-viewer";
 import { formatDate, initials, cn } from "@/lib/utils";
 import { AvatarImg } from "@/components/ui/avatar-img";
+import { LoadMore } from "@/components/ui/load-more";
+import { usePagedList } from "@/lib/use-paged-list";
 
 interface FileRow {
   id: string;
@@ -24,6 +26,8 @@ interface WikiCommentRow {
   createdAt: string;
   author: { id: string; name: string; avatarColor: string } | null;
   attachments: FileRow[];
+  /** Top-level comments: all replies, of which at most 100 are loaded with the page. */
+  replyCount?: number;
 }
 
 const MAX_FILE = 4 * 1024 * 1024;
@@ -35,7 +39,8 @@ const MAX_FILE = 4 * 1024 * 1024;
  */
 export function WikiComments({ pageId, currentUserId, canManage }: { pageId: string; currentUserId: string | null; canManage: boolean }) {
   const { t } = useT();
-  const [items, setItems] = useState<WikiCommentRow[]>([]);
+  const list = usePagedList<WikiCommentRow>(`/api/wiki/${pageId}/comments`, "before");
+  const { items, setItems } = list;
   const [draft, setDraft] = useState("");
   const [replyTo, setReplyTo] = useState<WikiCommentRow | null>(null);
   const [files, setFiles] = useState<FileRow[]>([]);
@@ -43,14 +48,6 @@ export function WikiComments({ pageId, currentUserId, canManage }: { pageId: str
   const [sending, setSending] = useState(false);
   const [viewer, setViewer] = useState<{ files: FileRow[]; index: number } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    let alive = true;
-    api.get<WikiCommentRow[]>(`/api/wiki/${pageId}/comments`).then((r) => alive && setItems(r)).catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [pageId]);
 
   async function upload(list: FileList) {
     setUploading(true);
@@ -95,7 +92,8 @@ export function WikiComments({ pageId, currentUserId, canManage }: { pageId: str
     if (!confirm(t("wc.deleteConfirm"))) return;
     try {
       await api.delete(`/api/wiki-comments/${c.id}`);
-      setItems((prev) => prev.filter((x) => x.id !== c.id && x.parentCommentId !== c.id));
+      // Its replies stay (product decision) and show as top-level comments, as the server lists them.
+      setItems((prev) => prev.filter((x) => x.id !== c.id));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
@@ -149,6 +147,7 @@ export function WikiComments({ pageId, currentUserId, canManage }: { pageId: str
           </div>
         )}
         {!nested && repliesOf(c.id).map((r) => view(r, true))}
+        {!nested && (c.replyCount ?? 0) > repliesOf(c.id).length && <p className="mt-2 text-xs text-neutral-400">{t("common.moreReplies", { count: (c.replyCount ?? 0) - repliesOf(c.id).length })}</p>}
       </div>
     </div>
   );
@@ -156,9 +155,10 @@ export function WikiComments({ pageId, currentUserId, canManage }: { pageId: str
   return (
     <section id="comments" className="mt-10 border-t border-neutral-200 dark:border-neutral-800 pt-6" data-testid="wiki-comments">
       <h2 className="flex items-center gap-2 text-sm font-semibold text-neutral-800 dark:text-neutral-100 mb-4">
-        <MessageSquare size={15} /> {t("wc.title")} <span className="text-neutral-400 font-normal">{items.length}</span>
+        <MessageSquare size={15} /> {t("wc.title")} <span className="text-neutral-400 font-normal">{items.length}{list.hasMore ? "+" : ""}</span>
       </h2>
       <div className="space-y-5 mb-5">
+        <LoadMore hasMore={list.hasMore} loading={list.loadingMore} onClick={list.loadMore} label={t("common.loadOlderComments")} testId="wiki-comments-load-older" />
         {roots.length === 0 && <p className="text-xs text-neutral-400">{t("wc.empty")}</p>}
         {roots.map((c) => view(c))}
       </div>

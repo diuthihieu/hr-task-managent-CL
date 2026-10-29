@@ -31,6 +31,7 @@ export const POST = route<P>(async (req, { params }) => {
       summary: existing ? `Removed ${emoji} reaction` : `Reacted ${emoji}`,
       changes: { reaction: { from: existing ? emoji : null, to: existing ? null : emoji } },
     });
+    // Unpaged on purpose: reactions on one comment (fixed emoji set x people).
     return tx.commentReaction.findMany({ where: { commentId }, orderBy: { createdAt: "asc" }, select: { emoji: true, userId: true, user: { select: { name: true } } } });
   });
 

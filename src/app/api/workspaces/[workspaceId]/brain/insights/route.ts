@@ -20,6 +20,7 @@ export const POST = route<P>(async (_req, { params }) => {
   const { user, access, base } = await brainContext(workspaceId);
   await assertAi(user.id);
   const f = await forYou(access, base);
+  // Unpaged on purpose: ids of the caller's current tasks from forYou() (already capped).
   const tasks = await prisma.task.findMany({
     where: { id: { in: f.myTasks.map((t) => t.id) } },
     select: { title: true, dueDate: true, status: { select: { name: true } }, project: { select: { name: true } } },

@@ -14,6 +14,7 @@ export const GET = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { projectId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "viewer");
+  // Unpaged on purpose: views of one project (configuration).
   const [views, rights] = await Promise.all([prisma.view.findMany({ where: { projectId }, orderBy: { sortOrder: "asc" } }), viewRights(ctx, projectId)]);
   return NextResponse.json(views.map((view) => serializeView(view, { canEdit: rights.canEdit, canDelete: rights.canDelete(view) })));
 });

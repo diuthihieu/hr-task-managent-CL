@@ -12,6 +12,7 @@ export const GET = route<P>(async (_req, { params }) => {
   const { user, canManage, seePoints, settings } = await recoContext(workspaceId);
   const [balances, rewards, unreadKudos, received, pendingRequests] = await Promise.all([
     pointBalances(prisma, workspaceId, [user.id]),
+    // Unpaged on purpose: active rewards of one workspace (catalog).
     prisma.reward.findMany({ where: { workspaceId, active: true, deletedAt: null }, select: { id: true, name: true, pointsCost: true, quantity: true, approvedCount: true }, orderBy: { pointsCost: "asc" } }),
     prisma.kudos.count({ where: { workspaceId, toId: user.id, deletedAt: null, readAt: null } }),
     prisma.kudos.count({ where: { workspaceId, toId: user.id, deletedAt: null } }),

@@ -28,6 +28,8 @@ import type { ActivityRow, AttachmentRow, FieldRow, RecordRow } from "@/types";
 import { Meta } from "@/components/ui/meta";
 import { uploadTaskAttachment } from "@/lib/task-attachment-upload";
 import { InlineArrow } from "@/components/ui/inline-arrow";
+import { LoadMore } from "@/components/ui/load-more";
+import { usePagedList } from "@/lib/use-paged-list";
 
 interface ProjectDetail {
   id: string;
@@ -58,10 +60,13 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [record, setRecord] = useState<RecordRow | null>(null);
   const [content, setContent] = useState<string | null | undefined>(undefined);
-  const [attachments, setAttachments] = useState<AttachmentRow[]>([]);
+  const attachmentList = usePagedList<AttachmentRow>(`/api/tasks/${taskId}/attachments`, "after");
+  const { items: attachments, setItems: setAttachments } = attachmentList;
   const [viewing, setViewing] = useState<number | null>(null);
-  const [comments, setComments] = useState<TaskCommentItem[]>([]);
-  const [activity, setActivity] = useState<ActivityRow[]>([]);
+  const commentList = usePagedList<TaskCommentItem>(`/api/tasks/${taskId}/comments`, "before");
+  const { items: comments, setItems: setComments } = commentList;
+  const activityList = usePagedList<ActivityRow>(`/api/tasks/${taskId}/activity`, "after");
+  const { items: activity } = activityList;
   const [siblings, setSiblings] = useState<{ id: string; label: string }[]>([]);
   /** All tasks of the project: parent chain and sub-tasks of this task. */
   const [projectTasks, setProjectTasks] = useState<RecordRow[]>([]);
@@ -77,9 +82,10 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
   const fileRef = useRef<HTMLInputElement>(null);
   const tasksHref = `/w/${workspaceSlug}/p/${projectId}`;
 
+  const reloadActivity = activityList.reload;
   const loadActivity = useCallback(() => {
-    api.get<ActivityRow[]>(`/api/tasks/${taskId}/activity`).then(setActivity).catch(() => {});
-  }, [taskId]);
+    reloadActivity().catch(() => {});
+  }, [reloadActivity]);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,8 +97,6 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
         setContent(c.content);
       })
       .catch(() => !cancelled && setNotFound(true));
-    api.get<AttachmentRow[]>(`/api/tasks/${taskId}/attachments`).then((a) => !cancelled && setAttachments(a)).catch(() => {});
-    api.get<TaskCommentItem[]>(`/api/tasks/${taskId}/comments`).then((c) => !cancelled && setComments(c)).catch(() => {});
     api
       .get<RecordRow[]>(`/api/projects/${projectId}/tasks`)
       .then((rows) => {
@@ -101,11 +105,10 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
         setSiblings(rows.map((r) => ({ id: r.id, label: String(r.data.sys_title ?? "") })));
       })
       .catch(() => {});
-    loadActivity();
     return () => {
       cancelled = true;
     };
-  }, [projectId, taskId, loadActivity]);
+  }, [projectId, taskId]);
 
   const fields = useMemo(() => project?.fields ?? [], [project]);
   const role = project?.myRole ?? "viewer";
@@ -380,7 +383,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
             <div className="flex items-center gap-2 mb-2">
               <Paperclip size={15} className="text-neutral-400" />
               <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100">
-                {t("record.attachments")} <span className="text-neutral-400 font-normal">({attachments.length})</span>
+                {t("record.attachments")} <span className="text-neutral-400 font-normal">({attachments.length}{attachmentList.hasMore ? "+" : ""})</span>
               </h2>
               {canEdit && (
                 <>
@@ -431,11 +434,13 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
                 ))}
               </div>
             )}
+            <LoadMore hasMore={attachmentList.hasMore} loading={attachmentList.loadingMore} onClick={attachmentList.loadMore} testId="attachments-load-more" />
           </section>
 
           {/* Comments inline on narrow screens (the side panel is hidden there). */}
           <section className="mt-8 lg:hidden">
             <h2 className="text-sm font-semibold text-neutral-800 dark:text-neutral-100 mb-2">{t("record.comments")}</h2>
+            <LoadMore hasMore={commentList.hasMore} loading={commentList.loadingMore} onClick={commentList.loadMore} label={t("common.loadOlderComments")} testId="comments-load-older" />
             <TaskCommentThread
               comments={comments}
               onReply={startReply}
@@ -454,7 +459,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
         <div className="flex items-center gap-1 px-3 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
           {(
             [
-              ["comments", `${t("record.comments")} (${comments.length})`, MessageSquare],
+              ["comments", `${t("record.comments")} (${comments.length}${commentList.hasMore ? "+" : ""})`, MessageSquare],
               ["activity", t("record.activity"), History],
             ] as const
           ).map(([key, label, Icon]) => (
@@ -469,14 +474,17 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
         </div>
         <div className="flex-1 overflow-y-auto thin-scroll p-3 space-y-3">
           {side === "comments" ? (
-            <TaskCommentThread
-              comments={comments}
-              onReply={startReply}
-              onDelete={deleteComment}
-              canDelete={(comment) => comment.user?.id === currentUserId || canModerate}
-              onReactionsChange={(commentId, reactions) => setComments((current) => current.map((comment) => (comment.id === commentId ? { ...comment, reactions } : comment)))}
-              empty={<p className="text-xs text-neutral-400">{t("record.noComments")}</p>}
-            />
+            <>
+              <LoadMore hasMore={commentList.hasMore} loading={commentList.loadingMore} onClick={commentList.loadMore} label={t("common.loadOlderComments")} testId="comments-load-older" />
+              <TaskCommentThread
+                comments={comments}
+                onReply={startReply}
+                onDelete={deleteComment}
+                canDelete={(comment) => comment.user?.id === currentUserId || canModerate}
+                onReactionsChange={(commentId, reactions) => setComments((current) => current.map((comment) => (comment.id === commentId ? { ...comment, reactions } : comment)))}
+                empty={<p className="text-xs text-neutral-400">{t("record.noComments")}</p>}
+              />
+            </>
           ) : null}
           {side === "activity" &&
             (activity.length ? (
@@ -500,6 +508,7 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
             ) : (
               <p className="text-xs text-neutral-400">{t("record.noActivity")}</p>
             ))}
+          {side === "activity" && <LoadMore hasMore={activityList.hasMore} loading={activityList.loadingMore} onClick={activityList.loadMore} testId="activity-load-more" />}
         </div>
         {side === "comments" && (
           <div className="border-t border-neutral-200 dark:border-neutral-800 p-3 shrink-0">

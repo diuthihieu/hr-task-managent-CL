@@ -59,6 +59,7 @@ export const PATCH = route<{ userId: string }>(async (req, { params }) => {
     if (temporaryPassword) {
       await log("password_reset", `Reset password for ${target.email}`);
       // ...and in each of their workspaces, so the workspace's admins see it too (BUG-31).
+      // Unpaged on purpose: one user's workspace memberships.
       const memberships = await tx.workspaceMember.findMany({ where: { userId, workspace: { deletedAt: null } }, select: { workspaceId: true } });
       for (const m of memberships)
         await logActivity(tx, { workspaceId: m.workspaceId, actorId: admin.id, entityType: "user", entityId: userId, action: "password_reset", summary: `System admin ${admin.email} reset the password of ${target.email}` });

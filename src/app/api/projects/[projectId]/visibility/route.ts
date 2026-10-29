@@ -19,7 +19,9 @@ export const GET = route<P>(async (_req, { params }) => {
   const ctx = await requireWorkspaceRole(user, await workspaceOfProject(projectId), "viewer");
   const [project, members, hidden] = await Promise.all([
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { ownerId: true, createdById: true } }),
+    // Unpaged on purpose: members of one workspace (team size).
     prisma.workspaceMember.findMany({ where: { workspaceId: ctx.workspaceId }, include: { user: { select: { id: true, name: true, email: true, avatarColor: true } } }, orderBy: { createdAt: "asc" } }),
+    // Unpaged on purpose: people hidden from one project (at most the team).
     prisma.projectHiddenMember.findMany({ where: { projectId }, select: { userId: true } }),
   ]);
   let canManage = true;
@@ -58,6 +60,7 @@ export const PUT = route<P>(async (req, { params }) => {
   const body = schema.parse(await readJson(req));
   const wanted = [...new Set(body.hiddenUserIds)];
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { ownerId: true, createdById: true, name: true } });
+  // Unpaged on purpose: ids from the request, members only.
   const members = await prisma.workspaceMember.findMany({ where: { workspaceId: ctx.workspaceId, userId: { in: wanted } }, select: { userId: true, role: true } });
   if (members.length !== wanted.length) throw badRequest("Only workspace members can be hidden from a project");
   for (const m of members) {
@@ -66,6 +69,7 @@ export const PUT = route<P>(async (req, { params }) => {
     if (reason === "self") throw badRequest("You can't hide a project from yourself");
   }
   await prisma.$transaction(async (tx) => {
+    // Unpaged on purpose: people hidden from one project (at most the team).
     const before = await tx.projectHiddenMember.findMany({ where: { projectId }, select: { userId: true } });
     const beforeIds = new Set(before.map((b) => b.userId));
     const add = wanted.filter((id) => !beforeIds.has(id));

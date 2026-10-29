@@ -10,6 +10,7 @@ import { allowedArtifactUrl, artifactPrefixes } from "@/lib/release-urls";
 /** Every release incl. unpublished ones (Admin console). */
 export const GET = route(async () => {
   await requireAdmin();
+  // Unpaged on purpose: one row per published app version.
   const rows = await prisma.desktopRelease.findMany({ orderBy: [{ publishedAt: "desc" }] });
   return NextResponse.json(rows.map(serializeRelease));
 });

@@ -24,8 +24,11 @@ export const GET = route<P>(async (_req, { params }) => {
   await assertCanManageProject(ctx, projectId);
   const [owner, members, hidden, rows] = await Promise.all([
     projectOwner(projectId),
+    // Unpaged on purpose: members of one workspace (team size).
     prisma.workspaceMember.findMany({ where: { workspaceId: ctx.workspaceId, user: { deletedAt: null } }, include: { user: { select: { id: true, name: true, email: true, avatarColor: true, isActive: true } } }, orderBy: { createdAt: "asc" } }),
+    // Unpaged on purpose: people hidden from one project (at most the team).
     prisma.projectHiddenMember.findMany({ where: { projectId }, select: { userId: true } }),
+    // Unpaged on purpose: per-person rights in one project (at most the team).
     prisma.projectMemberPermission.findMany({ where: { projectId }, select: { userId: true, permissions: true } }),
   ]);
   const hiddenIds = new Set(hidden.map((h) => h.userId));
@@ -71,6 +74,7 @@ export const PUT = route<P>(async (req, { params }) => {
   if (ids.length !== changes.length) throw badRequest("One change per member");
   const [owner, members] = await Promise.all([
     projectOwner(projectId),
+    // Unpaged on purpose: ids from the request (max 1000 changes).
     prisma.workspaceMember.findMany({ where: { workspaceId: ctx.workspaceId, userId: { in: ids } }, select: { userId: true, role: true } }),
   ]);
   if (members.length !== ids.length) throw badRequest("Only workspace members have rights in a project");

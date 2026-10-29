@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { X, Trash2, Send, Paperclip, Download, History, MessageSquare, ListChecks, Maximize2, Reply } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
@@ -20,6 +20,8 @@ import type { ActivityRow, AttachmentRow, FieldRow, RecordRow } from "@/types";
 import { Meta } from "@/components/ui/meta";
 import { uploadTaskAttachment } from "@/lib/task-attachment-upload";
 import { InlineArrow } from "@/components/ui/inline-arrow";
+import { LoadMore } from "@/components/ui/load-more";
+import { usePagedList } from "@/lib/use-paged-list";
 import { prependMention, stripMentions } from "@/lib/mentions";
 
 type Tab = "details" | "comments" | "files" | "activity";
@@ -75,9 +77,12 @@ export function RecordDrawer({
 }) {
   const { t } = useT();
   const [tab, setTab] = useState<Tab>("details");
-  const [comments, setComments] = useState<TaskCommentItem[]>([]);
-  const [attachments, setAttachments] = useState<AttachmentRow[]>([]);
-  const [activity, setActivity] = useState<ActivityRow[]>([]);
+  const commentList = usePagedList<TaskCommentItem>(`/api/tasks/${record.id}/comments`, "before");
+  const attachmentList = usePagedList<AttachmentRow>(`/api/tasks/${record.id}/attachments`, "after");
+  const activityList = usePagedList<ActivityRow>(`/api/tasks/${record.id}/activity`, "after");
+  const { items: comments, setItems: setComments } = commentList;
+  const { items: attachments, setItems: setAttachments } = attachmentList;
+  const activity = activityList.items;
   const [draft, setDraft] = useState("");
   const [replyTo, setReplyTo] = useState<TaskCommentItem | null>(null);
   /** The comment just posted, checked by AI for a task to propose. */
@@ -87,15 +92,19 @@ export function RecordDrawer({
   const fileRef = useRef<HTMLInputElement>(null);
   const primary = fields.find((f) => f.isPrimary);
 
-  const loadSide = useCallback(() => {
-    api.get<TaskCommentItem[]>(`/api/tasks/${record.id}/comments`).then(setComments).catch(() => {});
-    api.get<AttachmentRow[]>(`/api/tasks/${record.id}/attachments`).then(setAttachments).catch(() => {});
-    api.get<ActivityRow[]>(`/api/tasks/${record.id}/activity`).then(setActivity).catch(() => {});
-  }, [record.id]);
-
+  // The lists load when a task opens; an edit to the same task (new updatedAt) refreshes their first pages.
+  const { reload: reloadComments } = commentList;
+  const { reload: reloadAttachments } = attachmentList;
+  const { reload: reloadActivity } = activityList;
+  const seen = useRef({ id: record.id, updatedAt: record.updatedAt });
   useEffect(() => {
-    loadSide();
-  }, [loadSide, record.updatedAt]);
+    const changed = seen.current.id === record.id && seen.current.updatedAt !== record.updatedAt;
+    seen.current = { id: record.id, updatedAt: record.updatedAt };
+    if (!changed) return;
+    reloadComments().catch(() => {});
+    reloadAttachments().catch(() => {});
+    reloadActivity().catch(() => {});
+  }, [record.id, record.updatedAt, reloadComments, reloadAttachments, reloadActivity]);
 
   async function postComment() {
     if (!draft.trim()) return;
@@ -174,8 +183,8 @@ export function RecordDrawer({
           {(
             [
               ["details", t("record.properties"), ListChecks],
-              ["comments", `${t("record.comments")} (${comments.length})`, MessageSquare],
-              ["files", `${t("record.attachments")} (${attachments.length})`, Paperclip],
+              ["comments", `${t("record.comments")} (${comments.length}${commentList.hasMore ? "+" : ""})`, MessageSquare],
+              ["files", `${t("record.attachments")} (${attachments.length}${attachmentList.hasMore ? "+" : ""})`, Paperclip],
               ["activity", t("record.activity"), History],
             ] as const
           ).map(([key, label, Icon]) => (
@@ -238,12 +247,15 @@ export function RecordDrawer({
             <CommentTaskSuggestion key={suggestFor} taskId={record.id} commentId={suggestFor} onDone={() => setSuggestFor(null)} onCreated={onTaskCreated} />
           ) : null}
           {tab === "comments" && (
-            <TaskCommentThread
-              comments={comments}
-              onReply={startReply}
-              onReactionsChange={(commentId, reactions) => setComments((current) => current.map((comment) => (comment.id === commentId ? { ...comment, reactions } : comment)))}
-              empty={<p className="text-xs text-neutral-400">{t("record.noComments")}</p>}
-            />
+            <>
+              <LoadMore hasMore={commentList.hasMore} loading={commentList.loadingMore} onClick={commentList.loadMore} label={t("common.loadOlderComments")} testId="comments-load-older" />
+              <TaskCommentThread
+                comments={comments}
+                onReply={startReply}
+                onReactionsChange={(commentId, reactions) => setComments((current) => current.map((comment) => (comment.id === commentId ? { ...comment, reactions } : comment)))}
+                empty={<p className="text-xs text-neutral-400">{t("record.noComments")}</p>}
+              />
+            </>
           )}
 
           {tab === "files" && (
@@ -280,6 +292,7 @@ export function RecordDrawer({
                 </div>
               ))}
               {attachments.length === 0 && <p className="text-xs text-neutral-400">{t("record.noAttachments")}</p>}
+              <LoadMore hasMore={attachmentList.hasMore} loading={attachmentList.loadingMore} onClick={attachmentList.loadMore} testId="attachments-load-more" />
             </div>
           )}
 
@@ -304,6 +317,7 @@ export function RecordDrawer({
                 </div>
               ))}
               {activity.length === 0 && <p className="text-xs text-neutral-400">{t("record.noActivity")}</p>}
+              <LoadMore hasMore={activityList.hasMore} loading={activityList.loadingMore} onClick={activityList.loadMore} testId="activity-load-more" />
             </div>
           )}
         </div>

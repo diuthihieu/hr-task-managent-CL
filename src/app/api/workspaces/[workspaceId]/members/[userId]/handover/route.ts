@@ -50,6 +50,7 @@ export const POST = route<P>(async (req, { params }) => {
   if (!PROJECT_OWNER_ROLES.includes(to.role) && (await prisma.project.count({ where: ownedProjectsWhere(workspaceId, userId) })))
     throw badRequest("Projects can only be handed to an editor or above");
   const result = await prisma.$transaction(async (tx) => {
+    // Unpaged on purpose: projects owned by one member (ids only, not returned).
     const projectIds = (await tx.project.findMany({ where: ownedProjectsWhere(workspaceId, userId), select: { id: true } })).map((p) => p.id);
     await tx.project.updateMany({ where: { id: { in: projectIds } }, data: { ownerId: toUserId, updatedById: user.id } });
     // The new owner must be able to see the projects they now own.

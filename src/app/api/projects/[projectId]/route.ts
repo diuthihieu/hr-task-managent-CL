@@ -19,7 +19,9 @@ export const GET = route<P>(async (_req, { params }) => {
   if (!meta) throw notFound("Project");
   const [project, views, members, workspace] = await Promise.all([
     prisma.project.findUniqueOrThrow({ where: { id: projectId } }),
+    // Unpaged on purpose: views of one project (configuration).
     prisma.view.findMany({ where: { projectId }, orderBy: { sortOrder: "asc" } }),
+    // Unpaged on purpose: members of one workspace (team size).
     prisma.workspaceMember.findMany({
       where: { workspaceId: ctx.workspaceId, user: { isActive: true, deletedAt: null } },
       include: { user: { select: { id: true, name: true, avatarColor: true } } },

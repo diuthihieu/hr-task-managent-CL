@@ -17,8 +17,11 @@ export const GET = route<P>(async (_req, { params }) => {
   await requireRecognitionManager(user, workspaceId, ctx.role);
   const [rules, members, managers, overrides] = await Promise.all([
     pointRules(workspaceId),
+    // Unpaged on purpose: members of one workspace (team size).
     prisma.workspaceMember.findMany({ where: { workspaceId, user: { isActive: true, deletedAt: null } }, select: { role: true, user: { select: { id: true, name: true, email: true, avatarColor: true } } }, orderBy: { user: { name: "asc" } } }),
+    // Unpaged on purpose: recognition managers of one workspace.
     prisma.recognitionManager.findMany({ where: { workspaceId }, select: { userId: true } }),
+    // Unpaged on purpose: recognition settings per member (team size).
     prisma.recognitionMember.findMany({ where: { workspaceId } }),
   ]);
   return NextResponse.json({

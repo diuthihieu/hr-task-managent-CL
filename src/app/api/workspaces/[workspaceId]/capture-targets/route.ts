@@ -13,7 +13,9 @@ export const GET = route<P>(async (_req, { params }) => {
   await requireWorkspaceRole(user, workspaceId, "contributor");
   const [projects, categories, statuses] = await Promise.all([
     prisma.project.findMany({ where: { workspaceId, deletedAt: null, ...visibleProjectWhere(user), status: { in: ["active", "on_hold"] } }, orderBy: { sortOrder: "asc" } }),
+    // Unpaged on purpose: categories of the workspace (configuration).
     prisma.category.findMany({ where: { workspaceId }, orderBy: { sortOrder: "asc" } }),
+    // Unpaged on purpose: statuses of the workspace (configuration).
     prisma.status.findMany({ where: { workspaceId }, orderBy: { sortOrder: "asc" } }),
   ]);
   const statusOptions = statuses.map((s) => ({ id: s.id, label: s.name, color: s.color }));

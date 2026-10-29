@@ -14,6 +14,7 @@ export const GET = route<P>(async (req, { params }) => {
   const { workspaceId } = await params;
   await requireWorkspaceRole(user, workspaceId, "viewer");
   const withRoles = new URL(req.url).searchParams.get("withRoles") === "1";
+  // Unpaged on purpose: members of one workspace (team size).
   const members = await prisma.workspaceMember.findMany({
     where: { workspaceId, user: withRoles ? { deletedAt: null } : { isActive: true, deletedAt: null } },
     include: { user: { select: { id: true, name: true, email: true, avatarColor: true, isActive: true } } },

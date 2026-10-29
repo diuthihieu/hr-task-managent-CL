@@ -10,6 +10,7 @@ import { uuid } from "@/lib/validation";
 import { mentionedUserIds, stripMentions } from "@/lib/mentions";
 import { sanitizeCommentBody, taskCommentImageIds } from "@/lib/comment-rich-text-server";
 import { summarizeCommentReactions } from "@/lib/comment-reactions";
+import { assertCursor, pageArgs, readPage, toPage } from "@/lib/pagination";
 
 type P = { taskId: string };
 
@@ -28,12 +29,34 @@ function serializeComment<T extends { author: unknown; reactions: { emoji: strin
   return { ...rest, user: author, reactions: summarizeCommentReactions(reactions, currentUserId) };
 }
 
-export const GET = route<P>(async (_req, { params }) => {
+/** Replies shown per comment; `replyCount` on the comment tells how many there are in all. */
+const MAX_REPLIES = 100;
+
+/**
+ * `{ items, nextCursor }`: a page of top-level comments, newest page first (`?cursor=` loads older
+ * ones), in display order - oldest first, each followed by its replies (one level, at most 100).
+ * Replies whose comment was deleted are not shown (the thread view hides them too).
+ */
+export const GET = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { taskId } = await params;
   await requireWorkspaceRole(user, await workspaceOfTask(taskId), "viewer");
-  const comments = await prisma.comment.findMany({ where: { taskId, deletedAt: null }, orderBy: { createdAt: "asc" }, select });
-  return NextResponse.json((await withCurrentMentionNames(comments)).map((comment) => serializeComment(comment, user.id)));
+  const page = readPage(req);
+  const roots = { taskId, deletedAt: null, parentCommentId: null };
+  if (page.cursor) assertCursor(await prisma.comment.findFirst({ where: { ...roots, id: page.cursor }, select: { id: true } }));
+  const rows = await prisma.comment.findMany({
+    where: roots,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    ...pageArgs(page),
+    select: {
+      ...select,
+      replies: { where: { deletedAt: null }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: MAX_REPLIES, select },
+      _count: { select: { replies: { where: { deletedAt: null } } } },
+    },
+  });
+  const { items, nextCursor } = toPage(rows, page);
+  const flat = items.reverse().flatMap(({ replies, _count, ...comment }) => [{ ...comment, replyCount: _count.replies }, ...replies]);
+  return NextResponse.json({ items: (await withCurrentMentionNames(flat)).map((comment) => serializeComment(comment, user.id)), nextCursor });
 });
 
 const createSchema = z.object({ body: z.string().trim().min(1, "Comment cannot be empty").max(10000), parentCommentId: uuid.nullable().optional() });
@@ -57,6 +80,7 @@ export const POST = route<P>(async (req, { params }) => {
   const wanted = mentionedUserIds(commentBody);
   const mentioned = wanted.length
     ? (
+        // Unpaged on purpose: people @mentioned in one comment.
         await prisma.workspaceMember.findMany({
           where: { workspaceId: ctx.workspaceId, userId: { in: wanted }, user: { isActive: true, hiddenProjects: { none: { projectId: ctx.projectId } } } },
           select: { userId: true },

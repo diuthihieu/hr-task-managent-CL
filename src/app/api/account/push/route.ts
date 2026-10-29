@@ -30,6 +30,7 @@ export const POST = route(async (req) => {
     update: { userId: user.id, p256dh: b.keys.p256dh, auth: b.keys.auth, userAgent },
   });
   // Keep the newest devices only.
+  // Unpaged on purpose: only the caller's devices beyond the first 20 (at most a handful).
   const extra = await prisma.pushSubscription.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" }, skip: MAX_DEVICES, select: { id: true } });
   if (extra.length) await prisma.pushSubscription.deleteMany({ where: { id: { in: extra.map((x) => x.id) } } });
   return NextResponse.json({ ok: true }, { status: 201 });

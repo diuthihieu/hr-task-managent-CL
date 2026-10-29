@@ -21,6 +21,7 @@ export const POST = route<P>(async (req, { params }) => {
   const caps = await projectCaps(ctx, projectId);
   if (!caps.has("task.delete")) throw forbidden("You can't delete tasks in this project");
   const deleted = await prisma.$transaction(async (tx) => {
+    // Unpaged on purpose: ids from the request (max 1000).
     const tasks = await tx.task.findMany({
       where: { id: { in: ids }, projectId, deletedAt: null },
       select: { id: true, title: true, createdById: true, assignees: { where: { userId: user.id }, select: { userId: true } } },

@@ -13,6 +13,7 @@ export const GET = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { projectId } = await params;
   await requireWorkspaceRole(user, await workspaceOfProject(projectId), "viewer");
+  // Unpaged on purpose: categories of one project (configuration).
   const rows = await prisma.category.findMany({
     where: { projectId },
     orderBy: { sortOrder: "asc" },

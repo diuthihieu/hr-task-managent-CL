@@ -18,6 +18,7 @@ export const GET = route<P>(async (_req, { params }) => {
   const ctx = await requireWiki(user, wikiId, "viewer");
   const [wiki, members] = await Promise.all([
     prisma.wiki.findUniqueOrThrow({ where: { id: wikiId }, select: { createdById: true, members: { select: { userId: true, role: true } } } }),
+    // Unpaged on purpose: members of one workspace (team size).
     prisma.workspaceMember.findMany({ where: { workspaceId: ctx.workspaceId }, include: { user: { select: { id: true, name: true, email: true, avatarColor: true } } }, orderBy: { createdAt: "asc" } }),
   ]);
   const explicit = new Map(wiki.members.map((m) => [m.userId, m.role]));

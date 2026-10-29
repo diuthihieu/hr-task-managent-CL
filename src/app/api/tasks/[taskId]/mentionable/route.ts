@@ -9,6 +9,7 @@ export const GET = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { taskId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfTask(taskId), "viewer");
+  // Unpaged on purpose: members of one workspace (team size).
   const members = await prisma.workspaceMember.findMany({
     where: { workspaceId: ctx.workspaceId, user: { isActive: true, deletedAt: null, hiddenProjects: { none: { projectId: ctx.projectId } } } },
     select: { user: { select: { id: true, name: true, email: true, avatarColor: true } } },

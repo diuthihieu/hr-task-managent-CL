@@ -13,6 +13,7 @@ export const GET = route(async () => {
     const all = await prisma.workspace.findMany({ where: { deletedAt: null }, orderBy: { createdAt: "asc" } });
     return NextResponse.json(all.map((w) => ({ id: w.id, name: w.name, slug: w.slug, role: "owner" })));
   }
+  // Unpaged on purpose: the caller's own workspace memberships.
   const memberships = await prisma.workspaceMember.findMany({
     where: { userId: user.id, workspace: { deletedAt: null } },
     include: { workspace: true },

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
-import { BASE, prisma } from "./context";
+import { BASE, prisma, admin } from "./context";
 
 // BUG-04: the nightly cron moves audit rows older than the retention period into
 // activity_log_archives. activity_logs is append-only (trigger activity_logs_no_delete),
@@ -84,4 +84,22 @@ test("AI usage older than the retention is rolled up by month, then deleted; all
   assert.equal(month[0].requests, 2);
   assert.equal(Number(month[0].tokensIn), 30);
   assert.equal(Number(month[0].tokensOut), 12);
+  assert.equal(month[0].lastAt?.toISOString(), new Date(at.getTime() + DAY).toISOString(), "the latest rolled-up call is kept");
+});
+
+test("AI usage: a user's last AI use survives the roll-up; the retention never cuts into the 12-week chart", async () => {
+  const user = await prisma.user.create({ data: { email: "rolled.up@integration.test", name: "Rolled Up", systemRole: "MEMBER", passwordHash: "x" } });
+  const at = new Date(Date.UTC(2024, 2, 10));
+  await prisma.aiUsageEvent.create({ data: { userId: user.id, feature: "/api/test-last-ai", tokensIn: 3, tokensOut: 4, createdAt: at } });
+  assert.equal((await cron(`Bearer ${process.env.CRON_SECRET}`)).status, 200);
+  assert.equal(await prisma.aiUsageEvent.count({ where: { userId: user.id } }), 0, "rolled up");
+  const stats = await admin.get<{ userRows: { id: string; lastAiAt: string | null; aiTokensAll: number }[] }>("/api/admin/stats");
+  const row = stats.body.userRows.find((u) => u.id === user.id);
+  assert.ok(row, "the user is listed");
+  assert.equal(row.aiTokensAll, 7);
+  assert.equal(new Date(row.lastAiAt as string).toISOString(), at.toISOString(), "last AI use kept");
+  // An event 90 days old (inside the 12-week chart) is never rolled up, whatever AI_USAGE_RETENTION_DAYS says.
+  const { aiUsageRetentionDays } = await import("../../../src/lib/activity-archive");
+  assert.ok(aiUsageRetentionDays({ AI_USAGE_RETENTION_DAYS: "30" }) >= 12 * 7 + 7);
+  assert.equal(aiUsageRetentionDays({}), 400);
 });

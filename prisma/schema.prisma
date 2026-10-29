@@ -1362,16 +1362,18 @@ model AiUsageEvent {
 /// when the raw rows are deleted (all-time figures = this table + ai_usage_events).
 /// `key` = month|workspace|user|feature|model, for the roll-up's upsert.
 model AiUsageMonthly {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  key         String   @unique @db.VarChar(400)
-  month       DateTime @db.Date
-  workspaceId String?  @map("workspace_id") @db.Uuid
-  userId      String?  @map("user_id") @db.Uuid
-  feature     String   @db.VarChar(160)
-  model       String?  @db.VarChar(80)
-  requests    Int      @default(0)
-  tokensIn    BigInt   @default(0) @map("tokens_in")
-  tokensOut   BigInt   @default(0) @map("tokens_out")
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  key         String    @unique @db.VarChar(400)
+  month       DateTime  @db.Date
+  workspaceId String?   @map("workspace_id") @db.Uuid
+  userId      String?   @map("user_id") @db.Uuid
+  feature     String    @db.VarChar(160)
+  model       String?   @db.VarChar(80)
+  requests    Int       @default(0)
+  tokensIn    BigInt    @default(0) @map("tokens_in")
+  tokensOut   BigInt    @default(0) @map("tokens_out")
+  /// Latest call rolled into this row (keeps "last AI use" once the raw rows are gone).
+  lastAt      DateTime? @map("last_at") @db.Timestamptz(6)
 
   workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user      User?      @relation(fields: [userId], references: [id], onDelete: SetNull)

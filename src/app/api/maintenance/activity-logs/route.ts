@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { archiveOldActivityLogs, rollUpOldAiUsage } from "@/lib/activity-archive";
+import { aiUsageRetentionDays, archiveOldActivityLogs, rollUpOldAiUsage } from "@/lib/activity-archive";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -38,7 +38,7 @@ export async function GET(req: Request) {
     hasMore = r.deleted === batch;
   }
 
-  const aiDays = Math.max(30, Number(process.env.AI_USAGE_RETENTION_DAYS) || 400);
+  const aiDays = aiUsageRetentionDays();
   const aiCutoff = new Date(started - aiDays * DAY);
   let aiRolledUp = 0;
   let aiHasMore = true;

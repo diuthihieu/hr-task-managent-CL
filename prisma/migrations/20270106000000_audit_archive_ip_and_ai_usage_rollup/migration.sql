@@ -27,6 +27,7 @@ CREATE TABLE "ai_usage_monthly" (
     "requests" INTEGER NOT NULL DEFAULT 0,
     "tokens_in" BIGINT NOT NULL DEFAULT 0,
     "tokens_out" BIGINT NOT NULL DEFAULT 0,
+    "last_at" TIMESTAMPTZ(6),
 
     CONSTRAINT "ai_usage_monthly_pkey" PRIMARY KEY ("id")
 );

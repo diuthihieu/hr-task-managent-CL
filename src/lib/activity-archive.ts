@@ -49,6 +49,15 @@ export async function archiveOldActivityLogs(db: Pick<PrismaClient, "$transactio
 }
 
 /**
+ * Days of raw AI usage kept (AI_USAGE_RETENTION_DAYS, default 400). Never fewer
+ * than the admin overview's 12-week chart plus a week: that chart reads raw rows
+ * by week, which monthly totals can't rebuild.
+ */
+export function aiUsageRetentionDays(env: Record<string, string | undefined> = process.env) {
+  return Math.max(12 * 7 + 7, Number(env.AI_USAGE_RETENTION_DAYS) || 400);
+}
+
+/**
  * Deletes ai_usage_events rows older than `cutoff` (one batch) and adds them to
  * ai_usage_monthly in the same statement, so all-time totals never change.
  * Returns the number of rows deleted.
@@ -59,21 +68,22 @@ export async function rollUpOldAiUsage(db: Pick<PrismaClient, "$queryRaw">, cuto
       SELECT id FROM ai_usage_events WHERE created_at < ${cutoff} ORDER BY created_at ASC LIMIT ${batch} FOR UPDATE SKIP LOCKED
     ), deleted AS (
       DELETE FROM ai_usage_events AS e USING picked WHERE e.id = picked.id
-      RETURNING e.workspace_id, e.user_id, e.feature, e.model, e.tokens_in, e.tokens_out,
+      RETURNING e.workspace_id, e.user_id, e.feature, e.model, e.tokens_in, e.tokens_out, e.created_at,
                 date_trunc('month', e.created_at AT TIME ZONE 'UTC')::date AS month
     ), totals AS (
       SELECT month, workspace_id, user_id, feature, model, count(*)::int AS requests,
-             sum(tokens_in)::bigint AS tokens_in, sum(tokens_out)::bigint AS tokens_out
+             sum(tokens_in)::bigint AS tokens_in, sum(tokens_out)::bigint AS tokens_out, max(created_at) AS last_at
       FROM deleted GROUP BY month, workspace_id, user_id, feature, model
     ), merged AS (
-      INSERT INTO ai_usage_monthly (key, month, workspace_id, user_id, feature, model, requests, tokens_in, tokens_out)
+      INSERT INTO ai_usage_monthly (key, month, workspace_id, user_id, feature, model, requests, tokens_in, tokens_out, last_at)
       SELECT concat_ws('|', month, coalesce(workspace_id::text, '-'), coalesce(user_id::text, '-'), feature, coalesce(model, '-')),
-             month, workspace_id, user_id, feature, model, requests, tokens_in, tokens_out
+             month, workspace_id, user_id, feature, model, requests, tokens_in, tokens_out, last_at
       FROM totals
       ON CONFLICT (key) DO UPDATE SET
         requests = ai_usage_monthly.requests + EXCLUDED.requests,
         tokens_in = ai_usage_monthly.tokens_in + EXCLUDED.tokens_in,
-        tokens_out = ai_usage_monthly.tokens_out + EXCLUDED.tokens_out
+        tokens_out = ai_usage_monthly.tokens_out + EXCLUDED.tokens_out,
+        last_at = GREATEST(ai_usage_monthly.last_at, EXCLUDED.last_at)
       RETURNING 1
     )
     SELECT (SELECT count(*)::int FROM deleted) AS deleted, (SELECT count(*) FROM merged) AS merged

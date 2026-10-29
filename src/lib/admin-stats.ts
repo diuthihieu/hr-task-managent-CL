@@ -146,7 +146,8 @@ export async function loadAdminOverview(): Promise<AdminOverview> {
     SELECT u.id, u.name, u.email,
       (SELECT count(*) FROM workspace_members m JOIN workspaces w ON w.id = m.workspace_id WHERE m.user_id = u.id AND w.deleted_at IS NULL) AS workspaces,
       coalesce(ai.req30, 0) AS ai_req30, coalesce(ai.tok30, 0) AS ai_tok30,
-      coalesce(ai.tok_all, 0) + (SELECT coalesce(sum(mo.tokens_in + mo.tokens_out), 0) FROM ai_usage_monthly mo WHERE mo.user_id = u.id) AS ai_tok_all, ai.last_ai,
+      coalesce(ai.tok_all, 0) + (SELECT coalesce(sum(mo.tokens_in + mo.tokens_out), 0) FROM ai_usage_monthly mo WHERE mo.user_id = u.id) AS ai_tok_all,
+      GREATEST(ai.last_ai, (SELECT max(mo.last_at) FROM ai_usage_monthly mo WHERE mo.user_id = u.id)) AS last_ai,
       (SELECT coalesce(sum(size_bytes), 0) FROM attachments a WHERE a.uploaded_by = u.id AND a.deleted_at IS NULL)
         + (SELECT coalesce(sum(size_bytes), 0) FROM knowledge_docs k WHERE k.created_by = u.id AND k.deleted_at IS NULL)
         + (SELECT coalesce(sum(size_bytes), 0) FROM agent_outputs g WHERE g.created_by = u.id AND g.deleted_at IS NULL) AS storage

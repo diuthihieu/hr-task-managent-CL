@@ -13,6 +13,13 @@ setup("sign up and build a workspace", async ({ request }) => {
   const registered = await request.post("/api/register", { data: { email, password, name: "Hieu Diu-Thi", locale: "vi" } });
   expect(registered.status()).toBe(201);
   const { id: userId } = (await registered.json()) as { id: string };
+  // Stands in for the verification email (there's no mail server here): creating a workspace needs a verified address.
+  const db = new PrismaClient();
+  try {
+    await db.user.update({ where: { id: userId }, data: { emailVerifiedAt: new Date() } });
+  } finally {
+    await db.$disconnect();
+  }
   const { csrfToken } = await (await request.get("/api/auth/csrf")).json();
   await request.post("/api/auth/callback/credentials", { form: { csrfToken, email, password, callbackUrl: "/" }, maxRedirects: 0 });
   const post = async (url: string, data: unknown) => {

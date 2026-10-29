@@ -136,8 +136,22 @@ database or in production.
 | `cd desktop && npm run dev` / `npm run build` | Run / package the Windows desktop app (see docs/DESKTOP.md) |
 
 To change the schema: edit `prisma/schema.prisma`, run
-`npx prisma migrate dev --name <change>`, commit the generated migration.
-Never alter the database by hand.
+`npx prisma migrate dev --create-only --name <change>`, rename the new folder
+(see below), then `npx prisma migrate dev` and commit the migration. Never
+alter the database by hand.
+
+### Naming migrations
+
+Prisma applies migrations in folder-name order, and many existing folders
+carry future dates (the newest is in 2027). `prisma migrate dev` names a new
+folder after the real UTC time, which would land in the middle of the list
+(and fail on the shadow database if it touches a newer table). Until the real
+date passes the newest folder name, rename each new folder to a prefix one
+step above the newest existing one (e.g. after `20270105000000_push_subscriptions`
+use `20270106000000_<change>`). Never rename a folder that is already on
+`master`: production records applied migrations by name. CI
+(`scripts/check-migration-order.mjs`) fails a pull request whose new
+migration doesn't sort last.
 
 ## Deploying to Vercel
 

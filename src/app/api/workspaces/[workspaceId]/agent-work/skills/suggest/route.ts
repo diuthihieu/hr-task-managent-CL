@@ -4,6 +4,7 @@ import { aiConfigured, generate, parseJsonAnswer } from "@/lib/ai/gemini";
 import { badRequest, requireUser, requireWorkspaceRole, readJson, route } from "@/lib/authz";
 import { AGENT_ARTIFACT_FORMATS } from "@/lib/agent-work/artifact-contract";
 import { AGENT_TOOLS } from "@/lib/agent-work/tools";
+import { assertAgentAiQuota } from "@/lib/agent-work/engine";
 
 type P = { workspaceId: string };
 
@@ -30,6 +31,7 @@ export const POST = route<P>(async (req, { params }) => {
   await requireWorkspaceRole(user, workspaceId, "viewer");
   if (!aiConfigured()) throw badRequest("AI must be configured to suggest a Skill");
   const body = requestSchema.parse(await readJson(req));
+  await assertAgentAiQuota(user.id);
   const availableTools = AGENT_TOOLS.filter((tool) => tool.available).map((tool) => ({ name: tool.name, label: tool.label, risk: tool.risk }));
   const response = await generate({
     workspaceId,

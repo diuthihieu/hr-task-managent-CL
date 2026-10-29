@@ -2,6 +2,7 @@ import "server-only";
 import { HttpError } from "../http-errors";
 import { rankModels, type ListedModel } from "./models";
 import { currentAiContext, recordAiUsage } from "./usage";
+import { rateLimit } from "../rate-limit";
 
 // Minimal Gemini API client over REST (no SDK): generateContent and
 // streamGenerateContent (SSE). Configure with environment variables:
@@ -325,9 +326,37 @@ async function generateCollected(opts: GenerateOptions, total: number): Promise<
   return { text, model, ...usage };
 }
 
+let lastGlobalCapWarning = 0;
+
+/**
+ * Caps every AI call (BUG-05), on top of the routes' own limits: per user
+ * (AI_USER_CALLS_PER_10MIN, default 60 per 10 minutes) then system-wide
+ * (AI_GLOBAL_CALLS_PER_HOUR, default 600 per hour). User first: rateLimit counts
+ * refused hits too, so a blocked user must not keep spending the shared cap.
+ * Counted per generate / streamGenerate call, not per request to Google (one
+ * call can try several models). Calls without a user (none today) only hit the
+ * system-wide cap. The system-wide cap is also a lever for a few accounts to
+ * switch AI off for everyone; keep it well above real use.
+ */
+async function assertAiCaps() {
+  const userId = currentAiContext()?.userId;
+  if (userId && !(await rateLimit(`ai-user:${userId}`, Number(process.env.AI_USER_CALLS_PER_10MIN) || 60, 10 * 60_000))) {
+    throw new HttpError(429, "Too many AI requests - please wait a few minutes");
+  }
+  if (!(await rateLimit("ai-global", Number(process.env.AI_GLOBAL_CALLS_PER_HOUR) || 600, 60 * 60_000))) {
+    // Once an hour per instance, so an attack doesn't flood the logs.
+    if (Date.now() - lastGlobalCapWarning > 60 * 60_000) {
+      lastGlobalCapWarning = Date.now();
+      console.warn("[ai] global AI cap reached (AI_GLOBAL_CALLS_PER_HOUR): AI calls are refused until the hour resets");
+    }
+    throw new HttpError(429, "The AI service is busy - please try again later");
+  }
+}
+
 /** One-shot generation. Calls with a long budget (> 60 s) are streamed and collected. */
 export async function generate(opts: GenerateOptions): Promise<{ text: string; model: string } & Usage> {
   await assertWorkspaceAi(opts.workspaceId);
+  await assertAiCaps();
   if ((opts.timeBudgetMs ?? 0) > 60_000) {
     const r = await generateCollected(opts, opts.timeBudgetMs!);
     recordAiUsage({ workspaceId: opts.workspaceId, model: r.model, tokensIn: r.tokensIn, tokensOut: r.tokensOut });
@@ -346,6 +375,7 @@ export async function generate(opts: GenerateOptions): Promise<{ text: string; m
 /** Streaming generation: yields text chunks; `usage` is filled in when the stream ends. */
 export async function streamGenerate(opts: GenerateOptions, usage: Usage, signal?: AbortSignal): Promise<AsyncGenerator<string>> {
   await assertWorkspaceAi(opts.workspaceId);
+  await assertAiCaps();
   const { res, model } = await callWithFallback("streamGenerateContent", { ...requestInit(opts), signal });
   if (!res.body) throw new HttpError(502, "The AI service returned an empty response");
   // The stream is read after the route returns, so the request context is captured now.

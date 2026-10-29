@@ -1,9 +1,20 @@
-FROM node:20-alpine AS base
+# Node 24 (active LTS), the same major as CI, pinned by digest so every build
+# uses the same image; Dependabot (docker) proposes digest updates.
+FROM node:24-alpine@sha256:8a32c8cf649a49915a66e81e7a609223c708d0adabf288ee3f4077d765542f85 AS base
 
 FROM base AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
+
+# Schema upgrades (docker compose run --rm migrate): the Prisma CLI from the
+# lockfile, so `prisma migrate deploy` never downloads a different version at run
+# time. Not root: the official image's `node` user (uid 1000).
+FROM deps AS migrator
+COPY prisma ./prisma
+RUN npx --no-install prisma generate
+USER node
+CMD ["sh", "-c", "node prisma/check-legacy-data.mjs && npx --no-install prisma migrate deploy"]
 
 FROM base AS builder
 WORKDIR /app

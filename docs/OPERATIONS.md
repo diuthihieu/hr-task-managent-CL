@@ -46,6 +46,14 @@ mode gets a `support_access` entry in its activity log.
 - Unverified email (password sign-up without a mail provider): confirm ownership out of band, then Admin console
   -> "Mark email as verified".
 
+## Accepted risks
+- Account existence (BUG-14 part 2, not done on purpose): signing up with an address that already has an account
+  answers 409, and "forgot password" takes a little longer for existing addresses when mail is configured. Hiding
+  this would mean refusing password sign-in until the email is verified, which locks out existing unverified users
+  and blocks everyone when mail is down. Mitigations in place: sign-up limits per IP (10/hour) and per address
+  (5/day), the optional `SIGNUP_ALLOWED_DOMAINS` check runs before the 409, and inviting by email reveals only
+  verified accounts, at most 100 addresses per hour per inviter.
+
 ## Self-hosting (Docker Compose)
 ```
 AUTH_SECRET=$(openssl rand -base64 32) POSTGRES_PASSWORD=$(openssl rand -hex 16) docker compose up -d postgres

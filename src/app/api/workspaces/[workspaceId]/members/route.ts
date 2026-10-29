@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, badRequest } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, badRequest, HttpError } from "@/lib/authz";
+import { rateLimit } from "@/lib/rate-limit";
 import { createInvitations, inviteUrl } from "@/lib/invitations";
 import { emailSchema, workspaceRoleSchema } from "@/lib/validation";
 
@@ -43,6 +44,11 @@ export const POST = route<P>(async (req, { params }) => {
   const body = inviteSchema.parse(await readJson(req));
   if (body.role === "owner") throw badRequest("Invite them first; an owner can make them an owner after they join");
   const emails = [...(body.emails ?? []), ...(body.email ? [body.email] : [])];
+  // Each invite tells the admin whether the address has an account: 100 distinct addresses per hour per inviter (BUG-14).
+  const distinct = new Set(emails.map((e) => e.trim().toLowerCase())).size;
+  for (let i = 0; i < distinct; i++) {
+    if (!(await rateLimit(`invite-email:${user.id}`, 100, 60 * 60_000))) throw new HttpError(429, "Too many invitations - please try again in an hour");
+  }
   const results = await prisma.$transaction((tx) => createInvitations(tx, { workspaceId, emails, role: body.role, invitedById: user.id, message: body.message ?? null }));
   const origin = new URL(req.url).origin;
   return NextResponse.json({ invitations: results.map((r) => ({ ...r, token: undefined, url: r.token ? inviteUrl(origin, r.token) : null })) }, { status: 201 });

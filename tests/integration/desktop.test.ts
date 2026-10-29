@@ -6,6 +6,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
 import { Client, BASE } from "./client";
+import { buildReleasePayload } from "../../src/lib/release-payload";
 
 const TOKEN = process.env.DESKTOP_RELEASE_TOKEN ?? "";
 const prisma = new PrismaClient();
@@ -113,4 +114,20 @@ test("admins can pull a bad build; the download link falls back to the previous 
   assert.equal((await anon.get("/api/desktop/update/windows/x86_64/1.0.0")).status, 204, "unpublished builds are not offered as updates");
   // An admin session can register releases too (manual fallback when CI isn't configured).
   assert.equal((await admin.post("/api/desktop/releases", asset("1.9.1"))).status, 201);
+});
+
+test("the Admin console's Register dialog payload is accepted, Android included (BUG-36)", async () => {
+  // Regression guard: the API was always right; the dialog used to omit sha256 and platform.
+  const body = buildReleasePayload({
+    version: "v2.3.0",
+    installerUrl: "https://github.com/example/basework/releases/download/android-v2.3.0/woli-2.3.0.apk",
+    sha256: "AB".repeat(32),
+    platform: "android",
+    notes: "",
+  });
+  assert.equal((await admin.post("/api/desktop/releases", body)).status, 201);
+  const latest = await anon.get<{ version: string; sha256: string }>("/api/desktop/releases/latest?platform=android");
+  assert.equal(latest.status, 200);
+  assert.equal(latest.body.version, "2.3.0");
+  assert.equal((await anon.get<{ version: string }>("/api/desktop/releases/latest")).body.version, "1.9.1", "Windows latest unaffected");
 });

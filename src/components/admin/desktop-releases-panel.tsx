@@ -5,10 +5,11 @@ import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
-import { Badge, Switch } from "@/components/ui/misc";
+import { Badge, Select, Switch } from "@/components/ui/misc";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { formatDate } from "@/lib/utils";
 import type { DesktopReleaseDto } from "@/lib/desktop-releases";
+import { buildReleasePayload, ReleasePayloadError, PLATFORMS, DEFAULT_PLATFORM, type ReleasePlatform } from "@/lib/release-payload";
 import { useT } from "@/components/i18n-provider";
 
 /**
@@ -107,19 +108,28 @@ function RegisterDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenC
   const { t } = useT();
   const [version, setVersion] = useState("");
   const [installerUrl, setInstallerUrl] = useState("");
+  const [sha256, setSha256] = useState("");
+  const [platform, setPlatform] = useState<ReleasePlatform>(DEFAULT_PLATFORM);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    let payload;
+    try {
+      payload = buildReleasePayload({ version, installerUrl, sha256, platform, notes });
+    } catch (err) {
+      toast.error(err instanceof ReleasePayloadError && err.field === "sha256" ? t("rel.shaInvalid") : t("rel.urlInvalid"));
+      return;
+    }
     setSaving(true);
     try {
-      const fileName = decodeURIComponent(new URL(installerUrl).pathname.split("/").pop() || "installer");
-      await api.post("/api/desktop/releases", { version: version.trim().replace(/^v/, ""), installerUrl: installerUrl.trim(), installerFileName: fileName, releaseNotes: notes || undefined });
+      await api.post("/api/desktop/releases", payload);
       toast.success(t("rel.registered"));
       onOpenChange(false);
       setVersion("");
       setInstallerUrl("");
+      setSha256("");
       setNotes("");
       onDone();
     } catch (err) {
@@ -141,6 +151,15 @@ function RegisterDialog({ open, onOpenChange, onDone }: { open: boolean; onOpenC
           <div>
             <label htmlFor="rel-url" className="text-xs font-medium text-neutral-500 mb-1 block">{t("rel.url")}</label>
             <Input id="rel-url" value={installerUrl} onChange={(e) => setInstallerUrl(e.target.value)} placeholder="https://github.com/…/releases/download/desktop-v1.0.0/woli_1.0.0_x64_en-US.msi" required />
+          </div>
+          <div>
+            <label htmlFor="rel-sha" className="text-xs font-medium text-neutral-500 mb-1 block">{t("rel.sha256")}</label>
+            <Input id="rel-sha" value={sha256} onChange={(e) => setSha256(e.target.value)} className="font-mono text-xs" spellCheck={false} autoComplete="off" required />
+            <p className="text-[11px] text-neutral-500 mt-1">{t("rel.shaHint")}</p>
+          </div>
+          <div>
+            <span className="text-xs font-medium text-neutral-500 mb-1 block">{t("rel.platform")}</span>
+            <Select className="w-full" data-testid="rel-platform" value={platform} onValueChange={(v) => setPlatform(v as ReleasePlatform)} options={PLATFORMS.map((p) => ({ value: p, label: p === "android" ? "Android (APK)" : "Windows (x86_64)" }))} />
           </div>
           <div>
             <label htmlFor="rel-notes" className="text-xs font-medium text-neutral-500 mb-1 block">{t("rel.notes")}</label>

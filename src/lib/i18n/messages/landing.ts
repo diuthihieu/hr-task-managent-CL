@@ -251,7 +251,7 @@ export const LANDING = {
   "dl.previous": ["Previous versions", "Các phiên bản trước"],
   "rel.intro": ["The Download page and the in-app updater always use the highest published version.", "Trang tải và trình cập nhật trong ứng dụng luôn dùng phiên bản cao nhất đã phát hành."],
   "rel.register": ["Register release", "Đăng ký phiên bản"],
-  "rel.registerTitle": ["Register desktop release", "Đăng ký phiên bản máy tính"],
+  "rel.registerTitle": ["Register release", "Đăng ký phiên bản"],
   "rel.version": ["Version", "Phiên bản"],
   "rel.channel": ["Channel", "Kênh"],
   "rel.installer": ["Installer", "Bộ cài"],
@@ -263,4 +263,9 @@ export const LANDING = {
   "rel.registered": ["Release registered", "Đã đăng ký phiên bản"],
   "rel.url": ["Installer URL (https)", "Đường dẫn bộ cài (https)"],
   "rel.notes": ["Release notes (optional)", "Ghi chú phát hành (không bắt buộc)"],
+  "rel.sha256": ["Installer SHA-256", "Mã SHA-256 của bộ cài"],
+  "rel.shaHint": ["Windows: Get-FileHash -Algorithm SHA256 <file>. macOS/Linux: sha256sum <file>. Upper case and spaces are fine.", "Windows: Get-FileHash -Algorithm SHA256 <file>. macOS/Linux: sha256sum <file>. Chữ hoa hay khoảng trắng đều được."],
+  "rel.shaInvalid": ["The SHA-256 must be 64 hexadecimal characters.", "Mã SHA-256 phải gồm 64 ký tự hệ thập lục phân."],
+  "rel.urlInvalid": ["The installer URL must start with https://.", "Đường dẫn bộ cài phải bắt đầu bằng https://."],
+  "rel.platform": ["Platform", "Nền tảng"],
 } as const;

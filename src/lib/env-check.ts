@@ -15,6 +15,15 @@ export function configProblems(env: Record<string, string | undefined>): string[
   return problems;
 }
 
+/** Problems that don't stop the server but weaken a protection; logged at start-up. */
+export function configWarnings(env: Record<string, string | undefined>): string[] {
+  const warnings: string[] = [];
+  if (!env.VERCEL && !env.TRUSTED_PROXY?.trim()) {
+    warnings.push("TRUSTED_PROXY is not set: client addresses are unknown, so per-IP rate limits are off (sign-up uses one shared limit). Behind nginx set TRUSTED_PROXY=nginx - see docs/OPERATIONS.md \"Self-hosting\".");
+  }
+  return warnings;
+}
+
 export function assertSafeConfig(env: Record<string, string | undefined> = process.env) {
   const problems = configProblems(env);
   if (problems.length) throw new Error(`[config] Refusing to start:\n - ${problems.join("\n - ")}`);

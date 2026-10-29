@@ -44,7 +44,10 @@ services:
       DIRECT_URL: postgresql://basework:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/basework
       AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET (openssl rand -base64 32)}
       AUTH_URL: ${AUTH_URL:-}
+      # Which proxy sets the client address (docs/OPERATIONS.md "Self-hosting"): none | nginx.
+      TRUSTED_PROXY: ${TRUSTED_PROXY:-none}
     ports:
+      # With TRUSTED_PROXY=nginx, publish only to the proxy: "127.0.0.1:3000:3000".
       - "3000:3000"
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/api/health >/dev/null || exit 1"]

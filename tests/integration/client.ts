@@ -3,6 +3,8 @@
 // authorization and database - nothing is mocked.
 
 export const BASE = process.env.TEST_BASE_URL ?? "http://localhost:3100";
+/** What nginx would set (the server runs with TRUSTED_PROXY=nginx). */
+const PROXY = { "x-real-ip": "203.0.113.7" };
 
 export class Client {
   private cookies = new Map<string, string>();
@@ -23,13 +25,13 @@ export class Client {
   }
 
   async login(email: string, password: string): Promise<boolean> {
-    const csrfRes = await fetch(`${BASE}/api/auth/csrf`, { headers: { cookie: this.cookieHeader() } });
+    const csrfRes = await fetch(`${BASE}/api/auth/csrf`, { headers: { ...PROXY, cookie: this.cookieHeader() } });
     this.store(csrfRes);
     const { csrfToken } = (await csrfRes.json()) as { csrfToken: string };
     const res = await fetch(`${BASE}/api/auth/callback/credentials`, {
       method: "POST",
       redirect: "manual",
-      headers: { "content-type": "application/x-www-form-urlencoded", cookie: this.cookieHeader() },
+      headers: { ...PROXY, "content-type": "application/x-www-form-urlencoded", cookie: this.cookieHeader() },
       body: new URLSearchParams({ csrfToken, email, password, callbackUrl: BASE }),
     });
     this.store(res);
@@ -40,7 +42,7 @@ export class Client {
     const res = await fetch(`${BASE}${path}`, {
       method,
       redirect: "manual",
-      headers: { cookie: this.cookieHeader(), ...(body !== undefined ? { "content-type": "application/json" } : {}) },
+      headers: { ...PROXY, cookie: this.cookieHeader(), ...(body !== undefined ? { "content-type": "application/json" } : {}) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
     this.store(res);
@@ -63,7 +65,7 @@ export class Client {
 
   /** POST /api/auth/session - what the browser's update() does. */
   async updateSession(data: unknown = {}) {
-    const csrfRes = await fetch(`${BASE}/api/auth/csrf`, { headers: { cookie: this.cookieHeader() } });
+    const csrfRes = await fetch(`${BASE}/api/auth/csrf`, { headers: { ...PROXY, cookie: this.cookieHeader() } });
     this.store(csrfRes);
     const { csrfToken } = (await csrfRes.json()) as { csrfToken: string };
     return this.post<{ user?: unknown } | null>("/api/auth/session", { csrfToken, data });

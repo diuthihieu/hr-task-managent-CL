@@ -5,7 +5,7 @@ import MicrosoftEntraID from "next-auth/providers/microsoft-entra-id";
 import bcrypt from "bcryptjs";
 import { prisma } from "./prisma";
 import { randomAvatarColor } from "./passwords";
-import { clientIp, rateLimit, resetRateLimit } from "./rate-limit";
+import { clientIp, rateLimit, rateLimitByIp, resetRateLimit } from "./rate-limit";
 import { readMicrosoftIdentity, singleTenantIssuer, type MicrosoftClaims } from "./microsoft-identity";
 import { verifySessionRefresh } from "./session-refresh";
 import { signupDomainAllowed } from "./signup-policy";
@@ -97,8 +97,8 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
         const password = typeof credentials?.password === "string" ? credentials.password : "";
         if (!email || !password) return null;
         // Shared (all instances) limits: per account against password guessing, per IP against spraying.
-        const ip = request ? clientIp(request) : "unknown";
-        const [okAccount, okIp] = await Promise.all([rateLimit(`login-email:${email}`, 10, WINDOW), rateLimit(`login-ip:${ip}`, 60, WINDOW)]);
+        // Unknown address: only the per-account limit (a shared per-IP bucket would let one stranger lock everyone out).
+        const [okAccount, okIp] = await Promise.all([rateLimit(`login-email:${email}`, 10, WINDOW), request ? rateLimitByIp(request, "login-ip", 60, WINDOW, "skip") : true]);
         if (!okAccount || !okIp) {
           await logSecurityEvent(null, "sign_in_throttled", `Sign-in throttled for ${email}`, request);
           throw new RateLimited();

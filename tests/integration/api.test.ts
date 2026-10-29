@@ -25,7 +25,11 @@ import "./api/15-origin";
 import "./api/16-signup";
 import "./api/17-ai-caps";
 import "./api/18-invite-limits";
+import "./api/19-client-ip";
 
 test.after(async () => {
+  // BUG-13: no shared bucket for an unknown address (one stranger would lock everyone out), and no "...:null" keys.
+  const shared = await prisma.rateLimit.findMany({ where: { OR: [{ key: { endsWith: ":null" } }, { key: { endsWith: ":unknown" } }, { key: { endsWith: ":global" }, NOT: { key: { in: ["ai-global", "register:global"] } } }] }, select: { key: true } });
+  if (shared.length) throw new Error(`shared rate-limit keys: ${shared.map((k) => k.key).join(", ")}`);
   await prisma.$disconnect();
 });

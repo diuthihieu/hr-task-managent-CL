@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { errorResponse, badRequest, notFound, HttpError } from "@/lib/authz";
-import { clientIp, rateLimit } from "@/lib/rate-limit";
+import { rateLimit, rateLimitByIp } from "@/lib/rate-limit";
 import { getOrderedFormFields, isFieldVisible } from "@/lib/form-utils";
 import { logActivity } from "@/lib/activity";
 import { buildFields, createTask, loadProjectMeta } from "@/lib/task-grid";
@@ -48,8 +48,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ viewId:
     const { viewId } = await params;
     const form = await loadPublicForm(viewId);
     if (!form) throw notFound("Form");
-    const ip = clientIp(req);
-    const [okVisitor, okForm] = await Promise.all([rateLimit(`form-ip:${viewId}:${ip}`, 10, 3600_000), rateLimit(`form:${viewId}`, 300, 24 * 3600_000)]);
+    const [okVisitor, okForm] = await Promise.all([rateLimitByIp(req, `form-ip:${viewId}`, 10, 3600_000, "skip"), rateLimit(`form:${viewId}`, 300, 24 * 3600_000)]);
     if (!okVisitor || !okForm) throw new HttpError(429, "Too many submissions - please try again later");
     const raw = await req.text();
     if (raw.length > 100_000) throw new HttpError(413, "Submission is too large");

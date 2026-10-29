@@ -40,17 +40,17 @@ jobs:
         shell: bash
         working-directory: desktop
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: desktop/package-lock.json
 
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: desktop/src-tauri -> target
 
@@ -75,7 +75,7 @@ jobs:
           echo "msi=desktop/$msi" >> "$GITHUB_OUTPUT"
           ls -la src-tauri/target/release/bundle/nsis src-tauri/target/release/bundle/msi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: basework-desktop-windows-unsigned
           path: |
@@ -98,15 +98,16 @@ jobs:
         shell: bash
         working-directory: desktop
     steps:
-      - uses: actions/checkout@v4
-
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       # No caches in the release job: a poisoned cache must not reach a signed build.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
+          package-manager-cache: false
 
-      - uses: dtolnay/rust-toolchain@stable
-
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - run: npm ci
 
       - name: Check version matches the release tag
@@ -165,7 +166,7 @@ jobs:
           if [ -f "$sig" ]; then echo "sig=desktop/$sig" >> "$GITHUB_OUTPUT"; fi
           ls -la src-tauri/target/release/bundle/nsis src-tauri/target/release/bundle/msi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: basework-desktop-windows
           path: |
@@ -175,7 +176,7 @@ jobs:
           if-no-files-found: error
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
           tag_name: desktop-v${{ inputs.version }}
           name: Basework Desktop v${{ inputs.version }}

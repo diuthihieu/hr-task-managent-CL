@@ -22,6 +22,7 @@ import "./api/12-permission-matrix";
 import "./api/13-maintenance";
 import "./api/14-csp";
 import "./api/15-origin";
+import "./api/16-signup";
 
 test.after(async () => {
   await prisma.$disconnect();

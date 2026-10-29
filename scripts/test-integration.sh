@@ -19,6 +19,8 @@ export DESKTOP_RELEASE_TOKEN="$(head -c 48 /dev/urandom | base64 | tr -dc A-Za-z
 eval "$(node -e 'const k=require("web-push").generateVAPIDKeys();console.log(`export VAPID_PUBLIC_KEY=${k.publicKey} VAPID_PRIVATE_KEY=${k.privateKey} VAPID_SUBJECT=mailto:it@integration.test`)')"
 export ADMIN_EMAIL=admin@integration.test ADMIN_PASSWORD=Bootstrap123 ADMIN_NAME="Integration Admin"
 export CRON_SECRET=integration-cron-secret
+# New accounts only for these domains (production default: empty = open sign-up).
+export SIGNUP_ALLOWED_DOMAINS=integration.test
 unset BLOB_READ_WRITE_TOKEN
 # AI calls go to a local Gemini stub (no real key or network needed). The configured
 # models are "retired", so every call also exercises model discovery.

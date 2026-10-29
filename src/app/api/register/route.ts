@@ -8,6 +8,8 @@ import { emailSchema, nameSchema } from "@/lib/validation";
 import { clientIp, rateLimit } from "@/lib/rate-limit";
 import { sendVerificationEmail } from "@/lib/email-verification";
 import { appOrigin } from "@/lib/app-origin";
+import { signupDomainAllowed } from "@/lib/signup-policy";
+import { hasLiveInvitation } from "@/lib/invitations";
 
 const schema = z.object({
   name: nameSchema,
@@ -18,12 +20,18 @@ const schema = z.object({
   website: z.string().max(0).optional(),
 });
 
-/** Open self-service sign-up. The new account can then create its own workspaces or be added to others. */
+/**
+ * Self-service sign-up, open unless SIGNUP_ALLOWED_DOMAINS is set (then only those
+ * domains, or an address with a live invitation). The new account must verify its
+ * email before it can create or join a workspace.
+ */
 export const POST = route(async (req) => {
   if (!(await rateLimit(`register:${clientIp(req)}`, 10, 60 * 60 * 1000))) throw new HttpError(429, "Too many sign-up attempts. Try again later.");
   const body = schema.parse(await readJson(req));
   const password = assertPasswordPolicy(body.password);
   if (!(await rateLimit(`register-email:${body.email}`, 5, 24 * 3600_000))) throw new HttpError(429, "Too many sign-up attempts. Try again later.");
+  // Before the "already exists" check, so outsiders can't probe which addresses have accounts.
+  if (!signupDomainAllowed(body.email) && !(await hasLiveInvitation(body.email))) throw new HttpError(403, "Sign-up is limited to invited people and approved email domains", "domain_not_allowed");
   if (await prisma.user.findUnique({ where: { email: body.email }, select: { id: true } })) {
     throw new HttpError(409, "An account with this email already exists. Sign in instead.");
   }

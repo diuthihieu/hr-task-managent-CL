@@ -17,6 +17,13 @@ const inviteDedupe = (id: string) => `invite:${id}`;
 
 const livePending = (now = new Date()) => ({ status: "pending" as const, expiresAt: { gt: now }, workspace: { deletedAt: null } });
 
+/** True when someone invited this address to a live workspace (lets them sign up outside SIGNUP_ALLOWED_DOMAINS). */
+export async function hasLiveInvitation(email: string) {
+  return (await prisma.workspaceInvitation.count({ where: { email: email.trim().toLowerCase(), ...livePending() } })) > 0;
+}
+
+export const UNVERIFIED_MESSAGE = "Verify your email address first - check your inbox for the verification link";
+
 /**
  * Invite people by email. Nobody joins until they accept. Existing accounts
  * get an Action Center notification now; others see the invitation as soon as
@@ -119,7 +126,8 @@ export async function respondToInvite(user: { id: string; email: string; name: s
   const target = await resolveInviteToken(token);
   if (!target) throw notFound("Invitation");
   if (target.kind === "invitation" && target.email.toLowerCase() !== user.email.toLowerCase()) throw forbidden(`This invitation was sent to ${target.email}. Sign in with that email to accept it.`);
-  if (target.kind === "invitation" && decision === "accept" && !user.emailVerifiedAt) throw new HttpError(403, "Verify your email address first - check your inbox for the verification link", "email_unverified");
+  // Accepting anything needs a verified address: a shared link too, or an unverified account could still join a workspace (BUG-08).
+  if (decision === "accept" && !user.emailVerifiedAt) throw new HttpError(403, UNVERIFIED_MESSAGE, "email_unverified");
   const already = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: target.workspace.id, userId: user.id } } });
   if (already) return { joined: true, slug: target.workspace.slug, alreadyMember: true };
   if (target.state !== "pending") throw badRequest(target.state === "expired" ? "This invitation has expired - ask for a new one" : "This invitation is no longer valid");

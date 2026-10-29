@@ -202,7 +202,7 @@ export function AuthCard({ initialMode = "login", callbackUrl = "/workspaces", g
           </div>
         </>
       )}
-      {error && <p className="text-xs text-red-600 mt-3 text-center" data-testid="auth-error">{t(error === "account_disabled" ? "auth.err.disabled" : error === "google_unverified" ? "auth.err.googleUnverified" : error === "microsoft_unverified" ? "auth.err.microsoftUnverified" : error === "microsoft_no_email" ? "auth.err.microsoftNoEmail" : "auth.err.generic")}</p>}
+      {error && <p className="text-xs text-red-600 mt-3 text-center" data-testid="auth-error">{t(error === "account_disabled" ? "auth.err.disabled" : error === "google_unverified" ? "auth.err.googleUnverified" : error === "microsoft_unverified" ? "auth.err.microsoftUnverified" : error === "microsoft_no_email" ? "auth.err.microsoftNoEmail" : error === "domain_not_allowed" ? "auth.err.domainNotAllowed" : "auth.err.generic")}</p>}
       <p className="text-xs text-neutral-500 mt-4 text-center">
         {mode === "login" ? t("auth.noAccount") : t("auth.haveAccount")}{" "}
         <button className="text-indigo-600 hover:underline font-medium" onClick={() => setMode(mode === "login" ? "register" : "login")}>

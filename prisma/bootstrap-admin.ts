@@ -37,8 +37,9 @@ async function main() {
 
   const user = await prisma.user.upsert({
     where: { email },
-    update: { systemRole: "ADMIN", isActive: true, deletedAt: null, passwordHash, mustChangePassword: true },
-    create: { email, name, passwordHash, systemRole: "ADMIN", mustChangePassword: true },
+    // The operator chose this address: verified, like accounts made in the Admin console (creating workspaces needs it).
+    update: { systemRole: "ADMIN", isActive: true, deletedAt: null, passwordHash, mustChangePassword: true, emailVerifiedAt: new Date() },
+    create: { email, name, passwordHash, systemRole: "ADMIN", mustChangePassword: true, emailVerifiedAt: new Date() },
   });
   await prisma.activityLog.create({
     data: { actorId: null, entityType: "user", entityId: user.id, action: "created", summary: `Bootstrap admin ${email} created` },

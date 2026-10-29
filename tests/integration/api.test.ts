@@ -23,6 +23,7 @@ import "./api/13-maintenance";
 import "./api/14-csp";
 import "./api/15-origin";
 import "./api/16-signup";
+import "./api/17-ai-caps";
 
 test.after(async () => {
   await prisma.$disconnect();

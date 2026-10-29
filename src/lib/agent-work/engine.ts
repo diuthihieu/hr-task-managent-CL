@@ -12,6 +12,8 @@ import { badRequest, notFound, requireWorkspaceRole, visibleProjectWhere, visibl
 import { logActivity } from "@/lib/activity";
 import { deleteAttachmentBlob, uploadAgentArtifact } from "@/lib/storage";
 import { accessibleAgentSkillWhere } from "./access";
+import { HttpError } from "@/lib/http-errors";
+import { rateLimit } from "@/lib/rate-limit";
 
 const STARTER_SKILL_KEY = "task-brief";
 const STARTER_TOOLS = [...SIMPLE_TASK_TOOLS];
@@ -307,6 +309,15 @@ async function candidateTasks(user: SessionUser, workspaceId: string, scanScope:
   });
 }
 
+/**
+ * Agent AI calls per user (BUG-05): 30 per 10 minutes. Checked only when AI is
+ * configured (without it the engine falls back to local scoring / a default
+ * plan), and before anything changes state, so a refused call leaves no run stuck.
+ */
+export async function assertAgentAiQuota(userId: string) {
+  if (!(await rateLimit(`ai-agent:${userId}`, 30, 10 * 60_000))) throw new HttpError(429, "Too many agent requests - please wait a few minutes");
+}
+
 export async function detectAgentSuggestions(user: SessionUser, workspaceId: string, manual: boolean) {
   const ctx = await requireWorkspaceRole(user, workspaceId, "viewer");
   await expireAgentSuggestions(user.id, workspaceId);
@@ -325,6 +336,8 @@ export async function detectAgentSuggestions(user: SessionUser, workspaceId: str
   let picks: DetectionPick[] = [];
 
   if (aiConfigured()) {
+    // Outside the try below, which falls back to local scoring on any error.
+    await assertAgentAiQuota(user.id);
     const payload = {
       skills: activeSkills.map((skill) => ({ id: skill.id, name: skill.name, description: skill.description, triggers: skill.triggers })),
       tasks: tasks.slice(0, 25).map((task) => ({ id: task.id, title: task.title, project: task.project.name, status: task.status, priority: task.priority, progress: task.progress, dueDate: task.dueDate?.toISOString().slice(0, 10) ?? null, updatedAt: task.updatedAt.toISOString(), description: task.description?.slice(0, 600) ?? htmlToText(task.content).slice(0, 600) })),
@@ -438,6 +451,8 @@ export async function decideSuggestion(user: SessionUser, suggestionId: string, 
     return getAgentRun(user, suggestion.runId);
   }
   assertAgentRunTransition(suggestion.run.status, "confirming");
+  // Accepting plans the run with AI: limited before the run changes state (planForRun can't refuse halfway).
+  if (aiConfigured()) await assertAgentAiQuota(user.id);
   const goal = customGoal?.trim() || suggestion.proposedGoal;
   const claimed = await prisma.$transaction(async (tx) => {
     const result = await tx.agentSuggestion.updateMany({ where: { id: suggestion.id, userId: user.id, status: "open" }, data: { status: "accepted", decidedAt: new Date() } });

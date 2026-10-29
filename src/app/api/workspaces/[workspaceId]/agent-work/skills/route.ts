@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { aiConfigured, generate, parseJsonAnswer } from "@/lib/ai/gemini";
 import { requireUser, requireWorkspaceRole, route, readJson, badRequest, notFound } from "@/lib/authz";
-import { listAgentSkills } from "@/lib/agent-work/engine";
+import { assertAgentAiQuota, listAgentSkills } from "@/lib/agent-work/engine";
 import { agentSkillBodySchema, createAgentSkillSchema, defaultAgentSkillFields } from "@/lib/agent-work/skill-schema";
 
 type P = { workspaceId: string };
@@ -31,6 +31,7 @@ export const POST = route<P>(async (req, { params }) => {
     if (!conversation) throw notFound("Conversation");
     await requireWorkspaceRole(user, { workspaceId, projectId: conversation.projectId, wikiId: conversation.wikiId }, "viewer");
     if (!aiConfigured()) throw badRequest("AI must be configured to create a Skill from a conversation");
+    await assertAgentAiQuota(user.id);
     const response = await generate({
       workspaceId,
       system: "Turn this conversation into a reusable Woli Skill. Return JSON {name,description,instructions,triggers:string[]}. Instructions must describe a repeatable workflow, validation rules and expected output. Do not include private source facts in the reusable Skill.",

@@ -9,6 +9,7 @@ import { logActivity } from "@/lib/activity";
 import { notifyTaskDetail } from "@/lib/notifications";
 import { readTaskFiles } from "@/lib/ai/task-files";
 import { attachmentDataFromUpload, clientTokenOptions } from "@/lib/upload-meta";
+import { setAiContextUser } from "@/lib/ai/usage";
 
 export const maxDuration = 120;
 
@@ -59,6 +60,8 @@ export const POST = route(async (req) => {
     onUploadCompleted: async ({ blob, tokenPayload }) => {
       if (!tokenPayload) throw badRequest("Missing upload metadata");
       const payload = JSON.parse(tokenPayload) as TokenPayload;
+      // Vercel Blob calls this without a session: the signed payload names the uploader, so their AI cap applies to the text extraction.
+      setAiContextUser(payload.uploadedById);
       const prefix = `workspaces/${payload.workspaceId}/tasks/${payload.taskId}/`;
       if (!blob.pathname.startsWith(prefix)) throw badRequest("Upload path does not match task");
       const existing = await prisma.attachment.findUnique({ where: { storageKey: blob.pathname }, select: { id: true } });

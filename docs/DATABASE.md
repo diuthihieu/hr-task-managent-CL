@@ -7,7 +7,8 @@ always **Browser → Next.js route handler (authz) → Prisma → PostgreSQL**.
 - Schema: [`prisma/schema.prisma`](../prisma/schema.prisma)
 - Migrations: [`prisma/migrations/`](../prisma/migrations). The schema is only
   changed through migrations (`prisma migrate dev` locally, `prisma migrate
-  deploy` in CI/Vercel builds). Rules Prisma cannot express (CHECK
+  deploy` in CI/Vercel builds). New migration folders must sort after every
+  existing one (see README "Naming migrations"; CI checks it). Rules Prisma cannot express (CHECK
   constraints, partial unique index, integrity triggers) live in
   `20260926140100_constraints_and_triggers` and
   `20260927120000_open_signup_project_okrs_wiki`.

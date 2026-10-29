@@ -52,6 +52,10 @@ test("only CI (release token) or a system admin can register releases", async ()
   assert.equal((await publish({ ...asset("0.1.0"), version: "latest" })).status, 400);
   assert.equal((await publish({ ...asset("0.1.0"), installerUrl: "http://insecure.example.com/a.exe" })).status, 400);
   assert.equal((await publish({ ...asset("0.1.0"), installerUrl: "https://evil.example.com/a.exe" })).status, 400, "only allowed artifact hosts");
+  // BUG-26: only this app's release URLs - not another repository on github.com, no path tricks, updater too.
+  assert.equal((await publish({ ...asset("0.1.0"), installerUrl: "https://github.com/stranger/repo/releases/download/v1/x.exe" })).status, 400, "another repository");
+  assert.equal((await publish({ ...asset("0.1.0"), installerUrl: "https://github.com/example/basework/releases/download/%2e%2e/%2e%2e/stranger/x.exe" })).status, 400, "encoded ..");
+  assert.equal((await publish({ ...asset("0.1.0"), updaterUrl: "https://evil.example.com/u.zip", updaterSignature: "c2ln" })).status, 400, "updater URL checked too");
   const { sha256: _omit, ...noHash } = asset("0.1.0");
   void _omit;
   assert.equal((await publish(noHash)).status, 400, "a checksum is required");

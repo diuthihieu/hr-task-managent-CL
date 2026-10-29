@@ -22,7 +22,9 @@ When one is published, users inside the app see "A new woli Android app is avail
    keytool -list -v -keystore woli-android-release.jks -alias woli | grep SHA256
    ```
 
-2. **GitHub secrets** (repo > Settings > Secrets and variables > Actions):
+2. **GitHub secrets** - in the `release` environment (repo > Settings > Environments > `release`;
+   tags `android-v*` / `desktop-v*` only, reviewer approval - see docs/DESKTOP.md "One-time setup"),
+   never at repository level, so pull-request builds can't read them:
 
    | Secret | Value |
    | --- | --- |
@@ -40,7 +42,8 @@ When one is published, users inside the app see "A new woli Android app is avail
 
 ## Releasing
 
-Push a tag (or run the **Android app** workflow manually with a version):
+Push a tag (or run the **Android app** workflow manually with a version, choosing the **tag** in
+"Use workflow from" - the `release` environment refuses branches; channel `beta` for a trial build):
 
 ```bash
 git tag android-v1.0.0 && git push origin android-v1.0.0
@@ -50,7 +53,10 @@ The workflow builds the signed APK, attaches it to the GitHub Release `android-v
 as platform `android`. The "Get woli on your phone" dialog then offers **Download woli for Android**
 (`/api/desktop/download/latest?platform=android`).
 
-Pull requests that touch `mobile/android` build a debug APK (workflow artifact) to check the code.
+After a reviewer approves the `release` environment, the signed build runs.
+
+Pull requests that touch `mobile/android` build an unsigned debug APK (workflow artifact) to check the
+code; they never see the signing key.
 
 ## iPhone / iPad
 

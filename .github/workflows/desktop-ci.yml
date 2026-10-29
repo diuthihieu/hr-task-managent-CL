@@ -24,4 +24,4 @@ jobs:
     uses: ./.github/workflows/desktop-build.yml
     with:
       publish: false
-    secrets: inherit
+    # No secrets: CI builds are unsigned (BUG-20).

@@ -34,7 +34,10 @@ When one is published, users inside the app see "A new woli Android app is avail
    | `ANDROID_KEY_PASSWORD` | key password |
    | `DESKTOP_RELEASE_TOKEN` | already used by desktop releases; registers the APK with the server |
 
-   Optional repository variable `ANDROID_APP_HOST` (default `woli-work.vercel.app`) - the site the app opens.
+   **Required** repository variable `ANDROID_APP_HOST` - the site the app opens (host only, e.g. the
+   production domain). It has no default: the release fails without it, and the same host must be in
+   `BASEWORK_SERVER_URL` (docs/DESKTOP.md) so both apps register with, and open, the same server.
+   Pull-request builds that can't read variables (Dependabot, forks) use `example.invalid`.
 
 3. **Digital Asset Links**: `/.well-known/assetlinks.json` lists the signing certificate's SHA-256
    fingerprint (`src/app/.well-known/assetlinks.json/route.ts`). If you use a different key, set

@@ -33,8 +33,10 @@ jobs:
     permissions:
       contents: read
     env:
-      # Public origin of the web app (not a secret). Set it as a repository variable.
-      BASEWORK_SERVER_URL: ${{ vars.BASEWORK_SERVER_URL || 'https://hr-task-managent-cl-o1sz.vercel.app' }}
+      # Public origin of the web app (repository variable, not a secret). A CI build is only a
+      # compile check; runs that can't read variables (Dependabot, forks) use a placeholder that
+      # can never resolve. The release job has no fallback.
+      BASEWORK_SERVER_URL: ${{ vars.BASEWORK_SERVER_URL || 'https://example.invalid' }}
     defaults:
       run:
         shell: bash
@@ -92,7 +94,8 @@ jobs:
     permissions:
       contents: write
     env:
-      BASEWORK_SERVER_URL: ${{ vars.BASEWORK_SERVER_URL || 'https://hr-task-managent-cl-o1sz.vercel.app' }}
+      # Required: prepare-shell.mjs fails the release when it's missing (BUG-16).
+      BASEWORK_SERVER_URL: ${{ vars.BASEWORK_SERVER_URL }}
     defaults:
       run:
         shell: bash

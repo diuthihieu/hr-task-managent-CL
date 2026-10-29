@@ -84,7 +84,7 @@ jobs:
           if [ -f "$sig" ]; then echo "sig=desktop/$sig" >> "$GITHUB_OUTPUT"; fi
           ls -la src-tauri/target/release/bundle/nsis src-tauri/target/release/bundle/msi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: basework-desktop-windows
           path: |

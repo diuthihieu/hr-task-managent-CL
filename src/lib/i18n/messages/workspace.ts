@@ -438,6 +438,7 @@ export const WORKSPACE = {
   "adm.copyPassword": ["Copy password", "Sao chép mật khẩu"],
   "adm.adminRole": ["Admin (manages accounts & workspaces)", "Quản trị (quản lý tài khoản & workspace)"],
   "adm.addToWs": ["Add to workspace", "Thêm vào workspace"],
+  "adm.addToWsHint": ["Only workspaces you administer (others need support access). Otherwise invite them from the workspace.", "Chỉ các workspace bạn là admin (workspace khác cần chế độ hỗ trợ). Nếu không, hãy mời họ từ workspace đó."],
   "adm.notNow": ["Not now", "Để sau"],
   "adm.wsRole": ["Workspace role", "Vai trò trong workspace"],
   "adm.tempHint": ["A temporary password is generated and shown once. The user must change it at first sign-in.", "Hệ thống tạo mật khẩu tạm và chỉ hiện một lần. Người dùng phải đổi khi đăng nhập lần đầu."],

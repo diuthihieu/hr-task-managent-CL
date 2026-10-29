@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireAdmin, route, readJson, badRequest } from "@/lib/authz";
+import { requireAdmin, route, readJson, badRequest, forbidden } from "@/lib/authz";
+import { roleAtLeast, supportAccess } from "@/lib/access";
 import { logActivity } from "@/lib/activity";
 import { assertPasswordPolicy, generateTemporaryPassword, hashPassword, randomAvatarColor } from "@/lib/passwords";
 import { emailSchema, nameSchema, uuid, workspaceRoleSchema } from "@/lib/validation";
@@ -50,6 +51,16 @@ export const POST = route(async (req) => {
   if (body.workspaceId && !(await prisma.workspace.findFirst({ where: { id: body.workspaceId, deletedAt: null }, select: { id: true } }))) {
     throw badRequest("Workspace not found");
   }
+  // System admins see tenant workspaces only through their own membership; adding
+  // someone to another workspace is break-glass support access, logged there (BUG-31).
+  let viaSupport = false;
+  if (body.workspaceId) {
+    const own = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: body.workspaceId, userId: admin.id } }, select: { role: true } });
+    if (!roleAtLeast(own?.role, "admin")) {
+      if (!supportAccess(admin)) throw forbidden("Adding an account to a workspace you don't administer needs support access (ADMIN_SUPPORT_ACCESS=1) - or invite the person from that workspace instead");
+      viaSupport = true;
+    }
+  }
   const passwordHash = await hashPassword(password);
   const user = await prisma.$transaction(async (tx) => {
     const created = await tx.user.create({
@@ -68,6 +79,8 @@ export const POST = route(async (req) => {
     await logActivity(tx, { workspaceId: null, actorId: admin.id, entityType: "user", entityId: created.id, action: "created", summary: `Created account ${created.email} (${created.systemRole})` });
     if (body.workspaceId) {
       await tx.workspaceMember.create({ data: { workspaceId: body.workspaceId, userId: created.id, role: body.workspaceRole, createdById: admin.id } });
+      // Same entry as opening the workspace with support access (src/lib/authz.ts).
+      if (viaSupport) await tx.activityLog.create({ data: { workspaceId: body.workspaceId, actorId: admin.id, entityType: "workspace", entityId: body.workspaceId, action: "support_access", summary: `System admin ${admin.email} added an account with support access` } });
       await logActivity(tx, { workspaceId: body.workspaceId, actorId: admin.id, entityType: "member", entityId: created.id, action: "created", summary: `Added ${created.name} as ${body.workspaceRole}` });
     }
     return created;

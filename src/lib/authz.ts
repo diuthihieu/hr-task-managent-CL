@@ -10,6 +10,9 @@
 //   content only through their own memberships. Support access to other
 //   workspaces is break-glass: it needs ADMIN_SUPPORT_ACCESS=1 on the server
 //   (set temporarily) and every workspace opened that way is audit-logged.
+//   The admin console follows the same rule: a new account goes straight into
+//   a workspace only if the admin administers it or has support access, and a
+//   password reset is logged in each of the member's workspaces.
 
 import { NextResponse } from "next/server";
 import { Prisma, type WorkspaceRole } from "@prisma/client";

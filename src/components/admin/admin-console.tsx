@@ -337,6 +337,7 @@ function CreateUserDialog({
               <Select className="w-full" value={workspaceRole} onValueChange={setWorkspaceRole} options={ROLE_OPTIONS} />
             </div>
           </div>
+          {workspaceId !== "none" && <p className="text-[11px] text-neutral-400">{tr("adm.addToWsHint")}</p>}
           <p className="text-[11px] text-neutral-400">{tr("adm.tempHint")}</p>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>{tr("common.cancel")}</Button>

@@ -15,9 +15,19 @@ export function ownedProjectsWhere(workspaceId: string, userId: string) {
 
 export const ROLE_RANK: Record<WorkspaceRole, number> = { viewer: 0, contributor: 1, editor: 2, admin: 3, owner: 4 };
 
-/** Checked inside the change's transaction under a per-workspace lock, so concurrent removals can't drop the last owner. */
-export async function assertKeepsAnOwner(tx: Tx, workspaceId: string, userId: string) {
+/**
+ * The per-workspace owners lock (held until the transaction ends). Every change
+ * that can add or remove an owner takes it FIRST and then reads the roles again
+ * inside the transaction, so concurrent requests can't leave two owners or none.
+ * Taking it twice in one transaction doesn't block.
+ */
+export async function lockOwners(tx: Tx, workspaceId: string) {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"ws-owners:" + workspaceId}))`;
+}
+
+/** Checked inside the change's transaction under the owners lock, so concurrent removals can't drop the last owner. */
+export async function assertKeepsAnOwner(tx: Tx, workspaceId: string, userId: string) {
+  await lockOwners(tx, workspaceId);
   const others = await tx.workspaceMember.count({ where: { workspaceId, role: "owner", userId: { not: userId } } });
   if (others === 0) throw badRequest("A workspace needs at least one owner");
 }
@@ -28,6 +38,7 @@ export async function assertKeepsAnOwner(tx: Tx, workspaceId: string, userId: st
  * tells the person, who may decline a promotion.
  */
 export async function applyRoleChange(tx: Tx, o: { workspaceId: string; actorId: string; userId: string; role: WorkspaceRole }) {
+  await lockOwners(tx, o.workspaceId);
   const target = await tx.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: o.workspaceId, userId: o.userId } } });
   if (!target) throw notFound("Member");
   if (o.role === "owner" || target.role === "owner") throw forbidden("A workspace has exactly one owner - use Transfer ownership");

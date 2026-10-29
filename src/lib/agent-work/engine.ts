@@ -473,6 +473,13 @@ export async function getAgentRun(user: SessionUser, runId: string) {
   return serializeAgentRun(row);
 }
 
+/**
+ * Sensitive context (payroll, legal, termination...) pauses the run until the
+ * person running the agent confirms it - a deliberate self-confirmation step,
+ * not a second person's approval (product decision, BUG-32): the agent's tools
+ * only read tasks / files, save documents and comment. A "four eyes" rule would
+ * need its own design (who approves each kind).
+ */
 async function requestSensitiveApproval(user: SessionUser, runId: string, kind: AgentApprovalKind, reason: string) {
   const run = await prisma.agentRun.findUniqueOrThrow({ where: { id: runId }, select: { status: true } });
   assertAgentRunTransition(run.status, "waiting_approval");

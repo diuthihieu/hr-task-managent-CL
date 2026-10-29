@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, badRequest, notFound } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, badRequest, notFound, HttpError } from "@/lib/authz";
+import { lockOwners } from "@/lib/member-roles";
 import { logActivity } from "@/lib/activity";
 
 type P = { workspaceId: string };
@@ -26,7 +27,13 @@ export const POST = route<P>(async (req, { params }) => {
   if (!target) throw notFound("Member");
   if (!target.user.isActive) throw badRequest("This account is deactivated");
   await prisma.$transaction(async (tx) => {
-    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${"ws-owners:" + workspaceId}))`;
+    // The checks above answer early; these run again under the lock (a concurrent
+    // transfer, demotion or removal may have won while this request waited).
+    await lockOwners(tx, workspaceId);
+    const me = await tx.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId: user.id } }, select: { role: true } });
+    if (me?.role !== "owner") throw new HttpError(409, "Ownership changed while this request was waiting", "ownership_changed");
+    const still = await tx.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId: toUserId } }, select: { user: { select: { isActive: true } } } });
+    if (!still || !still.user.isActive) throw new HttpError(409, "That member left or was deactivated while this request was waiting", "ownership_changed");
     await tx.workspaceMember.update({ where: { workspaceId_userId: { workspaceId, userId: toUserId } }, data: { role: "owner" } });
     await tx.workspaceMember.update({ where: { workspaceId_userId: { workspaceId, userId: user.id } }, data: { role: myNewRole } });
     await logActivity(tx, { workspaceId, actorId: user.id, entityType: "member", entityId: toUserId, action: "role_changed", summary: `Workspace ownership transferred to ${target.user.name}`, changes: { role: { from: target.role, to: "owner" } } });

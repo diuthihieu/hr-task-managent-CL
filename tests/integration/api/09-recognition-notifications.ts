@@ -193,7 +193,11 @@ test("recognition: reward catalog, redemption with reserved points, approval and
   const notice = await prisma.notification.findFirstOrThrow({ where: { userId: adminUser.id, type: "reward_request", actorId: s.contributorId }, orderBy: { createdAt: "desc" } });
   assert.equal((notice.data as { redemptionId: string }).redemptionId, r1.body.id, "the notice points at the request");
   assert.match(notice.link ?? "", new RegExp(`tab=manage&request=${r1.body.id}$`));
-  assert.equal((await contributor.patch(`/api/redemptions/${r1.body.id}`, { action: "approve" })).status, 200);
+  // BUG-32: a recognition manager can't decide their own request (cancel is how they withdraw it).
+  const self = await contributor.patch<{ error: string }>(`/api/redemptions/${r1.body.id}`, { action: "approve" });
+  assert.equal(self.status, 403, "no self-approval");
+  assert.equal((await contributor.patch(`/api/redemptions/${r1.body.id}`, { action: "reject" })).status, 403, "no self-rejection either");
+  assert.equal((await admin.patch(`/api/redemptions/${r1.body.id}`, { action: "approve" })).status, 200, "another manager decides");
   assert.ok((await prisma.notification.findUniqueOrThrow({ where: { id: notice.id } })).actionedAt, "every approver's notice is answered once decided");
   const out = await contributor.patch<{ error: string }>(`/api/redemptions/${r2.body.id}`, { action: "approve" });
   assert.equal(out.status, 400);

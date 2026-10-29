@@ -4,7 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, forbidden, notFound } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { workspaceRoleSchema } from "@/lib/validation";
-import { assertKeepsAnOwner, applyRoleChange } from "@/lib/member-roles";
+import { assertKeepsAnOwner, applyRoleChange, lockOwners } from "@/lib/member-roles";
 
 type P = { workspaceId: string; userId: string };
 
@@ -23,13 +23,15 @@ export const DELETE = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { workspaceId, userId } = await params;
   const ctx = await requireWorkspaceRole(user, workspaceId, userId === user.id ? "viewer" : "admin");
-  const target = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId } } });
-  if (!target) throw notFound("Member");
-  if (target.role === "owner") {
-    if (ctx.role !== "owner" && userId !== user.id) throw forbidden("Only owners can remove an owner");
-  }
   await prisma.$transaction(async (tx) => {
-    if (target.role === "owner") await assertKeepsAnOwner(tx, workspaceId, userId);
+    // Read the member under the owners lock: a transfer may be making them the owner right now.
+    await lockOwners(tx, workspaceId);
+    const target = await tx.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId } } });
+    if (!target) throw notFound("Member");
+    if (target.role === "owner") {
+      if (ctx.role !== "owner" && userId !== user.id) throw forbidden("Only owners can remove an owner");
+      await assertKeepsAnOwner(tx, workspaceId, userId);
+    }
     // Unassign from this workspace's tasks, then drop the membership.
     await tx.taskAssignee.deleteMany({ where: { userId, task: { workspaceId } } });
     await tx.taskReportRecipient.deleteMany({ where: { userId, task: { workspaceId } } });

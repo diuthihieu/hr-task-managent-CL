@@ -6,7 +6,7 @@ import type { WorkspaceRole } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { notFound, badRequest, HttpError, type SessionUser } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
-import { ROLE_RANK, assertKeepsAnOwner } from "@/lib/member-roles";
+import { ROLE_RANK, assertKeepsAnOwner, lockOwners } from "@/lib/member-roles";
 import { quickTaskAction } from "@/lib/task-quick";
 
 export async function markAllRead(userId: string): Promise<number> {
@@ -62,6 +62,8 @@ export async function answerRoleChange(user: SessionUser, notificationId: string
   const workspaceId = n.workspaceId;
 
   return prisma.$transaction(async (tx) => {
+    // Owners lock before reading the role (BUG-32): a concurrent transfer may be changing it.
+    await lockOwners(tx, workspaceId);
     const member = await tx.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId, userId: user.id } } });
     if (!member) throw notFound("Workspace");
     if (decision === "decline") {

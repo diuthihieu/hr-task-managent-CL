@@ -1,0 +1,36 @@
+# OSV-Scanner exceptions (BUG-33). Run with --config=osv-scanner.toml (a toml at the
+# repo root is not applied to desktop/src-tauri/Cargo.lock automatically).
+# Ignored by advisory id, never by package, each with the reason it can't affect the
+# shipped app and a date to look again. Everything with a same-semver fix was updated
+# instead (cargo update: rustls, rustls-webpki, webpki-root-certs, tokio, and
+# tauri-plugin-updater 2.14.1, which moves zip 4 -> 9).
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0429"
+ignoreUntil = 2027-04-30
+reason = "glib 0.18 (unsound VariantStrIter): GTK dependency compiled only for Linux; the desktop app ships for Windows only."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0370"
+ignoreUntil = 2027-04-30
+reason = "zvariant unmaintained: D-Bus dependency compiled only for Linux; the desktop app ships for Windows only. No replacement in Tauri 2 yet."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0371"
+ignoreUntil = 2027-04-30
+reason = "zbus_names unmaintained: D-Bus dependency compiled only for Linux; the desktop app ships for Windows only. No replacement in Tauri 2 yet."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0372"
+ignoreUntil = 2027-04-30
+reason = "zvariant_derive unmaintained: D-Bus dependency compiled only for Linux; the desktop app ships for Windows only. No replacement in Tauri 2 yet."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+ignoreUntil = 2027-04-30
+reason = "proc-macro-error unmaintained: build-time proc macro (gtk / glib derive chain), never in the shipped binary; no replacement in Tauri 2 yet."
+
+[[IgnoredVulns]]
+id = "GHSA-qwgh-2vcv-g2f7"
+ignoreUntil = 2027-04-30
+reason = "block-buffer 0.10: the bug needs a caught panic, and the release profile sets panic = \"abort\" (desktop/src-tauri/Cargo.toml). The fix (0.12) needs the whole digest family upgraded by upstream crates."

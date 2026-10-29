@@ -1,9 +1,12 @@
-# Weekly dependency / security update PRs (web, desktop and CI actions).
+# Weekly dependency / security update PRs (web, desktop, Android and CI actions).
+# cooldown: a release must be a week old before a PR is opened (gives time for a
+# compromised or broken release to be pulled).
 version: 2
 updates:
   - package-ecosystem: npm
     directory: "/"
     schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
     open-pull-requests-limit: 10
     groups:
       minor-and-patch:
@@ -11,9 +14,16 @@ updates:
   - package-ecosystem: npm
     directory: "/desktop"
     schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
   - package-ecosystem: cargo
     directory: "/desktop/src-tauri"
     schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
   - package-ecosystem: github-actions
     directory: "/"
     schedule: { interval: weekly }
+    cooldown: { default-days: 7 }
+  - package-ecosystem: gradle
+    directory: "/mobile/android"
+    schedule: { interval: weekly }
+    cooldown: { default-days: 7 }

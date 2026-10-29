@@ -1,0 +1,65 @@
+# Weekly (and on dependency changes) vulnerability audit of every lockfile: npm
+# (web + desktop) down to low severity, and OSV-Scanner over the whole repo
+# (npm, Cargo) with the documented exceptions in osv-scanner.toml.
+# Separate from Web CI, which builds and runs the test suites; Web CI blocks
+# pull requests on high / critical npm advisories.
+name: Dependency audit
+
+on:
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+  push:
+    branches: ["master"]
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "desktop/package.json"
+      - "desktop/package-lock.json"
+      - "**/Cargo.lock"
+      - "osv-scanner.toml"
+      - ".github/workflows/audit.yml"
+  pull_request:
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "desktop/package.json"
+      - "desktop/package-lock.json"
+      - "**/Cargo.lock"
+      - "osv-scanner.toml"
+      - ".github/workflows/audit.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+      - name: Web (whole tree, low and above)
+        run: npm audit --audit-level=low --package-lock-only
+      - name: Desktop (low and above)
+        working-directory: desktop
+        run: npm audit --audit-level=low --package-lock-only
+
+  osv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: OSV-Scanner (all lockfiles, exceptions in osv-scanner.toml)
+        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
+        with:
+          scan-args: |-
+            --config=osv-scanner.toml
+            --recursive
+            ./

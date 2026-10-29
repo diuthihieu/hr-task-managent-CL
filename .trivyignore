@@ -1,0 +1,9 @@
+# Same exceptions as osv-scanner.toml (reasons and review dates there).
+GHSA-4r6h-8v6p-xvw6
+GHSA-5pgg-2g8v-p4x9
+GHSA-qwgh-2vcv-g2f7
+RUSTSEC-2024-0429
+RUSTSEC-2024-0370
+RUSTSEC-2026-0370
+RUSTSEC-2026-0371
+RUSTSEC-2026-0372

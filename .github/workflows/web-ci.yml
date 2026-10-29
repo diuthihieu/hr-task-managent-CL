@@ -52,6 +52,10 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Fail early on any high / critical advisory in the whole tree (dev included).
+      # Low / moderate ones are reported by the weekly audit workflow instead.
+      - name: Dependency audit (high and above)
+        run: npm audit --audit-level=high
       - run: npx prisma generate
       - name: Lint
         run: npx eslint src tests e2e playwright.config.ts --max-warnings=0
@@ -87,5 +91,3 @@ jobs:
             playwright-report/
             test-results/
           retention-days: 7
-      - name: Dependency audit (critical)
-        run: npm audit --omit=dev --audit-level=critical

@@ -96,9 +96,9 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
   // Recent activity, limited to things this user can see.
   const ids = (type: string) => activity.filter((a) => a.entityType === type).map((a) => a.entityId);
   const [actTasks, actPages, actObjectives] = await Promise.all([
-    prisma.task.findMany({ where: { id: { in: ids("task") }, project: visible }, select: { id: true, title: true, projectId: true } }),
+    prisma.task.findMany({ where: { id: { in: ids("task") }, deletedAt: null, project: { deletedAt: null, ...visible } }, select: { id: true, title: true, projectId: true } }),
     prisma.wikiPage.findMany({ where: { id: { in: ids("wiki_page") }, deletedAt: null, wiki: visibleWikiWhere(user, role), ...visiblePageWhere(hidden) }, select: { id: true, title: true, wikiId: true } }),
-    prisma.objective.findMany({ where: { id: { in: ids("objective") }, deletedAt: null, OR: [{ projectId: null }, { project: visible }] }, select: { id: true, title: true } }),
+    prisma.objective.findMany({ where: { id: { in: ids("objective") }, deletedAt: null, OR: [{ projectId: null }, { project: { deletedAt: null, ...visible } }] }, select: { id: true, title: true } }),
   ]);
   const projectById = new Map(projects.map((p) => [p.id, p]));
   const recent = activity

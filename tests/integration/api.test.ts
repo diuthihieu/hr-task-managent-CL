@@ -29,6 +29,7 @@ import "./api/19-client-ip";
 import "./api/20-admin-powers";
 import "./api/21-owner-races";
 import "./api/22-pagination";
+import "./api/23-soft-delete";
 import "./api/30-report-hours";
 import "./api/31-hours-rule";
 import "./api/32-pivot";

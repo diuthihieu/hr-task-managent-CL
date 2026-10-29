@@ -59,6 +59,9 @@ jobs:
       - name: Dependency audit (high and above)
         run: npm audit --audit-level=high
       - run: npx prisma generate
+      # Reads of soft-deleted models must filter deletedAt (or say why not) - docs/SOFT-DELETE.md.
+      - name: Soft-deleted rows stay filtered
+        run: node scripts/check-soft-delete.mjs
       - name: Lint
         run: npx eslint src tests e2e playwright.config.ts --max-warnings=0
       - name: Type check

@@ -24,6 +24,7 @@ import "./api/14-csp";
 import "./api/15-origin";
 import "./api/16-signup";
 import "./api/17-ai-caps";
+import "./api/18-invite-limits";
 
 test.after(async () => {
   await prisma.$disconnect();

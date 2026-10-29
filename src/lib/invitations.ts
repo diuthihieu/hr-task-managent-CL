@@ -52,7 +52,8 @@ export async function createInvitations(
         });
     if (account?.isActive) await notifyInvitee(tx, inv.id, account.id);
     await logActivity(tx, { workspaceId: opts.workspaceId, actorId: opts.invitedById, entityType: "member", entityId: inv.id, action: "created", summary: `Invited ${raw} as ${opts.role} to ${ws.name}` });
-    results.push({ email: raw, status: existing ? "reinvited" : "invited", invitationId: inv.id, token: inv.token, hasAccount: !!found });
+    // True only when the person was notified now: an unverified account (maybe someone else's sign-up) is not revealed (BUG-14).
+    results.push({ email: raw, status: existing ? "reinvited" : "invited", invitationId: inv.id, token: inv.token, hasAccount: !!account?.isActive });
   }
   return results;
 }

@@ -365,7 +365,7 @@ export const WORKSPACE = {
   "inv.regen": ["New link", "Tạo link mới"],
   "inv.regenConfirm": ["Create a new link? The current link will stop working.", "Tạo link mới? Link hiện tại sẽ không dùng được nữa."],
   "inv.res.member": ["Already a member", "Đã là thành viên"],
-  "inv.res.noAccount": ["No account yet - they'll see the invitation after signing up with this email. Send them the link.", "Chưa có tài khoản - họ sẽ thấy lời mời sau khi đăng ký bằng email này. Hãy gửi link cho họ."],
+  "inv.res.noAccount": ["Not notified yet - they'll see the invitation once they sign up with this email and verify it. Send them the link.", "Chưa thông báo được - họ sẽ thấy lời mời sau khi đăng ký bằng email này và xác minh email. Hãy gửi link cho họ."],
   "inv.res.notified": ["Invitation sent to their Action Center", "Đã gửi lời mời vào Trung tâm xử lý của họ"],
   "inv.resHint": ["woli doesn't send emails: copy each personal link and send it by email or chat if needed. A personal link only works for that email address.", "woli không tự gửi email: sao chép link cá nhân và gửi qua email/chat nếu cần. Link cá nhân chỉ dùng được cho đúng email đó."],
   "inv.revoke": ["Revoke invitation", "Thu hồi lời mời"],

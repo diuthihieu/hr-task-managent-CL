@@ -90,7 +90,7 @@ test("owners invite people by email - they join only after accepting; any user c
     message: "Welcome to the HR team",
   });
   assert.equal(inv.status, 201, JSON.stringify(inv.body));
-  assert.deepEqual(inv.body.invitations.map((i) => [i.email, i.status, i.hasAccount]), [["contributor@integration.test", "invited", true], ["viewer@integration.test", "invited", true]]);
+  assert.deepEqual(inv.body.invitations.map((i) => [i.email, i.status, i.hasAccount]), [["contributor@integration.test", "invited", false], ["viewer@integration.test", "invited", false]]);
   // Password sign-ups haven't proven they own the address: no email invitation until it is verified.
   assert.equal((v.body as { verification?: string }).verification, "unavailable", "no mail provider in tests");
   assert.equal((await viewer.get<{ items: { type: string }[] }>("/api/notifications")).body.items.filter((n) => n.type === "workspace_invite").length, 0, "unverified accounts don't see email invitations");

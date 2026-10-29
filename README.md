@@ -13,7 +13,10 @@ app ships with no pre-loaded business data.
 
 - **Open sign-up.** Anyone can create an account on the home page (`/`);
   the sign-in and sign-up forms sit at the top, with the how-to guide, the
-  benefits and the Windows download further down.
+  benefits and the Windows download further down. An account must verify its
+  email before it can create a workspace, join through a shared invite link or
+  run the AI connection check. To limit new accounts to some email domains, set
+  `SIGNUP_ALLOWED_DOMAINS` (people invited by email can still sign up).
 - **Workspaces are self-service.** Whoever creates a workspace is its
   **owner**. Owners and admins add other people *by the email they signed up
   with* (unknown emails are rejected) and give them a role: `owner`, `admin`,

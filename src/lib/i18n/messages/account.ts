@@ -72,6 +72,7 @@ export const ACCOUNT = {
   "auth.microsoftSignUp": ["Sign up with Microsoft", "Đăng ký bằng Microsoft"],
   "auth.err.microsoftUnverified": ["Microsoft did not confirm that this email belongs to you, so it can't be used to sign in here. Sign in with your email and password instead, or ask the administrator to enable verified Microsoft emails.", "Microsoft chưa xác nhận email này thuộc về bạn nên không dùng để đăng nhập được. Hãy đăng nhập bằng email và mật khẩu, hoặc nhờ quản trị viên bật xác minh email Microsoft."],
   "auth.err.microsoftNoEmail": ["Your Microsoft account has no email address we can use. Ask your IT administrator to add one.", "Tài khoản Microsoft của bạn không có email dùng được. Hãy nhờ bộ phận IT bổ sung email."],
+  "auth.err.domainNotAllowed": ["New accounts on this server are limited to invited people and approved email domains. Ask a workspace admin to invite you.", "Máy chủ này chỉ cho tạo tài khoản mới với người được mời hoặc email thuộc tên miền được phép. Hãy nhờ admin workspace mời bạn."],
   "auth.err.generic": ["Sign-in failed. Please try again.", "Đăng nhập thất bại. Vui lòng thử lại."],
   "prefs.systemMode": ["System", "Theo hệ thống"],
   "prefs.systemHint": ["Follows your computer / phone setting and switches automatically.", "Theo cài đặt của máy tính / điện thoại và tự chuyển sáng - tối."],

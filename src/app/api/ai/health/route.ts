@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { requireUser, route, HttpError } from "@/lib/authz";
 import { aiConfigured, generate, geminiModels } from "@/lib/ai/gemini";
+import { UNVERIFIED_MESSAGE } from "@/lib/invitations";
 
 /** Connection check for the settings screens: sends a tiny prompt and reports what happened. */
 export const POST = route(async () => {
-  await requireUser();
+  const user = await requireUser();
+  // The only AI call outside a workspace: verified addresses only, outside the try below (BUG-08).
+  if (!user.emailVerifiedAt) throw new HttpError(403, UNVERIFIED_MESSAGE, "email_unverified");
   if (!aiConfigured()) return NextResponse.json({ ok: false, configured: false, models: geminiModels(), message: "GEMINI_API_KEY is not set on the server" });
   const started = Date.now();
   try {

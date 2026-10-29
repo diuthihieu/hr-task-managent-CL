@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, route, readJson, badRequest, supportAccess } from "@/lib/authz";
+import { requireUser, route, readJson, badRequest, supportAccess, HttpError } from "@/lib/authz";
+import { UNVERIFIED_MESSAGE } from "@/lib/invitations";
 import { createWorkspace } from "@/lib/workspace-setup";
 import { nameSchema } from "@/lib/validation";
 
@@ -25,6 +26,8 @@ const createSchema = z.object({ name: nameSchema, description: z.string().max(20
 /** Any signed-in user can create a workspace and becomes its owner. */
 export const POST = route(async (req) => {
   const user = await requireUser();
+  // Creating a workspace is one of the ways into the app's resources: verified addresses only (BUG-08).
+  if (!user.emailVerifiedAt) throw new HttpError(403, UNVERIFIED_MESSAGE, "email_unverified");
   const body = createSchema.parse(await readJson(req));
   const count = await prisma.workspaceMember.count({ where: { userId: user.id, role: "owner", workspace: { deletedAt: null } } });
   if (count >= 50) throw badRequest("You already own 50 workspaces");

@@ -8,6 +8,8 @@ import { randomAvatarColor } from "./passwords";
 import { clientIp, rateLimit, resetRateLimit } from "./rate-limit";
 import { readMicrosoftIdentity, singleTenantIssuer, type MicrosoftClaims } from "./microsoft-identity";
 import { verifySessionRefresh } from "./session-refresh";
+import { signupDomainAllowed } from "./signup-policy";
+import { hasLiveInvitation } from "./invitations";
 
 /** Too many attempts: the sign-in form shows "try again later" instead of "wrong password". */
 class RateLimited extends CredentialsSignin {
@@ -38,14 +40,20 @@ const microsoftSingleTenant = singleTenantIssuer(MICROSOFT_ISSUER);
  * verify email ownership, linking drops that password (Google just proved who
  * owns the address) - the owner can set a new one from their profile.
  */
-async function upsertGoogleUser(p: { sub: string; email: string; name: string }) {
+async function upsertGoogleUser(p: { sub: string; email: string; name: string }): Promise<{ user?: Awaited<ReturnType<typeof prisma.user.findUnique>>; error?: string }> {
   const bySub = await prisma.user.findUnique({ where: { googleSub: p.sub } });
-  if (bySub) return bySub;
+  if (bySub) return { user: bySub };
   const byEmail = await prisma.user.findUnique({ where: { email: p.email } });
-  if (byEmail && (!byEmail.isActive || byEmail.deletedAt)) return byEmail;
+  if (byEmail && (!byEmail.isActive || byEmail.deletedAt)) return { user: byEmail };
   // Google proved who owns the address: drop the (possibly squatted) password and end its sessions.
-  if (byEmail) return prisma.user.update({ where: { id: byEmail.id }, data: { googleSub: p.sub, passwordHash: null, mustChangePassword: false, emailVerifiedAt: new Date(), sessionVersion: { increment: 1 } } });
-  return prisma.user.create({ data: { email: p.email, name: p.name.slice(0, 120) || p.email.split("@")[0], googleSub: p.sub, passwordHash: null, mustChangePassword: false, emailVerifiedAt: new Date(), avatarColor: randomAvatarColor() } });
+  if (byEmail) return { user: await prisma.user.update({ where: { id: byEmail.id }, data: { googleSub: p.sub, passwordHash: null, mustChangePassword: false, emailVerifiedAt: new Date(), sessionVersion: { increment: 1 } } }) };
+  if (!(await mayCreateAccount(p.email))) return { error: "domain_not_allowed" };
+  return { user: await prisma.user.create({ data: { email: p.email, name: p.name.slice(0, 120) || p.email.split("@")[0], googleSub: p.sub, passwordHash: null, mustChangePassword: false, emailVerifiedAt: new Date(), avatarColor: randomAvatarColor() } }) };
+}
+
+/** New accounts follow the same rule as /api/register: SIGNUP_ALLOWED_DOMAINS (empty = open) or a live invitation. */
+async function mayCreateAccount(email: string) {
+  return signupDomainAllowed(email) || hasLiveInvitation(email);
 }
 
 /**
@@ -65,6 +73,7 @@ async function upsertMicrosoftUser(id: { key: string; email: string; name: strin
     if (!byEmail.isActive || byEmail.deletedAt) return { user: byEmail };
     return { user: await prisma.user.update({ where: { id: byEmail.id }, data: { microsoftSub: id.key, passwordHash: null, mustChangePassword: false, emailVerifiedAt: byEmail.emailVerifiedAt ?? new Date(), sessionVersion: { increment: 1 } } }) };
   }
+  if (!(await mayCreateAccount(id.email))) return { error: "domain_not_allowed" };
   return {
     user: await prisma.user.create({
       data: { email: id.email, name: id.name || id.email.split("@")[0], microsoftSub: id.key, passwordHash: null, mustChangePassword: false, emailVerifiedAt: new Date(), avatarColor: randomAvatarColor() },
@@ -135,7 +144,9 @@ export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
       if (account?.provider !== "google") return true;
       const email = typeof profile?.email === "string" ? profile.email.trim().toLowerCase() : "";
       if (!email || profile?.email_verified !== true || !account.providerAccountId) return "/?auth=login&error=google_unverified";
-      const user = await upsertGoogleUser({ sub: account.providerAccountId, email, name: typeof profile.name === "string" ? profile.name : "" });
+      const r = await upsertGoogleUser({ sub: account.providerAccountId, email, name: typeof profile.name === "string" ? profile.name : "" });
+      if (r.error || !r.user) return `/?auth=login&error=${r.error ?? "google_unverified"}`;
+      const user = r.user;
       if (!user.isActive || user.deletedAt) return "/?auth=login&error=account_disabled";
       await prisma.user.update({ where: { id: user.id }, data: { lastLoginAt: new Date(), emailVerifiedAt: user.emailVerifiedAt ?? new Date() } });
       await logSecurityEvent(user.id, "sign_in", "Signed in with Google");

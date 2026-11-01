@@ -96,3 +96,14 @@ test("sub-tasks are grouped with their top-most parent in the list, whatever the
     ["To Do", ["p", "c", "g"]],
   ]);
 });
+
+test("'is' on assignees matches tasks shared with others (U2)", async () => {
+  const { applyFilters } = await import("../query-engine");
+  const { field, record } = await import("./helpers");
+  const people = field("sys_assignees", "Assignees", "people");
+  const rows = [record("hieu", { sys_assignees: ["u-hieu"] }), record("both", { sys_assignees: ["u-hieu", "u-tam"] }), record("tam", { sys_assignees: ["u-tam"] }), record("none", { sys_assignees: [] })];
+  const ids = (op: "is" | "is_not", value: unknown) => applyFilters(rows, [people], { conjunction: "AND", conditions: [{ id: "c", fieldId: "sys_assignees", operator: op, value }] }).map((r) => r.id);
+  assert.deepEqual(ids("is", "u-hieu"), ["hieu", "both"]);
+  assert.deepEqual(ids("is_not", "u-hieu"), ["tam", "none"]);
+  assert.deepEqual(ids("is", ["u-hieu", "u-tam"]), ["hieu", "both", "tam"]);
+});

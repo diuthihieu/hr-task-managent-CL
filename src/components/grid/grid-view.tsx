@@ -1,5 +1,6 @@
 "use client";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { defaultRangeExtractor, useVirtualizer, type Range } from "@tanstack/react-virtual";
 import {
   DndContext,
   closestCenter,
@@ -38,11 +39,16 @@ import { inRange, normalizeRange, planFillDown, planPaste, rangeCols, rangeRows,
 import { parseFieldConfig } from "@/lib/field-types";
 import { groupFieldPatch } from "@/lib/grid-group";
 import { orderVisibleFields } from "@/lib/grid-columns";
-import { DEFAULT_WIDTH, MAX_PASTE_ROWS, PRIMARY_WIDTH, type GridContextMenu, type GridInteractions, type GridSelection, type GridViewProps } from "./grid-shared";
+import { DEFAULT_WIDTH, MAX_PASTE_ROWS, PRIMARY_WIDTH, ROW_HEIGHTS, type GridContextMenu, type GridInteractions, type GridSelection, type GridViewProps } from "./grid-shared";
 import { GroupSection, HeaderCell, ParentGroupHeader, Row } from "./grid-row";
 import { GridClipboardMenu } from "./grid-clipboard-menu";
 
 export type { GridBulkChange } from "./grid-shared";
+
+/** Height of the sticky header row: the rows start below it in the scroll container. */
+const HEADER_HEIGHT = 32;
+/** Rows rendered above and below the visible ones. */
+export const GRID_OVERSCAN = 10;
 
 export function GridView(props: GridViewProps) {
   const { t } = useT();
@@ -151,7 +157,10 @@ export function GridView(props: GridViewProps) {
   if (rowOrder.length !== flatRecords.length || !flatRecords.every((r) => rowOrder.includes(r.id))) {
     setRowOrder(flatRecords.map((r) => r.id));
   }
+  // The row being dragged stays rendered even when it scrolls out of view (see the virtualizer below).
+  const [draggingRowId, setDraggingRowId] = useState<string | null>(null);
   function handleRowDragEnd(e: DragEndEvent) {
+    setDraggingRowId(null);
     const { active, over } = e;
     if (!over || active.id === over.id) return;
     const oldIndex = rowOrder.indexOf(String(active.id));
@@ -180,6 +189,29 @@ export function GridView(props: GridViewProps) {
     ? leaves.flatMap((group) => (collapsedGroups.has(group.key) || hiddenByParent(group) ? [] : (groupTrees.get(group.key) ?? []).map(() => group.key)))
     : displayRows.map(() => undefined);
   const rowIndex = new Map(displayRows.map((record, index) => [record.id, index]));
+
+  // BUG-06a: without grouping only the rows in view (plus overscan) are rendered; spacers above and
+  // below keep the scroll height. Positions go on spacers, never on the rows, whose transform belongs
+  // to dnd-kit. Fixed row heights are known; "auto" (always on phones) is measured.
+  const draggingIndex = draggingRowId ? flatTree.findIndex((r) => r.record.id === draggingRowId) : -1;
+  const rangeExtractor = useCallback(
+    (r: Range) => {
+      const out = defaultRangeExtractor(r);
+      return draggingIndex >= 0 && !out.includes(draggingIndex) ? [...out, draggingIndex].sort((a, b) => a - b) : out;
+    },
+    [draggingIndex],
+  );
+  // eslint-disable-next-line react-hooks/incompatible-library -- the app doesn't use the React Compiler (next.config.ts); the virtualizer re-renders through its own state
+  const virtualizer = useVirtualizer({
+    count: flatTree.length,
+    getScrollElement: () => containerRef.current,
+    estimateSize: () => (rowHeight === "auto" ? ROW_HEIGHTS.short : (ROW_HEIGHTS[rowHeight] ?? 36)),
+    getItemKey: (i) => flatTree[i]?.record.id ?? i,
+    overscan: GRID_OVERSCAN,
+    scrollMargin: HEADER_HEIGHT,
+    rangeExtractor,
+  });
+
   /** What a new row inserted in a group starts with, so it shows in that same group (every level of it). */
   function groupData(groupKey: string | undefined, sample: RecordRow | undefined): Record<string, unknown> {
     const leaf = groupKey === undefined ? undefined : leaves?.find((l) => l.key === groupKey);
@@ -589,17 +621,31 @@ export function GridView(props: GridViewProps) {
 
   const { focusRecordId, onFocused } = props;
   const focusVisible = !!focusRecordId && rowIndex.has(focusRecordId);
+  const flatFocusIndex = focusRecordId && !groups ? flatTree.findIndex((r) => r.record.id === focusRecordId) : -1;
   useEffect(() => {
     if (!focusRecordId || !focusVisible) return;
-    const row = containerRef.current?.querySelector(`[data-record-id="${focusRecordId}"]`);
-    const input = row?.querySelector<HTMLInputElement | HTMLTextAreaElement>('[data-field-id="sys_title"] input, [data-field-id="sys_title"] textarea');
-    row?.scrollIntoView({ block: "center" });
-    if (input) {
-      input.focus();
-      input.select();
-    }
-    onFocused?.();
-  }, [focusRecordId, focusVisible, onFocused]);
+    // A new row may be outside the rendered window: scroll the virtualizer to it first, then focus
+    // once it is in the DOM (a few frames at most).
+    if (flatFocusIndex >= 0) virtualizer.scrollToIndex(flatFocusIndex, { align: "center" });
+    let frame = 0;
+    let tries = 0;
+    const attempt = () => {
+      const row = containerRef.current?.querySelector(`[data-record-id="${focusRecordId}"]`);
+      if (!row && tries++ < 20) {
+        frame = requestAnimationFrame(attempt);
+        return;
+      }
+      const input = row?.querySelector<HTMLInputElement | HTMLTextAreaElement>('[data-field-id="sys_title"] input, [data-field-id="sys_title"] textarea');
+      row?.scrollIntoView({ block: "center" });
+      if (input) {
+        input.focus();
+        input.select();
+      }
+      onFocused?.();
+    };
+    attempt();
+    return () => cancelAnimationFrame(frame);
+  }, [focusRecordId, focusVisible, flatFocusIndex, virtualizer, onFocused]);
 
   /** Tasks a move / duplicate acts on: the ticked rows, else the rows of the current selection. */
   function transferIds(): string[] {
@@ -625,6 +671,24 @@ export function GridView(props: GridViewProps) {
     setSelection(null);
     await props.onDeleteRecords(ids);
   }
+
+  const virtualItems = groups ? [] : virtualizer.getVirtualItems();
+  const padTop = virtualItems.length ? virtualItems[0].start - HEADER_HEIGHT : 0;
+  const padBottom = virtualItems.length ? virtualizer.getTotalSize() - (virtualItems[virtualItems.length - 1].end - HEADER_HEIGHT) : 0;
+  const virtualRows = (
+    <>
+      {padTop > 0 && <div aria-hidden style={{ height: padTop }} />}
+      {virtualItems.map((item) => {
+        const r = flatTree[item.index];
+        return (
+          <div key={r.record.id} data-index={item.index} ref={rowHeight === "auto" ? virtualizer.measureElement : undefined}>
+            <Row record={r.record} depth={r.depth} childCount={r.childCount} {...props} rowHeight={rowHeight} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />
+          </div>
+        );
+      })}
+      {padBottom > 0 && <div aria-hidden style={{ height: padBottom }} />}
+    </>
+  );
 
   return (
     <div
@@ -665,7 +729,7 @@ export function GridView(props: GridViewProps) {
             </div>
           </div>
         </DndContext>
-        <DndContext sensors={rowSensors} collisionDetection={closestCenter} onDragEnd={handleRowDragEnd}>
+        <DndContext sensors={rowSensors} collisionDetection={closestCenter} onDragStart={(e) => setDraggingRowId(String(e.active.id))} onDragEnd={handleRowDragEnd} onDragCancel={() => setDraggingRowId(null)}>
           {leaves ? (
             leaves.map((group, li) => {
               const prev = leaves[li - 1];
@@ -704,12 +768,10 @@ export function GridView(props: GridViewProps) {
             })
           ) : props.reorderable ? (
             <SortableContext items={flatTree.map((r) => r.record.id)} strategy={verticalListSortingStrategy}>
-              {flatTree.map((r) => (
-                <Row key={r.record.id} record={r.record} depth={r.depth} childCount={r.childCount} {...props} rowHeight={rowHeight} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />
-              ))}
+              {virtualRows}
             </SortableContext>
           ) : (
-            flatTree.map((r) => <Row key={r.record.id} record={r.record} depth={r.depth} childCount={r.childCount} {...props} rowHeight={rowHeight} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />)
+            virtualRows
           )}
         </DndContext>
       </div>

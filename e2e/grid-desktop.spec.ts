@@ -164,3 +164,24 @@ test('the "+" between rows inserts into the group that was clicked, also for a t
   const added = (await records(page.request, p.id)).find((r) => r.data.sys_title !== "Both teams")!;
   expect(added.data[fieldId]).toEqual([alpha]);
 });
+
+test("a long task list renders only the rows in view (virtualized), and the last task is reachable by scrolling (BUG-06a)", async ({ page, seed }) => {
+  const p = await project(page.request, seed.wsId, ["Task 000"]);
+  let anchor = p.tasks[0].id;
+  for (let i = 0; i < 6; i++) {
+    const res = await page.request.post(`/api/projects/${p.id}/tasks/insert`, { data: { anchorId: anchor, position: "below", count: 50, data: {} } });
+    expect(res.ok(), `insert ${res.status()}`).toBeTruthy();
+  }
+  const last = await page.request.post(`/api/projects/${p.id}/tasks`, { data: { data: { sys_title: "Last task of the list" } } });
+  expect(last.ok()).toBeTruthy();
+  anchor = ((await last.json()) as Rec).id;
+
+  await page.goto(`/w/${seed.slug}/p/${p.id}`);
+  const grid = page.getByTestId("grid-view");
+  await expect(rows(page).first()).toBeVisible();
+  const rendered = await rows(page).count();
+  expect(rendered, "302 tasks, only a window of them in the DOM").toBeLessThan(120);
+  await grid.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await expect(row(page, anchor)).toBeVisible();
+  expect(await rows(page).count()).toBeLessThan(120);
+});

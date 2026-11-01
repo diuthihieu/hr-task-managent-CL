@@ -47,7 +47,7 @@ async function main() {
   const status = await prisma.status.findFirst({ where: { workspaceId }, orderBy: [{ isDefault: "desc" }, { sortOrder: "asc" }] });
   if (!status) throw new Error("The workspace has no statuses");
 
-  const project = await prisma.project.create({ data: { workspaceId, name: `Perf ${n}${withRollup ? " + rollup" : ""} ${new Date().toISOString().slice(0, 16)}`, createdById: admin.id, ownerId: admin.id } });
+  const project = await prisma.project.create({ data: { workspaceId, name: `Perf ${n}${withRollup ? " + rollup" : ""} ${new Date().toISOString().slice(0, 16)}`, createdById: admin.id, ownerId: admin.id, views: { create: [{ name: "All tasks", type: "grid", isDefault: true, isBase: true, sortOrder: 0, createdById: admin.id }] } } });
   const link = await prisma.customField.create({ data: { projectId: project.id, name: "Related", type: "link", sortOrder: 0, settings: { maxLinks: 20 } } });
   if (withRollup) await prisma.customField.create({ data: { projectId: project.id, name: "Related count", type: "rollup", sortOrder: 1, settings: { lookupLinkFieldId: link.id, lookupFieldId: "", rollupFn: "count" } } });
 

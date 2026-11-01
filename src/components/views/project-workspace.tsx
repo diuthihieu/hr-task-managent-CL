@@ -19,7 +19,7 @@ import { RecordDrawer } from "@/components/grid/record-drawer";
 import { FieldEditorDialog } from "@/components/fields/field-editor-dialog";
 import { ExportDialog } from "./export-dialog";
 import type { LinkTarget } from "@/components/grid/cell";
-import { applyFilters, applySorts, applyGroup, getCellValue, type ViewConfig } from "@/lib/query-engine";
+import { applyFilters, applySorts, applyGroup, filterConditionCount, getCellValue, type ViewConfig } from "@/lib/query-engine";
 import { parseFieldConfig } from "@/lib/field-types";
 import { groupFieldPatch } from "@/lib/grid-group";
 import { orderVisibleFields } from "@/lib/grid-columns";
@@ -171,7 +171,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
   );
   const sorted = useMemo(() => applySorts(filtered, fields, config.sorts), [filtered, fields, config.sorts]);
   const groups = useMemo(() => applyGroup(sorted, fields, config.group, members), [sorted, fields, config.group, members]);
-  const reorderable = (!config.sorts || config.sorts.length === 0) && !config.group?.fieldId && !search.trim() && !config.filters?.conditions?.length;
+  const reorderable = (!config.sorts || config.sorts.length === 0) && !config.group?.fieldId && !search.trim() && !filterConditionCount(config.filters);
 
   async function handleCellChange(recordId: string, fieldId: string, value: unknown) {
     return handleCellChangeMultiple(recordId, { [fieldId]: value });

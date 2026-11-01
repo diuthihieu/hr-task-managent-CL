@@ -7,7 +7,7 @@
 // records for the widget's table, so a widget always reflects live Base data.
 
 import type { FieldRow, RecordRow } from "@/types";
-import { applyFilters, getCellValue, resolveValueLabel, type FilterGroup, type FilterCondition, type MemberLite } from "./query-engine";
+import { applyFilters, filterConditionCount, withoutFieldConditions, getCellValue, resolveValueLabel, type FilterGroup, type FilterCondition, type MemberLite } from "./query-engine";
 import { parseFieldConfig } from "./field-types";
 
 export type Aggregation = "count" | "distinct" | "sum" | "avg" | "min" | "max";
@@ -109,10 +109,12 @@ export function widgetConfigProblem(type: string, config: DashboardBlockConfig, 
   return null;
 }
 
-/** Merge dashboard-level, chart-level and slicer filter groups into one AND group. */
+/**
+ * Merge view-level, chart-level and slicer filters: every one of them must hold (AND), each keeping
+ * its own AND / OR (an OR chart filter used to be flattened into the AND list).
+ */
 export function mergeFilters(...groups: (FilterGroup | undefined)[]): FilterGroup {
-  const conditions = groups.flatMap((g) => g?.conditions ?? []);
-  return { conjunction: "AND", conditions };
+  return { conjunction: "AND", conditions: [], groups: groups.filter((g): g is FilterGroup => filterConditionCount(g) > 0) };
 }
 
 export interface CrossFilter {
@@ -368,9 +370,7 @@ export function computeKpiTrend(
 
   // The selected comparison field defines the period. A saved date filter on
   // that same field must not make the current/previous windows asymmetric.
-  const filters = config.filters
-    ? { ...config.filters, conditions: config.filters.conditions.filter((condition) => condition.fieldId !== dateField.id) }
-    : undefined;
+  const filters = config.filters ? withoutFieldConditions(config.filters, dateField.id) : undefined;
   const base = applyFilters(records, fields, filters, currentUserId);
   const currentStart = utcPeriodStart(now, period);
   const currentEnd = shiftUtcPeriod(currentStart, period, 1);

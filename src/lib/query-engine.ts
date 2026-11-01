@@ -404,6 +404,8 @@ export interface RecordGroup {
   color?: string;
   records: RecordRow[];
   aggregate?: number;
+  /** The field this group's value comes from (a level whose field was deleted is skipped, so it can't be read off the rule). */
+  fieldId?: string;
   /** Sub-groups (multi-level grouping). */
   children?: RecordGroup[];
 }
@@ -429,7 +431,7 @@ export function leafGroups(groups: RecordGroup[], rule: GroupRule, parent: Group
   const levelField = [rule.fieldId, ...(rule.thenFieldIds ?? [])][parent.length] ?? "";
   return groups.flatMap((g) => {
     const pathKey = parent.length ? `${parent[parent.length - 1].pathKey}\u0001${g.key}` : g.key;
-    const step: GroupPathStep = { fieldId: levelField, key: g.key, label: g.label, color: g.color, count: g.records.length, aggregate: g.aggregate, pathKey };
+    const step: GroupPathStep = { fieldId: g.fieldId ?? levelField, key: g.key, label: g.label, color: g.color, count: g.records.length, aggregate: g.aggregate, pathKey };
     const path = [...parent, step];
     return g.children?.length ? leafGroups(g.children, rule, path) : [{ ...g, key: pathKey, path }];
   });
@@ -484,7 +486,7 @@ export function applyGroup(
       else if (group.aggFn === "min") aggregate = nums.length ? Math.min(...nums) : 0;
       else if (group.aggFn === "max") aggregate = nums.length ? Math.max(...nums) : 0;
     }
-    result.push({ key, label, color, records: recs, aggregate });
+    result.push({ key, label, color, records: recs, aggregate, fieldId: field.id });
   }
   result.sort((a, b) => a.label.localeCompare(b.label));
   const [next, ...rest] = (group.thenFieldIds ?? []).filter((id) => id && id !== group.fieldId && byId.has(id));

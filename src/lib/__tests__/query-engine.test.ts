@@ -165,3 +165,14 @@ test("multi-level grouping: the first group is the parent, the next ones nest in
   assert.equal(leaves[0].path[0].count, 2, "the parent level knows its size");
   assert.deepEqual(leafGroups(applyGroup(rows, fields, { fieldId: "sys_category" })!, { fieldId: "sys_category" }).map((l) => l.key), ["Payroll", "Recruit"], "one level: same keys as before");
 });
+
+test("multi-level grouping: a level whose field was deleted is skipped, and each leaf keeps the real field of every level", async () => {
+  const { applyGroup, leafGroups } = await import("../query-engine");
+  const { field, record } = await import("./helpers");
+  const fields = [field("sys_category", "Category", "text"), field("sys_assignees", "Assignees", "people")];
+  const rows = [record("1", { sys_category: "Payroll", sys_assignees: ["hieu"] })];
+  // Saved as Category -> (deleted field) -> Assignees.
+  const rule = { fieldId: "sys_category", thenFieldIds: ["cf_deleted", "sys_assignees"] };
+  const leaves = leafGroups(applyGroup(rows, fields, rule)!, rule);
+  assert.deepEqual(leaves.map((l) => l.path.map((p) => [p.fieldId, p.key])), [[["sys_category", "Payroll"], ["sys_assignees", "hieu"]]]);
+});

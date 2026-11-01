@@ -6,7 +6,7 @@ import { ListTree, GripVertical, Info, Plus, ChevronDown, ChevronRight } from "l
 import { Checkbox } from "@/components/ui/misc";
 import { Cell } from "./cell";
 import { FieldHeaderMenu } from "./field-header-menu";
-import { getCellValue, getConditionalStyle, type RecordGroup } from "@/lib/query-engine";
+import { getCellValue, getConditionalStyle, type GroupPathStep, type RecordGroup } from "@/lib/query-engine";
 import type { FieldRow, RecordRow } from "@/types";
 import { cn } from "@/lib/utils";
 import { RecordOpenButtons, revealOn } from "@/components/grid/record-open-buttons";
@@ -69,9 +69,29 @@ export function HeaderCell({
   );
 }
 
+/** Indent per group level. */
+const GROUP_STEP = 18;
+
+/** Header of an outer level in a multi-level grouping (the leaf level is a GroupSection). */
+export function ParentGroupHeader({ step, depth, open, onToggle }: { step: GroupPathStep; depth: number; open: boolean; onToggle: () => void }) {
+  return (
+    <div role="row" className="bg-neutral-200/70 dark:bg-neutral-800 border-b border-neutral-200 dark:border-neutral-700 py-1.5 pr-2" style={{ width: "100%", paddingLeft: 8 + depth * GROUP_STEP }} data-testid="group-parent-header">
+      <button onClick={onToggle} className="sticky left-2 w-max flex items-center gap-1.5 text-sm font-semibold text-neutral-800 dark:text-neutral-100">
+        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+        {step.color && <span className="h-2 w-2 rounded-full" style={{ backgroundColor: step.color }} />}
+        {step.label}
+        <span className="text-neutral-400 font-normal">{step.count}</span>
+        {step.aggregate !== undefined && <span className="text-neutral-400 font-normal ml-2">Σ {step.aggregate.toLocaleString()}</span>}
+      </button>
+    </div>
+  );
+}
+
 export function GroupSection(
   props: {
     group: RecordGroup;
+    /** Level in a multi-level grouping (0 = outermost). */
+    depth?: number;
     treeRows: TreeRow<RecordRow>[];
     open: boolean;
     onToggle: () => void;
@@ -80,11 +100,11 @@ export function GroupSection(
     interactions: GridInteractions;
   } & GridViewProps
 ) {
-  const { group, open, onToggle, treeRows, ...rowProps } = props;
+  const { group, open, onToggle, treeRows, depth = 0, ...rowProps } = props;
   const { t } = useT();
   return (
     <>
-      <div role="row" className="bg-neutral-100 dark:bg-neutral-800/60 border-b border-neutral-200 dark:border-neutral-800 px-2 py-1.5" style={{ width: "100%" }}>
+      <div role="row" className="bg-neutral-100 dark:bg-neutral-800/60 border-b border-neutral-200 dark:border-neutral-800 py-1.5 pr-2" style={{ width: "100%", paddingLeft: 8 + depth * GROUP_STEP }}>
         {/* Sticky so the group name stays in view while the grid scrolls sideways. */}
         <button onClick={onToggle} className="sticky left-2 w-max flex items-center gap-1.5 text-sm font-medium text-neutral-700 dark:text-neutral-200" data-testid="group-header">
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}

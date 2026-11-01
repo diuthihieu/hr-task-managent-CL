@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import {
   DndContext,
   closestCenter,
@@ -13,7 +13,7 @@ import { Plus } from "lucide-react";
 import { Checkbox } from "@/components/ui/misc";
 import { CellDisplayValue } from "./cell";
 import { AddFieldButton } from "./add-field-menu";
-import { getCellValue } from "@/lib/query-engine";
+import { getCellValue, leafGroups, type LeafGroup } from "@/lib/query-engine";
 import type { FieldRow, RecordRow } from "@/types";
 import { cn } from "@/lib/utils";
 import { useT } from "@/components/i18n-provider";
@@ -39,7 +39,7 @@ import { parseFieldConfig } from "@/lib/field-types";
 import { groupFieldPatch } from "@/lib/grid-group";
 import { orderVisibleFields } from "@/lib/grid-columns";
 import { DEFAULT_WIDTH, MAX_PASTE_ROWS, PRIMARY_WIDTH, type GridContextMenu, type GridInteractions, type GridSelection, type GridViewProps } from "./grid-shared";
-import { GroupSection, HeaderCell, Row } from "./grid-row";
+import { GroupSection, HeaderCell, ParentGroupHeader, Row } from "./grid-row";
 import { GridClipboardMenu } from "./grid-clipboard-menu";
 
 export type { GridBulkChange } from "./grid-shared";
@@ -166,24 +166,32 @@ export function GridView(props: GridViewProps) {
 
   // Sub-tasks sit under their parent (indented); collapsed parents hide theirs.
   const flatTree = groups ? [] : buildTaskTree(props.reorderable ? orderedFlatRecords : flatRecords, collapsedTasks);
-  const groupTrees = new Map((groups ?? []).map((group) => [group.key, buildTaskTree(group.records, collapsedTasks)]));
+  // Multi-level grouping: the innermost groups, each with the levels above it (one level = as before).
+  const leaves = groups ? leafGroups(groups, props.groupRule ?? { fieldId: props.groupFieldId ?? null }) : null;
+  const hiddenByParent = (leaf: LeafGroup) => leaf.path.slice(0, -1).some((step) => collapsedGroups.has(step.pathKey));
+  const groupTrees = new Map((leaves ?? []).map((group) => [group.key, buildTaskTree(group.records, collapsedTasks)]));
   const hasHierarchy = groups ? [...groupTrees.values()].some((rows) => rows.some((r) => r.depth > 0 || r.childCount > 0)) : flatTree.some((r) => r.depth > 0 || r.childCount > 0);
   // Rows in the order they are on screen (rows of collapsed groups / parents are not part of any range).
-  const displayRows = groups
-    ? groups.flatMap((group) => (collapsedGroups.has(group.key) ? [] : (groupTrees.get(group.key) ?? []).map((r) => r.record)))
+  const displayRows = leaves
+    ? leaves.flatMap((group) => (collapsedGroups.has(group.key) || hiddenByParent(group) ? [] : (groupTrees.get(group.key) ?? []).map((r) => r.record)))
     : flatTree.map((r) => r.record);
   // The group each on-screen row is shown in (a task with several assignees can sit in several groups).
-  const displayGroupKeys: (string | undefined)[] = groups
-    ? groups.flatMap((group) => (collapsedGroups.has(group.key) ? [] : (groupTrees.get(group.key) ?? []).map(() => group.key)))
+  const displayGroupKeys: (string | undefined)[] = leaves
+    ? leaves.flatMap((group) => (collapsedGroups.has(group.key) || hiddenByParent(group) ? [] : (groupTrees.get(group.key) ?? []).map(() => group.key)))
     : displayRows.map(() => undefined);
   const rowIndex = new Map(displayRows.map((record, index) => [record.id, index]));
-  const groupField = props.groupFieldId ? fields.find((f) => f.id === props.groupFieldId) : undefined;
-
-  /** What a new row inserted in a group starts with, so it shows in that same group. */
+  /** What a new row inserted in a group starts with, so it shows in that same group (every level of it). */
   function groupData(groupKey: string | undefined, sample: RecordRow | undefined): Record<string, unknown> {
-    if (!groupField || groupKey === undefined) return {};
-    const value = sample ? getCellValue(sample, groupField, fields) : undefined;
-    return groupFieldPatch(groupField, groupKey, value) ?? {};
+    const leaf = groupKey === undefined ? undefined : leaves?.find((l) => l.key === groupKey);
+    if (!leaf) return {};
+    const out: Record<string, unknown> = {};
+    for (const step of leaf.path) {
+      const field = fields.find((f) => f.id === step.fieldId);
+      if (!field) continue;
+      const value = sample ? getCellValue(sample, field, fields) : undefined;
+      Object.assign(out, groupFieldPatch(field, step.key, value) ?? {});
+    }
+    return out;
   }
 
   /**
@@ -650,28 +658,42 @@ export function GridView(props: GridViewProps) {
           </div>
         </DndContext>
         <DndContext sensors={rowSensors} collisionDetection={closestCenter} onDragEnd={handleRowDragEnd}>
-          {groups ? (
-            groups.map((group) => (
-              <GroupSection
-                key={group.key}
-                group={group}
-                open={!collapsedGroups.has(group.key)}
-                onToggle={() =>
-                  setCollapsedGroups((prev) => {
-                    const next = new Set(prev);
-                    if (next.has(group.key)) next.delete(group.key);
-                    else next.add(group.key);
-                    return next;
-                  })
-                }
-                {...props}
-                rowHeight={rowHeight}
-                treeRows={groupTrees.get(group.key) ?? []}
-                visibleFields={visibleFields}
-                widthOf={widthOf}
-                interactions={interactions}
-              />
-            ))
+          {leaves ? (
+            leaves.map((group, li) => {
+              const prev = leaves[li - 1];
+              const toggle = (key: string) =>
+                setCollapsedGroups((p) => {
+                  const next = new Set(p);
+                  if (next.has(key)) next.delete(key);
+                  else next.add(key);
+                  return next;
+                });
+              // Headers of the parent levels that start at this group (not shown under a collapsed parent).
+              const parents = group.path.slice(0, -1).map((step, depth) =>
+                prev?.path[depth]?.pathKey === step.pathKey || group.path.slice(0, depth).some((a) => collapsedGroups.has(a.pathKey)) ? null : (
+                  <ParentGroupHeader key={step.pathKey} step={step} depth={depth} open={!collapsedGroups.has(step.pathKey)} onToggle={() => toggle(step.pathKey)} />
+                ),
+              );
+              return (
+                <Fragment key={group.key}>
+                  {parents}
+                  {!hiddenByParent(group) && (
+                    <GroupSection
+                      group={group}
+                      depth={group.path.length - 1}
+                      open={!collapsedGroups.has(group.key)}
+                      onToggle={() => toggle(group.key)}
+                      {...props}
+                      rowHeight={rowHeight}
+                      treeRows={groupTrees.get(group.key) ?? []}
+                      visibleFields={visibleFields}
+                      widthOf={widthOf}
+                      interactions={interactions}
+                    />
+                  )}
+                </Fragment>
+              );
+            })
           ) : props.reorderable ? (
             <SortableContext items={flatTree.map((r) => r.record.id)} strategy={verticalListSortingStrategy}>
               {flatTree.map((r) => (

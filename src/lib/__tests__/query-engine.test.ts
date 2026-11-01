@@ -142,3 +142,26 @@ test("dashboard filters keep a chart's OR when merged with slicers", async () =>
   const slicer = { conjunction: "AND" as const, conditions: [{ id: "3", fieldId: "sys_priority", operator: "is" as const, value: "high" }] };
   assert.deepEqual(applyFilters(rows, fields, mergeFilters(undefined, chart, slicer)).map((r) => r.id), ["a", "b"]);
 });
+
+test("multi-level grouping: the first group is the parent, the next ones nest inside (U5)", async () => {
+  const { applyGroup, leafGroups } = await import("../query-engine");
+  const { field, record } = await import("./helpers");
+  const fields = [field("sys_category", "Category", "text"), field("sys_assignees", "Assignees", "people"), field("sys_actual", "Actual", "number")];
+  const rows = [
+    record("1", { sys_category: "Payroll", sys_assignees: ["hieu"], sys_actual: 2 }),
+    record("2", { sys_category: "Payroll", sys_assignees: ["hieu", "tam"], sys_actual: 3 }),
+    record("3", { sys_category: "Recruit", sys_assignees: ["tam"], sys_actual: 4 }),
+  ];
+  const rule = { fieldId: "sys_category", thenFieldIds: ["sys_assignees"], aggFn: "sum" as const, aggFieldId: "sys_actual" };
+  const groups = applyGroup(rows, fields, rule)!;
+  assert.deepEqual(groups.map((g) => [g.label, g.records.length, g.aggregate]), [["Payroll", 2, 5], ["Recruit", 1, 4]]);
+  assert.deepEqual(groups[0].children!.map((g) => [g.key, g.records.map((r) => r.id), g.aggregate]), [["hieu", ["1", "2"], 5], ["tam", ["2"], 3]]);
+  const leaves = leafGroups(groups, rule);
+  assert.deepEqual(leaves.map((l) => [l.key.split("\u0001"), l.path.map((p) => p.fieldId)]), [
+    [["Payroll", "hieu"], ["sys_category", "sys_assignees"]],
+    [["Payroll", "tam"], ["sys_category", "sys_assignees"]],
+    [["Recruit", "tam"], ["sys_category", "sys_assignees"]],
+  ]);
+  assert.equal(leaves[0].path[0].count, 2, "the parent level knows its size");
+  assert.deepEqual(leafGroups(applyGroup(rows, fields, { fieldId: "sys_category" })!, { fieldId: "sys_category" }).map((l) => l.key), ["Payroll", "Recruit"], "one level: same keys as before");
+});

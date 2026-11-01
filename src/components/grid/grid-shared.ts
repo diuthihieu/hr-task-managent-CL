@@ -1,6 +1,6 @@
 // Shared by the grid's pieces: sizes, limits, and the selection / interaction types.
 import { type Member, type LinkTarget, type OkrOptions } from "./cell";
-import { type RecordGroup, type ConditionalFormatRule } from "@/lib/query-engine";
+import { type RecordGroup, type ConditionalFormatRule, type GroupRule } from "@/lib/query-engine";
 import type { FieldRow, RecordRow } from "@/types";
 import { type CellRange } from "@/lib/grid-selection";
 
@@ -48,6 +48,8 @@ export interface GridViewProps {
   onDeleteRecords?: (ids: string[]) => Promise<void>;
   /** The field the view is grouped by: new rows added inside a group take that group's value. */
   groupFieldId?: string;
+  /** Full grouping (levels below the first), for multi-level groups. */
+  groupRule?: GroupRule;
   /** Scroll to this task and focus its name cell (e.g. right after "+ New task"); `onFocused` then clears it. */
   focusRecordId?: string | null;
   onFocused?: () => void;

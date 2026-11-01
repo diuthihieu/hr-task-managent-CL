@@ -556,6 +556,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onFocused={() => setFocusTaskId(null)}
           onDeleteRecords={caps.has("task.delete") ? handleDeleteRecords : undefined}
           groupFieldId={config.group?.fieldId || undefined}
+          groupRule={config.group}
           onOpenRecord={setOpenRecordId}
           onOpenPage={openPage}
           onAddField={canFields ? handleAddField : () => toast.info(t("pp.noFields"))}

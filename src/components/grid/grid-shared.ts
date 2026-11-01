@@ -82,5 +82,5 @@ export interface GridInteractions {
   /** Values a new row needs to land in a group (grouped views); `{}` otherwise. */
   groupData: (groupKey: string | undefined, sample: RecordRow | undefined) => Record<string, unknown>;
   /** Insert one row right below this one (the "+" on the line between two rows); undefined without the right. */
-  insertBelow?: (recordId: string) => void;
+  insertBelow?: (recordId: string, groupKey?: string) => void;
 }

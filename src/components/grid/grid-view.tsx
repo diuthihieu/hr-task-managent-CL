@@ -575,6 +575,13 @@ export function GridView(props: GridViewProps) {
       },
     },
     groupData,
+    insertBelow: props.onInsertRows
+      ? (recordId: string) => {
+          const at = rowIndex.get(recordId);
+          const anchor = at === undefined ? undefined : displayRows[at];
+          if (anchor && at !== undefined) void props.onInsertRows!(anchor.id, "below", 1, insertData(anchor, displayGroupKeys[at]));
+        }
+      : undefined,
   };
 
   const canPaste = visibleFields.some(isGridFieldPasteable);

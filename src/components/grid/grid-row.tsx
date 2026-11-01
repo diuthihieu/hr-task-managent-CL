@@ -174,7 +174,7 @@ export function Row({
         role="cell"
         onMouseDownCapture={(event) => interactions.rowMouseDown(event, record.id)}
         onContextMenu={interactions.openMenu}
-        className={cn("sticky left-0 z-10 flex items-center justify-center gap-0.5 bg-white dark:bg-neutral-950 border-b border-r border-neutral-100 dark:border-neutral-900 shrink-0", activeRow && "ring-2 ring-inset ring-indigo-500")}
+        className={cn("sticky left-0 z-10 group-hover/row:z-20 flex items-center justify-center gap-0.5 bg-white dark:bg-neutral-950 border-b border-r border-neutral-100 dark:border-neutral-900 shrink-0", activeRow && "ring-2 ring-inset ring-indigo-500")}
         style={{ height, minHeight, width: 36, minWidth: 36 }}
         data-testid="row-handle"
       >
@@ -182,6 +182,22 @@ export function Row({
           <GripVertical size={12} />
         </span>
         <Checkbox checked={selected} onCheckedChange={() => props.onToggleSelect(record.id)} />
+        {interactions.insertBelow && (
+          // Hovering the line under this row shows a "+" that inserts a row right there.
+          <div className="group/ins absolute -bottom-[7px] left-0 z-30 flex h-[14px] w-9 items-center justify-center">
+            <button
+              type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => interactions.insertBelow?.(record.id)}
+              className="flex h-4 w-4 items-center justify-center rounded-full bg-indigo-600 text-white opacity-0 shadow group-hover/ins:opacity-100 focus-visible:opacity-100"
+              aria-label={t("grid.insertHere")}
+              title={t("grid.insertHere")}
+              data-testid="row-insert-between"
+            >
+              <Plus size={11} />
+            </button>
+          </div>
+        )}
       </div>
       {visibleFields.map((field, idx) => {
         const value = getCellValue(record, field, props.fields);
@@ -275,7 +291,7 @@ export function Row({
                   <ListTree size={13} />
                 </button>
               )}
-              <div className={cn("flex-1 overflow-hidden", autoFit ? "" : "h-full", field.isPrimary && autoFit && "md:pr-7", field.isPrimary && childCount > 0 && "[&_input]:font-semibold [&_textarea]:font-semibold", field.isPrimary && depth > 0 && "[&_input]:text-neutral-700 [&_textarea]:text-neutral-700 dark:[&_input]:text-neutral-300 dark:[&_textarea]:text-neutral-300")}>
+              <div className={cn("flex-1 overflow-hidden", autoFit ? "" : "h-full", field.isPrimary && autoFit && "md:pr-7", field.isPrimary && childCount > 0 && "[&_input]:font-semibold [&_textarea]:font-semibold", field.isPrimary && depth > 0 && "[&_input]:text-[13px] [&_textarea]:text-[13px] [&_input]:text-neutral-500 [&_textarea]:text-neutral-500 dark:[&_input]:text-neutral-400 dark:[&_textarea]:text-neutral-400")}>
                 <Cell
                   field={field}
                   value={value}

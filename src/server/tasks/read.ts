@@ -7,6 +7,7 @@ import type { FieldRow, RecordRow } from "@/types";
 import { makeT, type MessageKey, type TFunction } from "@/lib/i18n/core";
 import { getCellValue } from "@/lib/query-engine";
 import { SYS, fromDateOnly, isUuid, okrTargetToken } from "./values";
+import { collectLinkedTaskIds, computedLinkFields, linksOf, type LinkLoader } from "./linked-set";
 
 type Tx = Prisma.TransactionClient;
 
@@ -323,6 +324,27 @@ export async function loadTaskRecord(taskId: string, db: Tx | typeof prisma = pr
   const types = new Map(meta.customFields.map((f) => [f.id, f.type]));
   const fields = buildFields(meta);
   if (!meta.customFields.some((f) => f.type === "lookup" || f.type === "rollup")) return toRecord(task, types);
-  const tasks = await db.task.findMany({ where: { projectId: task.projectId, deletedAt: null }, include: TASK_INCLUDE, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }, { id: "asc" }] });
+  // Only the tasks its lookups / rollups can reach (BUG-07), in the project's row order: the values
+  // depend on that order, so they come out exactly as with the whole project loaded.
+  const follow = computedLinkFields(fields);
+  const customLinks = follow.filter((id) => types.get(id) === "link");
+  const loadLinks: LinkLoader = async (ids) =>
+    (
+      await db.task.findMany({
+        where: { id: { in: ids }, projectId: task.projectId, deletedAt: null },
+        select: { id: true, parentTaskId: true, dependencies: { select: { dependsOnTaskId: true } }, customValues: { where: { customFieldId: { in: customLinks } }, select: { customFieldId: true, valueTaskIds: true } } },
+      })
+    ).map((t) => ({
+      id: t.id,
+      links: [
+        ...(follow.includes(SYS.parent) && t.parentTaskId ? [t.parentTaskId] : []),
+        ...(follow.includes(SYS.dependsOn) ? t.dependencies.map((d) => d.dependsOnTaskId) : []),
+        ...t.customValues.flatMap((v) => v.valueTaskIds),
+      ],
+    }));
+  const own = toRecord(task, types);
+  const ids = await collectLinkedTaskIds({ id: task.id, links: linksOf(own, follow) }, loadLinks);
+  const order = [{ sortOrder: "asc" as const }, { createdAt: "asc" as const }, { id: "asc" as const }];
+  const tasks = await db.task.findMany({ where: { projectId: task.projectId, deletedAt: null, ...(ids ? { id: { in: [...ids] } } : {}) }, include: TASK_INCLUDE, orderBy: order });
   return resolveComputedFields(tasks.map((t) => toRecord(t, types)), fields).find((r) => r.id === taskId) ?? null;
 }

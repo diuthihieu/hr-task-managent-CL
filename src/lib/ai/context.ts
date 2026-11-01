@@ -9,6 +9,7 @@ import { htmlToText } from "./extract";
 import { isCurrentKnowledge } from "../wiki";
 import { taskCommentsSection } from "./task-comments";
 import { taskRef, type CitationTarget } from "./citations";
+import { ownMinutes } from "../hours";
 
 // Grounding context for the AI. Everything given to the model is read with
 // the same permission filters as the rest of the app, so the model can only
@@ -123,6 +124,40 @@ export async function hoursSection(where: Prisma.TaskWhereInput): Promise<string
   });
   const text = timeSummarySection(rows);
   return rows.length === HOURS_TASK_LIMIT ? `${text}\n[Note: only the first ${HOURS_TASK_LIMIT} tasks were counted - totals are partial.]` : text;
+}
+
+/**
+ * Estimate / actual hours per person, category and month, counted from the tasks themselves (not from
+ * whatever charts a dashboard shows). A task with several assignees counts in full for each of them; a
+ * parent counts only its own share (its total minus its sub-tasks), so a branch is never counted twice.
+ */
+export async function hoursByCategorySection(where: Prisma.TaskWhereInput): Promise<string> {
+  const tasks = await prisma.task.findMany({
+    where,
+    select: { id: true, parentTaskId: true, estimateMinutes: true, actualMinutes: true, completedAt: true, dueDate: true, startDate: true, status: { select: { category: true } }, category: { select: { name: true } }, assignees: { select: { user: { select: { name: true } } } } },
+    take: HOURS_TASK_LIMIT,
+  });
+  const own = ownMinutes(tasks);
+  const rows = new Map<string, { person: string; category: string; month: string; tasks: number; est: number; act: number; actDone: number }>();
+  for (const t of tasks) {
+    const share = own.get(t.id)!;
+    const m = month(t.completedAt ?? t.dueDate ?? t.startDate);
+    const category = t.category?.name ?? "(no category)";
+    for (const person of t.assignees.length ? t.assignees.map((a) => a.user.name) : ["(unassigned)"]) {
+      const key = `${person}\u0000${category}\u0000${m}`;
+      const r = rows.get(key) ?? { person, category, month: m, tasks: 0, est: 0, act: 0, actDone: 0 };
+      r.tasks++;
+      r.est += share.est;
+      r.act += share.act;
+      if (t.status.category === "done") r.actDone += share.act;
+      rows.set(key, r);
+    }
+  }
+  const list = [...rows.values()].sort((a, b) => a.person.localeCompare(b.person) || b.month.localeCompare(a.month) || a.category.localeCompare(b.category));
+  const head = "## Hours per person, category and month (every live task of the report's projects, before any view / chart / slicer filter; a task with several assignees counts in full for each; parents count only their own share - a parent's hours include its sub-tasks'; month = completed, else due, else start date)\nperson | category | month | tasks | estimate h | actual h | actual h of done tasks\n";
+  if (!list.length) return head + "(no tasks)";
+  const text = head + list.map((r) => [r.person, r.category, r.month, r.tasks, hours(r.est), hours(r.act), hours(r.actDone)].join(" | ")).join("\n");
+  return tasks.length === HOURS_TASK_LIMIT ? `${text}\n[Note: only the first ${HOURS_TASK_LIMIT} tasks were counted - totals are partial.]` : text;
 }
 
 /** Focus time each person logged on tasks the asker can see, per month (last 12 months). */

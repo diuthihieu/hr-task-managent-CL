@@ -27,10 +27,20 @@ export async function recordFocusTime(tx: Tx, s: Pick<FocusSession, "id" | "task
   const add = Math.max(0, total - toMinutes(s.recordedSeconds));
   await tx.focusSession.update({ where: { id: s.id }, data: { recordedSeconds: Math.max(s.recordedSeconds, elapsedSeconds) } });
   if (!add) return 0;
-  const task = await tx.task.findUniqueOrThrow({ where: { id: s.taskId }, select: { actualMinutes: true, workspaceId: true } });
+  const task = await tx.task.findUniqueOrThrow({ where: { id: s.taskId }, select: { actualMinutes: true, workspaceId: true, parentTaskId: true } });
   const to = (task.actualMinutes ?? 0) + add;
   await tx.task.update({ where: { id: s.taskId }, data: { actualMinutes: to, updatedById: actorId } });
   await logActivity(tx, { workspaceId: task.workspaceId, actorId, entityType: "task", entityId: s.taskId, action: "updated", summary: `Focused ${add} min`, changes: { actualMinutes: { from: task.actualMinutes, to } } });
+  // A parent's hours include its sub-tasks' (parent >= sum of its sub-tasks), so time focused on a
+  // sub-task counts for every task above it too.
+  const seen = new Set([s.taskId]);
+  for (let id = task.parentTaskId; id && !seen.has(id); ) {
+    seen.add(id);
+    const parent = await tx.task.findFirst({ where: { id, deletedAt: null }, select: { actualMinutes: true, parentTaskId: true } });
+    if (!parent) break;
+    await tx.task.update({ where: { id }, data: { actualMinutes: (parent.actualMinutes ?? 0) + add, updatedById: actorId } });
+    id = parent.parentTaskId;
+  }
   return add;
 }
 

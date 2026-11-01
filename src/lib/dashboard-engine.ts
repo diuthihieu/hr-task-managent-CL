@@ -94,6 +94,21 @@ function aggregate(values: number[], distinctValues: unknown[], fn: Aggregation,
   return 0;
 }
 
+/**
+ * Why a widget can't show a meaningful number, or null. A sum / average / min / max needs a value
+ * field that exists in the data source; without one every result would read 0 (and an AI report
+ * would repeat that 0 as a fact).
+ */
+export function widgetConfigProblem(type: string, config: DashboardBlockConfig, fields: FieldRow[]): string | null {
+  if (["narrative", "table", "text"].includes(type)) return null;
+  const ids = new Set(fields.map((f) => f.id));
+  const agg = config.aggregation ?? "count";
+  if (agg !== "count" && agg !== "distinct" && !(config.measureFieldId && ids.has(config.measureFieldId))) return `Choose the value field to ${agg} (Edit widget)`;
+  if (config.dimensionFieldId && !ids.has(config.dimensionFieldId)) return "The grouping field no longer exists - choose another (Edit widget)";
+  if (config.dimension2FieldId && !ids.has(config.dimension2FieldId)) return "The second grouping field no longer exists - choose another (Edit widget)";
+  return null;
+}
+
 /** Merge dashboard-level, chart-level and slicer filter groups into one AND group. */
 export function mergeFilters(...groups: (FilterGroup | undefined)[]): FilterGroup {
   const conditions = groups.flatMap((g) => g?.conditions ?? []);

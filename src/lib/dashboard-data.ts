@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { HttpError, hiddenProjectIds, type SessionUser } from "@/lib/authz";
-import { mergeFilters, parseBlockConfig, resolveCrossFilterConditions, type CrossFilter, type DashboardBlockConfig } from "@/lib/dashboard-engine";
+import { mergeFilters, widgetConfigProblem, parseBlockConfig, resolveCrossFilterConditions, type CrossFilter, type DashboardBlockConfig } from "@/lib/dashboard-engine";
 import { loadProjectGrid } from "@/lib/task-grid";
 import type { FieldRow, RecordRow } from "@/types";
 
@@ -39,6 +39,8 @@ export async function loadBlockData(
     prisma.workspaceMember.findMany({ where: { workspaceId }, include: { user: { select: { id: true, name: true, avatarColor: true } } } }),
   ]);
   const fields = grid!.fields;
+  const problem = widgetConfigProblem(block.type, config, fields);
+  if (problem) return { error: problem };
   const memberList = members.map((m) => m.user);
   const viewConfig = view ? (view.config as { filters?: typeof config.filters }) : null;
   const slicerConditions = resolveCrossFilterConditions(fields, memberList, body.slicers);

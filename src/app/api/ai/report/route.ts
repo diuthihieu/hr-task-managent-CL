@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfDashboard, workspaceOfProject, HttpError } from "@/lib/authz";
+import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfDashboard, workspaceOfProject, visibleProjectWhere, HttpError } from "@/lib/authz";
+import { hoursByCategorySection } from "@/lib/ai/context";
 import { aiConfigured, generate, parseJsonAnswer, ROUTE_120_BUDGET } from "@/lib/ai/gemini";
 import { actionSystemPrompt } from "@/lib/ai/actions";
 import { personalPromptBlock } from "@/lib/ai/personal";
@@ -36,13 +37,22 @@ export const POST = route(async (req) => {
 
   let workspaceId: string;
   let source: string;
+  let projectIds: string[];
   if (body.targetKind === "project") {
     workspaceId = (await requireWorkspaceRole(user, await workspaceOfProject(body.targetId), "viewer")).workspaceId;
     source = `Dashboard view of project: ${(await prisma.project.findUniqueOrThrow({ where: { id: body.targetId }, select: { name: true } })).name}`;
+    projectIds = [body.targetId];
   } else {
     workspaceId = (await requireWorkspaceRole(user, await workspaceOfDashboard(body.targetId), "viewer")).workspaceId;
-    source = `Dashboard: ${(await prisma.dashboard.findUniqueOrThrow({ where: { id: body.targetId }, select: { name: true } })).name}`;
+    const dash = await prisma.dashboard.findUniqueOrThrow({ where: { id: body.targetId }, select: { name: true, widgets: { select: { config: true } } } });
+    source = `Dashboard: ${dash.name}`;
+    projectIds = [...new Set(dash.widgets.map((w) => (w.config as { dataSource?: { projectId?: unknown } } | null)?.dataSource?.projectId).filter((id): id is string => typeof id === "string"))];
   }
+  // Hours facts straight from the tasks the user may see, so an hours report never depends on how a
+  // chart happens to be configured (a chart with no value field shows 0).
+  const facts = projectIds.length
+    ? await hoursByCategorySection({ workspaceId, deletedAt: null, projectId: { in: projectIds }, project: { deletedAt: null, ...visibleProjectWhere(user) } })
+    : "";
   const ws = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { slug: true, name: true, logoUpdatedAt: true } });
   const chartList = body.charts.length ? body.charts.map((c) => `- [[chart:${c.id}]] ${c.title || "(untitled chart)"}`).join("\n") : "(no charts)";
   const system = actionSystemPrompt({
@@ -54,11 +64,11 @@ export const POST = route(async (req) => {
 Answer ONLY with JSON: {"title":"<report title>","fileName":"<short file name without extension>","markdown":"<the report>"}
 - The markdown starts with a "# " title, then sections ("## "). Typical: executive summary, key figures, one section per relevant chart with analysis, risks, recommendations - but follow the request (e.g. only visuals, only goals).
 - To show a chart, put its marker alone on its own line, exactly as listed in CHARTS (e.g. [[chart:abc123]]). Use only listed charts; include all of them when the user asks for "all charts".
-- Numbers must come from DATA. Tables are welcome.
+- Numbers must come from DATA. Tables are welcome. For hours (estimate / actual per person, category or month) use the "Hours per person, category and month" table in DATA, which is computed from the tasks; a chart marked "(error: ...)" is misconfigured - don't report its value as 0.
 - If the user names the file, use that name for fileName.
 CHARTS:
 ${chartList}`,
-    data: `${source}\n\n${body.data}`,
+    data: `${source}\n\n${body.data}${facts ? `\n\n${facts}` : ""}`,
     personal: await personalPromptBlock(user.id),
   });
   const r = await generate({ workspaceId, system, contents: [{ role: "user", parts: [{ text: body.prompt + (body.fileName ? `\nFile name: ${body.fileName}` : "") }] }], temperature: 0.3, json: true, maxOutputTokens: 8192, timeBudgetMs: ROUTE_120_BUDGET });

@@ -129,7 +129,9 @@ export function WidgetEditorDialog({
                 className="w-full"
                 value={projectId ?? ""}
                 onValueChange={(v) => {
-                  patchConfig({ dataSource: { projectId: v, viewId: undefined }, dimensionFieldId: undefined, measureFieldId: undefined });
+                  // Task columns (sys_*) exist in every project: keep them; custom fields belong to the old project.
+                  const keep = (id: string | undefined) => (id?.startsWith("sys_") ? id : undefined);
+                  patchConfig({ dataSource: { projectId: v, viewId: undefined }, dimensionFieldId: keep(draft.config.dimensionFieldId), dimension2FieldId: keep(draft.config.dimension2FieldId), measureFieldId: keep(draft.config.measureFieldId) });
                 }}
                 options={projects.map((t) => ({ value: t.id, label: t.name }))}
                 placeholder={t("db.w.chooseProject")}

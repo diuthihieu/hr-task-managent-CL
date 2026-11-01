@@ -248,6 +248,17 @@ function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+/**
+ * "is" on a field with several values (assignees, multi-select, links) means "one of them is": a task
+ * assigned to Hieu and Tam is Hieu's task too. A target list (several options picked) matches any.
+ */
+function isMatch(value: unknown, target: unknown): boolean {
+  const values = (Array.isArray(value) ? value : [value]).map((v) => String(v ?? ""));
+  const targets = (Array.isArray(target) ? target : [target]).map((t) => String(t ?? ""));
+  if (!Array.isArray(value) && !Array.isArray(target)) return values[0] === targets[0];
+  return targets.some((t) => values.includes(t));
+}
+
 function matchesCondition(
   value: unknown,
   op: FilterOperator,
@@ -303,9 +314,9 @@ function matchesCondition(
           new Date(value as string).getFullYear() === now.getFullYear()
         : false;
     case "is":
-      return String(value ?? "") === String(target ?? "");
+      return isMatch(value, target);
     case "is_not":
-      return String(value ?? "") !== String(target ?? "");
+      return !isMatch(value, target);
     case "contains_any": {
       const arr = Array.isArray(value) ? value : [value];
       const targets = Array.isArray(target) ? target : [target];

@@ -213,6 +213,8 @@ export const TASKS = {
   "flt.andLower": ["and", "và"],
   "flt.orLower": ["or", "hoặc"],
   "flt.addGroup": ["Add condition group", "Thêm nhóm điều kiện"],
+  "grp.then": ["then by", "rồi theo"],
+  "grp.addLevel": ["Add sub-group", "Thêm nhóm con"],
   "flt.removeGroup": ["Remove group", "Xoá nhóm"],
   "srt.none": ["No sorts applied", "Chưa sắp xếp"],
   "srt.sort": ["Sort", "Theo"],

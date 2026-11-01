@@ -71,6 +71,8 @@ export interface GroupRule {
   fieldId: string | null;
   aggFieldId?: string | null;
   aggFn?: "count" | "sum" | "avg" | "min" | "max";
+  /** Sub-groups inside each group, outermost first (Group by A, then B, then C). */
+  thenFieldIds?: string[];
 }
 
 export interface ConditionalFormatRule {
@@ -402,6 +404,37 @@ export interface RecordGroup {
   color?: string;
   records: RecordRow[];
   aggregate?: number;
+  /** The field this group's value comes from (a level whose field was deleted is skipped, so it can't be read off the rule). */
+  fieldId?: string;
+  /** Sub-groups (multi-level grouping). */
+  children?: RecordGroup[];
+}
+
+/** One level of a nested group: the field, its value and how the level is shown. */
+export interface GroupPathStep {
+  fieldId: string;
+  key: string;
+  label: string;
+  color?: string;
+  /** Records under this level (all its sub-groups). */
+  count: number;
+  aggregate?: number;
+  /** Unique key of this level: the keys of every level down to it. */
+  pathKey: string;
+}
+
+/** A group with no sub-groups, with the levels above it; `key` is its unique path key. */
+export type LeafGroup = RecordGroup & { path: GroupPathStep[] };
+
+/** The innermost groups of a (possibly nested) grouping, in display order, each with its path. */
+export function leafGroups(groups: RecordGroup[], rule: GroupRule, parent: GroupPathStep[] = []): LeafGroup[] {
+  const levelField = [rule.fieldId, ...(rule.thenFieldIds ?? [])][parent.length] ?? "";
+  return groups.flatMap((g) => {
+    const pathKey = parent.length ? `${parent[parent.length - 1].pathKey}\u0001${g.key}` : g.key;
+    const step: GroupPathStep = { fieldId: g.fieldId ?? levelField, key: g.key, label: g.label, color: g.color, count: g.records.length, aggregate: g.aggregate, pathKey };
+    const path = [...parent, step];
+    return g.children?.length ? leafGroups(g.children, rule, path) : [{ ...g, key: pathKey, path }];
+  });
 }
 
 export function applyGroup(
@@ -453,9 +486,11 @@ export function applyGroup(
       else if (group.aggFn === "min") aggregate = nums.length ? Math.min(...nums) : 0;
       else if (group.aggFn === "max") aggregate = nums.length ? Math.max(...nums) : 0;
     }
-    result.push({ key, label, color, records: recs, aggregate });
+    result.push({ key, label, color, records: recs, aggregate, fieldId: field.id });
   }
   result.sort((a, b) => a.label.localeCompare(b.label));
+  const [next, ...rest] = (group.thenFieldIds ?? []).filter((id) => id && id !== group.fieldId && byId.has(id));
+  if (next) for (const g of result) g.children = applyGroup(g.records, fields, { ...group, fieldId: next, thenFieldIds: rest }, members) ?? undefined;
   return result;
 }
 

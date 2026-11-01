@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hoursConflict, ownMinutes } from "../hours";
+import { ownMinutes } from "../hours";
 
 test("a parent's own share is its total minus its sub-tasks, so a branch counts once", () => {
   const own = ownMinutes([
@@ -22,9 +22,4 @@ test("never negative when sub-tasks exceed the parent (legacy data)", () => {
     { id: "c", parentTaskId: "p", estimateMinutes: 120, actualMinutes: 30 },
   ]);
   assert.deepEqual(own.get("p"), { est: 0, act: 0 });
-});
-
-test("hoursConflict names the minimum the parent needs", () => {
-  assert.deepEqual(hoursConflict({ estimate: 2, actual: 5 }, [{ estimate: 1.5, actual: 2 }, { estimate: 1, actual: null }]), { estimate: 2.5, actual: null });
-  assert.deepEqual(hoursConflict({ estimate: null, actual: null }, [{ estimate: 3, actual: 3 }]), { estimate: null, actual: null }, "empty parent: nothing to fix");
 });

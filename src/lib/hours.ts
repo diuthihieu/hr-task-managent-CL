@@ -27,14 +27,3 @@ export function ownMinutes(tasks: HoursTask[]): Map<string, { est: number; act: 
     }),
   );
 }
-
-/** Sub-task hours that add up to more than their parent's: the parent must be at least the sum. */
-export function hoursConflict(parent: { estimate: number | null; actual: number | null }, children: { estimate: number | null; actual: number | null }[]) {
-  const est = children.reduce((s, c) => s + (c.estimate ?? 0), 0);
-  const act = children.reduce((s, c) => s + (c.actual ?? 0), 0);
-  const round = (n: number) => Math.round(n * 100) / 100;
-  return {
-    estimate: parent.estimate !== null && round(parent.estimate) < round(est) ? round(est) : null,
-    actual: parent.actual !== null && round(parent.actual) < round(act) ? round(act) : null,
-  };
-}

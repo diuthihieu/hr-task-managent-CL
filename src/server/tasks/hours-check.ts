@@ -1,7 +1,6 @@
 import "server-only";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { hoursConflict } from "@/lib/hours";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 
@@ -13,22 +12,21 @@ export interface HoursConflict {
   actual: { current: number; min: number } | null;
 }
 
-const toHours = (m: number | null) => (m === null ? null : Math.round((m / 60) * 100) / 100);
+const toHours = (m: number) => Math.round((m / 60) * 100) / 100;
+/** Hours to suggest for `minutes`, rounded up to 0.01 h so that, saved and stored as whole minutes again, it still covers them. */
+const coverHours = (minutes: number) => Math.ceil((minutes / 60) * 100 - 1e-9) / 100;
 
 async function check(db: Db, parentId: string): Promise<HoursConflict | null> {
   const parent = await db.task.findFirst({ where: { id: parentId, deletedAt: null }, select: { id: true, title: true, estimateMinutes: true, actualMinutes: true } });
   if (!parent) return null;
   const children = await db.task.findMany({ where: { parentTaskId: parentId, deletedAt: null }, select: { estimateMinutes: true, actualMinutes: true } });
   if (!children.length) return null;
-  const p = { estimate: toHours(parent.estimateMinutes), actual: toHours(parent.actualMinutes) };
-  const c = hoursConflict(p, children.map((ch) => ({ estimate: toHours(ch.estimateMinutes), actual: toHours(ch.actualMinutes) })));
-  if (c.estimate === null && c.actual === null) return null;
-  return {
-    parentId: parent.id,
-    parentTitle: parent.title,
-    estimate: c.estimate === null ? null : { current: p.estimate ?? 0, min: c.estimate },
-    actual: c.actual === null ? null : { current: p.actual ?? 0, min: c.actual },
-  };
+  // Compared in stored minutes: rounding each sub-task to hours first can ask for a total that can't be saved.
+  const short = (own: number | null, sum: number) => (own !== null && own < sum ? { current: toHours(own), min: coverHours(sum) } : null);
+  const estimate = short(parent.estimateMinutes, children.reduce((n, c) => n + (c.estimateMinutes ?? 0), 0));
+  const actual = short(parent.actualMinutes, children.reduce((n, c) => n + (c.actualMinutes ?? 0), 0));
+  if (!estimate && !actual) return null;
+  return { parentId: parent.id, parentTitle: parent.title, estimate, actual };
 }
 
 /**

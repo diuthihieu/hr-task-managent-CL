@@ -26,7 +26,10 @@ const useHoursCheck = create<{ queue: Pending[]; push: (p: Pending) => void; shi
   shift: () => set((s) => ({ queue: s.queue.slice(1) })),
 }));
 
-/** After a save: when a parent now has fewer hours than its sub-tasks add up to, ask for the right ones. */
+/**
+ * After a save: when a parent now has fewer hours than its sub-tasks add up to, ask for the right ones.
+ * `onSaved` then gets the PARENT's saved record, not the task that was saved: match it by id.
+ */
 export function promptHoursCheck(saved: unknown, onSaved?: (record: RecordRow) => void) {
   const conflict = (saved as { hoursConflict?: HoursConflict } | null)?.hoursConflict;
   if (conflict) useHoursCheck.getState().push({ ...conflict, onSaved });

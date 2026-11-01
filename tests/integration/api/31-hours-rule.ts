@@ -30,3 +30,13 @@ test("a save that puts sub-tasks above their parent's hours reports the conflict
   const empty = (await admin.post<Rec>(`/api/projects/${P}/tasks`, { data: { sys_title: "Container" } })).body;
   assert.equal((await admin.post<Rec & { hoursConflict?: Conflict }>(`/api/projects/${P}/tasks`, { data: { sys_title: "Child", sys_parent: [empty.id], sys_actual: 2 } })).body.hoursConflict, undefined);
 });
+
+test("the least parent hours are worked out from stored minutes, so saving that value clears the conflict", async () => {
+  const P = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Hours minutes" })).body.id;
+  const parent = (await admin.post<Rec>(`/api/projects/${P}/tasks`, { data: { sys_title: "Short calls", sys_actual: 0.05 } })).body; // 3 min
+  let conflict: Conflict | undefined;
+  for (let i = 0; i < 3; i++) conflict = (await admin.post<Rec & { hoursConflict?: Conflict }>(`/api/projects/${P}/tasks`, { data: { sys_title: `Call ${i}`, sys_parent: [parent.id], sys_actual: 0.0334 } })).body.hoursConflict; // 2 min each
+  assert.deepEqual(conflict?.actual, { current: 0.05, min: 0.1 }, "6 min -> 0.1 h (rounded up), not 3 x 0.03 = 0.09 h");
+  const fixed = await admin.patch<Rec & { hoursConflict?: Conflict }>(`/api/tasks/${parent.id}`, { data: { sys_actual: conflict!.actual!.min } });
+  assert.equal(fixed.body.hoursConflict, undefined, "the suggested value is enough once stored in minutes");
+});

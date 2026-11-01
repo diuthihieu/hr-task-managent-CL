@@ -89,6 +89,7 @@ function DoneCheckForm({ pending, onClose }: { pending: Pending; onClose: () => 
       pending.onSaved?.(saved);
       toast.success(t("doneCheck.saved"));
       onClose();
+      promptHoursCheck(saved, pending.onSaved); // the actual hours entered here can exceed the parent's
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {

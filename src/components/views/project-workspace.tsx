@@ -209,11 +209,13 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
     let created = 0;
     const errors: string[] = [];
     const queue = [...updates];
+    const putRecord = (rec: RecordRow) => setRecords((prev) => prev.map((r) => (r.id === rec.id ? rec : r)));
     const worker = async () => {
       for (let next = queue.shift(); next; next = queue.shift()) {
         try {
           const saved = await api.patch<RecordRow>(`/api/tasks/${next.recordId}`, { data: next.patch });
-          setRecords((prev) => prev.map((r) => (r.id === saved.id ? saved : r)));
+          putRecord(saved);
+          promptHoursCheck(saved, putRecord); // pasted hours can exceed a parent's
           updated++;
         } catch (e) {
           errors.push(e instanceof Error ? e.message : t("common.failed"));
@@ -227,6 +229,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         try {
           const record = await api.post<RecordRow>(`/api/projects/${projectId}/tasks`, { data });
           setRecords((prev) => [...prev, record]);
+          promptHoursCheck(record, putRecord);
           created++;
         } catch (e) {
           errors.push(e instanceof Error ? e.message : t("common.failed"));

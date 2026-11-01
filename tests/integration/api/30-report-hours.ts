@@ -30,6 +30,22 @@ test("hours reports use the tasks' hours (each assignee in full, parents once); 
   const prompt = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
   assert.match(prompt, /Hours per person, category and month/);
   const row = (person: string) => prompt.split("\n").find((l) => l.startsWith(`${person} | Payroll | 2026-10 |`)) ?? "";
-  assert.equal(row("Hieu").split(" | ").at(-1), "11", "6 shared + 5 parent total (3 own + 2 child) = 11");
-  assert.equal(row("Tam").split(" | ").at(-1), "6", "the other assignee gets the full 6 hours too");
+  // person | category | month | tasks | estimate h | actual h | actual h of done tasks
+  assert.equal(row("Hieu").split(" | ")[5], "11", "6 shared + 5 parent total (3 own + 2 child) = 11");
+  assert.equal(row("Tam").split(" | ")[5], "6", "the other assignee gets the full 6 hours too");
+});
+
+test("time focused on a sub-task also counts for its parent (a parent's hours include its sub-tasks')", async () => {
+  const P = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Focus roll-up" })).body.id;
+  const top = (await admin.post<Rec>(`/api/projects/${P}/tasks`, { data: { sys_title: "Top", sys_actual: 1 } })).body;
+  const mid = (await admin.post<Rec>(`/api/projects/${P}/tasks`, { data: { sys_title: "Mid", sys_parent: [top.id] } })).body;
+  const leaf = (await admin.post<Rec>(`/api/projects/${P}/tasks`, { data: { sys_title: "Leaf", sys_parent: [mid.id] } })).body;
+  const f = await admin.post<{ id: string }>(`/api/tasks/${leaf.id}/focus`, {});
+  assert.equal(f.status, 201, JSON.stringify(f.body));
+  await prisma.focusSession.update({ where: { id: f.body.id }, data: { elapsedSeconds: 30 * 60, resumedAt: new Date() } });
+  assert.equal((await admin.patch(`/api/focus/${f.body.id}`, { action: "complete" })).status, 200);
+  const minutes = async (id: string) => (await prisma.task.findUniqueOrThrow({ where: { id }, select: { actualMinutes: true } })).actualMinutes;
+  assert.equal(await minutes(leaf.id), 30);
+  assert.equal(await minutes(mid.id), 30);
+  assert.equal(await minutes(top.id), 90, "1 h logged before + 30 min of the sub-task");
 });

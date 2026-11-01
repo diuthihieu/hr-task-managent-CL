@@ -64,7 +64,7 @@ export const POST = route(async (req) => {
 Answer ONLY with JSON: {"title":"<report title>","fileName":"<short file name without extension>","markdown":"<the report>"}
 - The markdown starts with a "# " title, then sections ("## "). Typical: executive summary, key figures, one section per relevant chart with analysis, risks, recommendations - but follow the request (e.g. only visuals, only goals).
 - To show a chart, put its marker alone on its own line, exactly as listed in CHARTS (e.g. [[chart:abc123]]). Use only listed charts; include all of them when the user asks for "all charts".
-- Numbers must come from DATA. Tables are welcome. For hours (estimate / actual per person, category or month) use the "Hours per person, category and month" table in DATA, which is computed from the tasks; a chart marked "(error: ...)" is misconfigured - don't report its value as 0.
+- Numbers must come from DATA. Tables are welcome. For hours (estimate / actual per person, category or month) use the "Hours per person, category and month" table in DATA, computed from the tasks; it covers every task of the projects before filters, so when the request or a chart is limited by filters (status, dates, a view...), use that chart's numbers for that scope or say which scope you report. A chart marked "(error: ...)" is misconfigured - don't report its value as 0.
 - If the user names the file, use that name for fileName.
 CHARTS:
 ${chartList}`,

@@ -6,6 +6,7 @@ import { api } from "@/lib/api-client";
 import { onViewsChanged } from "@/lib/view-events";
 import { toast } from "@/components/ui/toast";
 import { promptDoneCheck } from "@/components/tasks/done-check-dialog";
+import { promptHoursCheck } from "@/components/tasks/hours-check-dialog";
 import { ViewTabs } from "./view-tabs";
 import { ViewToolbar } from "./view-toolbar";
 import { GridView, type GridBulkChange } from "@/components/grid/grid-view";
@@ -244,6 +245,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
     try {
       const record = await api.post<RecordRow>(`/api/projects/${projectId}/tasks`, { data: initialData ?? {} });
       setRecords((prev) => [...prev, record]);
+      promptHoursCheck(record, (rec) => setRecords((prev) => prev.map((r) => (r.id === rec.id ? rec : r))));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
@@ -304,6 +306,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
         const record = await api.post<RecordRow>(`/api/projects/${projectId}/tasks`, { data });
         setRecords((prev) => [...prev, record]);
         setFocusTaskId(record.id);
+        promptHoursCheck(record, (rec) => setRecords((prev) => prev.map((r) => (r.id === rec.id ? rec : r))));
         toast.success(t("ntd.added"));
         return true;
       } catch (e) {

@@ -100,7 +100,7 @@ export function NewTaskDialog({
                     data-testid="ntd-title"
                   />
                 ) : (
-                  <div className="min-h-[36px] rounded-md border border-neutral-200 dark:border-neutral-800" data-testid={`ntd-field-${field.id}`}>
+                  <div className="flex min-h-[36px] items-stretch rounded-md border border-neutral-200 dark:border-neutral-800 [&>*]:min-h-[34px]" data-testid={`ntd-field-${field.id}`}>
                     <Cell
                       field={field}
                       value={getCellValue(record, field, allFields)}

@@ -7,6 +7,7 @@
 // records for the widget's table, so a widget always reflects live Base data.
 
 import type { FieldRow, RecordRow } from "@/types";
+import { ownMinutes } from "./hours";
 import { applyFilters, filterConditionCount, withoutFieldConditions, getCellValue, resolveValueLabel, type FilterGroup, type FilterCondition, type MemberLite } from "./query-engine";
 import { parseFieldConfig } from "./field-types";
 
@@ -101,6 +102,7 @@ function aggregate(values: number[], distinctValues: unknown[], fn: Aggregation,
  */
 export function widgetConfigProblem(type: string, config: DashboardBlockConfig, fields: FieldRow[]): string | null {
   if (["narrative", "table", "text"].includes(type)) return null;
+  if (type === "pivot" && !config.dimensionFieldId) return "Choose the field for the rows (Edit widget)";
   const ids = new Set(fields.map((f) => f.id));
   const agg = config.aggregation ?? "count";
   if (agg !== "count" && agg !== "distinct" && !(config.measureFieldId && ids.has(config.measureFieldId))) return `Choose the value field to ${agg} (Edit widget)`;
@@ -394,6 +396,85 @@ export function computeKpiTrend(
   };
 }
 
+export interface PivotTable {
+  rowField: string;
+  colField: string | null;
+  rows: { key: string; label: string }[];
+  cols: { key: string; label: string }[];
+  /** cells[row][col] */
+  cells: number[][];
+  rowTotals: number[];
+  colTotals: number[];
+  total: number;
+}
+
+const HOUR_FIELDS = new Set(["sys_estimate", "sys_actual"]);
+
+/**
+ * Summary table (pivot): rows by one field, columns by an optional second one, a value per cell.
+ * A task with several values (assignees...) counts in full in each of their rows - two people on a
+ * 6-hour task have spent 6 hours each - and totals add the cells up (person-hours). Summing estimate /
+ * actual hours counts a parent only for its own share (its total minus its sub-tasks'), so a task
+ * branch isn't counted twice.
+ */
+export function computePivot(records: RecordRow[], fields: FieldRow[], config: DashboardBlockConfig, members: MemberLite[], currentUserId?: string): PivotTable {
+  const byId = new Map(fields.map((f) => [f.id, f]));
+  const rowField = config.dimensionFieldId ? byId.get(config.dimensionFieldId) : undefined;
+  const colField = config.dimension2FieldId ? byId.get(config.dimension2FieldId) : undefined;
+  const measure = config.measureFieldId ? byId.get(config.measureFieldId) : undefined;
+  const aggFn = config.aggregation ?? "count";
+  const empty: PivotTable = { rowField: rowField?.name ?? "", colField: colField?.name ?? null, rows: [], cols: [], cells: [], rowTotals: [], colTotals: [], total: 0 };
+  if (!rowField) return empty;
+  const filtered = applyFilters(records, fields, config.filters, currentUserId);
+
+  // Own share of hours (minutes math, like the reports).
+  let valueOf = (r: RecordRow) => (measure ? Number(getCellValue(r, measure, fields)) || 0 : 0);
+  if (measure && aggFn === "sum" && HOUR_FIELDS.has(measure.id)) {
+    const minutes = (r: RecordRow) => (typeof r.data[measure.id] === "number" ? Math.round((r.data[measure.id] as number) * 60) : null);
+    const own = ownMinutes(
+      filtered.map((r) => ({ id: r.id, parentTaskId: Array.isArray(r.data.sys_parent) ? String((r.data.sys_parent as unknown[])[0] ?? "") || null : null, estimateMinutes: measure.id === "sys_estimate" ? minutes(r) : null, actualMinutes: measure.id === "sys_actual" ? minutes(r) : null })),
+    );
+    valueOf = (r) => {
+      const o = own.get(r.id);
+      return o ? Math.round(((measure.id === "sys_estimate" ? o.est : o.act) / 60) * 100) / 100 : 0;
+    };
+  }
+
+  const keysOf = (r: RecordRow, f: FieldRow | undefined) => {
+    if (!f) return ["__value__"];
+    const raw = getCellValue(r, f, fields);
+    return (Array.isArray(raw) ? (raw.length ? raw : ["__empty__"]) : [raw ?? "__empty__"]).map(String);
+  };
+  const rowsMap = new Map<string, string>();
+  const colsMap = new Map<string, string>();
+  const bucket = new Map<string, RecordRow[]>();
+  for (const r of filtered) {
+    for (const rk of keysOf(r, rowField)) {
+      if (!rowsMap.has(rk)) rowsMap.set(rk, resolveValueLabel(rowField, rk, members).label);
+      for (const ck of keysOf(r, colField)) {
+        if (!colsMap.has(ck)) colsMap.set(ck, colField ? resolveValueLabel(colField, ck, members).label : "Value");
+        const k = `${rk}\u0000${ck}`;
+        bucket.set(k, [...(bucket.get(k) ?? []), r]);
+      }
+    }
+  }
+  const order = (m: Map<string, string>) => [...m.entries()].sort((a, b) => (a[0] === "__empty__" ? 1 : b[0] === "__empty__" ? -1 : a[1].localeCompare(b[1]))).map(([key, label]) => ({ key, label }));
+  const rows = order(rowsMap);
+  const cols = order(colsMap);
+  const agg = (recs: RecordRow[]) => {
+    const values = recs.map(valueOf);
+    return Math.round(aggregate(values, measure ? recs.map((r) => getCellValue(r, measure, fields)) : recs.map((r) => r.id), aggFn, recs.length) * 100) / 100;
+  };
+  const additive = aggFn === "sum" || aggFn === "count";
+  const cells = rows.map((r) => cols.map((c) => agg(bucket.get(`${r.key}\u0000${c.key}`) ?? [])));
+  const all = (pick: (rk: string, ck: string) => boolean) => [...bucket.entries()].filter(([k]) => pick(...(k.split("\u0000") as [string, string]))).flatMap(([, v]) => v);
+  const round = (n: number) => Math.round(n * 100) / 100;
+  const rowTotals = rows.map((r, i) => (additive ? round(cells[i].reduce((a, b) => a + b, 0)) : agg(all((rk) => rk === r.key))));
+  const colTotals = cols.map((c, j) => (additive ? round(cells.reduce((a, row) => a + row[j], 0)) : agg(all((_, ck) => ck === c.key))));
+  const total = additive ? round(rowTotals.reduce((a, b) => a + b, 0)) : agg(all(() => true));
+  return { rowField: rowField.name, colField: colField?.name ?? null, rows, cols, cells, rowTotals, colTotals, total };
+}
+
 export const AGGREGATION_LABELS: Record<Aggregation, string> = {
   count: "Count",
   distinct: "Distinct Count",
@@ -406,6 +487,7 @@ export const AGGREGATION_LABELS: Record<Aggregation, string> = {
 export const CHART_TYPES = [
   { type: "kpi", label: "KPI Card" },
   { type: "table", label: "Table" },
+  { type: "pivot", label: "Summary table" },
   { type: "bar", label: "Bar Chart" },
   { type: "column", label: "Column Chart" },
   { type: "stacked_column", label: "Stacked Column" },

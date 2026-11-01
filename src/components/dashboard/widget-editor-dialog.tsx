@@ -17,7 +17,7 @@ export interface BlockDraft {
 }
 
 const DATE_TYPES = ["date", "datetime", "created_time", "modified_time"];
-const NEEDS_DIMENSION: ChartType[] = ["bar", "column", "line", "area", "pie", "donut", "combo", "radar", "treemap", "funnel"];
+const NEEDS_DIMENSION: ChartType[] = ["bar", "column", "line", "area", "pie", "donut", "combo", "radar", "treemap", "funnel", "pivot"];
 const NEEDS_SERIES: ChartType[] = ["stacked_column", "stacked_bar"];
 const NEEDS_MEASURE2: ChartType[] = ["combo", "scatter"];
 const NEEDS_MEASURE: ChartType[] = [...NEEDS_DIMENSION, ...NEEDS_SERIES, ...NEEDS_MEASURE2, "kpi", "gauge"];
@@ -90,7 +90,9 @@ export function WidgetEditorDialog({
   const dimensionField = fields.find((f) => f.id === draft.config.dimensionFieldId);
   const showDateBucket = dimensionField && DATE_TYPES.includes(dimensionField.type);
   const needsDimension = NEEDS_DIMENSION.includes(draft.type) || NEEDS_SERIES.includes(draft.type);
-  const needsSeries = NEEDS_SERIES.includes(draft.type);
+  const isPivot = draft.type === "pivot";
+  // A summary table has rows (dimension), optional columns (series) and a value.
+  const needsSeries = NEEDS_SERIES.includes(draft.type) || isPivot;
   const needsMeasure = NEEDS_MEASURE.includes(draft.type);
   const needsMeasure2 = NEEDS_MEASURE2.includes(draft.type);
   const isTable = draft.type === "table";
@@ -176,7 +178,7 @@ export function WidgetEditorDialog({
               {needsDimension && (
                 <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.dimension")}</label>
+                    <label className="text-xs font-medium text-neutral-500 mb-1 block">{isPivot ? t("db.w.pivotRows") : t("db.w.dimension")}</label>
                     <Select
                       className="w-full"
                       value={draft.config.dimensionFieldId ?? ""}
@@ -201,12 +203,12 @@ export function WidgetEditorDialog({
 
               {needsSeries && (
                 <div>
-                  <label className="text-xs font-medium text-neutral-500 mb-1 block">{t("db.w.series")}</label>
+                  <label className="text-xs font-medium text-neutral-500 mb-1 block">{isPivot ? t("db.w.pivotCols") : t("db.w.series")}</label>
                   <Select
                     className="w-full"
                     value={draft.config.dimension2FieldId ?? ""}
-                    onValueChange={(v) => patchConfig({ dimension2FieldId: v })}
-                    options={fields.map((f) => ({ value: f.id, label: f.name }))}
+                    onValueChange={(v) => patchConfig({ dimension2FieldId: v === "__none__" ? undefined : v })}
+                    options={[...(isPivot ? [{ value: "__none__", label: t("db.w.pivotNoCols") }] : []), ...fields.map((f) => ({ value: f.id, label: f.name }))]}
                     placeholder={t("form.chooseField")}
                   />
                 </div>

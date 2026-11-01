@@ -46,7 +46,8 @@ export function WidgetEditorDialog({
 
   const [draft, setDraft] = useState<BlockDraft>(makeDraft);
   const [wasOpen, setWasOpen] = useState(false);
-  const [fields, setFields] = useState<FieldRow[]>([]);
+  const [baseFields, setBaseFields] = useState<FieldRow[]>([]);
+  const [mergeFields, setMergeFields] = useState<FieldRow[]>([]);
   const [views, setViews] = useState<ViewRow[]>([]);
 
   if (open && !wasOpen) {
@@ -65,12 +66,12 @@ export function WidgetEditorDialog({
       .get<{ fields: FieldRow[]; views: ViewRow[] }>(`/api/projects/${projectId}`)
       .then((detail) => {
         if (cancelled) return;
-        setFields(detail.fields);
+        setBaseFields(detail.fields);
         setViews(detail.views);
       })
       .catch(() => {
         if (!cancelled) {
-          setFields([]);
+          setBaseFields([]);
           setViews([]);
         }
       });
@@ -78,6 +79,26 @@ export function WidgetEditorDialog({
       cancelled = true;
     };
   }, [open, projectId]);
+
+  const ds = draft.config.dataSource ?? {};
+  const mergeProjectId = ds.merge?.projectId;
+  useEffect(() => {
+    if (!open || !mergeProjectId) return;
+    let cancelled = false;
+    api
+      .get<{ fields: FieldRow[] }>(`/api/projects/${mergeProjectId}`)
+      .then((detail) => !cancelled && setMergeFields(detail.fields))
+      .catch(() => !cancelled && setMergeFields([]));
+    return () => {
+      cancelled = true;
+    };
+  }, [open, mergeProjectId]);
+  // What the pickers offer: the main project's fields, plus "Project" when appending and the merged columns.
+  const fields: FieldRow[] = [
+    ...baseFields,
+    ...(ds.appendProjectIds?.length ? [{ ...baseFields[0], id: "__project", name: t("db.src.projectCol"), type: "text", config: null, isPrimary: false, system: false }] : []),
+    ...(ds.merge && mergeProjectId ? mergeFields.filter((f) => ds.merge!.fieldIds.includes(f.id)).map((f) => ({ ...f, id: `m:${f.id}`, name: `${projects.find((p) => p.id === mergeProjectId)?.name ?? ""} · ${f.name}`, isPrimary: false })) : []),
+  ].filter((f) => f.id);
 
   function patchConfig(patch: Partial<DashboardBlockConfig>) {
     setDraft((d) => ({ ...d, config: { ...d.config, ...patch } }));
@@ -144,12 +165,22 @@ export function WidgetEditorDialog({
               <Select
                 className="w-full"
                 value={draft.config.dataSource?.viewId ?? ""}
-                onValueChange={(v) => patchConfig({ dataSource: { projectId, viewId: v || undefined } })}
+                onValueChange={(v) => patchConfig({ dataSource: { ...ds, projectId, viewId: v || undefined } })}
                 options={[{ value: "", label: t("db.w.allRecords") }, ...views.map((v) => ({ value: v.id, label: v.name }))]}
                 placeholder={t("db.w.allRecords")}
               />
             </div>
           </div>
+
+          {projectId && (
+            <CombineSources
+              projects={projects.filter((p) => p.id !== projectId)}
+              ds={ds}
+              baseFields={baseFields}
+              mergeFields={mergeFields}
+              onChange={(next) => patchConfig({ dataSource: { ...ds, ...next, projectId } })}
+            />
+          )}
 
           {isTable ? (
             <div>
@@ -459,5 +490,84 @@ function ToggleStyle({ label, checked, onChange }: { label: string; checked: boo
       <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
       {label}
     </label>
+  );
+}
+
+/** Power Query-like sources: Append stacks other projects' tasks; Merge joins one on a key field. */
+function CombineSources({
+  projects,
+  ds,
+  baseFields,
+  mergeFields,
+  onChange,
+}: {
+  projects: { id: string; name: string }[];
+  ds: NonNullable<DashboardBlockConfig["dataSource"]>;
+  baseFields: FieldRow[];
+  mergeFields: FieldRow[];
+  onChange: (next: Partial<NonNullable<DashboardBlockConfig["dataSource"]>>) => void;
+}) {
+  const { t } = useT();
+  const [open, setOpen] = useState(!!(ds.appendProjectIds?.length || ds.merge));
+  const append = ds.appendProjectIds ?? [];
+  const merge = ds.merge;
+  return (
+    <div className="rounded-md border border-neutral-200 dark:border-neutral-800" data-testid="combine-sources">
+      <button type="button" onClick={() => setOpen((o) => !o)} className="flex w-full items-center justify-between px-2 py-1.5 text-xs font-medium text-neutral-600 dark:text-neutral-300">
+        {t("db.src.title")}
+        <span className="text-neutral-400">{append.length || merge ? t("db.src.on", { n: append.length + (merge ? 1 : 0) }) : open ? "−" : "+"}</span>
+      </button>
+      {open && (
+        <div className="space-y-3 border-t border-neutral-100 p-2 dark:border-neutral-800">
+          <div>
+            <p className="mb-1 text-[11px] font-medium text-neutral-500">{t("db.src.append")}</p>
+            <p className="mb-1 text-[11px] text-neutral-400">{t("db.src.appendHint")}</p>
+            <div className="max-h-28 space-y-0.5 overflow-y-auto thin-scroll">
+              {projects.map((p) => (
+                <label key={p.id} className="flex cursor-pointer items-center gap-2 text-xs">
+                  <input type="checkbox" checked={append.includes(p.id)} onChange={(e) => onChange({ appendProjectIds: e.target.checked ? [...append, p.id].slice(0, 8) : append.filter((id) => id !== p.id) })} data-testid="combine-append" />
+                  {p.name}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <p className="mb-1 text-[11px] font-medium text-neutral-500">{t("db.src.merge")}</p>
+            <p className="mb-1 text-[11px] text-neutral-400">{t("db.src.mergeHint")}</p>
+            <Select
+              className="w-full"
+              value={merge?.projectId ?? "__none__"}
+              onValueChange={(v) => onChange({ merge: v === "__none__" ? undefined : { projectId: v, leftFieldId: merge?.leftFieldId ?? "sys_title", rightFieldId: "sys_title", fieldIds: [] } })}
+              options={[{ value: "__none__", label: t("db.src.noMerge") }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+            />
+            {merge && (
+              <div className="mt-2 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="mb-1 block text-[11px] text-neutral-500">{t("db.src.leftKey")}</label>
+                    <Select className="w-full" value={merge.leftFieldId} onValueChange={(v) => onChange({ merge: { ...merge, leftFieldId: v } })} options={baseFields.map((f) => ({ value: f.id, label: f.name }))} />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-[11px] text-neutral-500">{t("db.src.rightKey")}</label>
+                    <Select className="w-full" value={merge.rightFieldId} onValueChange={(v) => onChange({ merge: { ...merge, rightFieldId: v } })} options={mergeFields.map((f) => ({ value: f.id, label: f.name }))} />
+                  </div>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] text-neutral-500">{t("db.src.bring")}</label>
+                  <div className="max-h-28 space-y-0.5 overflow-y-auto thin-scroll">
+                    {mergeFields.filter((f) => f.id !== merge.rightFieldId).map((f) => (
+                      <label key={f.id} className="flex cursor-pointer items-center gap-2 text-xs">
+                        <input type="checkbox" checked={merge.fieldIds.includes(f.id)} onChange={(e) => onChange({ merge: { ...merge, fieldIds: e.target.checked ? [...merge.fieldIds, f.id] : merge.fieldIds.filter((id) => id !== f.id) } })} />
+                        {f.name}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

@@ -140,9 +140,12 @@ export function RecordPage({ projectId, taskId, workspaceSlug, currentUserId }: 
       const saved = await api.patch<RecordRow>(`/api/tasks/${taskId}`, { data: { [fieldId]: value } });
       setRecord(saved);
       loadActivity();
+      // The callback can also get the parent's record (parent-hours correction): only this task's record replaces the page's.
       promptDoneCheck(saved, (rec) => {
-        setRecord(rec);
-        loadActivity();
+        if (rec.id === taskId) {
+          setRecord(rec);
+          loadActivity();
+        } else setProjectTasks((prev) => prev.map((r) => (r.id === rec.id ? rec : r)));
       });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));

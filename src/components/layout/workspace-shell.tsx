@@ -9,6 +9,7 @@ import { WorkspaceAvatar } from "@/components/workspaces/workspace-avatar";
 import { emitViewsChanged } from "@/lib/view-events";
 import { FocusDock } from "@/components/focus/focus-mode";
 import { DoneCheckDialog } from "@/components/tasks/done-check-dialog";
+import { HoursCheckDialog } from "@/components/tasks/hours-check-dialog";
 import { AgentSuggestionPopup } from "@/components/agent-work/agent-suggestion-popup";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { signOutAndUnsubscribe } from "@/components/notifications/web-push";
@@ -577,6 +578,7 @@ export function WorkspaceShell({
 
       <FocusDock workspaceId={workspace.id} />
       <DoneCheckDialog />
+      <HoursCheckDialog />
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} workspaceId={workspace.id} workspaceSlug={workspace.slug} />
       <PreferencesDialog open={prefsOpen} onOpenChange={setPrefsOpen} />
 

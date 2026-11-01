@@ -12,6 +12,7 @@ import { api } from "@/lib/api-client";
 import type { DoneCheckField } from "@/lib/done-check";
 import type { MessageKey } from "@/lib/i18n/core";
 import type { RecordRow } from "@/types";
+import { promptHoursCheck } from "./hours-check-dialog";
 
 type Pending = { taskId: string; title?: string; missing: DoneCheckField[]; onSaved?: (record: RecordRow) => void };
 
@@ -27,6 +28,8 @@ const useDoneCheck = create<{ queue: Pending[]; push: (p: Pending) => void; shif
  * (actual time, start, due, completed), ask the user to fill them in or ignore.
  */
 export function promptDoneCheck(saved: unknown, onSaved?: (record: RecordRow) => void) {
+  // Every save path calls this: it also asks to fix a parent whose hours fall below its sub-tasks'.
+  promptHoursCheck(saved, onSaved);
   const rec = saved as (RecordRow & { doneMissing?: DoneCheckField[] }) | null;
   if (!rec?.id || !rec.doneMissing?.length) return;
   const title = typeof rec.data?.sys_title === "string" ? rec.data.sys_title : undefined;
@@ -86,6 +89,7 @@ function DoneCheckForm({ pending, onClose }: { pending: Pending; onClose: () => 
       pending.onSaved?.(saved);
       toast.success(t("doneCheck.saved"));
       onClose();
+      promptHoursCheck(saved, pending.onSaved); // the actual hours entered here can exceed the parent's
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {

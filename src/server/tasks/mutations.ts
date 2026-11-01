@@ -9,6 +9,7 @@ import { logActivity } from "@/lib/activity";
 import { doneMissing } from "@/lib/done-check";
 import { loadTaskRecord } from "./read";
 import { applyTaskPatch, createTask } from "./write";
+import { HOURS_KEYS, hoursConflictAround } from "./hours-check";
 
 export async function createTaskInProject(ctx: WorkspaceContext, projectId: string, data: Record<string, unknown>) {
   const actorId = ctx.user.id;
@@ -17,7 +18,8 @@ export async function createTaskInProject(ctx: WorkspaceContext, projectId: stri
     await notifyTaskCreated(tx, taskId, actorId);
     const rec = await loadTaskRecord(taskId, tx);
     await logActivity(tx, { workspaceId: ctx.workspaceId, actorId, entityType: "task", entityId: taskId, action: "created", summary: `Created task "${rec?.data.sys_title}"` });
-    return rec;
+    const hoursConflict = rec && HOURS_KEYS.some((k) => k in data) ? await hoursConflictAround(tx, taskId) : null;
+    return rec && hoursConflict ? { ...rec, hoursConflict } : rec;
   });
 }
 
@@ -58,7 +60,10 @@ export async function updateTask(ctx: WorkspaceContext, taskId: string, body: { 
         });
       }
     }
-    return loadTaskRecord(taskId, tx);
+    const rec = await loadTaskRecord(taskId, tx);
+    // A parent's hours must cover its sub-tasks': tell the client when this edit broke that.
+    const hoursConflict = rec && body.data && HOURS_KEYS.some((k) => k in body.data!) ? await hoursConflictAround(tx, taskId) : null;
+    return rec && hoursConflict ? { ...rec, hoursConflict } : rec;
   });
   return becameDone && record ? { ...record, doneMissing: doneMissing(record.data) } : record;
 }

@@ -575,6 +575,14 @@ export function GridView(props: GridViewProps) {
       },
     },
     groupData,
+    insertBelow: props.onInsertRows
+      ? (recordId: string, groupKey?: string) => {
+          const at = rowIndex.get(recordId);
+          const anchor = at === undefined ? undefined : displayRows[at];
+          // A task shown in several groups (several assignees) has one index per id: the group comes from the row clicked.
+          if (anchor && at !== undefined) void props.onInsertRows!(anchor.id, "below", 1, insertData(anchor, groupKey ?? displayGroupKeys[at]));
+        }
+      : undefined,
   };
 
   const canPaste = visibleFields.some(isGridFieldPasteable);
@@ -688,7 +696,7 @@ export function GridView(props: GridViewProps) {
                       treeRows={groupTrees.get(group.key) ?? []}
                       visibleFields={visibleFields}
                       widthOf={widthOf}
-                      interactions={interactions}
+                      interactions={interactions.insertBelow ? { ...interactions, insertBelow: (id) => interactions.insertBelow!(id, group.key) } : interactions}
                     />
                   )}
                 </Fragment>

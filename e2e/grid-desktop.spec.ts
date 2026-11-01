@@ -142,3 +142,25 @@ test("each kind of cell saves what is typed or picked", async ({ page, seed }) =
   await expect(cell("sys_created_by")).toContainText("Hieu Diu-Thi");
   await expect(cell("sys_created_by").locator("input, textarea, button")).toHaveCount(0);
 });
+
+test('the "+" between rows inserts into the group that was clicked, also for a task shown in two groups', async ({ page, seed }) => {
+  const p = await project(page.request, seed.wsId, []);
+  const created = await page.request.post(`/api/projects/${p.id}/custom-fields`, { data: { name: "Team", type: "multi_select", config: { options: [{ label: "Alpha" }, { label: "Beta" }] } } });
+  expect(created.ok()).toBeTruthy();
+  const fieldId = ((await created.json()) as { id: string }).id;
+  const detail = (await (await page.request.get(`/api/projects/${p.id}`)).json()) as { views: { id: string; type: string }[]; fields: { id: string; config: unknown }[] };
+  const raw = detail.fields.find((f) => f.id === fieldId)!.config;
+  const options = ((typeof raw === "string" ? JSON.parse(raw) : raw) as { options: { id: string; label: string }[] }).options;
+  const [alpha, beta] = ["Alpha", "Beta"].map((l) => options.find((o) => o.label === l)!.id);
+  expect((await page.request.post(`/api/projects/${p.id}/tasks`, { data: { data: { sys_title: "Both teams", [fieldId]: [alpha, beta] } } })).ok()).toBeTruthy();
+  const view = detail.views.find((v) => v.type === "grid")!;
+  expect((await page.request.patch(`/api/views/${view.id}`, { data: { config: { group: { fieldId } } } })).ok()).toBeTruthy();
+
+  await open(page, seed.slug, p.id, 2); // the task sits in Alpha and in Beta
+  const first = rows(page).first();
+  await first.hover();
+  await first.getByTestId("row-insert-between").click();
+  await expect.poll(async () => (await records(page.request, p.id)).length).toBe(2);
+  const added = (await records(page.request, p.id)).find((r) => r.data.sys_title !== "Both teams")!;
+  expect(added.data[fieldId]).toEqual([alpha]);
+});

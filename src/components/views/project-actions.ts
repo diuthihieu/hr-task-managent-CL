@@ -132,8 +132,8 @@ export function fieldActions({
       case "filter": {
         const cond: FilterCondition = { id: nanoid(8), fieldId, operator: "contains" };
         const current = config.filters;
-        // Appending to an AND filter keeps it flat; an OR filter (or one with groups) becomes a group, so its meaning is kept.
-        updateConfig({ filters: !current || (current.conjunction !== "OR" && !current.groups?.length) ? { conjunction: "AND", conditions: [...(current?.conditions ?? []), cond] } : { conjunction: "AND", conditions: [cond], groups: [current] } });
+        // An AND filter (groups included) just gets one more condition; only an OR filter is wrapped in a group, so its meaning is kept.
+        updateConfig({ filters: current?.conjunction !== "OR" ? { ...current, conjunction: "AND", conditions: [...(current?.conditions ?? []), cond] } : { conjunction: "AND", conditions: [cond], groups: [current] } });
         return;
       }
       case "delete":

@@ -43,23 +43,7 @@ export function FilterPanel({
       </div>
       {empty && <p className="text-xs text-neutral-400 mb-2">{t("flt.none")}</p>}
       <ConditionList fields={fields} members={members} group={filter} onChange={onChange} />
-      {groups.map((g, gi) => (
-        <div key={gi} className="mt-2 flex items-start gap-1.5" data-testid="filter-group">
-          <span className="w-10 pt-2 text-xs text-neutral-400 shrink-0">{!(filter.conditions ?? []).length && gi === 0 ? t("flt.where") : filter.conjunction === "OR" ? t("flt.orLower") : t("flt.andLower")}</span>
-          <div className="flex-1 min-w-0 rounded-md border border-neutral-200 bg-neutral-50/60 p-2 dark:border-neutral-800 dark:bg-neutral-900/40">
-            <ConditionList
-              fields={fields}
-              members={members}
-              group={g}
-              nested
-              onChange={(next) => onChange({ ...filter, groups: next.conditions.length ? groups.map((x, i) => (i === gi ? next : x)) : groups.filter((_, i) => i !== gi) })}
-            />
-          </div>
-          <button onClick={() => onChange({ ...filter, groups: groups.filter((_, i) => i !== gi) })} className="mt-2 text-neutral-400 hover:text-red-600 shrink-0" aria-label={t("flt.removeGroup")}>
-            <X size={14} />
-          </button>
-        </div>
-      ))}
+      <GroupBoxes fields={fields} members={members} parent={filter} onChange={onChange} />
       <div className="flex flex-wrap items-center justify-between gap-2 mt-3">
         <div className="flex items-center gap-3">
           <AddConditionButton fields={fields} group={filter} onChange={onChange} />
@@ -70,6 +54,35 @@ export function FilterPanel({
         {(filter.conditions ?? []).length + groups.length > 1 && <ConjunctionToggle value={filter.conjunction} onChange={(conjunction) => onChange({ ...filter, conjunction })} />}
       </div>
     </div>
+  );
+}
+
+/** The groups inside `parent`, each in its own box; a group can hold groups of its own (rendered the same way). */
+function GroupBoxes({ fields, members, parent, onChange }: { fields: FieldRow[]; members: Member[]; parent: FilterGroup; onChange: (g: FilterGroup) => void }) {
+  const { t } = useT();
+  const groups = parent.groups ?? [];
+  const setGroups = (next: FilterGroup[]) => onChange({ ...parent, groups: next });
+  // A group left with nothing in it is removed: an empty group would only clutter the panel.
+  const put = (gi: number, next: FilterGroup) => setGroups((next.conditions ?? []).length || (next.groups ?? []).length ? groups.map((x, i) => (i === gi ? next : x)) : groups.filter((_, i) => i !== gi));
+  return (
+    <>
+      {groups.map((g, gi) => (
+        <div key={gi} className="mt-2 flex items-start gap-1.5" data-testid="filter-group">
+          <span className="w-10 pt-2 text-xs text-neutral-400 shrink-0">{!(parent.conditions ?? []).length && gi === 0 ? t("flt.where") : parent.conjunction === "OR" ? t("flt.orLower") : t("flt.andLower")}</span>
+          <div className="flex-1 min-w-0 rounded-md border border-neutral-200 bg-neutral-50/60 p-2 dark:border-neutral-800 dark:bg-neutral-900/40">
+            <ConditionList fields={fields} members={members} group={g} onChange={(next) => put(gi, next)} />
+            <GroupBoxes fields={fields} members={members} parent={g} onChange={(next) => put(gi, next)} />
+            <div className="mt-2 flex items-center justify-between">
+              <AddConditionButton fields={fields} group={g} onChange={(next) => put(gi, next)} />
+              {(g.conditions ?? []).length + (g.groups ?? []).length > 1 && <ConjunctionToggle small value={g.conjunction} onChange={(conjunction) => put(gi, { ...g, conjunction })} />}
+            </div>
+          </div>
+          <button onClick={() => setGroups(groups.filter((_, i) => i !== gi))} className="mt-2 text-neutral-400 hover:text-red-600 shrink-0" aria-label={t("flt.removeGroup")}>
+            <X size={14} />
+          </button>
+        </div>
+      ))}
+    </>
   );
 }
 
@@ -103,8 +116,8 @@ function AddConditionButton({ fields, group, onChange }: { fields: FieldRow[]; g
   );
 }
 
-/** The conditions of one group; a nested group also has its own add button and AND / OR. */
-function ConditionList({ fields, members, group, nested, onChange }: { fields: FieldRow[]; members: Member[]; group: FilterGroup; nested?: boolean; onChange: (g: FilterGroup) => void }) {
+/** The conditions of one group (its sub-groups are drawn by GroupBoxes). */
+function ConditionList({ fields, members, group, onChange }: { fields: FieldRow[]; members: Member[]; group: FilterGroup; onChange: (g: FilterGroup) => void }) {
   const { t } = useT();
   const conditions = group.conditions ?? [];
   const update = (id: string, patch: Partial<FilterCondition>) => onChange({ ...group, conditions: conditions.map((c) => (c.id === id ? { ...c, ...patch } : c)) });
@@ -137,12 +150,6 @@ function ConditionList({ fields, members, group, nested, onChange }: { fields: F
           );
         })}
       </div>
-      {nested && (
-        <div className="mt-2 flex items-center justify-between">
-          <AddConditionButton fields={fields} group={group} onChange={onChange} />
-          {conditions.length > 1 && <ConjunctionToggle small value={group.conjunction} onChange={(conjunction) => onChange({ ...group, conjunction })} />}
-        </div>
-      )}
     </>
   );
 }

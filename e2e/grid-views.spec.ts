@@ -91,3 +91,23 @@ test("columns: sort, hide, freeze, and add / delete a custom field from the colu
   await expect.poll(async () => (await detail(page.request, id)).fields.filter((f) => !f.system).length).toBe(0);
   await expect(page.getByTestId(`field-menu-${custom.id}`)).toHaveCount(0);
 });
+
+test("filters: groups inside groups are all shown in the filter panel (none hidden while still applied)", async ({ page, seed }) => {
+  const id = await project(page.request, seed.wsId, ["Alpha"]);
+  const view = (await detail(page.request, id)).views.find((v) => v.type === "grid")!;
+  const cond = (cid: string, value: string) => ({ id: cid, fieldId: "sys_title", operator: "contains", value });
+  // What "Filter by this field" used to make from "A AND (B OR C)" placed under an OR: two levels of groups.
+  const filters = { conjunction: "AND", conditions: [cond("c1", "A")], groups: [{ conjunction: "OR", conditions: [cond("c2", "B")], groups: [{ conjunction: "AND", conditions: [cond("c3", "C"), cond("c4", "D")] }] }] };
+  expect((await page.request.patch(`/api/views/${view.id}`, { data: { config: { ...config(view), filters } } })).ok()).toBeTruthy();
+  await page.goto(`/w/${seed.slug}/p/${id}`);
+  await page.getByRole("button", { name: /Lọc|Filter/ }).first().click();
+  const panel = page.getByTestId("filter-panel");
+  await expect(panel.getByTestId("filter-group")).toHaveCount(2);
+  await expect(panel.getByTestId("filter-condition")).toHaveCount(4);
+  // Editing the innermost group keeps the outer ones.
+  await panel.getByTestId("filter-condition").nth(3).getByRole("button").last().click();
+  await expect.poll(async () => JSON.stringify(config((await detail(page.request, id)).views.find((v) => v.id === view.id)).filters)).not.toContain('"c4"');
+  const saved = config((await detail(page.request, id)).views.find((v) => v.id === view.id)).filters as typeof filters;
+  expect(saved.groups[0].groups![0].conditions.map((c) => c.id)).toEqual(["c3"]);
+  expect(saved.groups[0].conditions.map((c) => c.id)).toEqual(["c2"]);
+});

@@ -1,5 +1,5 @@
 # Weekly (and on dependency changes) vulnerability audit of every lockfile: npm
-# (web + desktop) down to low severity, and OSV-Scanner over the whole repo
+# (web production dependencies and desktop down to low, web dev tools at high), and OSV-Scanner over the whole repo
 # (npm, Cargo) with the documented exceptions in osv-scanner.toml.
 # Separate from Web CI, which builds and runs the test suites; Web CI blocks
 # pull requests on high / critical npm advisories.
@@ -43,8 +43,13 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
-      - name: Web (whole tree, low and above)
-        run: npm audit --audit-level=low --package-lock-only
+      # npm audit has no ignore list: what ships (production dependencies) must be clean down to low;
+      # dev tooling must have nothing high. Dev advisories below that are tracked by OSV below, with
+      # their reasons in osv-scanner.toml.
+      - name: Web, production dependencies (low and above)
+        run: npm audit --audit-level=low --package-lock-only --omit=dev
+      - name: Web, whole tree incl. dev tools (high and above)
+        run: npm audit --audit-level=high --package-lock-only
       - name: Desktop (low and above)
         working-directory: desktop
         run: npm audit --audit-level=low --package-lock-only

@@ -31,11 +31,6 @@ ignoreUntil = 2027-04-30
 reason = "proc-macro-error unmaintained: build-time proc macro (gtk / glib derive chain), never in the shipped binary; no replacement in Tauri 2 yet."
 
 [[IgnoredVulns]]
-id = "GHSA-qwgh-2vcv-g2f7"
-ignoreUntil = 2027-04-30
-reason = "block-buffer 0.10: the bug needs a caught panic, and the release profile sets panic = \"abort\" (desktop/src-tauri/Cargo.toml). The fix (0.12) needs the whole digest family upgraded by upstream crates."
-
-[[IgnoredVulns]]
 id = "GHSA-4r6h-8v6p-xvw6"
 ignoreUntil = 2027-04-30
 reason = "xlsx (CVE-2023-30533) false positive: the advisory has no fixed version for the npm package, but SheetJS fixed it in 0.19.3; the app uses 0.20.3 from cdn.sheetjs.com (the latest release)."
@@ -44,3 +39,8 @@ reason = "xlsx (CVE-2023-30533) false positive: the advisory has no fixed versio
 id = "GHSA-5pgg-2g8v-p4x9"
 ignoreUntil = 2027-04-30
 reason = "xlsx (CVE-2024-22363) false positive: the advisory has no fixed version for the npm package, but SheetJS fixed it in 0.20.2; the app uses 0.20.3 from cdn.sheetjs.com (the latest release)."
+
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2027-01-31
+reason = "minimatch < 11.0.1 (DoS through crafted glob patterns): dev-only, pulled in by ESLint and its plugins, which need minimatch 3 / 10 (no backport; 11 changed the API). The patterns come from the repo's own lint config, never from users, and nothing ships to production. Review when the ESLint plugins move to minimatch 11."

@@ -212,6 +212,8 @@ export const TASKS = {
   "flt.where": ["Where", "Khi"],
   "flt.andLower": ["and", "và"],
   "flt.orLower": ["or", "hoặc"],
+  "flt.addGroup": ["Add condition group", "Thêm nhóm điều kiện"],
+  "flt.removeGroup": ["Remove group", "Xoá nhóm"],
   "srt.none": ["No sorts applied", "Chưa sắp xếp"],
   "srt.sort": ["Sort", "Theo"],
   "srt.then": ["then", "rồi theo"],

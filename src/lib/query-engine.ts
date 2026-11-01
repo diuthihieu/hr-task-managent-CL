@@ -44,6 +44,22 @@ export interface FilterCondition {
 export interface FilterGroup {
   conjunction: "AND" | "OR";
   conditions: FilterCondition[];
+  /**
+   * Condition groups, each with its own AND / OR, combined with the conditions above by this group's
+   * conjunction - e.g. Assignee is Hieu AND (Status is To do OR Status is In progress).
+   */
+  groups?: FilterGroup[];
+}
+
+/** The filter without any condition on one field, at every level. */
+export function withoutFieldConditions(group: FilterGroup, fieldId: string): FilterGroup {
+  return { ...group, conditions: (group.conditions ?? []).filter((c) => c.fieldId !== fieldId), groups: group.groups?.map((g) => withoutFieldConditions(g, fieldId)) };
+}
+
+/** Every condition in a filter, groups included (for counts and badges). */
+export function filterConditionCount(group: FilterGroup | undefined): number {
+  if (!group) return 0;
+  return (group.conditions?.length ?? 0) + (group.groups ?? []).reduce((n, g) => n + filterConditionCount(g), 0);
 }
 
 export interface SortRule {
@@ -342,17 +358,24 @@ export function applyFilters(
   filterGroup: FilterGroup | undefined,
   currentUserId?: string
 ): RecordRow[] {
-  if (!filterGroup || !filterGroup.conditions?.length) return records;
+  if (!filterConditionCount(filterGroup)) return records;
   const byId = new Map(fields.map((f) => [f.id, f]));
-  return records.filter((record) => {
-    const results = filterGroup.conditions.map((cond) => {
+  const matches = (record: RecordRow, group: FilterGroup): boolean | null => {
+    const results: boolean[] = (group.conditions ?? []).map((cond) => {
       const field = byId.get(cond.fieldId);
       if (!field) return true;
       const value = computeCellValue(record, field, byId);
       return matchesCondition(value, cond.operator, cond.value, cond.value2, currentUserId);
     });
-    return filterGroup.conjunction === "OR" ? results.some(Boolean) : results.every(Boolean);
-  });
+    // An empty group doesn't take part (it would otherwise make an OR always true).
+    for (const sub of group.groups ?? []) {
+      const r = matches(record, sub);
+      if (r !== null) results.push(r);
+    }
+    if (!results.length) return null;
+    return group.conjunction === "OR" ? results.some(Boolean) : results.every(Boolean);
+  };
+  return records.filter((record) => matches(record, filterGroup!) !== false);
 }
 
 export function applySorts(records: RecordRow[], fields: FieldRow[], sorts: SortRule[] | undefined): RecordRow[] {

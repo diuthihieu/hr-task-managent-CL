@@ -107,3 +107,38 @@ test("'is' on assignees matches tasks shared with others (U2)", async () => {
   assert.deepEqual(ids("is_not", "u-hieu"), ["tam", "none"]);
   assert.deepEqual(ids("is", ["u-hieu", "u-tam"]), ["hieu", "both", "tam"]);
 });
+
+test("AND and OR combine through condition groups (U4)", async () => {
+  const { applyFilters, filterConditionCount } = await import("../query-engine");
+  const { field, record } = await import("./helpers");
+  const fields = [field("sys_status", "Status", "status"), field("sys_assignees", "Assignees", "people")];
+  const rows = [
+    record("hieu-todo", { sys_status: "todo", sys_assignees: ["hieu"] }),
+    record("hieu-doing", { sys_status: "doing", sys_assignees: ["hieu", "tam"] }),
+    record("hieu-done", { sys_status: "done", sys_assignees: ["hieu"] }),
+    record("tam-todo", { sys_status: "todo", sys_assignees: ["tam"] }),
+  ];
+  const filter = {
+    conjunction: "AND" as const,
+    conditions: [{ id: "a", fieldId: "sys_assignees", operator: "is" as const, value: "hieu" }],
+    groups: [{ conjunction: "OR" as const, conditions: [{ id: "s1", fieldId: "sys_status", operator: "is" as const, value: "todo" }, { id: "s2", fieldId: "sys_status", operator: "is" as const, value: "doing" }] }],
+  };
+  assert.deepEqual(applyFilters(rows, fields, filter).map((r) => r.id), ["hieu-todo", "hieu-doing"], "Hieu AND (To do OR Doing)");
+  assert.equal(filterConditionCount(filter), 3);
+  // OR at the top with an AND group: done tasks, or Tam's to-dos.
+  const or = { conjunction: "OR" as const, conditions: [{ id: "d", fieldId: "sys_status", operator: "is" as const, value: "done" }], groups: [{ conjunction: "AND" as const, conditions: [{ id: "t", fieldId: "sys_assignees", operator: "is" as const, value: "tam" }, { id: "td", fieldId: "sys_status", operator: "is" as const, value: "todo" }] }] };
+  assert.deepEqual(applyFilters(rows, fields, or).map((r) => r.id), ["hieu-done", "tam-todo"]);
+  // An empty group doesn't turn an OR into "everything".
+  assert.deepEqual(applyFilters(rows, fields, { ...or, groups: [{ conjunction: "AND", conditions: [] }] }).map((r) => r.id), ["hieu-done"]);
+});
+
+test("dashboard filters keep a chart's OR when merged with slicers", async () => {
+  const { mergeFilters } = await import("../dashboard-engine");
+  const { applyFilters } = await import("../query-engine");
+  const { field, record } = await import("./helpers");
+  const fields = [field("sys_status", "Status", "status"), field("sys_priority", "Priority", "single_select")];
+  const rows = [record("a", { sys_status: "todo", sys_priority: "high" }), record("b", { sys_status: "doing", sys_priority: "high" }), record("c", { sys_status: "done", sys_priority: "high" }), record("d", { sys_status: "todo", sys_priority: "low" })];
+  const chart = { conjunction: "OR" as const, conditions: [{ id: "1", fieldId: "sys_status", operator: "is" as const, value: "todo" }, { id: "2", fieldId: "sys_status", operator: "is" as const, value: "doing" }] };
+  const slicer = { conjunction: "AND" as const, conditions: [{ id: "3", fieldId: "sys_priority", operator: "is" as const, value: "high" }] };
+  assert.deepEqual(applyFilters(rows, fields, mergeFilters(undefined, chart, slicer)).map((r) => r.id), ["a", "b"]);
+});

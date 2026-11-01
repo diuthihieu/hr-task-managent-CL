@@ -10,7 +10,7 @@ import { SortPanel } from "@/components/filters/sort-panel";
 import { GroupPanel } from "@/components/filters/group-panel";
 import { HiddenFieldsPanel } from "@/components/filters/hidden-fields-panel";
 import { FormatPanel } from "@/components/filters/format-panel";
-import type { ViewConfig } from "@/lib/query-engine";
+import { filterConditionCount, type ViewConfig } from "@/lib/query-engine";
 import type { FieldRow } from "@/types";
 import type { Member } from "@/components/grid/cell";
 import { cn } from "@/lib/utils";
@@ -58,7 +58,7 @@ export function ViewToolbar({
   const { t } = useT();
   const isGrid = viewType === "grid";
   const showGenericGroup = viewType !== "kanban"; // Kanban's columns ARE the grouping, configured in its own settings
-  const filterCount = config.filters?.conditions?.length ?? 0;
+  const filterCount = filterConditionCount(config.filters);
   const sortCount = config.sorts?.length ?? 0;
   const hiddenCount = config.hiddenFieldIds?.length ?? 0;
   const formatCount = config.conditionalFormats?.length ?? 0;

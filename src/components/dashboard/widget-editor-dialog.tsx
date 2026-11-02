@@ -210,13 +210,22 @@ export function WidgetEditorDialog({
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-xs font-medium text-neutral-500 mb-1 block">{isPivot ? t("db.w.pivotRows") : t("db.w.dimension")}</label>
-                    <Select
-                      className="w-full"
-                      value={draft.config.dimensionFieldId ?? ""}
-                      onValueChange={(v) => patchConfig({ dimensionFieldId: v })}
-                      options={fields.map((f) => ({ value: f.id, label: f.name }))}
-                      placeholder={t("form.chooseField")}
-                    />
+                    {isPivot ? (
+                      <FieldListPicker
+                        testId="pivot-rows"
+                        fields={fields}
+                        value={draft.config.rowFieldIds?.length ? draft.config.rowFieldIds : draft.config.dimensionFieldId ? [draft.config.dimensionFieldId] : []}
+                        onChange={(ids) => patchConfig({ rowFieldIds: ids, dimensionFieldId: ids[0] })}
+                      />
+                    ) : (
+                      <Select
+                        className="w-full"
+                        value={draft.config.dimensionFieldId ?? ""}
+                        onValueChange={(v) => patchConfig({ dimensionFieldId: v })}
+                        options={fields.map((f) => ({ value: f.id, label: f.name }))}
+                        placeholder={t("form.chooseField")}
+                      />
+                    )}
                   </div>
                   {showDateBucket && (
                     <div>
@@ -235,13 +244,23 @@ export function WidgetEditorDialog({
               {needsSeries && (
                 <div>
                   <label className="text-xs font-medium text-neutral-500 mb-1 block">{isPivot ? t("db.w.pivotCols") : t("db.w.series")}</label>
-                  <Select
-                    className="w-full"
-                    value={draft.config.dimension2FieldId ?? ""}
-                    onValueChange={(v) => patchConfig({ dimension2FieldId: v === "__none__" ? undefined : v })}
-                    options={[...(isPivot ? [{ value: "__none__", label: t("db.w.pivotNoCols") }] : []), ...fields.map((f) => ({ value: f.id, label: f.name }))]}
-                    placeholder={t("form.chooseField")}
-                  />
+                  {isPivot ? (
+                    <FieldListPicker
+                      testId="pivot-cols"
+                      fields={fields}
+                      value={draft.config.colFieldIds?.length ? draft.config.colFieldIds : draft.config.dimension2FieldId ? [draft.config.dimension2FieldId] : []}
+                      onChange={(ids) => patchConfig({ colFieldIds: ids, dimension2FieldId: ids[0] })}
+                      emptyLabel={t("db.w.pivotNoCols")}
+                    />
+                  ) : (
+                    <Select
+                      className="w-full"
+                      value={draft.config.dimension2FieldId ?? ""}
+                      onValueChange={(v) => patchConfig({ dimension2FieldId: v === "__none__" ? undefined : v })}
+                      options={fields.map((f) => ({ value: f.id, label: f.name }))}
+                      placeholder={t("form.chooseField")}
+                    />
+                  )}
                 </div>
               )}
 
@@ -567,6 +586,38 @@ function CombineSources({
             )}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * D4: an ordered list of fields (summary table rows or columns) - the first is the parent, the next
+ * ones its children. Add from the list, remove, move up / down; at most 4 levels.
+ */
+function FieldListPicker({ fields, value, onChange, emptyLabel, testId }: { fields: FieldRow[]; value: string[]; onChange: (ids: string[]) => void; emptyLabel?: string; testId: string }) {
+  const { t } = useT();
+  const name = (id: string) => fields.find((f) => f.id === id)?.name ?? id;
+  const move = (i: number, by: number) => {
+    const next = [...value];
+    [next[i], next[i + by]] = [next[i + by], next[i]];
+    onChange(next);
+  };
+  const free = fields.filter((f) => !value.includes(f.id));
+  return (
+    <div className="space-y-1" data-testid={testId}>
+      {value.length === 0 && emptyLabel && <p className="text-[11px] text-neutral-400">{emptyLabel}</p>}
+      {value.map((id, i) => (
+        <div key={id} className="flex items-center gap-1 rounded-md border border-neutral-200 dark:border-neutral-700 px-2 py-1 text-xs" data-testid="field-list-item">
+          <span className="text-neutral-400 w-4 shrink-0">{i + 1}.</span>
+          <span className="flex-1 truncate" style={{ paddingLeft: i * 8 }}>{name(id)}</span>
+          <button type="button" className="px-1 text-neutral-400 hover:text-neutral-700 disabled:opacity-30" disabled={i === 0} onClick={() => move(i, -1)} aria-label={t("db.w.moveUp")}>↑</button>
+          <button type="button" className="px-1 text-neutral-400 hover:text-neutral-700 disabled:opacity-30" disabled={i === value.length - 1} onClick={() => move(i, 1)} aria-label={t("db.w.moveDown")}>↓</button>
+          <button type="button" className="px-1 text-neutral-400 hover:text-red-600" onClick={() => onChange(value.filter((x) => x !== id))} aria-label={t("common.remove")}>×</button>
+        </div>
+      ))}
+      {value.length < 4 && free.length > 0 && (
+        <Select className="w-full" value="" onValueChange={(v) => v && onChange([...value, v])} options={free.map((f) => ({ value: f.id, label: f.name }))} placeholder={value.length ? t("db.w.addLevel") : t("form.chooseField")} />
       )}
     </div>
   );

@@ -5,6 +5,7 @@ import { requireAdmin, route, readJson } from "@/lib/authz";
 import { logActivity } from "@/lib/activity";
 import { requireReleasePublisher } from "@/lib/release-auth";
 import { PLATFORMS, serializeRelease } from "@/lib/desktop-releases";
+import { allowedArtifactUrl, artifactPrefixes } from "@/lib/release-urls";
 
 /** Every release incl. unpublished ones (Admin console). */
 export const GET = route(async () => {
@@ -14,13 +15,8 @@ export const GET = route(async () => {
 });
 
 const https = z.string().url().regex(/^https:\/\//, "must be an https:// URL");
-/** Installers may only be served from these hosts (comma list in DESKTOP_ARTIFACT_HOSTS; "*." allows subdomains). */
-const ARTIFACT_HOSTS = (process.env.DESKTOP_ARTIFACT_HOSTS ?? "github.com,objects.githubusercontent.com,*.public.blob.vercel-storage.com").split(",").map((h) => h.trim().toLowerCase()).filter(Boolean);
-const allowedHost = (url: string) => {
-  const host = new URL(url).hostname.toLowerCase();
-  return ARTIFACT_HOSTS.some((h) => (h.startsWith("*.") ? host.endsWith(h.slice(1)) : host === h));
-};
-const artifactUrl = https.refine(allowedHost, "host is not an allowed artifact host (DESKTOP_ARTIFACT_HOSTS)");
+/** Installers and update packages only from our own release URLs (DESKTOP_ARTIFACT_PREFIXES, see release-urls.ts). */
+const artifactUrl = https.refine((u) => allowedArtifactUrl(u, artifactPrefixes()), "must be one of this app's release download URLs (DESKTOP_ARTIFACT_PREFIXES)");
 const publishSchema = z.object({
   version: z.string().regex(/^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$/, "must be a semantic version like 1.2.0"),
   platform: z.enum(PLATFORMS).default("windows-x86_64"),
@@ -30,7 +26,7 @@ const publishSchema = z.object({
   installerSizeBytes: z.number().int().nonnegative().optional(),
   /** Required: clients and the download page show it so the installer can be verified. */
   sha256: z.string().regex(/^[0-9a-f]{64}$/),
-  updaterUrl: https.optional(),
+  updaterUrl: artifactUrl.optional(),
   updaterSignature: z.string().min(1).max(4000).optional(),
   minOsVersion: z.string().min(1).max(120).optional(),
   releaseNotes: z.string().max(20000).optional(),

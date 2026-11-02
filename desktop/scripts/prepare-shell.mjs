@@ -4,9 +4,26 @@
 import { writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-const DEFAULT_URL = "https://hr-task-managent-cl-o1sz.vercel.app";
-const raw = (process.env.BASEWORK_SERVER_URL || DEFAULT_URL).trim().replace(/\/+$/, "");
-const url = new URL(raw);
+// No default (BUG-16): a build must say which server it opens - a baked-in host
+// that later disappears leaves every install pointing at nothing. `--dev` (tauri
+// dev only) falls back to a local web server.
+const dev = process.argv.includes("--dev");
+let raw = (process.env.BASEWORK_SERVER_URL ?? "").trim().replace(/\/+$/, "");
+if (!raw && dev) {
+  raw = "http://localhost:3000";
+  console.warn("[desktop] BASEWORK_SERVER_URL not set - using http://localhost:3000 (dev only)");
+}
+if (!raw) {
+  console.error("BASEWORK_SERVER_URL is not set: set it to the production web origin (e.g. https://your-app.example.com) - see docs/DESKTOP.md.");
+  process.exit(1);
+}
+let url;
+try {
+  url = new URL(raw);
+} catch {
+  console.error(`BASEWORK_SERVER_URL is not a valid URL (got ${raw})`);
+  process.exit(1);
+}
 const isLocal = url.hostname === "localhost" || url.hostname === "127.0.0.1";
 if (url.protocol !== "https:" && !isLocal) {
   console.error(`BASEWORK_SERVER_URL must use https:// (got ${raw})`);

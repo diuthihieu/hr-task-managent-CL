@@ -28,8 +28,10 @@ on:
 permissions:
   contents: read
 
+# The site the app opens (repository variable, BUG-16): pull-request builds that can't read it
+# (Dependabot, forks) use a placeholder; the release job requires it.
 env:
-  APP_HOST: ${{ vars.ANDROID_APP_HOST || 'woli-work.vercel.app' }}
+  APP_HOST: ${{ vars.ANDROID_APP_HOST }}
 
 jobs:
   build:
@@ -56,6 +58,7 @@ jobs:
           PR_NUMBER: ${{ github.event.number }}
         run: |
           v="0.0.0-pr.$PR_NUMBER"
+          APP_HOST="${APP_HOST:-example.invalid}"
           gradle -p mobile/android assembleDebug -PappVersion="$v" -PappHost="$APP_HOST" --no-daemon --stacktrace
           mkdir -p dist
           cp "$(ls mobile/android/app/build/outputs/apk/debug/*.apk | head -1)" "dist/woli-android-$v-debug.apk"
@@ -111,6 +114,10 @@ jobs:
         with:
           gradle-version: "8.10.2"
           cache-disabled: true
+
+      - name: Release host
+        run: |
+          if [ -z "$APP_HOST" ]; then echo "::error::Repository variable ANDROID_APP_HOST is not set (the site the app opens) - docs/ANDROID.md."; exit 1; fi
 
       - name: Signing key
         id: key

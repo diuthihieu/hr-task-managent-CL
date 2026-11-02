@@ -5,7 +5,7 @@
   "identifier": "app.basework.desktop",
   "build": {
     "frontendDist": "../shell",
-    "beforeDevCommand": "node scripts/prepare-shell.mjs",
+    "beforeDevCommand": "node scripts/prepare-shell.mjs --dev",
     "beforeBuildCommand": "node scripts/prepare-shell.mjs"
   },
   "app": {

@@ -66,7 +66,7 @@ release, never in CI builds of branches or pull requests:
 
 | Kind | Where | Name | Value |
 |---|---|---|---|
-| Variable | repository | `BASEWORK_SERVER_URL` | Production web origin, e.g. `https://hr-task-managent-cl-o1sz.vercel.app` (defaults to that) |
+| Variable | repository | `BASEWORK_SERVER_URL` | **Required**, no default: the production web origin (`https://` + the same host as `ANDROID_APP_HOST`). Release builds fail without it; it is baked into the app and its update channel |
 | Secret | `release` environment | `DESKTOP_RELEASE_TOKEN` | Random string, ≥ 32 characters (`openssl rand -hex 32`) |
 
 Vercel project → Environment Variables (Production): the **same**
@@ -108,8 +108,13 @@ cd desktop
 npm ci
 $env:BASEWORK_SERVER_URL = "https://your-production-url"
 npm run build        # -> src-tauri/target/release/bundle/{nsis,msi}/
-npm run dev          # opens the window against BASEWORK_SERVER_URL (use http://localhost:3000 for a local web server)
+npm run dev          # opens the window against BASEWORK_SERVER_URL, or http://localhost:3000 when it isn't set
 ```
+
+`npm run build` (and `npm run prepare-shell`, which `cargo build` / `cargo test`
+need first) refuses to run without `BASEWORK_SERVER_URL` - there is no default
+host to fall back to. Only `npm run dev` / `npm run prepare-shell:dev` use
+`http://localhost:3000`.
 
 Installers: the NSIS `-setup.exe` installs per-user with no admin rights (the
 one on the Download page). The `.msi` installs per-machine, for IT deployment

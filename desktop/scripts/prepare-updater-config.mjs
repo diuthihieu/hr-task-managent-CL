@@ -11,7 +11,18 @@ if (!pubkey) {
   console.error("TAURI_UPDATER_PUBKEY is not set - cannot enable the updater.");
   process.exit(1);
 }
-const server = new URL(process.env.BASEWORK_SERVER_URL || "https://hr-task-managent-cl-o1sz.vercel.app").origin;
+const rawServer = (process.env.BASEWORK_SERVER_URL ?? "").trim();
+if (!rawServer) {
+  console.error("BASEWORK_SERVER_URL is not set - the updater must know which server to ask (docs/DESKTOP.md).");
+  process.exit(1);
+}
+let server;
+try {
+  server = new URL(rawServer).origin;
+} catch {
+  console.error(`BASEWORK_SERVER_URL is not a valid URL (got ${rawServer})`);
+  process.exit(1);
+}
 const config = {
   bundle: { createUpdaterArtifacts: true },
   plugins: {

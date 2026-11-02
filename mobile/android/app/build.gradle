@@ -2,7 +2,7 @@
 // Google / Microsoft sign-in work). Every web deploy reaches the app at once; this shell only needs a
 // new release when its icon, name or start address change.
 //
-// Build:   gradle -p mobile/android assembleRelease -PappVersion=1.0.0 -PappHost=woli-work.vercel.app
+// Build:   gradle -p mobile/android assembleRelease -PappVersion=1.0.0 -PappHost=<production host>
 // Signing: ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
 //          (without them the release build is unsigned; CI then builds a debug APK to check the code).
 plugins {
@@ -10,7 +10,9 @@ plugins {
 }
 
 def appVersion = (project.findProperty("appVersion") ?: "1.0.0").toString()
-def appHost = (project.findProperty("appHost") ?: "woli-work.vercel.app").toString()
+// No default host (BUG-16): the app must be told which site it opens.
+def appHost = (project.findProperty("appHost") ?: "").toString().trim()
+if (!appHost) throw new GradleException("Set -PappHost=<production host> (the site the app opens) - see docs/ANDROID.md")
 def parts = appVersion.replaceAll(/-.*$/, "").tokenize(".").collect { it as int } + [0, 0, 0]
 def appVersionCode = parts[0] * 10000 + parts[1] * 100 + parts[2]
 

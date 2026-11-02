@@ -368,6 +368,7 @@ export const DASHBOARDS = {
   "db.slicerSearch": ["Search", "Tìm kiếm"],
   "db.slicerSelectAll": ["Select all", "Chọn tất cả"],
   "db.slicerNoValues": ["No value", "Không có giá trị"],
+  "db.slicerCapped": ["At most {max} values can be picked; narrow the list with search.", "Chỉ chọn được tối đa {max} giá trị; hãy tìm kiếm để thu hẹp danh sách."],
   "db.slicerRemove": ["Remove slicer", "Xoá bộ lọc này"],
   "db.noData": ["No data for the current filters", "Không có dữ liệu với bộ lọc hiện tại"],
   "db.slicerField": ["Field name (e.g. Status, Category, Owner, Due Date)", "Tên trường (VD: Trạng thái, Category, Hạn chót)"],

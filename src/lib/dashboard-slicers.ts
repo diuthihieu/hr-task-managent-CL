@@ -25,7 +25,8 @@ export interface SlicerDef extends SlicerSelection {
   id: string;
 }
 
-const MAX_VALUES = 500;
+/** Most values one slicer may pick (the dropdown never picks more, so what is ticked is what filters). */
+export const MAX_SLICER_VALUES = 500;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 const shiftDay = (day: string, by: number) => {
@@ -49,7 +50,7 @@ export function normalizeSlicer(raw: unknown): SlicerSelection | null {
     return { fieldName, values: [r.label.slice(0, 500)] };
   }
   const out: SlicerSelection = { fieldName };
-  if (Array.isArray(r.values)) out.values = [...new Set(r.values.filter((v): v is string => typeof v === "string").map((v) => v.slice(0, 500)))].slice(0, MAX_VALUES);
+  if (Array.isArray(r.values)) out.values = [...new Set(r.values.filter((v): v is string => typeof v === "string").map((v) => v.slice(0, 500)))].slice(0, MAX_SLICER_VALUES);
   if (day(r.from)) out.from = day(r.from);
   if (day(r.to)) out.to = day(r.to);
   return out;
@@ -71,8 +72,10 @@ function labelsOf(record: RecordRow, field: FieldRow, fields: FieldRow[], member
 
 function matches(record: RecordRow, field: FieldRow, fields: FieldRow[], members: MemberLite[], s: SlicerSelection): boolean {
   if (DATE_TYPES.includes(field.type)) {
-    if (!s.from && !s.to) return true;
     const day = labelsOf(record, field, fields, members)[0];
+    // Picked days (an old "Due date = 2026-10-01" slicer, or values sent by a client): any of them.
+    if (s.values?.length && !s.values.some((v) => v.slice(0, 10) === day)) return false;
+    if (!s.from && !s.to) return true;
     return day !== "__empty__" && (!s.from || day >= s.from) && (!s.to || day <= s.to);
   }
   if (!s.values?.length) return true;
@@ -136,4 +139,17 @@ export function mergeSlicerOptions(parts: SlicerOptions[]): SlicerOptions {
   const mins = found.map((p) => p.min).filter((d): d is string => !!d).sort();
   const maxs = found.map((p) => p.max).filter((d): d is string => !!d).sort();
   return { found: true, kind, values, min: mins[0], max: maxs[maxs.length - 1] };
+}
+
+/** Picked values plus some more (case ignored), at most MAX_SLICER_VALUES; `capped` when some were left out. */
+export function addSlicerValues(picked: string[], add: string[]): { values: string[]; capped: boolean } {
+  const seen = new Set(picked.map(norm));
+  const values = [...picked];
+  for (const v of add) {
+    if (seen.has(norm(v))) continue;
+    if (values.length >= MAX_SLICER_VALUES) return { values, capped: true };
+    seen.add(norm(v));
+    values.push(v);
+  }
+  return { values, capped: false };
 }

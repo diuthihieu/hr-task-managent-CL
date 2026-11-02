@@ -7,7 +7,7 @@ import { Checkbox } from "@/components/ui/misc";
 import { DateInput } from "@/components/ui/date-input";
 import { api } from "@/lib/api-client";
 import type { CrossFilter } from "@/lib/dashboard-engine";
-import { slicerActive, type SlicerDef, type SlicerSelection } from "@/lib/dashboard-slicers";
+import { MAX_SLICER_VALUES, addSlicerValues, slicerActive, type SlicerDef, type SlicerSelection } from "@/lib/dashboard-slicers";
 import { useT } from "@/components/i18n-provider";
 import { cn } from "@/lib/utils";
 import { nanoid } from "nanoid";
@@ -157,7 +157,9 @@ function SlicerButton({
 
   const picked = useMemo(() => slicer.values ?? [], [slicer.values]);
   const isDate = options?.kind === "date" || ((slicer.from || slicer.to) && !picked.length);
-  const summary = isDate
+  const summary = isDate && picked.length
+    ? picked.join(", ")
+    : isDate
     ? slicer.from || slicer.to
       ? `${slicer.from ? shortDay(slicer.from) : "…"} – ${slicer.to ? shortDay(slicer.to) : "…"}`
       : t("db.slicerAll")
@@ -177,13 +179,26 @@ function SlicerButton({
   const isPicked = (label: string) => picked.some((p) => p.toLowerCase() === label.toLowerCase());
   const allShownPicked = shown.length > 0 && shown.every((v) => isPicked(v.label));
 
+  // At most MAX_SLICER_VALUES picked: what is ticked is exactly what filters (the server keeps no more).
+  const [capped, setCapped] = useState(false);
   function toggle(label: string) {
-    onChange({ fieldName: slicer.fieldName, values: isPicked(label) ? picked.filter((p) => p.toLowerCase() !== label.toLowerCase()) : [...picked, label] });
+    if (isPicked(label)) {
+      setCapped(false);
+      return onChange({ fieldName: slicer.fieldName, values: picked.filter((p) => p.toLowerCase() !== label.toLowerCase()) });
+    }
+    const next = addSlicerValues(picked, [label]);
+    setCapped(next.capped);
+    onChange({ fieldName: slicer.fieldName, values: next.values });
   }
 
   function selectAll() {
-    if (allShownPicked) onChange({ fieldName: slicer.fieldName, values: picked.filter((p) => !shown.some((v) => v.label.toLowerCase() === p.toLowerCase())) });
-    else onChange({ fieldName: slicer.fieldName, values: [...new Set([...picked, ...shown.map((v) => v.label)])] });
+    if (allShownPicked) {
+      setCapped(false);
+      return onChange({ fieldName: slicer.fieldName, values: picked.filter((p) => !shown.some((v) => v.label.toLowerCase() === p.toLowerCase())) });
+    }
+    const next = addSlicerValues(picked, shown.map((v) => v.label));
+    setCapped(next.capped);
+    onChange({ fieldName: slicer.fieldName, values: next.values });
   }
 
   return (
@@ -222,7 +237,7 @@ function SlicerButton({
             {options.min && <p className="text-[11px] text-neutral-400">{t("db.slicerRange", { from: shortDay(options.min), to: shortDay(options.max ?? options.min) })}</p>}
             <p className="text-[11px] text-neutral-400">{t("db.slicerInclusive")}</p>
             <div className="flex justify-end">
-              <button className="text-xs text-neutral-500 hover:text-red-600 disabled:opacity-40" disabled={!slicer.from && !slicer.to} onClick={() => onChange({ fieldName: slicer.fieldName })} data-testid="slicer-clear">
+              <button className="text-xs text-neutral-500 hover:text-red-600 disabled:opacity-40" disabled={!slicer.from && !slicer.to && !picked.length} onClick={() => onChange({ fieldName: slicer.fieldName })} data-testid="slicer-clear">
                 {t("db.slicerClear")}
               </button>
             </div>
@@ -243,6 +258,11 @@ function SlicerButton({
                 {t("db.slicerClear")}
               </button>
             </div>
+            {capped && (
+              <p className="px-3 py-1 text-[11px] text-amber-600 dark:text-amber-400 border-b border-neutral-100 dark:border-neutral-800" data-testid="slicer-capped">
+                {t("db.slicerCapped", { max: MAX_SLICER_VALUES })}
+              </p>
+            )}
             <div className="max-h-64 overflow-y-auto thin-scroll py-1">
               {shown.length === 0 && <p className="px-3 py-2 text-xs text-neutral-400">{t("db.slicerNoValues")}</p>}
               {shown.map((v) => (

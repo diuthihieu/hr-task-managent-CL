@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { field, record } from "./helpers";
-import { mergeSlicerOptions, normalizeSlicer, slicerActive, slicerConditions, slicerOptions, type SlicerSelection } from "../dashboard-slicers";
+import { MAX_SLICER_VALUES, addSlicerValues, mergeSlicerOptions, normalizeSlicer, slicerActive, slicerConditions, slicerOptions, type SlicerSelection } from "../dashboard-slicers";
 import { applyFilters } from "../query-engine";
 
 // D3: Power BI-like slicers - OR between the values of one slicer, AND between slicers, an empty
@@ -55,13 +55,19 @@ test("options: values with counts after the other slicers; the slicer's own sele
   assert.equal(slicerOptions(rows, fields, members, { fieldName: "Nope" }, []).found, false);
 });
 
+test("an old saved slicer picking one date still filters that day", () => {
+  const legacy = normalizeSlicer({ fieldName: "Due date", label: "2026-10-15", operator: "is" })!;
+  assert.deepEqual(ids([legacy]), ["t2"]);
+  assert.deepEqual(ids([{ fieldName: "Due date", values: ["2026-10-01", "2026-10-31T10:00:00.000Z"] }]), ["t1", "t3"], "several days: any of them");
+});
+
 test("old saved slicers (one value / before / after / between) still work", () => {
   assert.deepEqual(normalizeSlicer({ fieldName: "Status", label: "Done", operator: "is" }), { fieldName: "Status", values: ["Done"] });
   assert.deepEqual(normalizeSlicer({ fieldName: "Due", label: "2026-10-01", operator: "between", value2: "2026-10-31" }), { fieldName: "Due", from: "2026-10-01", to: "2026-10-31" });
   assert.deepEqual(normalizeSlicer({ fieldName: "Due", label: "2026-10-01", operator: "after" }), { fieldName: "Due", from: "2026-10-02" });
   assert.deepEqual(normalizeSlicer({ fieldName: "Due", label: "2026-10-01", operator: "before" }), { fieldName: "Due", to: "2026-09-30" });
   assert.equal(normalizeSlicer({ fieldName: "" }), null);
-  assert.equal(normalizeSlicer({ fieldName: "Status", values: Array.from({ length: 600 }, (_, i) => `v${i}`) })?.values?.length, 500, "bounded");
+  assert.equal(normalizeSlicer({ fieldName: "Status", values: Array.from({ length: 600 }, (_, i) => `v${i}`) })?.values?.length, MAX_SLICER_VALUES, "bounded - the UI never picks more (MAX_SLICER_VALUES)");
 });
 
 test("a built-in field is found by its name in either language (the UI shows it translated)", () => {
@@ -70,4 +76,13 @@ test("a built-in field is found by its name in either language (the UI shows it 
   const kept = (s: SlicerSelection[]) => applyFilters(r, sys, { conjunction: "AND", conditions: slicerConditions(r, sys, members, s) }).map((x) => x.id);
   assert.deepEqual(kept([{ fieldName: "Hạn chót", to: "2026-10-31" }]), ["x"]);
   assert.equal(slicerOptions(r, sys, members, { fieldName: "hạn chót" }, [{ fieldName: "Due date", from: "2026-11-01" }]).min, "2026-10-01", "its own selection, named in the other language, doesn't narrow it");
+});
+
+test("picking values never goes past the limit, and says when it stops (Select all on a long list)", () => {
+  const many = Array.from({ length: 700 }, (_, i) => `v${i}`);
+  const r = addSlicerValues(["v0"], many);
+  assert.equal(r.values.length, MAX_SLICER_VALUES);
+  assert.equal(r.capped, true);
+  assert.deepEqual(addSlicerValues(["A"], ["a", "B"]), { values: ["A", "B"], capped: false }, "case ignored, no duplicates");
+  assert.equal(normalizeSlicer({ fieldName: "x", values: r.values })?.values?.length, r.values.length, "what is ticked is exactly what the server filters by");
 });

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { field, record } from "./helpers";
 import { resolveComputedFields } from "../../server/tasks/read";
-import { collectLinkedTaskIds, computedLinkFields, linksOf } from "../../server/tasks/linked-set";
+import { LINKED_SET_MAX_QUERIES, collectLinkedTaskIds, computedLinkFields, linksOf } from "../../server/tasks/linked-set";
 import type { RecordRow } from "@/types";
 
 // BUG-07: an edit recomputes lookups / rollups from the tasks reachable through the links those
@@ -40,6 +40,13 @@ test("only the 3 linked tasks are looked up, however big the project", async () 
     assert.deepEqual([...ids!].sort(), ["t0", "t1", "t2", "t3"]);
     assert.equal(g.calls.flat().length, 3, `${n} tasks: 3 ids loaded`);
   }
+});
+
+test("a long chain of links stops after a few queries and asks for the old full load", async () => {
+  const rows = Array.from({ length: 1000 }, (_, i) => record(`t${i}`, { sys_title: `T${i}`, [LINK]: i < 999 ? [`t${i + 1}`] : [] }, i));
+  const g = graph(rows);
+  assert.equal(await collectLinkedTaskIds(g.start("t0"), g.load), null);
+  assert.ok(g.calls.length <= LINKED_SET_MAX_QUERIES, `${g.calls.length} sequential queries`);
 });
 
 test("past the limit it stops and asks for the old full load", async () => {

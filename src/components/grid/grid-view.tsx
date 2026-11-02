@@ -39,6 +39,7 @@ import { inRange, normalizeRange, planFillDown, planPaste, rangeCols, rangeRows,
 import { parseFieldConfig } from "@/lib/field-types";
 import { groupFieldPatch } from "@/lib/grid-group";
 import { orderVisibleFields } from "@/lib/grid-columns";
+import { keepIndexes, virtualSpacers } from "@/lib/grid-virtual";
 import { DEFAULT_WIDTH, MAX_PASTE_ROWS, PRIMARY_WIDTH, ROW_HEIGHTS, type GridContextMenu, type GridInteractions, type GridSelection, type GridViewProps } from "./grid-shared";
 import { GroupSection, HeaderCell, ParentGroupHeader, Row } from "./grid-row";
 import { GridClipboardMenu } from "./grid-clipboard-menu";
@@ -157,8 +158,10 @@ export function GridView(props: GridViewProps) {
   if (rowOrder.length !== flatRecords.length || !flatRecords.every((r) => rowOrder.includes(r.id))) {
     setRowOrder(flatRecords.map((r) => r.id));
   }
-  // The row being dragged stays rendered even when it scrolls out of view (see the virtualizer below).
+  // The row being dragged, and the row holding focus (a cell being edited keeps its draft until blur),
+  // stay rendered even when they scroll out of view (see the virtualizer below).
   const [draggingRowId, setDraggingRowId] = useState<string | null>(null);
+  const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
   function handleRowDragEnd(e: DragEndEvent) {
     setDraggingRowId(null);
     const { active, over } = e;
@@ -193,13 +196,11 @@ export function GridView(props: GridViewProps) {
   // BUG-06a: without grouping only the rows in view (plus overscan) are rendered; spacers above and
   // below keep the scroll height. Positions go on spacers, never on the rows, whose transform belongs
   // to dnd-kit. Fixed row heights are known; "auto" (always on phones) is measured.
-  const draggingIndex = draggingRowId ? flatTree.findIndex((r) => r.record.id === draggingRowId) : -1;
+  const keptIndexes = [draggingRowId, focusedRowId].filter(Boolean).map((id) => flatTree.findIndex((r) => r.record.id === id));
+  const keptKey = keptIndexes.join(",");
   const rangeExtractor = useCallback(
-    (r: Range) => {
-      const out = defaultRangeExtractor(r);
-      return draggingIndex >= 0 && !out.includes(draggingIndex) ? [...out, draggingIndex].sort((a, b) => a - b) : out;
-    },
-    [draggingIndex],
+    (r: Range) => keepIndexes(defaultRangeExtractor(r), keptKey ? keptKey.split(",").map(Number) : []),
+    [keptKey],
   );
   // eslint-disable-next-line react-hooks/incompatible-library -- the app doesn't use the React Compiler (next.config.ts); the virtualizer re-renders through its own state
   const virtualizer = useVirtualizer({
@@ -673,20 +674,23 @@ export function GridView(props: GridViewProps) {
   }
 
   const virtualItems = groups ? [] : virtualizer.getVirtualItems();
-  const padTop = virtualItems.length ? virtualItems[0].start - HEADER_HEIGHT : 0;
-  const padBottom = virtualItems.length ? virtualizer.getTotalSize() - (virtualItems[virtualItems.length - 1].end - HEADER_HEIGHT) : 0;
+  // A spacer before every rendered row that doesn't follow the previous one (a kept row far from the
+  // window leaves a gap), and one after the last, so every row sits at its own offset.
+  const spacers = virtualSpacers(virtualItems, virtualizer.getTotalSize(), HEADER_HEIGHT);
   const virtualRows = (
     <>
-      {padTop > 0 && <div aria-hidden style={{ height: padTop }} />}
-      {virtualItems.map((item) => {
+      {virtualItems.map((item, i) => {
         const r = flatTree[item.index];
         return (
-          <div key={r.record.id} data-index={item.index} ref={rowHeight === "auto" ? virtualizer.measureElement : undefined}>
-            <Row record={r.record} depth={r.depth} childCount={r.childCount} {...props} rowHeight={rowHeight} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />
-          </div>
+          <Fragment key={r.record.id}>
+            {spacers.before[i] > 0 && <div aria-hidden style={{ height: spacers.before[i] }} />}
+            <div data-index={item.index} ref={rowHeight === "auto" ? virtualizer.measureElement : undefined}>
+              <Row record={r.record} depth={r.depth} childCount={r.childCount} {...props} rowHeight={rowHeight} visibleFields={visibleFields} widthOf={widthOf} interactions={interactions} />
+            </div>
+          </Fragment>
         );
       })}
-      {padBottom > 0 && <div aria-hidden style={{ height: padBottom }} />}
+      {spacers.after > 0 && <div aria-hidden style={{ height: spacers.after }} />}
     </>
   );
 
@@ -694,6 +698,13 @@ export function GridView(props: GridViewProps) {
     <div
       ref={containerRef}
       tabIndex={-1}
+      onFocus={(e) => {
+        const id = e.target.closest<HTMLElement>("[role=row][data-record-id]")?.dataset.recordId ?? null;
+        if (id !== focusedRowId) setFocusedRowId(id);
+      }}
+      onBlur={(e) => {
+        if (focusedRowId && !e.currentTarget.contains(e.relatedTarget as Node | null)) setFocusedRowId(null);
+      }}
       className={cn("flex-1 overflow-auto thin-scroll outline-none", dragging && "select-none")}
       data-testid="grid-view"
     >

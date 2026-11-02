@@ -1,0 +1,334 @@
+{
+  "src/app/(app)/w/[workspaceSlug]/layout.tsx": {
+    "user.findUnique": 1
+  },
+  "src/app/api/account/password/route.ts": {
+    "user.findUniqueOrThrow": 1
+  },
+  "src/app/api/account/preferences/route.ts": {
+    "user.findUniqueOrThrow": 1
+  },
+  "src/app/api/account/profile/route.ts": {
+    "user.findUniqueOrThrow": 1
+  },
+  "src/app/api/account/verify-email/route.ts": {
+    "user.findUniqueOrThrow": 1
+  },
+  "src/app/api/admin/users/route.ts": {
+    "user.findUnique": 1
+  },
+  "src/app/api/ai/action/route.ts": {
+    "project.findUniqueOrThrow": 1,
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/app/api/ai/chat/route.ts": {
+    "workspace.findUniqueOrThrow": 1,
+    "wiki.findUniqueOrThrow": 1
+  },
+  "src/app/api/ai/narrative/route.ts": {
+    "project.findUniqueOrThrow": 1,
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/app/api/ai/report/route.ts": {
+    "project.findUniqueOrThrow": 1,
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/app/api/ai/task-intake/confirm/route.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/app/api/ai/task-intake/route.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/app/api/attachments/[attachmentId]/download/route.ts": {
+    "attachment.findUniqueOrThrow": 1
+  },
+  "src/app/api/attachments/[attachmentId]/preview/route.ts": {
+    "attachment.findUniqueOrThrow": 1
+  },
+  "src/app/api/attachments/[attachmentId]/route.ts": {
+    "attachment.findUniqueOrThrow": 1
+  },
+  "src/app/api/brain/retro/route.ts": {
+    "project.findUniqueOrThrow": 1,
+    "task.findUniqueOrThrow": 1
+  },
+  "src/app/api/brain/retro/save/route.ts": {
+    "project.findUniqueOrThrow": 1,
+    "workspace.findUniqueOrThrow": 1,
+    "task.findUniqueOrThrow": 1,
+    "wikiPage.aggregate": 1
+  },
+  "src/app/api/comments/[commentId]/route.ts": {
+    "comment.findUniqueOrThrow": 2
+  },
+  "src/app/api/custom-fields/[fieldId]/route.ts": {
+    "customField.findUniqueOrThrow": 1
+  },
+  "src/app/api/decisions/[decisionId]/route.ts": {
+    "workspace.findUniqueOrThrow": 1,
+    "decision.findUniqueOrThrow": 3
+  },
+  "src/app/api/focus/[sessionId]/route.ts": {
+    "task.findUniqueOrThrow": 1
+  },
+  "src/app/api/key-results/[keyResultId]/route.ts": {
+    "keyResult.findUniqueOrThrow": 1,
+    "objective.findUniqueOrThrow": 2
+  },
+  "src/app/api/key-results/[keyResultId]/tasks/[taskId]/route.ts": {
+    "keyResult.findUniqueOrThrow": 1,
+    "objective.findUniqueOrThrow": 1,
+    "task.findFirst": 1
+  },
+  "src/app/api/key-results/[keyResultId]/tasks/route.ts": {
+    "keyResult.findUniqueOrThrow": 1,
+    "objective.findUniqueOrThrow": 1
+  },
+  "src/app/api/knowledge-docs/[docId]/route.ts": {
+    "knowledgeDoc.findUniqueOrThrow": 1
+  },
+  "src/app/api/kudos/[kudosId]/reactions/route.ts": {
+    "kudos.findUniqueOrThrow": 1
+  },
+  "src/app/api/objectives/[objectiveId]/key-results/route.ts": {
+    "objective.findUniqueOrThrow": 1
+  },
+  "src/app/api/objectives/[objectiveId]/route.ts": {
+    "objective.findUniqueOrThrow": 2,
+    "keyResult.findUnique": 1
+  },
+  "src/app/api/projects/[projectId]/history/route.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/app/api/projects/[projectId]/owner/route.ts": {
+    "project.findUniqueOrThrow": 1
+  },
+  "src/app/api/projects/[projectId]/route.ts": {
+    "project.findUniqueOrThrow": 2,
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/app/api/projects/[projectId]/transfer/route.ts": {
+    "project.findUniqueOrThrow": 2
+  },
+  "src/app/api/projects/[projectId]/visibility/route.ts": {
+    "project.findUniqueOrThrow": 2
+  },
+  "src/app/api/register/route.ts": {
+    "user.findUnique": 1
+  },
+  "src/app/api/saved-reports/[reportId]/route.ts": {
+    "user.findUniqueOrThrow": 1,
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/app/api/statuses/[statusId]/route.ts": {
+    "task.count": 1
+  },
+  "src/app/api/tasks/[taskId]/approvals/route.ts": {
+    "task.findUniqueOrThrow": 1
+  },
+  "src/app/api/tasks/[taskId]/computed-fields/[fieldId]/route.ts": {
+    "task.findUniqueOrThrow": 1
+  },
+  "src/app/api/tasks/[taskId]/content/route.ts": {
+    "task.findUniqueOrThrow": 1
+  },
+  "src/app/api/uploads/task/route.ts": {
+    "attachment.findUnique": 1
+  },
+  "src/app/api/users/[userId]/avatar/route.ts": {
+    "user.findUnique": 1
+  },
+  "src/app/api/wiki/[pageId]/comments/route.ts": {
+    "wikiPage.findUniqueOrThrow": 1,
+    "wikiComment.findUniqueOrThrow": 1
+  },
+  "src/app/api/wiki/[pageId]/connections/route.ts": {
+    "workspace.findUniqueOrThrow": 1,
+    "wikiPage.findUniqueOrThrow": 1
+  },
+  "src/app/api/wiki/[pageId]/layers/generate/route.ts": {
+    "wikiPage.findUniqueOrThrow": 1
+  },
+  "src/app/api/wiki/[pageId]/layers/route.ts": {
+    "wikiPage.findUniqueOrThrow": 2
+  },
+  "src/app/api/wiki/[pageId]/new-version/route.ts": {
+    "wikiPage.aggregate": 1,
+    "wikiPage.findUniqueOrThrow": 1
+  },
+  "src/app/api/wiki/[pageId]/reminder/route.ts": {
+    "workspace.findUniqueOrThrow": 1,
+    "wikiPage.findUniqueOrThrow": 1
+  },
+  "src/app/api/wiki/[pageId]/route.ts": {
+    "user.findUnique": 1,
+    "wikiPage.findUniqueOrThrow": 3
+  },
+  "src/app/api/wiki/[pageId]/to-task/route.ts": {
+    "workspace.findUniqueOrThrow": 1,
+    "wikiPage.findUniqueOrThrow": 1
+  },
+  "src/app/api/wikis/[wikiId]/members/route.ts": {
+    "wiki.findUniqueOrThrow": 1
+  },
+  "src/app/api/wikis/[wikiId]/pages/route.ts": {
+    "wikiPage.aggregate": 1
+  },
+  "src/app/api/wikis/[wikiId]/route.ts": {
+    "wiki.findUniqueOrThrow": 2
+  },
+  "src/app/api/workspaces/[workspaceId]/brain/ask/route.ts": {
+    "project.findUniqueOrThrow": 1,
+    "wiki.findUniqueOrThrow": 1
+  },
+  "src/app/api/workspaces/[workspaceId]/brain/insights/route.ts": {
+    "task.findMany": 1
+  },
+  "src/app/api/workspaces/[workspaceId]/brain/link-targets/route.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/app/api/workspaces/[workspaceId]/decisions/route.ts": {
+    "workspace.findUniqueOrThrow": 2,
+    "decision.findUniqueOrThrow": 1
+  },
+  "src/app/api/workspaces/[workspaceId]/graph/route.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/app/api/workspaces/[workspaceId]/journal/route.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/app/api/workspaces/[workspaceId]/journal/summary/route.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/app/api/workspaces/[workspaceId]/members/[userId]/route.ts": {
+    "user.findUniqueOrThrow": 1
+  },
+  "src/app/api/workspaces/[workspaceId]/objectives/route.ts": {
+    "objective.findUniqueOrThrow": 1
+  },
+  "src/app/api/workspaces/[workspaceId]/project-history-settings/route.ts": {
+    "workspace.findUniqueOrThrow": 2
+  },
+  "src/app/api/workspaces/[workspaceId]/projects/route.ts": {
+    "project.aggregate": 1
+  },
+  "src/app/api/workspaces/[workspaceId]/rewards/route.ts": {
+    "reward.aggregate": 1
+  },
+  "src/app/api/workspaces/[workspaceId]/route.ts": {
+    "workspace.findUniqueOrThrow": 2
+  },
+  "src/app/api/workspaces/[workspaceId]/transfer-ownership/route.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/app/api/workspaces/[workspaceId]/wikis/route.ts": {
+    "wiki.aggregate": 1
+  },
+  "src/lib/ai/actions.ts": {
+    "task.findUniqueOrThrow": 1,
+    "objective.findUniqueOrThrow": 1,
+    "wikiPage.findUniqueOrThrow": 1
+  },
+  "src/lib/ai/comment-task.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/lib/ai/context.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/lib/ai/gemini.ts": {
+    "workspace.findUnique": 1
+  },
+  "src/lib/ai/personal.ts": {
+    "user.findUnique": 1
+  },
+  "src/lib/ai/task-intake.ts": {
+    "project.findUniqueOrThrow": 1
+  },
+  "src/lib/auth.ts": {
+    "user.findUnique": 9
+  },
+  "src/lib/authz.ts": {
+    "task.findUniqueOrThrow": 1,
+    "task.findUnique": 1
+  },
+  "src/lib/brain/retro.ts": {
+    "project.findUniqueOrThrow": 1
+  },
+  "src/lib/brain/route-helpers.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/lib/focus-server.ts": {
+    "task.findUniqueOrThrow": 2
+  },
+  "src/lib/home-templates.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/lib/invitations.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/lib/member-roles.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/lib/mentions-server.ts": {
+    "user.findMany": 1
+  },
+  "src/lib/notifications.ts": {
+    "workspace.findUnique": 1,
+    "task.findUnique": 3
+  },
+  "src/lib/okr-write.ts": {
+    "user.findUnique": 1,
+    "keyResult.findUnique": 1,
+    "objective.findUnique": 1
+  },
+  "src/lib/project-permissions.ts": {
+    "project.findUnique": 1
+  },
+  "src/lib/project-transfer.ts": {
+    "task.findMany": 1,
+    "attachment.count": 1
+  },
+  "src/lib/push.ts": {
+    "user.findMany": 1
+  },
+  "src/lib/recognition/points.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/lib/recognition/route-helpers.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/lib/task-quick.ts": {
+    "task.findUniqueOrThrow": 1
+  },
+  "src/lib/task-transfer.ts": {
+    "project.findUniqueOrThrow": 4,
+    "task.findMany": 1,
+    "comment.findMany": 1
+  },
+  "src/lib/wiki-sources.ts": {
+    "wikiPage.findUniqueOrThrow": 1
+  },
+  "src/lib/wiki.ts": {
+    "wikiPage.findUnique": 1
+  },
+  "src/server/notifications/actions.ts": {
+    "workspace.findUniqueOrThrow": 1
+  },
+  "src/server/notifications/inbox.ts": {
+    "user.findUniqueOrThrow": 1
+  },
+  "src/server/notifications/settings.ts": {
+    "user.findUniqueOrThrow": 1
+  },
+  "src/server/tasks/mutations.ts": {
+    "task.findUniqueOrThrow": 1
+  },
+  "src/server/tasks/recurrence.ts": {
+    "task.findUniqueOrThrow": 1
+  },
+  "src/server/tasks/write.ts": {
+    "task.findUniqueOrThrow": 4,
+    "task.count": 1,
+    "task.findUnique": 1
+  }
+}

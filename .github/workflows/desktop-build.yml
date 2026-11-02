@@ -119,6 +119,20 @@ jobs:
             exit 1
           fi
 
+      - name: Refuse to publish over another channel's release
+        # A beta run for a version already released as stable (or the other way round) would replace
+        # the files stable users download, while the server keeps the other channel's checksum / signature.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: desktop-v${{ inputs.version }}
+          WANT_BETA: ${{ inputs.channel == 'beta' }}
+        run: |
+          existing=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease 2>/dev/null || echo none)
+          if [ "$existing" != "none" ] && [ "$existing" != "$WANT_BETA" ]; then
+            echo "::error::$TAG is already released on the other channel (prerelease=$existing). Publish a new version number instead."
+            exit 1
+          fi
+
       - name: Rust tests (navigation policy)
         working-directory: desktop/src-tauri
         run: |

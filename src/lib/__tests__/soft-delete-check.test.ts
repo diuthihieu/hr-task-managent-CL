@@ -29,3 +29,16 @@ test("deletedAt at the top, in AND / OR / NOT, or a where built elsewhere is acc
 test("a deliberate read of deleted rows is marked on the line above", () => {
   assert.deepEqual(reads("// soft-delete: restore needs the deleted row\nconst t = await prisma.task.findUnique({ where: { id } });"), []);
 });
+
+test("a marker covers only its own read, not the next statement or list item", () => {
+  assert.deepEqual(
+    reads("// soft-delete: restore needs the deleted row\nconst t = await prisma.task.findUnique({ where: { id } });\nconst c = await prisma.comment.findMany({ where: { taskId: id } });"),
+    ["comment.findMany"],
+  );
+  assert.deepEqual(
+    reads("const [t, c] = await Promise.all([\n  // soft-delete: restore needs the deleted row\n  prisma.task.findUnique({ where: { id } }),\n  prisma.comment.findMany({ where: { taskId: id } }),\n]);"),
+    ["comment.findMany"],
+  );
+  assert.deepEqual(reads("const t = await prisma.task.findUnique({ // soft-delete: restore needs the deleted row\n  where: { id },\n});"), []);
+  assert.deepEqual(reads("// soft-delete: restore needs the deleted row\nconst t = await prisma.task\n  .findUnique({ where: { id } });"), [], "a statement split over lines");
+});

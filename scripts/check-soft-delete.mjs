@@ -2,7 +2,8 @@
 // CI guard (BUG-12, docs/SOFT-DELETE.md): 18 models are soft-deleted (a deletedAt column) and every
 // read must filter it by hand. This fails when a change adds a read of such a model whose `where`
 // is written out but has no `deletedAt` condition (top level or inside AND / OR / NOT), or has no
-// `where` at all. Reads that mean to see deleted rows say so on the line above:
+// `where` at all. Reads that mean to see deleted rows say so right above their own statement (or
+// list item / argument), or at the end of the line that names the query:
 //   // soft-delete: <why this read includes deleted rows>
 // Existing reads are recorded in scripts/soft-delete-baseline.json (per file and query); the
 // count per file may go down, never up. Not checked: a `where` built elsewhere (a variable or a
@@ -40,6 +41,21 @@ function filtersDeleted(obj) {
   return false;
 }
 
+const MARKER = /^\/\/ soft-delete: \S/;
+
+/** true when the comments right before this read's own statement (or list item / argument /
+ *  property) carry the marker - a marker never reaches the next statement or sibling. */
+function markerAbove(call, text) {
+  for (let node = call; node; node = node.parent) {
+    const comments = ts.getLeadingCommentRanges(text, node.getFullStart()) ?? [];
+    if (comments.some((c) => MARKER.test(text.slice(c.pos, c.end)))) return true;
+    const p = node.parent;
+    if (!p || ts.isSourceFile(p) || ts.isBlock(p) || ts.isModuleBlock(p) || ts.isCaseClause(p) || ts.isDefaultClause(p)) return false;
+    if (ts.isArrayLiteralExpression(p) || ts.isPropertyAssignment(node) || (ts.isCallExpression(p) && p.arguments.includes(node))) return false;
+  }
+  return false;
+}
+
 /** Unguarded reads in one source file (pure, unit tested): [{ line, query }]. */
 export function unguardedReads(fileName, text, models) {
   const src = ts.createSourceFile(fileName, text, ts.ScriptTarget.Latest, true);
@@ -59,8 +75,8 @@ export function unguardedReads(fileName, text, models) {
           else if (ts.isSpreadAssignment(where) || !ts.isPropertyAssignment(where)) guarded = true;
           else guarded = !ts.isObjectLiteralExpression(where.initializer) || filtersDeleted(where.initializer);
         }
-        const line = src.getLineAndCharacterOfPosition(n.getStart()).line;
-        const marked = [lines[line - 1], lines[line - 2], lines[line]].some((l) => l && /\/\/ soft-delete: \S/.test(l));
+        const line = src.getLineAndCharacterOfPosition(n.expression.name.getStart()).line;
+        const marked = markerAbove(n, text) || /\/\/ soft-delete: \S/.test(lines[line] ?? "");
         if (!guarded && !marked) out.push({ line: line + 1, query: `${model}.${n.expression.name.text}` });
       }
     }

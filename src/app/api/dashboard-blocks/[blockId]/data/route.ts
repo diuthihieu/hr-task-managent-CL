@@ -20,11 +20,13 @@ export const POST = route<P>(async (req, { params }) => {
   const data = await loadBlockData(user, ctx.workspaceId, blockId, body);
   if ("error" in data) return NextResponse.json({ error: data.error, series: [], rows: [], fields: [] });
   const { type, config, fields, records, members: memberList } = data;
+  // Tells the viewer some sources are left out (hidden from them), so a smaller total is not taken for the whole.
+  const extra = data.hiddenSources ? { hiddenSources: data.hiddenSources } : {};
 
   if (type === "kpi") {
     const trend = computeKpiTrend(records, fields, config, userId);
     const value = trend?.current ?? computeKpi(records, fields, config, userId);
-    return NextResponse.json({ kpi: value, kpiTrend: trend });
+    return NextResponse.json({ ...extra, kpi: value, kpiTrend: trend });
   }
 
   if (type === "table") {
@@ -35,7 +37,7 @@ export const POST = route<P>(async (req, { params }) => {
     const rows = sorted
       .slice(0, 200)
       .map((r) => tableFieldIds.map((fid) => (byId.get(fid) ? formatDisplayValue(byId.get(fid)!, getCellValue(r, byId.get(fid)!, fields), memberList) : "")));
-    return NextResponse.json({
+    return NextResponse.json({ ...extra,
       rows,
       columns: tableFieldIds.map((fid) => byId.get(fid)?.name ?? fid),
       fields: tableFieldIds.map((fid) => byId.get(fid)).filter(Boolean),
@@ -43,16 +45,16 @@ export const POST = route<P>(async (req, { params }) => {
   }
 
   if (type === "pivot") {
-    return NextResponse.json({ pivot: computePivot(records, fields, config, memberList, userId) });
+    return NextResponse.json({ ...extra, pivot: computePivot(records, fields, config, memberList, userId) });
   }
 
   if (type === "stacked_column" || type === "stacked_bar") {
-    return NextResponse.json(computeStackedSeries(records, fields, config, memberList, userId));
+    return NextResponse.json({ ...extra, ...computeStackedSeries(records, fields, config, memberList, userId) });
   }
 
   if (type === "scatter") {
-    return NextResponse.json({ points: computeScatterPoints(records, fields, config, userId) });
+    return NextResponse.json({ ...extra, points: computeScatterPoints(records, fields, config, userId) });
   }
 
-  return NextResponse.json({ series: computeSeries(records, fields, config, memberList, userId) });
+  return NextResponse.json({ ...extra, series: computeSeries(records, fields, config, memberList, userId) });
 });

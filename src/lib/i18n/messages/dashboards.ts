@@ -306,6 +306,7 @@ export const DASHBOARDS = {
   "db.src.rightKey": ["Key in the other project", "Khoá ở dự án kia"],
   "db.src.bring": ["Columns to add", "Cột lấy sang"],
   "db.src.projectCol": ["Project", "Dự án"],
+  "db.src.hidden": ["{count} source project(s) hidden from you are left out", "Không gồm {count} project nguồn bạn không có quyền xem"],
   "db.w.measure": ["Measure", "Chỉ số"],
   "db.w.recordCount": ["Record count", "Số bản ghi"],
   "db.w.aggregation": ["Aggregation", "Phép tính"],

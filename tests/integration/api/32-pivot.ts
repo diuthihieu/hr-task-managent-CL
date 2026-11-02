@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { admin, s, prisma, type Rec } from "./context";
+import { admin, viewer, s, prisma, lastModelRequest, type Rec } from "./context";
 
 // U8a: a summary table widget - hours per assignee and category, each assignee in full.
 test("summary table widget: rows x columns x hours, with totals", async () => {
@@ -58,4 +58,57 @@ test("Append stacks two projects into one summary table; Merge adds another proj
   const other = (await admin.post<{ id: string }>("/api/workspaces", { name: "Other company" })).body.id;
   const foreign = (await admin.post<{ id: string }>(`/api/workspaces/${other}/projects`, { name: "Foreign" })).body.id;
   assert.equal((await admin.post(`/api/dashboards/${d.body.id}/blocks`, { type: "pivot", title: "x", config: { dataSource: { projectId: hr, appendProjectIds: [foreign] }, dimensionFieldId: "__project" } })).status, 400, "no projects from another workspace");
+});
+
+// A team dashboard is computed for whoever looks at it: a project hidden from the viewer never reaches
+// them, even when the author (who sees everything) appended it - and the viewer is told some sources
+// are left out, so a smaller total isn't mistaken for the whole picture.
+test("a team dashboard shows each viewer only the projects they may see, and says when a source is left out", async () => {
+  const proj = async (name: string) => (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name })).body.id;
+  const [open, secret] = [await proj("Visible to all"), await proj("Hidden from viewer")];
+  await admin.post(`/api/projects/${open}/tasks`, { data: { sys_title: "Open work", sys_actual: 2 } });
+  await admin.post(`/api/projects/${secret}/tasks`, { data: { sys_title: "Secret work", sys_actual: 5 } });
+  await prisma.projectHiddenMember.create({ data: { projectId: secret, userId: s.viewerId } });
+
+  const d = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/dashboards`, { name: "Team hours" });
+  const w = await admin.post<{ id: string }>(`/api/dashboards/${d.body.id}/blocks`, { type: "pivot", title: "By project", config: { dataSource: { projectId: open, appendProjectIds: [secret] }, dimensionFieldId: "__project", measureFieldId: "sys_actual", aggregation: "sum" } });
+  type Out = { pivot: { rows: { label: string }[]; total: number }; hiddenSources?: number };
+  const author = await admin.post<Out>(`/api/dashboard-blocks/${w.body.id}/data`, {});
+  assert.deepEqual([author.body.pivot.rows.map((r) => r.label), author.body.pivot.total, author.body.hiddenSources ?? 0], [["Hidden from viewer", "Visible to all"], 7, 0]);
+
+  const seen = await viewer.post<Out>(`/api/dashboard-blocks/${w.body.id}/data`, {});
+  assert.equal(seen.status, 200, JSON.stringify(seen.body));
+  assert.ok(seen.body.pivot, `the widget still works without the hidden source: ${JSON.stringify(seen.body)}`);
+  assert.deepEqual([seen.body.pivot.rows.map((r) => r.label), seen.body.pivot.total], [["Visible to all"], 2], "the hidden project's tasks and name never reach the viewer");
+  assert.equal(seen.body.hiddenSources, 1, "the viewer is told one source is left out");
+  assert.doesNotMatch(JSON.stringify(seen.body), /Secret work|Hidden from viewer/);
+
+  const drill = await viewer.post<{ tasks: { title: string }[] }>(`/api/dashboard-blocks/${w.body.id}/records`, { segment: { key: "Hidden from viewer", label: "Hidden from viewer" } });
+  assert.deepEqual(drill.body.tasks, [], "drill-down can't reach the hidden project either");
+
+  const main = await admin.post<{ id: string }>(`/api/dashboards/${d.body.id}/blocks`, { type: "pivot", title: "Secret only", config: { dataSource: { projectId: secret }, dimensionFieldId: "sys_status" } });
+  const none = await viewer.post<{ error?: string; pivot?: unknown }>(`/api/dashboard-blocks/${main.body.id}/data`, {});
+  assert.match(none.body.error ?? "", /no longer exists/);
+  assert.equal(none.body.pivot, undefined);
+
+  // A hidden merge source: its columns stay (no values), but nothing of its field setup leaks (option labels...).
+  const secretField = (await admin.post<{ id: string }>(`/api/projects/${secret}/custom-fields`, { name: "Grade", type: "single_select", config: { options: [{ id: "g1", label: "Confidential grade", color: "#f00" }] } })).body.id;
+  const merged = await admin.post<{ id: string }>(`/api/dashboards/${d.body.id}/blocks`, { type: "table", title: "Merged", config: { dataSource: { projectId: open, merge: { projectId: secret, leftFieldId: "sys_title", rightFieldId: "sys_title", fieldIds: [secretField] } }, tableFieldIds: ["sys_title", `m:${secretField}`] } });
+  const table = await viewer.post<{ columns?: string[]; rows?: string[][]; hiddenSources?: number }>(`/api/dashboard-blocks/${merged.body.id}/data`, {});
+  assert.equal(table.body.hiddenSources, 1, JSON.stringify(table.body));
+  assert.deepEqual(table.body.rows, [["Open work", ""]]);
+  assert.doesNotMatch(JSON.stringify(table.body), /Confidential grade|Hidden from viewer|Grade/, "no option, project or field name of the hidden source");
+  const stacked = await admin.post<{ id: string }>(`/api/dashboards/${d.body.id}/blocks`, { type: "stacked_column", title: "Stacked", config: { dataSource: { projectId: open, appendProjectIds: [secret] }, dimensionFieldId: "__project", dimension2FieldId: "sys_status", measureFieldId: "sys_actual", aggregation: "sum" } });
+  assert.equal((await viewer.post<{ hiddenSources?: number }>(`/api/dashboard-blocks/${stacked.body.id}/data`, {})).body.hiddenSources, 1, "stacked charts carry the notice too");
+
+  // AI report hours: every source project of the dashboard (appended ones too), only those the reader may see.
+  const unassignedActual = async () => {
+    const prompt = (await lastModelRequest()).body.systemInstruction!.parts[0].text;
+    return prompt.split("\n").find((l) => l.startsWith("(unassigned) | (no category) |"))?.split(" | ")[5];
+  };
+  const report = { targetKind: "dashboard", targetId: d.body.id, prompt: "Hours", data: "## By project", charts: [] };
+  assert.equal((await admin.post("/api/ai/report", report)).status, 200);
+  assert.equal(await unassignedActual(), "7", "the author's report counts the appended project");
+  assert.equal((await viewer.post("/api/ai/report", report)).status, 200);
+  assert.equal(await unassignedActual(), "2", "the viewer's report leaves the hidden project out");
 });

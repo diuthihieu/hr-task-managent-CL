@@ -139,6 +139,13 @@ To turn it on:
    Installed apps check the endpoint at startup, install the update
    (passive mode) and restart.
 
+Installed apps accept only signatures that carry the version
+(`requireSignedVersion` in the generated config), so an old signature can't
+be replayed under a newer version number to force a downgrade. CI builds sign
+the version automatically. If you ever sign an update by hand, always pass it:
+`npx tauri signer sign --app-version <version> ...` — without it the CLI only
+warns, and installed apps will reject the update.
+
 Keep the private key backed up: losing it means existing installs can't
 verify future updates, and users must reinstall manually.
 

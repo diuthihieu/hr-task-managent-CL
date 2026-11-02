@@ -30,6 +30,11 @@ const config = {
       pubkey,
       endpoints: [`${server}/api/desktop/update/{{target}}/{{arch}}/{{current_version}}`],
       windows: { installMode: "passive" },
+      // Refuse signatures without a signed version: otherwise whoever controls
+      // the update endpoint could pair a new version number with an old,
+      // version-less signature and force a downgrade. `tauri build` always
+      // signs the version; hand signing needs `tauri signer sign --app-version`.
+      requireSignedVersion: true,
     },
   },
 };

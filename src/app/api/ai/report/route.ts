@@ -46,7 +46,15 @@ export const POST = route(async (req) => {
     workspaceId = (await requireWorkspaceRole(user, await workspaceOfDashboard(body.targetId), "viewer")).workspaceId;
     const dash = await prisma.dashboard.findUniqueOrThrow({ where: { id: body.targetId }, select: { name: true, widgets: { select: { config: true } } } });
     source = `Dashboard: ${dash.name}`;
-    projectIds = [...new Set(dash.widgets.map((w) => (w.config as { dataSource?: { projectId?: unknown } } | null)?.dataSource?.projectId).filter((id): id is string => typeof id === "string"))];
+    // Every project a widget reads (main, appended, merged); the hours query below keeps only those the user may see.
+    projectIds = [
+      ...new Set(
+        dash.widgets.flatMap((w) => {
+          const ds = (w.config as { dataSource?: { projectId?: unknown; appendProjectIds?: unknown; merge?: { projectId?: unknown } } } | null)?.dataSource;
+          return [ds?.projectId, ...(Array.isArray(ds?.appendProjectIds) ? ds.appendProjectIds : []), ds?.merge?.projectId].filter((id): id is string => typeof id === "string");
+        }),
+      ),
+    ];
   }
   // Hours facts straight from the tasks the user may see, so an hours report never depends on how a
   // chart happens to be configured (a chart with no value field shows 0).

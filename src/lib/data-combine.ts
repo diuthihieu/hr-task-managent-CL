@@ -96,7 +96,7 @@ export function mergeSource(left: Source, right: Source, o: { leftFieldId: strin
   const newFields: FieldRow[] = brought.map((f, i) => ({
     ...plain(f, right.records.map((r) => resolved(right, r, f))),
     id: `m:${f.id}`,
-    name: `${right.name} · ${f.name}`,
+    name: right.name ? `${right.name} · ${f.name}` : f.name,
     order: 10000 + i,
     isPrimary: false,
     readOnly: true,

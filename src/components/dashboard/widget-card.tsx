@@ -26,6 +26,8 @@ export interface DataResponse {
   columns?: string[];
   points?: ScatterPoint[];
   error?: string;
+  /** Appended / merged projects hidden from this viewer, left out of the numbers. */
+  hiddenSources?: number;
 }
 
 export function WidgetCard({
@@ -176,6 +178,11 @@ export function WidgetCard({
             style={widgetStyle}
             gaugeMax={config.gaugeMax}
           />
+        )}
+        {!!data?.hiddenSources && !data.error && (
+          <div className="absolute bottom-1 left-2 text-[10px] text-amber-600 dark:text-amber-400" data-testid="widget-hidden-sources">
+            {t("db.src.hidden", { count: data.hiddenSources })}
+          </div>
         )}
         {crossFilterActive && (
           <div className="absolute top-1 right-1 text-[10px] bg-indigo-600 text-white rounded-full px-2 py-0.5">

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser, requireWorkspaceRole, route, workspaceOfWidget } from "@/lib/authz";
-import { computeSeries, computeStackedSeries, computeScatterPoints, computeKpi, computeKpiTrend, type CrossFilter } from "@/lib/dashboard-engine";
+import { computePivot, computeSeries, computeStackedSeries, computeScatterPoints, computeKpi, computeKpiTrend, type CrossFilter } from "@/lib/dashboard-engine";
 import { applyFilters, applySorts, getCellValue } from "@/lib/query-engine";
 import { formatDisplayValue } from "@/lib/format";
 import { loadBlockData } from "@/lib/dashboard-data";
@@ -40,6 +40,10 @@ export const POST = route<P>(async (req, { params }) => {
       columns: tableFieldIds.map((fid) => byId.get(fid)?.name ?? fid),
       fields: tableFieldIds.map((fid) => byId.get(fid)).filter(Boolean),
     });
+  }
+
+  if (type === "pivot") {
+    return NextResponse.json({ pivot: computePivot(records, fields, config, memberList, userId) });
   }
 
   if (type === "stacked_column" || type === "stacked_bar") {

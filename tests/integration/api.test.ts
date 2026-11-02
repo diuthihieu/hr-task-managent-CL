@@ -30,6 +30,7 @@ import "./api/20-admin-powers";
 import "./api/21-owner-races";
 import "./api/30-report-hours";
 import "./api/31-hours-rule";
+import "./api/32-pivot";
 
 test.after(async () => {
   // BUG-13: no shared bucket for an unknown address (one stranger would lock everyone out), and no "...:null" keys.

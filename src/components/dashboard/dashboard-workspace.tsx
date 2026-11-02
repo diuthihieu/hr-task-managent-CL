@@ -1,4 +1,5 @@
 "use client";
+import { pivotMatrix } from "@/lib/pivot-export";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import RGL, { WidthProvider, type Layout } from "react-grid-layout";
@@ -226,6 +227,7 @@ export function DashboardWorkspace({
       if (!d) lines.push("(not loaded)");
       else if (d.error) lines.push(`(error: ${d.error})`);
       else if (d.kpi !== undefined) lines.push(`Value: ${d.kpi}`);
+      else if (d.pivot) lines.push(pivotMatrix(d.pivot).slice(0, 60).map((r) => r.join(" | ")).join("\n"));
       else if (d.series) lines.push(d.series.slice(0, 60).map((p) => `${p.label}: ${p.value}${p.value2 !== undefined ? ` / ${p.value2}` : ""}`).join("\n"));
       else if (d.columns) lines.push([d.columns.join(" | "), ...(d.rows ?? []).slice(0, 40).map((r) => r.join(" | "))].join("\n"));
       else lines.push(JSON.stringify(d).slice(0, 3000));

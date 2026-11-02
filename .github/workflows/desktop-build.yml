@@ -1,6 +1,13 @@
 # Reusable: builds the Windows installers (NSIS .exe + .msi) and optionally
 # publishes them. Called by desktop-ci.yml (build check) and
 # desktop-release.yml (tagged release).
+#
+# Two jobs (BUG-20): `ci` builds without any secret (unsigned, no updater
+# artifacts); `release` is the only job that sees the signing key and the
+# release token - they live in the `release` environment, which only allows
+# desktop-v* / android-v* tags and needs a reviewer's approval (docs/DESKTOP.md).
+# Signing happens inside `tauri build`, so the whole release build runs in the
+# protected job; unsigned files are never handed from one job to the other.
 name: Desktop build (reusable)
 
 on:
@@ -14,11 +21,17 @@ on:
         description: Release version (without "v"); required when publish is true
         type: string
         default: ""
+      channel:
+        description: Release channel registered with the server (stable or beta)
+        type: string
+        default: stable
 
 jobs:
-  windows:
+  ci:
+    if: ${{ !inputs.publish }}
     runs-on: windows-latest
-    # Permissions come from the caller: read-only for CI, contents:write for releases.
+    permissions:
+      contents: read
     env:
       # Public origin of the web app (not a secret). Set it as a repository variable.
       BASEWORK_SERVER_URL: ${{ vars.BASEWORK_SERVER_URL || 'https://hr-task-managent-cl-o1sz.vercel.app' }}
@@ -43,12 +56,80 @@ jobs:
 
       - run: npm ci
 
+      - name: Rust tests (navigation policy)
+        working-directory: desktop/src-tauri
+        run: |
+          node ../scripts/prepare-shell.mjs
+          cargo test --locked
+
+      # No signing key here: a CI build is never signed (and never auto-updates).
+      - name: Build installers (unsigned)
+        run: npm run build
+
+      - name: Collect installers
+        id: files
+        run: |
+          nsis=$(ls src-tauri/target/release/bundle/nsis/*-setup.exe | head -1)
+          msi=$(ls src-tauri/target/release/bundle/msi/*.msi | head -1)
+          echo "nsis=desktop/$nsis" >> "$GITHUB_OUTPUT"
+          echo "msi=desktop/$msi" >> "$GITHUB_OUTPUT"
+          ls -la src-tauri/target/release/bundle/nsis src-tauri/target/release/bundle/msi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: basework-desktop-windows-unsigned
+          path: |
+            ${{ steps.files.outputs.nsis }}
+            ${{ steps.files.outputs.msi }}
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    if: ${{ inputs.publish }}
+    runs-on: windows-latest
+    # Secrets come from this environment only (tags desktop-v* / android-v*, reviewer approval).
+    environment: release
+    permissions:
+      contents: write
+    env:
+      BASEWORK_SERVER_URL: ${{ vars.BASEWORK_SERVER_URL || 'https://hr-task-managent-cl-o1sz.vercel.app' }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      # No caches in the release job: a poisoned cache must not reach a signed build.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: npm ci
+
       - name: Check version matches the release tag
-        if: inputs.publish
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
         run: |
           pkg=$(node -p "require('./package.json').version")
-          if [ "$pkg" != "${{ inputs.version }}" ]; then
-            echo "::error::desktop/package.json version ($pkg) != release version (${{ inputs.version }}). Bump the version first (docs/DESKTOP.md)."
+          if [ "$pkg" != "$RELEASE_VERSION" ]; then
+            echo "::error::desktop/package.json version ($pkg) != release version ($RELEASE_VERSION). Bump the version first (docs/DESKTOP.md)."
+            exit 1
+          fi
+
+      - name: Refuse to publish over another channel's release
+        # A beta run for a version already released as stable (or the other way round) would replace
+        # the files stable users download, while the server keeps the other channel's checksum / signature.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: desktop-v${{ inputs.version }}
+          WANT_BETA: ${{ inputs.channel == 'beta' }}
+        run: |
+          existing=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json isPrerelease --jq .isPrerelease 2>/dev/null || echo none)
+          if [ "$existing" != "none" ] && [ "$existing" != "$WANT_BETA" ]; then
+            echo "::error::$TAG is already released on the other channel (prerelease=$existing). Publish a new version number instead."
             exit 1
           fi
 
@@ -94,11 +175,11 @@ jobs:
           if-no-files-found: error
 
       - name: Create GitHub Release
-        if: inputs.publish
         uses: softprops/action-gh-release@v2
         with:
           tag_name: desktop-v${{ inputs.version }}
           name: Basework Desktop v${{ inputs.version }}
+          prerelease: ${{ inputs.channel == 'beta' }}
           body: |
             Windows desktop client for Basework. Same account, server and data as the web app.
             - **Basework_…-setup.exe** - per-user install, no admin rights (recommended; used by the web Download button)
@@ -109,11 +190,11 @@ jobs:
             ${{ steps.files.outputs.sig }}
 
       - name: Register release with the Basework server
-        if: inputs.publish
         working-directory: .
         env:
           DESKTOP_RELEASE_TOKEN: ${{ secrets.DESKTOP_RELEASE_TOKEN }}
           RELEASE_VERSION: ${{ inputs.version }}
+          RELEASE_CHANNEL: ${{ inputs.channel }}
           INSTALLER_PATH: ${{ steps.files.outputs.nsis }}
           INSTALLER_URL: https://github.com/${{ github.repository }}/releases/download/desktop-v${{ inputs.version }}/${{ steps.files.outputs.nsis_name }}
           UPDATER_SIG_PATH: ${{ steps.files.outputs.sig }}

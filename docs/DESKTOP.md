@@ -49,12 +49,25 @@ behaviour, icon, update mechanism, server URL).
 
 ## One-time setup
 
-GitHub repository → Settings → Secrets and variables → Actions:
+**Release environment (repository admin, before the first release).** Signing
+keys and the release token must exist only in the job that publishes a
+release, never in CI builds of branches or pull requests:
 
-| Kind | Name | Value |
-|---|---|---|
-| Variable | `BASEWORK_SERVER_URL` | Production web origin, e.g. `https://hr-task-managent-cl-o1sz.vercel.app` (defaults to that) |
-| Secret | `DESKTOP_RELEASE_TOKEN` | Random string, ≥ 32 characters (`openssl rand -hex 32`) |
+1. Settings → Environments → New environment `release`: Required reviewers
+   (at least one), Prevent self-review, untick "Allow administrators to bypass".
+   Deployment branches and tags: **Selected tags only** - `desktop-v*` and
+   `android-v*`, no branches. (With a single reviewer, Prevent self-review
+   can't be on - note that in docs/OPERATIONS.md.)
+2. Settings → Rules → New tag ruleset for `desktop-v*` and `android-v*`:
+   restrict creations, updates and deletions; only repository admins bypass.
+   Without it anyone with push access can create a release tag on any commit.
+3. Put the secrets below in the `release` environment (not the repository),
+   then delete any repository-level copies.
+
+| Kind | Where | Name | Value |
+|---|---|---|---|
+| Variable | repository | `BASEWORK_SERVER_URL` | Production web origin, e.g. `https://hr-task-managent-cl-o1sz.vercel.app` (defaults to that) |
+| Secret | `release` environment | `DESKTOP_RELEASE_TOKEN` | Random string, ≥ 32 characters (`openssl rand -hex 32`) |
 
 Vercel project → Environment Variables (Production): the **same**
 `DESKTOP_RELEASE_TOKEN`. Without it, CI still builds and uploads the installer
@@ -71,8 +84,10 @@ to GitHub Releases, and an admin can register it by hand in
    git tag desktop-v0.2.0
    git push origin desktop-v0.2.0
    ```
-   (or Actions → **Desktop release** → Run workflow, version `0.2.0`, from the default branch.)
-3. The workflow, on `windows-latest`:
+   (or Actions → **Desktop release** → Run workflow, version `0.2.0`, choosing the
+   **tag** in "Use workflow from" - the `release` environment refuses branches.
+   Channel `beta` registers a trial build that the Download button doesn't offer.)
+3. After a reviewer approves the `release` environment, the workflow, on `windows-latest`:
    - checks the tag matches `desktop/package.json`,
    - runs the Rust tests and `tauri build` (NSIS `-setup.exe` + `.msi`),
    - creates the GitHub Release `desktop-v0.2.0` with both installers,
@@ -110,9 +125,10 @@ To turn it on:
 
 1. Generate a signing key pair once:
    `cd desktop && npx tauri signer generate -w ~/.tauri/basework.key`
-2. GitHub → Secrets: `TAURI_SIGNING_PRIVATE_KEY` (file contents) and
-   `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Variables: `TAURI_UPDATER_PUBKEY`
-   (the `.pub` contents; not secret).
+2. GitHub → `release` environment secrets: `TAURI_SIGNING_PRIVATE_KEY` (file
+   contents) and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Repository variable:
+   `TAURI_UPDATER_PUBKEY` (the `.pub` contents; not secret). CI builds of
+   branches and pull requests never see the key and are never signed.
 3. Release as usual. CI then builds with `--features updater` and the
    generated config overlay, uploads the `.sig`, and registers the signature.
    Installed apps check the endpoint at startup, install the update

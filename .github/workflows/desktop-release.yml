@@ -1,5 +1,6 @@
 # Publishes a desktop release. Trigger by pushing a tag "desktop-vX.Y.Z"
-# (see docs/DESKTOP.md) or manually from the Actions tab.
+# (see docs/DESKTOP.md) or manually from the Actions tab - pick the TAG in
+# "Use workflow from": the release environment refuses branches.
 name: Desktop release
 
 on:
@@ -10,9 +11,14 @@ on:
       version:
         description: Version to release (must equal desktop/package.json), e.g. 1.2.0
         required: true
+      channel:
+        description: Release channel (beta for a trial release nobody is offered by default)
+        type: choice
+        options: [stable, beta]
+        default: stable
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   version:
@@ -21,15 +27,21 @@ jobs:
       value: ${{ steps.v.outputs.value }}
     steps:
       - id: v
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then v="${{ inputs.version }}"; else v="${GITHUB_REF_NAME#desktop-v}"; fi
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then v="$INPUT_VERSION"; else v="${GITHUB_REF_NAME#desktop-v}"; fi
           if ! [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then echo "::error::Invalid version '$v'"; exit 1; fi
           echo "value=$v" >> "$GITHUB_OUTPUT"
 
   release:
     needs: version
+    # Only this job may write (GitHub Release); its secrets come from the release environment.
+    permissions:
+      contents: write
     uses: ./.github/workflows/desktop-build.yml
     with:
       publish: true
       version: ${{ needs.version.outputs.value }}
-    secrets: inherit
+      channel: ${{ inputs.channel || 'stable' }}

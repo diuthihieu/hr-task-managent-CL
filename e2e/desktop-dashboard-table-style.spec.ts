@@ -48,5 +48,15 @@ test("summary table: header colours, wrapping header, drag a column wider and it
   }).toBeGreaterThan(before + 100);
   await page.reload();
   await expect(page.getByTestId("pivot-head").locator("th[data-col='__rows']")).toBeVisible({ timeout: 30_000 });
-  expect(Math.abs((await page.getByTestId("pivot-head").locator("th[data-col='__rows']").boundingBox())!.width - widened)).toBeLessThan(4);
+  const th = page.getByTestId("pivot-head").locator("th[data-col='__rows']");
+  expect(Math.abs((await th.boundingBox())!.width - widened)).toBeLessThan(4);
+
+  // The table doesn't stretch sized columns: dragging an edge left makes the column narrower by that much.
+  const g = (await th.getByTestId("pivot-resize").boundingBox())!;
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(g.x - 80, g.y + g.height / 2, { steps: 8 });
+  await page.mouse.up();
+  await expect.poll(async () => Math.round((await th.boundingBox())!.width)).toBeLessThan(widened - 60);
+  expect((await th.boundingBox())!.width).toBeGreaterThan(widened - 100);
 });

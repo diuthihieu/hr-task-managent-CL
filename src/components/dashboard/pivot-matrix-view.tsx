@@ -57,13 +57,14 @@ export function PivotMatrixView({
   // D5: column widths the viewer drags (seeded from the widget's saved ones), keyed by column.
   const [widths, setWidths] = useState<Record<string, number>>(style?.columnWidths ?? {});
   const keyOf = (c: { labels: string[]; subtotal: boolean }) => `c:${c.labels.join("›")}${c.subtotal ? ":t" : ""}`;
+  // With dragged widths the table is "w-max" (not stretched to the card), so each sized column keeps its width.
   const sized = (key: string): React.CSSProperties | undefined => (widths[key] ? { width: widths[key], minWidth: widths[key], maxWidth: widths[key] } : undefined);
   function startResize(key: string, e: React.PointerEvent<HTMLElement>) {
     e.preventDefault();
     e.stopPropagation();
     const th = (e.currentTarget as HTMLElement).parentElement!;
     const start = e.clientX;
-    const base = th.getBoundingClientRect().width;
+    const base = widths[key] ?? th.getBoundingClientRect().width;
     let latest = widths;
     const move = (ev: PointerEvent) => {
       latest = { ...latest, [key]: Math.min(800, Math.max(48, Math.round(base + ev.clientX - start))) };
@@ -229,7 +230,7 @@ export function PivotMatrixView({
         {!matrix.rows.length ? (
           <div className="h-full flex items-center justify-center text-xs text-neutral-400">{t("db.pivot.empty")}</div>
         ) : (
-          <table className="w-full text-xs border-collapse" style={{ color: style?.textColor }}>
+          <table className={cn("text-xs border-collapse", Object.keys(widths).length ? "w-max" : "w-full")} style={{ color: style?.textColor }}>
             <thead className="sticky top-0 bg-white dark:bg-neutral-900" style={{ backgroundColor: style?.headerBackground ?? style?.backgroundColor }} data-testid="pivot-head">
               {header.map((cells, r) => (
                 <tr key={r}>

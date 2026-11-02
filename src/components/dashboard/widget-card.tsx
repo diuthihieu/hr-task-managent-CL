@@ -196,7 +196,7 @@ export function WidgetCard({
               style={widgetStyle}
               levels={pivotLevels}
               onLevels={setPivotLevels}
-              onColumnWidths={canEdit ? (columnWidths) => saveStyle({ columnWidths }) : undefined}
+              onColumnWidths={editable ? (columnWidths) => saveStyle({ columnWidths }) : undefined}
             />
           ) : (
             <div className="h-full flex items-center justify-center text-xs text-neutral-400">{t("db.pivot.empty")}</div>

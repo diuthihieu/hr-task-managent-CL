@@ -65,7 +65,7 @@ const MAX_SOURCES = 10;
 /**
  * The main project's grid, with appended projects stacked under it and a merged one joined in (U8b).
  * Sources hidden from the viewer are left out (counted in `hiddenSources`), but the widget keeps its
- * shape: the Project column stays, and merged columns stay with no values.
+ * shape: the Project column stays, and merged columns become empty placeholders.
  */
 async function loadCombinedGrid(user: SessionUser, workspaceId: string, projectId: string, ds: NonNullable<DashboardBlockConfig["dataSource"]>) {
   const grid = await loadProjectGrid(projectId);
@@ -89,9 +89,9 @@ async function loadCombinedGrid(user: SessionUser, workspaceId: string, projectI
     const right = await source(ds.merge.projectId);
     if (right) combined = mergeSource(combined, right, ds.merge);
     else if (hidden.has(ds.merge.projectId)) {
-      // Only the column definitions (named without the project): no row of the hidden project is used.
-      const g = await loadProjectGrid(ds.merge.projectId);
-      if (g) combined = mergeSource(combined, { name: "", fields: g.fields, records: [] }, ds.merge);
+      // Placeholder columns with no values: nothing of the hidden project is read (rows, names, options).
+      const placeholders = ds.merge.fieldIds.map((id, i): FieldRow => ({ id: `m:${id}`, projectId, name: `(hidden source) ${i + 1}`, type: "text", config: null, order: 10000 + i, isPrimary: false, visible: true, description: null, defaultValue: null, readOnly: true, system: false }));
+      combined = { ...combined, fields: [...combined.fields, ...placeholders] };
     }
   }
   return { grid: { ...grid, fields: combined.fields, records: combined.records }, hiddenSources };

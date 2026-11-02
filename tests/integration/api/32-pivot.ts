@@ -91,6 +91,16 @@ test("a team dashboard shows each viewer only the projects they may see, and say
   assert.match(none.body.error ?? "", /no longer exists/);
   assert.equal(none.body.pivot, undefined);
 
+  // A hidden merge source: its columns stay (no values), but nothing of its field setup leaks (option labels...).
+  const secretField = (await admin.post<{ id: string }>(`/api/projects/${secret}/custom-fields`, { name: "Grade", type: "single_select", config: { options: [{ id: "g1", label: "Confidential grade", color: "#f00" }] } })).body.id;
+  const merged = await admin.post<{ id: string }>(`/api/dashboards/${d.body.id}/blocks`, { type: "table", title: "Merged", config: { dataSource: { projectId: open, merge: { projectId: secret, leftFieldId: "sys_title", rightFieldId: "sys_title", fieldIds: [secretField] } }, tableFieldIds: ["sys_title", `m:${secretField}`] } });
+  const table = await viewer.post<{ columns?: string[]; rows?: string[][]; hiddenSources?: number }>(`/api/dashboard-blocks/${merged.body.id}/data`, {});
+  assert.equal(table.body.hiddenSources, 1, JSON.stringify(table.body));
+  assert.deepEqual(table.body.rows, [["Open work", ""]]);
+  assert.doesNotMatch(JSON.stringify(table.body), /Confidential grade|Hidden from viewer|Grade/, "no option, project or field name of the hidden source");
+  const stacked = await admin.post<{ id: string }>(`/api/dashboards/${d.body.id}/blocks`, { type: "stacked_column", title: "Stacked", config: { dataSource: { projectId: open, appendProjectIds: [secret] }, dimensionFieldId: "__project", dimension2FieldId: "sys_status", measureFieldId: "sys_actual", aggregation: "sum" } });
+  assert.equal((await viewer.post<{ hiddenSources?: number }>(`/api/dashboard-blocks/${stacked.body.id}/data`, {})).body.hiddenSources, 1, "stacked charts carry the notice too");
+
   // AI report hours: every source project of the dashboard (appended ones too), only those the reader may see.
   const unassignedActual = async () => {
     const prompt = (await lastModelRequest()).body.systemInstruction!.parts[0].text;

@@ -49,7 +49,7 @@ export const POST = route<P>(async (req, { params }) => {
   }
 
   if (type === "stacked_column" || type === "stacked_bar") {
-    return NextResponse.json(computeStackedSeries(records, fields, config, memberList, userId));
+    return NextResponse.json({ ...extra, ...computeStackedSeries(records, fields, config, memberList, userId) });
   }
 
   if (type === "scatter") {

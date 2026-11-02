@@ -23,7 +23,8 @@ services:
 
   # Schema changes are a separate, explicit release step - the app never migrates on start.
   migrate:
-    build: .
+    # Its own image stage: the lockfile's Prisma CLI, no download at run time.
+    build: { context: ., target: migrator }
     profiles: ["release"]
     depends_on:
       postgres:
@@ -31,7 +32,7 @@ services:
     environment:
       DATABASE_URL: postgresql://basework:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/basework
       DIRECT_URL: postgresql://basework:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/basework
-    command: sh -c "node prisma/check-legacy-data.mjs && npx prisma migrate deploy"
+    command: sh -c "node prisma/check-legacy-data.mjs && npx --no-install prisma migrate deploy"
 
   app:
     build: .

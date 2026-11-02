@@ -51,7 +51,7 @@ jobs:
           node scripts/check-migration-order.mjs
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
       - run: npm ci
       # Fail early on any high / critical advisory in the whole tree (dev included).

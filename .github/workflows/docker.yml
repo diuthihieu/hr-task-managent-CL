@@ -1,0 +1,42 @@
+# Builds the self-hosting images (docker-compose.yml) and checks what BUG-23
+# requires: the runtime Node major equals CI's, the migrate image runs as a
+# non-root user and carries the lockfile's Prisma CLI (no download at run time).
+name: Docker images
+
+on:
+  push:
+    branches: ["master"]
+    paths: ["Dockerfile", "docker-compose.yml", ".dockerignore", "package.json", "package-lock.json", "prisma/**", ".github/workflows/docker.yml"]
+  pull_request:
+    paths: ["Dockerfile", "docker-compose.yml", ".dockerignore", "package.json", "package-lock.json", "prisma/**", ".github/workflows/docker.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: Build the app and migrate images
+        run: |
+          docker build --target migrator -t basework-migrate .
+          docker build -t basework-app .
+      - name: Same Node major as CI, migrate image non-root with the lockfile's Prisma
+        run: |
+          expected="v$(grep -m1 -oE 'node-version: "?[0-9]+' .github/workflows/web-ci.yml | grep -oE '[0-9]+$')"
+          for image in basework-app basework-migrate; do
+            v=$(docker run --rm --entrypoint node "$image" --version)
+            echo "$image: $v"
+            case "$v" in "$expected".*) ;; *) echo "::error::$image runs Node $v, CI uses $expected"; exit 1 ;; esac
+          done
+          uid=$(docker run --rm --entrypoint id basework-migrate -u)
+          [ "$uid" = "1000" ] || { echo "::error::migrate image runs as uid $uid"; exit 1; }
+          lock=$(node -p "require('./package-lock.json').packages['node_modules/prisma'].version")
+          got=$(docker run --rm --network none --entrypoint sh basework-migrate -c "npx --no-install prisma --version" | grep -m1 -oE '^prisma +: +[0-9.]+' | grep -oE '[0-9.]+$')
+          echo "prisma in image: $got, lockfile: $lock"
+          [ "$got" = "$lock" ] || { echo "::error::migrate image Prisma $got != lockfile $lock"; exit 1; }

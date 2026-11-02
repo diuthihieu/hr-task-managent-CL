@@ -99,7 +99,7 @@ Releasing a new version is a tag push - see [docs/DESKTOP.md](docs/DESKTOP.md).
 
 ## Getting started (local)
 
-Requires Node 20+ and PostgreSQL 14+.
+Requires Node 24 (the version CI and the Docker image use) and PostgreSQL 14+.
 
 ```bash
 npm install

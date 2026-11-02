@@ -42,7 +42,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: 24
       # npm audit has no ignore list: what ships (production dependencies) must be clean down to low;
       # dev tooling must have nothing high. Dev advisories below that are tracked by OSV below, with
       # their reasons in osv-scanner.toml.

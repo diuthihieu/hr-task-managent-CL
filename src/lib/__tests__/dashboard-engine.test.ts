@@ -58,3 +58,23 @@ test("pivot table: hours by assignee x category, each assignee in full, parents 
   const counts = computePivot(rows, fields, { dimensionFieldId: "sys_category", aggregation: "count" }, members);
   assert.deepEqual([counts.rows.map((r) => r.label), counts.cols.map((c) => c.label), counts.cells], [["Payroll", "Recruit"], ["Value"], [[2], [2]]]);
 });
+
+test("pivot table: a filter that drops a sub-task doesn't hand its hours to the parent (own share from all tasks)", async () => {
+  const { computePivot } = await import("../dashboard-engine");
+  const { record: rec } = await import("./helpers");
+  const fields = [field("sys_assignees", "Assignees", "people"), field("sys_actual", "Actual (h)", "number"), field("sys_parent", "Parent", "link")];
+  const members = [{ id: "a", name: "An", avatarColor: "#111" }, { id: "b", name: "Binh", avatarColor: "#222" }];
+  const rows = [rec("parent", { sys_assignees: ["a"], sys_actual: 5, sys_parent: [] }), rec("child", { sys_assignees: ["b"], sys_actual: 2, sys_parent: ["parent"] })];
+  const onlyAn = { conjunction: "AND" as const, conditions: [{ id: "f", fieldId: "sys_assignees", operator: "is" as const, value: "a" }] };
+  const p = computePivot(rows, fields, { dimensionFieldId: "sys_assignees", measureFieldId: "sys_actual", aggregation: "sum", filters: onlyAn }, members);
+  assert.deepEqual([p.rows.map((r) => r.label), p.cells], [["An"], [[3]]], "5 h parent - 2 h sub-task (filtered out) = 3 h, as without the filter");
+});
+
+test("pivot table: date rows follow the chosen bucket (month)", async () => {
+  const { computePivot } = await import("../dashboard-engine");
+  const { record: rec } = await import("./helpers");
+  const fields = [field("sys_due_date", "Due", "date"), field("sys_actual", "Actual (h)", "number")];
+  const rows = [rec("1", { sys_due_date: "2026-10-03", sys_actual: 1 }), rec("2", { sys_due_date: "2026-10-20", sys_actual: 2 }), rec("3", { sys_due_date: "2026-11-02", sys_actual: 4 })];
+  const p = computePivot(rows, fields, { dimensionFieldId: "sys_due_date", measureFieldId: "sys_actual", aggregation: "sum", dateBucket: "month" }, []);
+  assert.deepEqual([p.rows.map((r) => [r.key, r.label]), p.cells], [[["2026-10", "2026-10"], ["2026-11", "2026-11"]], [[3], [4]]]);
+});

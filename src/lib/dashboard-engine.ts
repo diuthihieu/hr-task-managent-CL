@@ -427,12 +427,13 @@ export function computePivot(records: RecordRow[], fields: FieldRow[], config: D
   if (!rowField) return empty;
   const filtered = applyFilters(records, fields, config.filters, currentUserId);
 
-  // Own share of hours (minutes math, like the reports).
+  // Own share of hours (minutes math, like the reports), worked out over every task: a filter that
+  // drops a sub-task must not hand its hours to the parent.
   let valueOf = (r: RecordRow) => (measure ? Number(getCellValue(r, measure, fields)) || 0 : 0);
   if (measure && aggFn === "sum" && HOUR_FIELDS.has(measure.id)) {
     const minutes = (r: RecordRow) => (typeof r.data[measure.id] === "number" ? Math.round((r.data[measure.id] as number) * 60) : null);
     const own = ownMinutes(
-      filtered.map((r) => ({ id: r.id, parentTaskId: Array.isArray(r.data.sys_parent) ? String((r.data.sys_parent as unknown[])[0] ?? "") || null : null, estimateMinutes: measure.id === "sys_estimate" ? minutes(r) : null, actualMinutes: measure.id === "sys_actual" ? minutes(r) : null })),
+      records.map((r) => ({ id: r.id, parentTaskId: Array.isArray(r.data.sys_parent) ? String((r.data.sys_parent as unknown[])[0] ?? "") || null : null, estimateMinutes: measure.id === "sys_estimate" ? minutes(r) : null, actualMinutes: measure.id === "sys_actual" ? minutes(r) : null })),
     );
     valueOf = (r) => {
       const o = own.get(r.id);
@@ -440,19 +441,18 @@ export function computePivot(records: RecordRow[], fields: FieldRow[], config: D
     };
   }
 
-  const keysOf = (r: RecordRow, f: FieldRow | undefined) => {
-    if (!f) return ["__value__"];
-    const raw = getCellValue(r, f, fields);
-    return (Array.isArray(raw) ? (raw.length ? raw : ["__empty__"]) : [raw ?? "__empty__"]).map(String);
-  };
+  // Date fields are grouped by the chosen bucket (day / week / month), like the charts.
+  const keysOf = (r: RecordRow, f: FieldRow | undefined) => (f ? groupKeysOf(r, f, fields, config.dateBucket ?? "day") : ["__value__"]);
+  // A date bucket ("2026-10") is its own label, as on the charts.
+  const labelOf = (f: FieldRow, key: string) => (DATE_TYPES.includes(f.type) && key !== "__empty__" ? key : resolveValueLabel(f, key, members).label);
   const rowsMap = new Map<string, string>();
   const colsMap = new Map<string, string>();
   const bucket = new Map<string, RecordRow[]>();
   for (const r of filtered) {
     for (const rk of keysOf(r, rowField)) {
-      if (!rowsMap.has(rk)) rowsMap.set(rk, resolveValueLabel(rowField, rk, members).label);
+      if (!rowsMap.has(rk)) rowsMap.set(rk, labelOf(rowField, rk));
       for (const ck of keysOf(r, colField)) {
-        if (!colsMap.has(ck)) colsMap.set(ck, colField ? resolveValueLabel(colField, ck, members).label : "Value");
+        if (!colsMap.has(ck)) colsMap.set(ck, colField ? labelOf(colField, ck) : "Value");
         const k = `${rk}\u0000${ck}`;
         bucket.set(k, [...(bucket.get(k) ?? []), r]);
       }

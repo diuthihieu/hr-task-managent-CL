@@ -24,8 +24,25 @@ function withOptions(field: FieldRow, extra: { id: string }[]): FieldRow {
   return add.length ? { ...field, config: JSON.stringify({ ...cfg, options: [...(cfg.options ?? []), ...add] }) } : field;
 }
 
-/** One column of resolved values (formulas, lookups...) so they survive the move to another table. */
-const resolved = (src: Source, r: RecordRow, f: FieldRow) => (COMPUTED.has(f.type) ? getCellValue(r, f, src.fields) : r.data[f.id]);
+/** Types whose value isn't read from the row's data (formulas, created time / by...). */
+const DERIVED = new Set([...COMPUTED, "created_time", "modified_time", "created_by"]);
+
+/** One column of resolved values (formulas, created time...) so they survive the move to another table. */
+const resolved = (src: Source, r: RecordRow, f: FieldRow) => (DERIVED.has(f.type) ? getCellValue(r, f, src.fields) : r.data[f.id]);
+
+/**
+ * The same field as a plain stored column, for values already resolved into the row's data: a formula
+ * would be evaluated again (with the main project's expression), a created time / by read off the row.
+ */
+function plain(f: FieldRow, values: unknown[]): FieldRow {
+  if (f.type === "created_time" || f.type === "modified_time") return { ...f, type: "datetime" };
+  if (f.type === "created_by") return { ...f, type: "person" };
+  if (COMPUTED.has(f.type)) {
+    const known = values.filter((v) => v !== null && v !== undefined && v !== "");
+    return { ...f, type: known.length && known.every((v) => typeof v === "number") ? "number" : "text", config: null };
+  }
+  return f;
+}
 
 export function appendSources(base: Source, others: Source[]): Source {
   let fields = base.fields.map((f) => f);
@@ -45,6 +62,15 @@ export function appendSources(base: Source, others: Source[]): Source {
       for (const [baseId, o] of map) data[baseId] = resolved(other, r, o);
       records.push({ ...r, data });
     }
+  }
+  if (others.length) {
+    // Formulas: each project's own results, stored in the row (the main project's rows too).
+    const baseIds = new Set(base.records.map((r) => r.id));
+    fields = fields.map((f) => {
+      if (f.type !== "formula") return f; // lookups / rollups already sit in the row's data
+      for (const r of records) if (baseIds.has(r.id) && r.data[PROJECT_FIELD_ID] === base.name) r.data[f.id] = getCellValue(r, f, base.fields);
+      return plain(f, records.map((r) => r.data[f.id]));
+    });
   }
   const project: FieldRow = { id: PROJECT_FIELD_ID, projectId: base.fields[0]?.projectId ?? "", name: "Project", type: "text", config: null, order: 9999, isPrimary: false, visible: true, description: null, defaultValue: null, readOnly: true };
   return { name: base.name, fields: [...fields, project], records };
@@ -68,10 +94,9 @@ export function mergeSource(left: Source, right: Source, o: { leftFieldId: strin
   }
   const brought = o.fieldIds.map((id) => right.fields.find((f) => f.id === id)).filter((f): f is FieldRow => !!f);
   const newFields: FieldRow[] = brought.map((f, i) => ({
-    ...f,
+    ...plain(f, right.records.map((r) => resolved(right, r, f))),
     id: `m:${f.id}`,
     name: `${right.name} · ${f.name}`,
-    type: COMPUTED.has(f.type) ? "text" : f.type,
     order: 10000 + i,
     isPrimary: false,
     readOnly: true,

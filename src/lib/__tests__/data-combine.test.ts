@@ -29,3 +29,22 @@ test("merge adds the matched right-hand columns (left join on a key, text compar
   assert.equal(getCellValue(out.records[0], dept, out.fields), "d1");
   assert.equal(out.records.length, 3, "left join keeps every left row");
 });
+
+test("append keeps each project's own formula results (not re-evaluated with the main project's expression)", () => {
+  const a = { name: "HR", fields: [field("h", "Hours", "number"), field("cost", "Cost", "formula", { expression: "{Hours} * 10" })], records: [record("t1", { h: 2 })] };
+  const b = { name: "IT", fields: [field("h2", "Hours", "number"), field("cost2", "Cost", "formula", { expression: "{Hours} * 20" })], records: [record("t2", { h2: 3 })] };
+  const out = appendSources(a, [b]);
+  const cost = out.fields.find((f) => f.id === "cost")!;
+  assert.deepEqual(out.records.map((r) => getCellValue(r, cost, out.fields)), [20, 60]);
+  assert.equal(cost.type, "number", "a materialised formula reads like a number column");
+});
+
+test("merge brings the other project's created time / created by, not the left task's", () => {
+  const left = { name: "Tasks", fields: [field("emp", "Code", "text")], records: [record("t1", { emp: "nv01" }), record("t2", { emp: "none" })] };
+  const r1 = { ...record("s1", { code: "NV01" }), createdAt: "2026-05-05T00:00:00Z", createdById: "u9" };
+  const right = { name: "Staff", fields: [field("code", "Code", "text"), field("ct", "Created", "created_time"), field("cb", "Created by", "created_by")], records: [r1] };
+  const out = mergeSource(left, right, { leftFieldId: "emp", rightFieldId: "code", fieldIds: ["ct", "cb"] });
+  const ct = out.fields.find((f) => f.id === "m:ct")!;
+  const cb = out.fields.find((f) => f.id === "m:cb")!;
+  assert.deepEqual(out.records.map((r) => [getCellValue(r, ct, out.fields), getCellValue(r, cb, out.fields)]), [["2026-05-05T00:00:00Z", "u9"], [null, null]]);
+});

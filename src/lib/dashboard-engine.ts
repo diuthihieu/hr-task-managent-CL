@@ -178,6 +178,27 @@ export function resolveCrossFilterConditions(fields: FieldRow[], members: Member
   return filters.map((f) => resolveCrossFilterCondition(fields, members, f)).filter((c): c is FilterCondition => c !== null);
 }
 
+/** Hour fields whose sums count a parent only for its own share. */
+const HOUR_FIELDS = new Set(["sys_estimate", "sys_actual"]);
+
+/**
+ * The number a record adds to a sum. Summing estimate / actual hours counts a parent only for its own
+ * share (its total minus its sub-tasks'), worked out over `all` tasks so a filter that drops a sub-task
+ * doesn't hand its hours to the parent; every other field / aggregation reads the record's own value.
+ */
+function measureValue(all: RecordRow[], fields: FieldRow[], measure: FieldRow | undefined, aggFn: Aggregation): (r: RecordRow) => number {
+  if (!measure) return () => 0;
+  if (aggFn !== "sum" || !HOUR_FIELDS.has(measure.id)) return (r) => Number(getCellValue(r, measure, fields)) || 0;
+  const minutes = (r: RecordRow) => (typeof r.data[measure.id] === "number" ? Math.round((r.data[measure.id] as number) * 60) : null);
+  const own = ownMinutes(
+    all.map((r) => ({ id: r.id, parentTaskId: Array.isArray(r.data.sys_parent) ? String((r.data.sys_parent as unknown[])[0] ?? "") || null : null, estimateMinutes: measure.id === "sys_estimate" ? minutes(r) : null, actualMinutes: measure.id === "sys_actual" ? minutes(r) : null })),
+  );
+  return (r) => {
+    const o = own.get(r.id);
+    return o ? Math.round(((measure.id === "sys_estimate" ? o.est : o.act) / 60) * 100) / 100 : 0;
+  };
+}
+
 export function computeSeries(
   records: RecordRow[],
   fields: FieldRow[],
@@ -192,8 +213,10 @@ export function computeSeries(
   const aggFn = config.aggregation ?? "count";
 
   const filtered = applyFilters(records, fields, config.filters, currentUserId);
+  const valueOf = measureValue(records, fields, measureField, aggFn);
+  const value2Of = measureValue(records, fields, measure2Field, aggFn);
   if (!dimensionField) {
-    const values = measureField ? filtered.map((r) => Number(getCellValue(r, measureField, fields)) || 0) : [];
+    const values = measureField ? filtered.map(valueOf) : [];
     const distinct = measureField ? filtered.map((r) => getCellValue(r, measureField, fields)) : filtered.map((r) => r.id);
     return [{ key: "value", label: "Value", value: aggregate(values, distinct, aggFn, filtered.length) }];
   }
@@ -213,12 +236,12 @@ export function computeSeries(
 
   let points: SeriesPoint[] = [];
   for (const [key, recs] of groups) {
-    const values = measureField ? recs.map((r) => Number(getCellValue(r, measureField, fields)) || 0) : [];
+    const values = measureField ? recs.map(valueOf) : [];
     const distinct = measureField ? recs.map((r) => getCellValue(r, measureField, fields)) : recs.map((r) => r.id);
     const value = aggregate(values, distinct, aggFn, recs.length);
     const value2 = measure2Field
       ? aggregate(
-          recs.map((r) => Number(getCellValue(r, measure2Field, fields)) || 0),
+          recs.map(value2Of),
           recs.map((r) => getCellValue(r, measure2Field, fields)),
           aggFn,
           recs.length
@@ -255,6 +278,7 @@ export function computeStackedSeries(
   if (!dimensionField || !seriesField) return { rows: [], seriesKeys: [] };
 
   const filtered = applyFilters(records, fields, config.filters, currentUserId);
+  const valueOf = measureValue(records, fields, measureField, aggFn);
   const cells = new Map<string, RecordRow[]>(); // `${rowKey}::${seriesKey}`
   const rowKeys = new Map<string, string>(); // rowKey -> label
   const seriesKeysMap = new Map<string, { label: string; color?: string }>();
@@ -282,7 +306,7 @@ export function computeStackedSeries(
     const row: Record<string, string | number> = { __rowKey: rowKey, label: rowLabel };
     for (const { key: seriesKey } of seriesKeys) {
       const recs = cells.get(`${rowKey}::${seriesKey}`) ?? [];
-      const values = measureField ? recs.map((r) => Number(getCellValue(r, measureField, fields)) || 0) : [];
+      const values = measureField ? recs.map(valueOf) : [];
       const distinct = measureField ? recs.map((r) => getCellValue(r, measureField, fields)) : recs.map((r) => r.id);
       row[seriesKey] = aggregate(values, distinct, aggFn, recs.length);
     }
@@ -321,12 +345,15 @@ export function computeKpi(
   records: RecordRow[],
   fields: FieldRow[],
   config: DashboardBlockConfig,
-  currentUserId?: string
+  currentUserId?: string,
+  /** Every task the own share of hours is worked out over (default: `records`). */
+  all: RecordRow[] = records
 ): number {
   const byId = new Map(fields.map((f) => [f.id, f]));
   const measureField = config.measureFieldId ? byId.get(config.measureFieldId) : undefined;
   const filtered = applyFilters(records, fields, config.filters, currentUserId);
-  const values = measureField ? filtered.map((r) => Number(getCellValue(r, measureField, fields)) || 0) : [];
+  const valueOf = measureValue(all, fields, measureField, config.aggregation ?? "count");
+  const values = measureField ? filtered.map(valueOf) : [];
   const distinct = measureField ? filtered.map((r) => getCellValue(r, measureField, fields)) : filtered.map((r) => r.id);
   return aggregate(values, distinct, config.aggregation ?? "count", filtered.length);
 }
@@ -390,8 +417,8 @@ export function computeKpiTrend(
     return Number.isFinite(time) && time >= start.getTime() && time < end.getTime();
   };
   const withoutFilters = { ...config, filters: undefined };
-  const current = computeKpi(base.filter((record) => inRange(record, currentStart, currentEnd)), fields, withoutFilters, currentUserId);
-  const previous = computeKpi(base.filter((record) => inRange(record, previousStart, currentStart)), fields, withoutFilters, currentUserId);
+  const current = computeKpi(base.filter((record) => inRange(record, currentStart, currentEnd)), fields, withoutFilters, currentUserId, records);
+  const previous = computeKpi(base.filter((record) => inRange(record, previousStart, currentStart)), fields, withoutFilters, currentUserId, records);
   const delta = current - previous;
   return {
     current,
@@ -415,7 +442,6 @@ export interface PivotTable {
   total: number;
 }
 
-const HOUR_FIELDS = new Set(["sys_estimate", "sys_actual"]);
 
 /**
  * Summary table (pivot): rows by one field, columns by an optional second one, a value per cell.
@@ -434,19 +460,8 @@ export function computePivot(records: RecordRow[], fields: FieldRow[], config: D
   if (!rowField) return empty;
   const filtered = applyFilters(records, fields, config.filters, currentUserId);
 
-  // Own share of hours (minutes math, like the reports), worked out over every task: a filter that
-  // drops a sub-task must not hand its hours to the parent.
-  let valueOf = (r: RecordRow) => (measure ? Number(getCellValue(r, measure, fields)) || 0 : 0);
-  if (measure && aggFn === "sum" && HOUR_FIELDS.has(measure.id)) {
-    const minutes = (r: RecordRow) => (typeof r.data[measure.id] === "number" ? Math.round((r.data[measure.id] as number) * 60) : null);
-    const own = ownMinutes(
-      records.map((r) => ({ id: r.id, parentTaskId: Array.isArray(r.data.sys_parent) ? String((r.data.sys_parent as unknown[])[0] ?? "") || null : null, estimateMinutes: measure.id === "sys_estimate" ? minutes(r) : null, actualMinutes: measure.id === "sys_actual" ? minutes(r) : null })),
-    );
-    valueOf = (r) => {
-      const o = own.get(r.id);
-      return o ? Math.round(((measure.id === "sys_estimate" ? o.est : o.act) / 60) * 100) / 100 : 0;
-    };
-  }
+  // Own share of hours worked out over every task: a filter that drops a sub-task must not hand its hours to the parent.
+  const valueOf = measureValue(records, fields, measure, aggFn);
 
   // Date fields are grouped by the chosen bucket (day / week / month), like the charts.
   const keysOf = (r: RecordRow, f: FieldRow | undefined) => (f ? groupKeysOf(r, f, fields, config.dateBucket ?? "day") : ["__value__"]);

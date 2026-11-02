@@ -78,3 +78,33 @@ test("pivot table: date rows follow the chosen bucket (month)", async () => {
   const p = computePivot(rows, fields, { dimensionFieldId: "sys_due_date", measureFieldId: "sys_actual", aggregation: "sum", dateBucket: "month" }, []);
   assert.deepEqual([p.rows.map((r) => [r.key, r.label]), p.cells], [[["2026-10", "2026-10"], ["2026-11", "2026-11"]], [[3], [4]]]);
 });
+
+test("KPI and charts summing hours count a parent only for its own share, under filters too (no double counting)", async () => {
+  const { computeKpi, computeSeries, computeStackedSeries, computeKpiTrend } = await import("../dashboard-engine");
+  const { record: rec } = await import("./helpers");
+  const fields = [
+    field("sys_assignees", "Assignees", "people"),
+    field("sys_category", "Category", "single_select", { options: [{ id: "pay", label: "Payroll", color: "#f00" }] }),
+    field("sys_actual", "Actual (h)", "number"),
+    field("sys_estimate", "Estimate (h)", "number"),
+    field("sys_parent", "Parent", "link"),
+    field("sys_due_date", "Due", "date"),
+  ];
+  const members = [{ id: "a", name: "An", avatarColor: "#111" }, { id: "b", name: "Binh", avatarColor: "#222" }];
+  const rows = [
+    rec("parent", { sys_assignees: ["a"], sys_category: "pay", sys_actual: 5, sys_estimate: 8, sys_parent: [], sys_due_date: "2026-10-10" }),
+    rec("child", { sys_assignees: ["b"], sys_category: "pay", sys_actual: 2, sys_estimate: 3, sys_parent: ["parent"], sys_due_date: "2026-10-12" }),
+  ];
+  const sum = (measureFieldId: string, extra: Partial<DashboardBlockConfig> = {}) => ({ measureFieldId, aggregation: "sum" as const, ...extra });
+  assert.equal(computeKpi(rows, fields, sum("sys_actual")), 5, "3 own + 2 child, not 5 + 2");
+  assert.equal(computeKpi(rows, fields, sum("sys_estimate")), 8);
+  const onlyAn = { conjunction: "AND" as const, conditions: [{ id: "f", fieldId: "sys_assignees", operator: "is" as const, value: "a" }] };
+  assert.equal(computeKpi(rows, fields, sum("sys_actual", { filters: onlyAn })), 3, "a filtered-out sub-task doesn't hand its hours to the parent");
+  assert.deepEqual(computeSeries(rows, fields, sum("sys_actual", { dimensionFieldId: "sys_category" }), members).map((p) => p.value), [5]);
+  assert.deepEqual(computeSeries(rows, fields, sum("sys_actual", { dimensionFieldId: "sys_assignees", measure2FieldId: "sys_estimate" }), members).map((p) => [p.label, p.value, p.value2]), [["An", 3, 5], ["Binh", 2, 3]]);
+  assert.equal(computeSeries(rows, fields, sum("sys_actual"), members)[0].value, 5, "a chart without a grouping field too");
+  assert.deepEqual(computeStackedSeries(rows, fields, sum("sys_actual", { dimensionFieldId: "sys_category", dimension2FieldId: "sys_assignees" }), members).rows[0], { __rowKey: "pay", label: "Payroll", a: 3, b: 2 });
+  const trend = computeKpiTrend(rows, fields, sum("sys_actual", { kpiCompareTo: "previous_month", kpiDateFieldId: "sys_due_date" }), undefined, new Date("2026-10-20T00:00:00Z"));
+  assert.equal(trend?.current, 5);
+  assert.equal(computeKpi(rows, fields, { measureFieldId: "sys_actual", aggregation: "max" }), 5, "other aggregations read the task's own value, as before");
+});

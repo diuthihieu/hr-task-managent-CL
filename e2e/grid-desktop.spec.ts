@@ -164,3 +164,50 @@ test('the "+" between rows inserts into the group that was clicked, also for a t
   const added = (await records(page.request, p.id)).find((r) => r.data.sys_title !== "Both teams")!;
   expect(added.data[fieldId]).toEqual([alpha]);
 });
+
+/** A project of 302 tasks: "Task 000", 300 blank ones, then "Last task of the list". */
+async function longList(request: APIRequestContext, wsId: string) {
+  const p = await project(request, wsId, ["Task 000"]);
+  for (let i = 0; i < 6; i++) {
+    const res = await request.post(`/api/projects/${p.id}/tasks/insert`, { data: { anchorId: p.tasks[0].id, position: "below", count: 50, data: {} } });
+    expect(res.ok(), `insert ${res.status()}`).toBeTruthy();
+  }
+  const last = await request.post(`/api/projects/${p.id}/tasks`, { data: { data: { sys_title: "Last task of the list" } } });
+  expect(last.ok()).toBeTruthy();
+  return { ...p, first: p.tasks[0].id, last: ((await last.json()) as Rec).id };
+}
+
+test("a long task list renders only the rows in view (virtualized), and the last task is reachable by scrolling (BUG-06a)", async ({ page, seed }) => {
+  const p = await longList(page.request, seed.wsId);
+  const anchor = p.last;
+
+  await page.goto(`/w/${seed.slug}/p/${p.id}`);
+  const grid = page.getByTestId("grid-view");
+  await expect(rows(page).first()).toBeVisible();
+  const rendered = await rows(page).count();
+  expect(rendered, "302 tasks, only a window of them in the DOM").toBeLessThan(120);
+  await grid.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await expect(row(page, anchor)).toBeVisible();
+  expect(await rows(page).count()).toBeLessThan(120);
+});
+
+test("a cell being edited stays mounted when it scrolls out of view, keeps the scroll height, and saves on blur (BUG-06a)", async ({ page, seed }) => {
+  const p = await longList(page.request, seed.wsId);
+  await page.goto(`/w/${seed.slug}/p/${p.id}`);
+  const grid = page.getByTestId("grid-view");
+  const textarea = row(page, p.first).locator("[data-field-id=sys_description] textarea");
+  await textarea.fill("Typed, not blurred yet");
+  const height = await grid.evaluate((el) => el.scrollHeight);
+
+  await grid.evaluate((el) => el.scrollTo({ top: el.scrollHeight }));
+  await expect(row(page, p.last)).toBeVisible();
+  await expect(textarea, "the row being edited is still in the DOM").toBeFocused();
+  // The kept row must not pull the window up: the rows between it and the window still take their space.
+  expect(Math.abs((await grid.evaluate((el) => el.scrollHeight)) - height)).toBeLessThan(5);
+  const lastTop = await row(page, p.last).evaluate((el) => el.getBoundingClientRect().top);
+  const gridBottom = await grid.evaluate((el) => el.getBoundingClientRect().bottom);
+  expect(lastTop).toBeLessThan(gridBottom);
+
+  await textarea.blur();
+  await expect.poll(async () => ((await (await page.request.get(`/api/tasks/${p.first}`)).json()) as Rec).data.sys_description).toBe("Typed, not blurred yet");
+});

@@ -15,13 +15,15 @@ export const POST = route<P>(async (req, { params }) => {
   const { blockId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfWidget(blockId), "viewer");
   const userId = user.id;
-  const body = (await req.json().catch(() => ({}))) as { slicers?: CrossFilter[]; crossFilter?: CrossFilter };
+  const body = (await req.json().catch(() => ({}))) as { slicers?: unknown[]; crossFilter?: CrossFilter };
 
   const data = await loadBlockData(user, ctx.workspaceId, blockId, body);
   if ("error" in data) return NextResponse.json({ error: data.error, series: [], rows: [], fields: [] });
   const { type, config, fields, records, members: memberList } = data;
   // Tells the viewer some sources are left out (hidden from them), so a smaller total is not taken for the whole.
-  const extra = data.hiddenSources ? { hiddenSources: data.hiddenSources } : {};
+  // "No data" for the current filters (slicers, click, widget / view filters), so the card says so.
+  const empty = applyFilters(records, fields, config.filters, userId).length === 0;
+  const extra = { ...(data.hiddenSources ? { hiddenSources: data.hiddenSources } : {}), ...(empty ? { empty: true } : {}) };
 
   if (type === "kpi") {
     const trend = computeKpiTrend(records, fields, config, userId);

@@ -31,7 +31,9 @@ export type FilterOperator =
   | "is_not"
   | "contains_any"
   | "contains_all"
-  | "is_current_user";
+  | "is_current_user"
+  /** The record itself is one of `value` (ids) - slicers, worked out by dashboard-slicers.ts. */
+  | "record_in";
 
 export interface FilterCondition {
   id: string;
@@ -364,6 +366,7 @@ export function applyFilters(
   const byId = new Map(fields.map((f) => [f.id, f]));
   const matches = (record: RecordRow, group: FilterGroup): boolean | null => {
     const results: boolean[] = (group.conditions ?? []).map((cond) => {
+      if (cond.operator === "record_in") return Array.isArray(cond.value) && cond.value.includes(record.id);
       const field = byId.get(cond.fieldId);
       if (!field) return true;
       const value = computeCellValue(record, field, byId);

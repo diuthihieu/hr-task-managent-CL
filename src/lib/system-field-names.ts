@@ -9,3 +9,16 @@ const SYSTEM_IDS = [
 
 const en = makeT("en");
 export const SYSTEM_FIELD_NAMES_EN: Record<string, string> = Object.fromEntries(SYSTEM_IDS.map((id) => [id, en(`field.${id}` as MessageKey)]));
+
+const vi = makeT("vi");
+/** Every name a built-in field goes by (English and Vietnamese), lower-cased. */
+const SYSTEM_FIELD_ALIASES: Record<string, Set<string>> = Object.fromEntries(SYSTEM_IDS.map((id) => [id, new Set([en(`field.${id}` as MessageKey), vi(`field.${id}` as MessageKey)].map((n) => n.trim().toLowerCase()))]));
+
+/**
+ * Whether a field is the one a dashboard slicer / chart click names. Built-in fields are shown in the
+ * viewer's language ("Hạn chót" / "Due date") but the server reads them in English, so both names match.
+ */
+export function fieldMatchesName(field: { id: string; name: string }, name: string): boolean {
+  const n = name.trim().toLowerCase();
+  return field.name.trim().toLowerCase() === n || !!SYSTEM_FIELD_ALIASES[field.id]?.has(n);
+}

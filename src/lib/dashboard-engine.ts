@@ -10,6 +10,7 @@ import type { FieldRow, RecordRow } from "@/types";
 import { ownMinutes } from "./hours";
 import { applyFilters, filterConditionCount, withoutFieldConditions, getCellValue, resolveValueLabel, type FilterGroup, type FilterCondition, type MemberLite } from "./query-engine";
 import { parseFieldConfig } from "./field-types";
+import { fieldMatchesName } from "./system-field-names";
 
 export type Aggregation = "count" | "distinct" | "sum" | "avg" | "min" | "max";
 export type DateBucket = "day" | "week" | "month";
@@ -72,7 +73,7 @@ export interface SeriesPoint {
   value2?: number;
 }
 
-const DATE_TYPES = ["date", "datetime", "created_time", "modified_time"];
+export const DATE_TYPES = ["date", "datetime", "created_time", "modified_time"];
 
 function bucketDate(iso: string, bucket: DateBucket): string {
   const d = new Date(iso);
@@ -149,7 +150,7 @@ export function resolveCrossFilterCondition(
   crossFilter: CrossFilter | undefined
 ): FilterCondition | null {
   if (!crossFilter) return null;
-  const field = fields.find((f) => f.name.toLowerCase() === crossFilter.fieldName.toLowerCase());
+  const field = fields.find((f) => fieldMatchesName(f, crossFilter.fieldName));
   if (!field) return null;
 
   if (crossFilter.operator === "before" || crossFilter.operator === "after") {
@@ -584,7 +585,8 @@ export interface Segment {
   seriesLabel?: string;
 }
 
-function groupKeysOf(record: RecordRow, field: FieldRow, fields: FieldRow[], bucket: DateBucket): string[] {
+/** The group keys of a record for a field (one per value of a multi-value field; dates bucketed). */
+export function groupKeysOf(record: RecordRow, field: FieldRow, fields: FieldRow[], bucket: DateBucket): string[] {
   const raw = getCellValue(record, field, fields);
   const rawKeys = Array.isArray(raw) ? (raw.length ? raw : ["__empty__"]) : [raw ?? "__empty__"];
   const isDate = DATE_TYPES.includes(field.type);

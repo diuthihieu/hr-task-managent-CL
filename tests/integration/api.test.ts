@@ -41,3 +41,4 @@ test.after(async () => {
   if (shared.length) throw new Error(`shared rate-limit keys: ${shared.map((k) => k.key).join(", ")}`);
   await prisma.$disconnect();
 });
+import "./api/33-slicers";

@@ -2,6 +2,8 @@ import { prisma } from "@/lib/prisma";
 import { HttpError, hiddenProjectIds, type SessionUser } from "@/lib/authz";
 import { appendSources, mergeSource, type Source } from "@/lib/data-combine";
 import { mergeFilters, widgetConfigProblem, parseBlockConfig, resolveCrossFilterConditions, type CrossFilter, type DashboardBlockConfig } from "@/lib/dashboard-engine";
+import { mergeSlicerOptions, normalizeSlicer, slicerConditions, slicerOptions, type SlicerOptions, type SlicerSelection } from "@/lib/dashboard-slicers";
+import { applyFilters } from "@/lib/query-engine";
 import { loadProjectGrid } from "@/lib/task-grid";
 import type { FieldRow, RecordRow } from "@/types";
 
@@ -25,7 +27,7 @@ export async function loadBlockData(
   user: SessionUser,
   workspaceId: string,
   blockId: string,
-  body: { slicers?: CrossFilter[]; crossFilter?: CrossFilter | null }
+  body: { slicers?: unknown[]; crossFilter?: CrossFilter | null }
 ): Promise<BlockData | { error: string }> {
   const block = await prisma.dashboardWidget.findUniqueOrThrow({ where: { id: blockId } });
   const config = parseBlockConfig(JSON.stringify(block.config ?? {}));
@@ -46,9 +48,9 @@ export async function loadBlockData(
   if (problem) return { error: problem };
   const memberList = members.map((m) => m.user);
   const viewConfig = view ? (view.config as { filters?: typeof config.filters }) : null;
-  const slicerConditions = resolveCrossFilterConditions(fields, memberList, body.slicers);
+  const slicers = parseSlicers(body.slicers);
   const clickConditions = resolveCrossFilterConditions(fields, memberList, body.crossFilter ? [body.crossFilter] : undefined);
-  const named = { conjunction: "AND" as const, conditions: [...slicerConditions, ...clickConditions] };
+  const named = { conjunction: "AND" as const, conditions: [...slicerConditions(grid!.records, fields, memberList, slicers), ...clickConditions] };
   return {
     type: block.type,
     config: { ...config, filters: mergeFilters(viewConfig?.filters, config.filters, named) },
@@ -57,6 +59,41 @@ export async function loadBlockData(
     members: memberList,
     hiddenSources,
   };
+}
+
+/** Slicers of a request (current or old shape), at most 20. */
+export function parseSlicers(raw: unknown[] | undefined): SlicerSelection[] {
+  return (Array.isArray(raw) ? raw : []).slice(0, 20).map(normalizeSlicer).filter((x): x is SlicerSelection => !!x);
+}
+
+/**
+ * Options of one dashboard slicer: its values (with counts) over every data source of the dashboard's
+ * widgets that the viewer may see, after the other slicers and a chart click - like Power BI's linked
+ * slicers. Hidden projects are left out, as everywhere.
+ */
+export async function dashboardSlicerOptions(user: SessionUser, workspaceId: string, dashboardId: string, fieldName: string, slicers: SlicerSelection[], crossFilter: CrossFilter | null): Promise<SlicerOptions> {
+  const widgets = await prisma.dashboardWidget.findMany({ where: { dashboardId }, select: { config: true }, take: 100 });
+  const sources = new Map<string, NonNullable<DashboardBlockConfig["dataSource"]>>();
+  for (const w of widgets) {
+    const ds = parseBlockConfig(JSON.stringify(w.config ?? {})).dataSource;
+    if (ds?.projectId) sources.set(JSON.stringify({ p: ds.projectId, a: ds.appendProjectIds ?? [], m: ds.merge ?? null }), ds);
+  }
+  const hidden = await hiddenProjectIds(user);
+  const members = (await prisma.workspaceMember.findMany({ where: { workspaceId }, include: { user: { select: { id: true, name: true, avatarColor: true } } } })).map((m) => m.user);
+  const parts: SlicerOptions[] = [];
+  for (const ds of sources.values()) {
+    if (hidden.has(ds.projectId!)) continue;
+    const live = await prisma.project.findFirst({ where: { id: ds.projectId, workspaceId, deletedAt: null }, select: { id: true } });
+    if (!live) continue;
+    const { grid } = await loadCombinedGrid(user, workspaceId, ds.projectId!, ds);
+    if (!grid) continue;
+    const click = resolveCrossFilterConditions(grid.fields, members, crossFilter ? [crossFilter] : undefined);
+    const records = click.length ? applyFilters(grid.records, grid.fields, { conjunction: "AND", conditions: click }) : grid.records;
+    parts.push(slicerOptions(records, grid.fields, members, { fieldName }, slicers));
+  }
+  const merged = mergeSlicerOptions(parts);
+  delete merged.tasks; // ids behind the counts stay on the server
+  return merged;
 }
 
 /** Projects a widget reads from may at most be this many (main + appended + merged). */

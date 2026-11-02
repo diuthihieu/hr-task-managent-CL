@@ -276,6 +276,7 @@ export function DashboardWorkspace({
       onDelete={() => deleteWidget(block.id)}
       onCrossFilter={(point) => handleCrossFilterClick(block, point)}
       crossFilterActive={crossFilter?.sourceBlockId === block.id ? crossFilter.filter.label : null}
+      onConfigSaved={(config) => setDashboard((d) => (d ? { ...d, blocks: d.blocks.map((b) => (b.id === block.id ? { ...b, config } : b)) } : d))}
       onData={(d) => {
         widgetData.current.set(block.id, d);
         queueNarrative();

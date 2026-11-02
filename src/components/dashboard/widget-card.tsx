@@ -46,6 +46,7 @@ export function WidgetCard({
   onDelete,
   onCrossFilter,
   crossFilterActive,
+  onConfigSaved,
   onData,
   narrative,
   onSegmentClick,
@@ -68,6 +69,8 @@ export function WidgetCard({
   onDelete: () => void;
   onCrossFilter?: (point: SeriesPoint) => void;
   crossFilterActive?: string | null;
+  /** The widget's config after it saved a change itself (column widths). */
+  onConfigSaved?: (config: string) => void;
 }) {
   const { t } = useT();
   const [data, setData] = useState<DataResponse | null>(null);
@@ -103,6 +106,15 @@ export function WidgetCard({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- filter objects are rebuilt every render; JSON.stringify keeps the effect from refetching on identity changes alone
   }, [block.id, block.type, block.config, JSON.stringify(slicers), JSON.stringify(crossFilter), JSON.stringify(pivotLevels)]);
+
+  /** Editors: column widths dragged on a summary table are saved for everyone (viewers keep theirs for the session). */
+  function saveStyle(patch: Partial<WidgetStyleConfig>) {
+    const next = JSON.stringify({ ...config, style: { ...config.style, ...patch } });
+    api
+      .patch(`/api/dashboard-blocks/${block.id}`, { config: JSON.parse(next) })
+      .then(() => onConfigSaved?.(next))
+      .catch(() => {});
+  }
 
   const measureLabel = fieldNameLookup(config.measureFieldId) ?? AGGREGATION_LABELS[config.aggregation ?? "count"];
   const measure2Label = fieldNameLookup(config.measure2FieldId);
@@ -177,7 +189,15 @@ export function WidgetCard({
           <TableDisplay columns={data?.columns ?? []} rows={data?.rows ?? []} style={widgetStyle} />
         ) : block.type === "pivot" ? (
           data?.matrix ? (
-            <PivotMatrixView matrix={data.matrix} title={block.title} valueLabel={measureLabel} style={widgetStyle} levels={pivotLevels} onLevels={setPivotLevels} />
+            <PivotMatrixView
+              matrix={data.matrix}
+              title={block.title}
+              valueLabel={measureLabel}
+              style={widgetStyle}
+              levels={pivotLevels}
+              onLevels={setPivotLevels}
+              onColumnWidths={canEdit ? (columnWidths) => saveStyle({ columnWidths }) : undefined}
+            />
           ) : (
             <div className="h-full flex items-center justify-center text-xs text-neutral-400">{t("db.pivot.empty")}</div>
           )
@@ -236,10 +256,10 @@ function TableDisplay({ columns, rows, style }: { columns: string[]; rows: strin
   return (
     <div className="h-full overflow-auto thin-scroll">
       <table className="w-full text-xs border-collapse">
-        <thead className="sticky top-0 bg-white dark:bg-neutral-900" style={{ backgroundColor: style?.backgroundColor }}>
+        <thead className="sticky top-0 bg-white dark:bg-neutral-900" style={{ backgroundColor: style?.headerBackground ?? style?.backgroundColor }}>
           <tr>
             {columns.map((c, i) => (
-              <th key={i} className="text-left font-medium text-neutral-500 border-b border-neutral-200 dark:border-neutral-800 px-2 py-1 whitespace-nowrap" style={{ color: style?.textColor, borderColor: style?.borderColor }}>
+              <th key={i} className={cn("text-left font-medium text-neutral-500 border-b border-neutral-200 dark:border-neutral-800 px-2 py-1 align-bottom", style?.headerWrap === false ? "whitespace-nowrap" : "whitespace-normal break-words min-w-[80px]")} style={{ color: style?.headerTextColor ?? style?.textColor, borderColor: style?.borderColor }}>
                 {c}
               </th>
             ))}

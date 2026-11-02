@@ -35,6 +35,11 @@ export interface WidgetStyleConfig {
   lineWidth?: number;
   barRadius?: number;
   donutInnerRadius?: number;
+  /** Tables / summary tables: header colours, wrapping header text, column widths (px) by column key. */
+  headerBackground?: string;
+  headerTextColor?: string;
+  headerWrap?: boolean;
+  columnWidths?: Record<string, number>;
 }
 
 export interface DashboardBlockConfig {
@@ -541,6 +546,16 @@ const clampStyleNumber = (value: unknown, min: number, max: number, fallback: nu
 
 /** Dashboard configuration is editable JSON (and can be AI-generated), so
  * only allow bounded style primitives before sending values into CSS/SVG. */
+/** Column widths a viewer dragged (px), at most 100 columns, each 48-800 px. */
+function columnWidths(raw: unknown): Record<string, number> | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const out = Object.entries(raw as Record<string, unknown>)
+    .filter((e): e is [string, number] => typeof e[1] === "number" && Number.isFinite(e[1]) && e[0].length <= 300)
+    .slice(0, 100)
+    .map(([k, v]) => [k, Math.min(800, Math.max(48, Math.round(v)))] as const);
+  return out.length ? Object.fromEntries(out) : undefined;
+}
+
 export function normalizeWidgetStyle(raw: unknown): WidgetStyleConfig | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const value = raw as Record<string, unknown>;
@@ -567,6 +582,10 @@ export function normalizeWidgetStyle(raw: unknown): WidgetStyleConfig | undefine
     lineWidth: clampStyleNumber(value.lineWidth, 1, 8, 2),
     barRadius: clampStyleNumber(value.barRadius, 0, 24, 4),
     donutInnerRadius: clampStyleNumber(value.donutInnerRadius, 20, 80, 55),
+    headerBackground: color("headerBackground"),
+    headerTextColor: color("headerTextColor"),
+    headerWrap: typeof value.headerWrap === "boolean" ? value.headerWrap : true,
+    columnWidths: columnWidths(value.columnWidths),
   };
 }
 

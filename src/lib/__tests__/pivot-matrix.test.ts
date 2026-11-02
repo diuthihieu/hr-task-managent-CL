@@ -83,3 +83,14 @@ test("export: one column per row level, the rows shown (collapsed parents withou
     ["Total", "", 16, 2, 18],
   ]);
 });
+
+test("many distinct rows and columns stay fast (cells are indexed, not scanned per output value)", () => {
+  const people2 = field("p", "Person", "text");
+  const code = field("c", "Code", "text");
+  const many = Array.from({ length: 600 }, (_, i) => record(`r${i}`, { p: `person ${i}`, c: `code ${i}`, sys_actual: 1, sys_parent: [] }));
+  const t0 = performance.now();
+  const m = computeMatrix(many, [people2, code, actual, parent], { ...sum, rowFieldIds: ["p"], colFieldIds: ["c"] }, members);
+  const ms = performance.now() - t0;
+  assert.equal(m.total, 600);
+  assert.ok(ms < 800, `${Math.round(ms)} ms for 600 x 600`);
+});

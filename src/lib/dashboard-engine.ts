@@ -120,7 +120,7 @@ export function widgetConfigProblem(type: string, config: DashboardBlockConfig, 
   if (agg !== "count" && agg !== "distinct" && !(config.measureFieldId && ids.has(config.measureFieldId))) return `Choose the value field to ${agg} (Edit widget)`;
   if (config.dimensionFieldId && !ids.has(config.dimensionFieldId)) return "The grouping field no longer exists - choose another (Edit widget)";
   if (config.dimension2FieldId && !ids.has(config.dimension2FieldId)) return "The second grouping field no longer exists - choose another (Edit widget)";
-  if ([...(config.rowFieldIds ?? []), ...(config.colFieldIds ?? [])].some((id) => !ids.has(id))) return "A row or column field no longer exists - choose another (Edit widget)";
+  if (type === "pivot" && [...(config.rowFieldIds ?? []), ...(config.colFieldIds ?? [])].some((id) => !ids.has(id))) return "A row or column field no longer exists - choose another (Edit widget)";
   return null;
 }
 

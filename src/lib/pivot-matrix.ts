@@ -130,20 +130,35 @@ export function computeMatrix(
   if (colFields.length) walkCols(sorted(colRoot), []);
   else columns.push({ labels: ["Value"], subtotal: false, path: "" });
 
-  // Value of a row prefix x column prefix: additive = sum of the full cells under both (person-hours),
-  // otherwise the aggregate of the distinct tasks under both.
-  const under = (prefix: string, path: string) => prefix === "" || path === prefix || path.startsWith(prefix + SEP);
-  const cellEntries = [...cells.entries()].map(([k, recs]) => {
-    const [rp, cp] = k.split("\u0000");
-    return { rp, cp, recs };
-  });
+  // Value of a row prefix x column prefix, pre-aggregated once per cell for every pair of its prefixes
+  // ("" = all): additive = sum of the full cells under both (person-hours), otherwise the aggregate of
+  // the distinct tasks under both. Each output value is then a lookup, not a scan of every cell.
   const agg = (recs: RecordRow[]) => round(aggregate(recs.map(valueOf), measure ? recs.map((r) => getCellValue(r, measure, fields)) : recs.map((r) => r.id), aggFn, recs.length));
+  const prefixes = (path: string) => {
+    const parts = path === "" ? [] : path.split(SEP);
+    return ["", ...parts.map((_, i) => parts.slice(0, i + 1).join(SEP))];
+  };
+  const sums = new Map<string, number>();
+  const tasks = new Map<string, Map<string, RecordRow>>();
+  for (const [k, recs] of cells) {
+    const [rp, cp] = k.split("\u0000");
+    const cellValue = additive ? agg(recs) : 0;
+    for (const r of prefixes(rp))
+      for (const c of prefixes(cp)) {
+        const key = `${r}\u0000${c}`;
+        if (additive) sums.set(key, (sums.get(key) ?? 0) + cellValue);
+        else {
+          const m = tasks.get(key) ?? new Map<string, RecordRow>();
+          for (const rec of recs) m.set(rec.id, rec);
+          tasks.set(key, m);
+        }
+      }
+  }
   const valueAt = (rowPrefix: string, colPrefix: string) => {
-    const hits = cellEntries.filter((e) => under(rowPrefix, e.rp) && under(colPrefix, e.cp));
-    if (additive) return round(hits.reduce((a, e) => a + agg(e.recs), 0));
-    const distinct = new Map<string, RecordRow>();
-    for (const e of hits) for (const r of e.recs) distinct.set(r.id, r);
-    return agg([...distinct.values()]);
+    const key = `${rowPrefix}\u0000${colPrefix}`;
+    if (additive) return round(sums.get(key) ?? 0);
+    const m = tasks.get(key);
+    return m ? agg([...m.values()]) : agg([]);
   };
 
   const toNode = (t: Tree, depth: number): MatrixNode => {

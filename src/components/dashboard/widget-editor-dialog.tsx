@@ -389,6 +389,12 @@ export function WidgetEditorDialog({
                 <ColorControl label={t("db.style.text")} value={draft.config.style?.textColor ?? "#171717"} onChange={(textColor) => patchStyle({ textColor })} />
                 <ColorControl label={t("db.style.border")} value={draft.config.style?.borderColor ?? "#e5e7eb"} onChange={(borderColor) => patchStyle({ borderColor })} />
                 <ColorControl label={t("db.style.grid")} value={draft.config.style?.gridColor ?? "#d1d5db"} onChange={(gridColor) => patchStyle({ gridColor })} />
+                {(isPivot || isTable) && (
+                  <>
+                    <ColorControl label={t("db.style.headerBg")} value={draft.config.style?.headerBackground ?? "#ffffff"} onChange={(headerBackground) => patchStyle({ headerBackground })} />
+                    <ColorControl label={t("db.style.headerText")} value={draft.config.style?.headerTextColor ?? "#737373"} onChange={(headerTextColor) => patchStyle({ headerTextColor })} />
+                  </>
+                )}
               </div>
 
               <div className="grid grid-cols-2 gap-2">
@@ -465,6 +471,7 @@ export function WidgetEditorDialog({
               </div>
 
               <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-neutral-600 dark:text-neutral-300">
+                {(isPivot || isTable) && <ToggleStyle label={t("db.style.headerWrap")} checked={draft.config.style?.headerWrap !== false} onChange={(headerWrap) => patchStyle({ headerWrap })} />}
                 <ToggleStyle label={t("db.style.legend")} checked={draft.config.style?.showLegend !== false} onChange={(showLegend) => patchStyle({ showLegend })} />
                 <ToggleStyle label={t("db.style.gridLines")} checked={draft.config.style?.showGrid !== false} onChange={(showGrid) => patchStyle({ showGrid })} />
                 <ToggleStyle label={t("db.style.dataLabels")} checked={draft.config.style?.showDataLabels === true} onChange={(showDataLabels) => patchStyle({ showDataLabels })} />

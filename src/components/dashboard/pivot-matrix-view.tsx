@@ -36,6 +36,7 @@ export function PivotMatrixView({
   style,
   levels,
   onLevels,
+  onColumnWidths,
 }: {
   matrix: MatrixTable;
   title: string;
@@ -43,6 +44,8 @@ export function PivotMatrixView({
   style?: WidgetStyleConfig;
   levels: PivotLevels | null;
   onLevels: (levels: PivotLevels | null) => void;
+  /** Called when the viewer finishes dragging a column edge (editors save it for everyone). */
+  onColumnWidths?: (widths: Record<string, number>) => void;
 }) {
   const { t } = useT();
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -51,6 +54,35 @@ export function PivotMatrixView({
   const columns = hasCols ? matrix.columns : [];
   const headRows = Math.max(1, matrix.colFields.length);
   const totalLabel = t("db.pivot.total");
+  // D5: column widths the viewer drags (seeded from the widget's saved ones), keyed by column.
+  const [widths, setWidths] = useState<Record<string, number>>(style?.columnWidths ?? {});
+  const keyOf = (c: { labels: string[]; subtotal: boolean }) => `c:${c.labels.join("›")}${c.subtotal ? ":t" : ""}`;
+  // With dragged widths the table is "w-max" (not stretched to the card), so each sized column keeps its width.
+  const sized = (key: string): React.CSSProperties | undefined => (widths[key] ? { width: widths[key], minWidth: widths[key], maxWidth: widths[key] } : undefined);
+  function startResize(key: string, e: React.PointerEvent<HTMLElement>) {
+    e.preventDefault();
+    e.stopPropagation();
+    const th = (e.currentTarget as HTMLElement).parentElement!;
+    const start = e.clientX;
+    const base = widths[key] ?? th.getBoundingClientRect().width;
+    let latest = widths;
+    const move = (ev: PointerEvent) => {
+      latest = { ...latest, [key]: Math.min(800, Math.max(48, Math.round(base + ev.clientX - start))) };
+      setWidths(latest);
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      onColumnWidths?.(latest);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  }
+  const handle = (key: string) => (
+    <span role="separator" aria-orientation="vertical" onPointerDown={(e) => startResize(key, e)} className="absolute right-0 top-0 h-full w-1.5 cursor-col-resize hover:bg-indigo-400/60" data-testid="pivot-resize" data-col={key} />
+  );
+  const wrap = style?.headerWrap !== false;
+  const thStyle: React.CSSProperties = { color: style?.headerTextColor };
 
   const toggle = (path: string) =>
     setExpanded((cur) => {
@@ -77,13 +109,13 @@ export function PivotMatrixView({
   }
 
   // Header rows: a column group spans its children; a group's subtotal spans the rows below its level.
-  const header: { label: string; colSpan: number; rowSpan: number; subtotal?: boolean }[][] = Array.from({ length: headRows }, () => []);
+  const header: { label: string; colSpan: number; rowSpan: number; subtotal?: boolean; col?: number }[][] = Array.from({ length: headRows }, () => []);
   if (hasCols) {
     for (let r = 0; r < headRows; r++) {
       for (let i = 0; i < columns.length; ) {
         const c = columns[i];
         if (c.subtotal && c.labels.length === r + 1) {
-          header[r].push({ label: `${c.labels[r]} · ${totalLabel}`, colSpan: 1, rowSpan: headRows - r, subtotal: true });
+          header[r].push({ label: `${c.labels[r]} · ${totalLabel}`, colSpan: 1, rowSpan: headRows - r, subtotal: true, col: i });
           i++;
           continue;
         }
@@ -98,7 +130,7 @@ export function PivotMatrixView({
           if (d.labels.length <= r || d.labels.slice(0, r + 1).join("\u0001") !== prefix || (d.subtotal && d.labels.length === r + 1)) break;
           span++;
         }
-        header[r].push({ label: c.labels[r], colSpan: span, rowSpan: 1 });
+        header[r].push({ label: c.labels[r], colSpan: span, rowSpan: 1, ...(span === 1 && r === headRows - 1 ? { col: i } : {}) });
         i += span;
       }
     }
@@ -111,7 +143,7 @@ export function PivotMatrixView({
       const open = expanded.has(n.path);
       rows.push(
         <tr key={n.path} className={cn(n.children && "font-medium", n.depth > 0 && "text-neutral-600 dark:text-neutral-300")} data-testid="pivot-row" data-depth={n.depth} data-label={n.label}>
-          <td className="px-2 py-1 border-b border-neutral-100 dark:border-neutral-900 whitespace-nowrap text-left" style={{ paddingLeft: 8 + n.depth * 16 }}>
+          <td className="px-2 py-1 border-b border-neutral-100 dark:border-neutral-900 whitespace-nowrap text-left overflow-hidden text-ellipsis" style={{ ...sized("__rows"), paddingLeft: 8 + n.depth * 16 }}>
             {n.children ? (
               <button type="button" onClick={() => toggle(n.path)} className="inline-flex items-center gap-1 hover:text-indigo-600" aria-expanded={open} data-testid="pivot-toggle">
                 {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -122,11 +154,11 @@ export function PivotMatrixView({
             )}
           </td>
           {columns.map((c, j) => (
-            <td key={j} className={cn(cellCls, c.subtotal && "bg-neutral-50/70 dark:bg-neutral-800/40")}>
+            <td key={j} className={cn(cellCls, c.subtotal && "bg-neutral-50/70 dark:bg-neutral-800/40")} style={sized(keyOf(c))}>
               {num(n.values[j])}
             </td>
           ))}
-          <td className={cn(cellCls, "font-medium")}>{num(n.total)}</td>
+          <td className={cn(cellCls, "font-medium")} style={sized("__total")}>{num(n.total)}</td>
         </tr>,
       );
       if (n.children && open) walk(n.children);
@@ -198,23 +230,29 @@ export function PivotMatrixView({
         {!matrix.rows.length ? (
           <div className="h-full flex items-center justify-center text-xs text-neutral-400">{t("db.pivot.empty")}</div>
         ) : (
-          <table className="w-full text-xs border-collapse" style={{ color: style?.textColor }}>
-            <thead className="sticky top-0 bg-white dark:bg-neutral-900" style={{ backgroundColor: style?.backgroundColor }}>
+          <table className={cn("text-xs border-collapse", Object.keys(widths).length ? "w-max" : "w-full")} style={{ color: style?.textColor }}>
+            <thead className="sticky top-0 bg-white dark:bg-neutral-900" style={{ backgroundColor: style?.headerBackground ?? style?.backgroundColor }} data-testid="pivot-head">
               {header.map((cells, r) => (
                 <tr key={r}>
                   {r === 0 && (
-                    <th rowSpan={headRows} className="font-medium text-neutral-500 border-b border-neutral-200 dark:border-neutral-800 px-2 py-1 text-left align-bottom">
+                    <th rowSpan={headRows} className={cn("relative font-medium text-neutral-500 border-b border-neutral-200 dark:border-neutral-800 px-2 py-1 text-left align-bottom", wrap ? "whitespace-normal break-words" : "whitespace-nowrap")} style={{ ...thStyle, ...sized("__rows") }} data-col="__rows">
                       {matrix.rowFields.join(" › ")}
+                      {handle("__rows")}
                     </th>
                   )}
-                  {cells.map((h, i) => (
-                    <th key={i} colSpan={h.colSpan} rowSpan={h.rowSpan} className={cn("font-medium text-neutral-500 border-b border-neutral-200 dark:border-neutral-800 px-2 py-1 text-right", h.colSpan > 1 && "text-center")}>
-                      {h.label}
-                    </th>
-                  ))}
+                  {cells.map((h, i) => {
+                    const key = h.col !== undefined ? keyOf(columns[h.col]) : undefined;
+                    return (
+                      <th key={i} colSpan={h.colSpan} rowSpan={h.rowSpan} className={cn("relative font-medium text-neutral-500 border-b border-neutral-200 dark:border-neutral-800 px-2 py-1 text-right align-bottom", h.colSpan > 1 && "text-center", wrap ? "whitespace-normal break-words" : "whitespace-nowrap")} style={{ ...thStyle, ...(key ? sized(key) : {}) }} data-col={key}>
+                        {h.label}
+                        {key && handle(key)}
+                      </th>
+                    );
+                  })}
                   {r === 0 && (
-                    <th rowSpan={headRows} className="font-medium text-neutral-500 border-b border-neutral-200 dark:border-neutral-800 px-2 py-1 text-right align-bottom">
+                    <th rowSpan={headRows} className={cn("relative font-medium text-neutral-500 border-b border-neutral-200 dark:border-neutral-800 px-2 py-1 text-right align-bottom", wrap ? "whitespace-normal break-words" : "whitespace-nowrap")} style={{ ...thStyle, ...sized("__total") }} data-col="__total">
                       {hasCols ? totalLabel : valueLabel}
+                      {handle("__total")}
                     </th>
                   )}
                 </tr>

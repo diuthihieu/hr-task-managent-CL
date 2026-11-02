@@ -123,3 +123,14 @@ test("summary table level fields are only checked on summary tables (a chart mad
   assert.equal(widgetConfigProblem("bar", { dimensionFieldId: "sys_category", rowFieldIds: ["gone"], colFieldIds: ["gone2"] }, fields), null);
   assert.match(widgetConfigProblem("pivot", { dimensionFieldId: "sys_category", rowFieldIds: ["sys_category", "gone"] }, fields) ?? "", /no longer exists/);
 });
+
+test("table header style: colours, wrapping and column widths are kept and bounded", async () => {
+  const { normalizeWidgetStyle } = await import("../dashboard-engine");
+  const s = normalizeWidgetStyle({ headerBackground: "#1e3a8a", headerTextColor: "#ffffff", headerWrap: false, columnWidths: { __rows: 220, "Done": 30, "x": 9999, bad: "wide" } })!;
+  assert.deepEqual([s.headerBackground, s.headerTextColor, s.headerWrap], ["#1e3a8a", "#ffffff", false]);
+  assert.deepEqual(s.columnWidths, { __rows: 220, Done: 48, x: 800 }, "widths clamped to 48-800 px, junk dropped");
+  const d = normalizeWidgetStyle({ headerBackground: "red; background:url(x)" })!;
+  assert.equal(d.headerBackground, undefined, "only #hex colours");
+  assert.equal(d.headerWrap, true, "headers wrap by default");
+  assert.equal(Object.keys(normalizeWidgetStyle({ columnWidths: Object.fromEntries(Array.from({ length: 200 }, (_, i) => [`c${i}`, 100])) })!.columnWidths ?? {}).length, 100, "at most 100 widths");
+});

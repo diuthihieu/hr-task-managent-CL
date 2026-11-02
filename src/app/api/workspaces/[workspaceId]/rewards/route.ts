@@ -13,6 +13,7 @@ type P = { workspaceId: string };
 export const GET = route<P>(async (_req, { params }) => {
   const { workspaceId } = await params;
   const { canManage } = await recoContext(workspaceId, { sync: false });
+  // Unpaged on purpose: rewards of one workspace (catalog).
   const rows = await prisma.reward.findMany({ where: { workspaceId, deletedAt: null, ...(canManage ? {} : { active: true }) }, select: REWARD_SELECT, orderBy: [{ sortOrder: "asc" }, { pointsCost: "asc" }] });
   return NextResponse.json(rows.map(serializeReward));
 });

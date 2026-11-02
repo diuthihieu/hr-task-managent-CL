@@ -11,6 +11,7 @@ import { extractBufferText, isExtractable, MAX_DOC_CHARS } from "@/lib/ai/extrac
 import { openAttachment } from "@/lib/storage";
 import { logActivity } from "@/lib/activity";
 import { sanitizeCommentBody } from "@/lib/comment-rich-text-server";
+import { assertCursor, pageArgs, readPage, toPage } from "@/lib/pagination";
 
 type P = { pageId: string };
 
@@ -30,13 +31,35 @@ const serialize = (c: { createdAt: Date; updatedAt: Date; attachments: { id: str
   attachments: c.attachments.map((a) => ({ ...a, downloadUrl: `/api/attachments/${a.id}/download` })),
 });
 
-/** Comments on a wiki page, oldest first (anyone who can read the page). */
-export const GET = route<P>(async (_req, { params }) => {
+/** Replies shown per comment; `replyCount` on the comment tells how many there are in all. */
+const MAX_REPLIES = 100;
+
+/**
+ * Comments on a wiki page (anyone who can read the page): `{ items, nextCursor }`, a page of
+ * top-level comments, newest page first (`?cursor=` loads older ones), in display order - oldest
+ * first, each followed by its replies (at most 100). Deleting a comment keeps its replies (product
+ * decision), so a reply whose comment was deleted counts as a top-level comment.
+ */
+export const GET = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { pageId } = await params;
   await requireWorkspaceRole(user, await workspaceOfWikiPage(pageId), "viewer");
-  const rows = await prisma.wikiComment.findMany({ where: { wikiPageId: pageId, deletedAt: null }, orderBy: { createdAt: "asc" }, select: WIKI_COMMENT_SELECT });
-  return NextResponse.json((await withCurrentMentionNames(rows)).map(serialize));
+  const page = readPage(req);
+  const roots = { wikiPageId: pageId, deletedAt: null, OR: [{ parentCommentId: null }, { parent: { deletedAt: { not: null } } }] };
+  if (page.cursor) assertCursor(await prisma.wikiComment.findFirst({ where: { ...roots, id: page.cursor }, select: { id: true } }));
+  const rows = await prisma.wikiComment.findMany({
+    where: roots,
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    ...pageArgs(page),
+    select: {
+      ...WIKI_COMMENT_SELECT,
+      replies: { where: { deletedAt: null }, orderBy: [{ createdAt: "asc" }, { id: "asc" }], take: MAX_REPLIES, select: WIKI_COMMENT_SELECT },
+      _count: { select: { replies: { where: { deletedAt: null } } } },
+    },
+  });
+  const { items, nextCursor } = toPage(rows, page);
+  const flat = items.reverse().flatMap(({ replies, _count, ...comment }) => [{ ...comment, replyCount: _count.replies }, ...replies]);
+  return NextResponse.json({ items: (await withCurrentMentionNames(flat)).map(serialize), nextCursor });
 });
 
 /**
@@ -63,6 +86,7 @@ export const POST = route<P>(async (req, { params }) => {
   if (body.parentCommentId && !parent)
     throw badRequest("The comment you reply to is gone");
   const files = body.attachmentIds?.length
+    // Unpaged on purpose: ids from the request (max 10 files).
     ? await prisma.attachment.findMany({ where: { id: { in: body.attachmentIds }, wikiPageId: pageId, uploadedById: user.id, wikiCommentId: null, deletedAt: null }, select: { id: true, fileName: true, url: true, storageProvider: true } })
     : [];
   if (files.length !== (body.attachmentIds?.length ?? 0)) throw badRequest("Some files are missing - upload them again");

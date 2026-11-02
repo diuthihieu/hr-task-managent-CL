@@ -38,8 +38,9 @@ export async function uploadTaskAttachment(taskId: string, file: File): Promise<
   for (let attempt = 0; attempt < 8; attempt++) {
     const response = await fetch(`/api/tasks/${taskId}/attachments`, { cache: "no-store" });
     if (response.ok) {
-      const rows = await response.json() as Array<AttachmentRow & { uploadKey?: string }>;
-      const match = rows.find((row) => row.uploadKey === blob.pathname);
+      // Newest first, so a file that was just uploaded is on the first page.
+      const { items } = await response.json() as { items: Array<AttachmentRow & { uploadKey?: string }> };
+      const match = items.find((row) => row.uploadKey === blob.pathname);
       if (match) return match;
     }
     await new Promise((resolve) => setTimeout(resolve, 250 * (attempt + 1)));

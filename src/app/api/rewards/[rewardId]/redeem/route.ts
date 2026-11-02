@@ -26,7 +26,9 @@ export const POST = route<P>(async (req, { params }) => {
     return tx.rewardRedemption.create({ data: { workspaceId: reward.workspaceId, rewardId, userId: user.id, points: reward.pointsCost, note: note || null } });
   });
   // Tell the people who approve.
+  // Unpaged on purpose: owners and admins of one workspace.
   const admins = await prisma.workspaceMember.findMany({ where: { workspaceId: reward.workspaceId, role: { in: ["owner", "admin"] } }, select: { userId: true } });
+  // Unpaged on purpose: recognition managers of one workspace.
   const managers = await prisma.recognitionManager.findMany({ where: { workspaceId: reward.workspaceId }, select: { userId: true } });
   const to = [...new Set([...admins, ...managers].map((m) => m.userId))].filter((id) => id !== user.id);
   await prisma.notification.createMany({ data: to.map((userId) => ({ userId, workspaceId: reward.workspaceId, actorId: user.id, type: "reward_request", title: reward.name, body: note || null, data: { redemptionId: red.id, points: reward.pointsCost }, link: `${base}/recognition?tab=manage&request=${red.id}` })) });

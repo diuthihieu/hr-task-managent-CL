@@ -10,6 +10,7 @@ export const GET = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { workspaceId } = await params;
   await requireWorkspaceRole(user, workspaceId, "admin");
+  // Unpaged on purpose: pending invitations only (capped by the invite rate limit).
   const rows = await prisma.workspaceInvitation.findMany({
     where: { workspaceId, status: "pending" },
     orderBy: { createdAt: "desc" },

@@ -18,6 +18,8 @@ export interface TaskCommentItem {
   createdAt: string;
   reactions: CommentReactionSummary[];
   user: { id: string; name: string; avatarColor: string } | null;
+  /** Top-level comments: all replies, of which at most 100 are loaded with the page. */
+  replyCount?: number;
 }
 
 export function TaskCommentThread({
@@ -68,10 +70,18 @@ export function TaskCommentThread({
               onReactionsChange={onReactionsChange}
             />
           ))}
+          <HiddenReplies comment={comment} shown={(replies.get(comment.id) ?? []).length} />
         </div>
       ))}
     </div>
   );
+}
+
+function HiddenReplies({ comment, shown }: { comment: TaskCommentItem; shown: number }) {
+  const { t } = useT();
+  const hidden = (comment.replyCount ?? 0) - shown;
+  if (hidden <= 0) return null;
+  return <p className="ml-9 text-xs text-neutral-400">{t("common.moreReplies", { count: hidden })}</p>;
 }
 
 function TaskComment({

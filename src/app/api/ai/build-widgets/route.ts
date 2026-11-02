@@ -164,6 +164,7 @@ ${JSON.stringify(catalog)}`;
     } else if (body.mode === "replace") {
       await tx.dashboardWidget.deleteMany({ where: { dashboardId } });
     }
+    // Unpaged on purpose: widgets of one dashboard (a screenful).
     const existing = await tx.dashboardWidget.findMany({ where: { dashboardId }, select: { y: true, h: true } });
     const top = existing.reduce((m, b) => Math.max(m, b.y + b.h), 0);
     const rows = [];

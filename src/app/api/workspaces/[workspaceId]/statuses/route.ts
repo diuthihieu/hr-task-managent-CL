@@ -11,6 +11,7 @@ export const GET = route<P>(async (_req, { params }) => {
   const user = await requireUser();
   const { workspaceId } = await params;
   await requireWorkspaceRole(user, workspaceId, "viewer");
+  // Unpaged on purpose: statuses of the workspace (configuration).
   const rows = await prisma.status.findMany({
     where: { workspaceId },
     orderBy: { sortOrder: "asc" },

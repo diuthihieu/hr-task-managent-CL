@@ -157,8 +157,8 @@ test("renames: mentions show the current name, the AI knows former names; replie
     const r2 = await contributor.post<{ id: string; parentCommentId: string }>(`/api/tasks/${s.r6task}/comments`, { body: "thanks", parentCommentId: r1.body.id });
     assert.equal(r2.status, 201);
     assert.equal(r2.body.parentCommentId, root.body.id, "a reply to a reply joins the root thread");
-    const list = await contributor.get<{ id: string; body: string }[]>(`/api/tasks/${s.r6task}/comments`);
-    assert.equal(list.body.find((c) => c.id === root.body.id)?.body, `@[Vivi Renamed](${s.viewerId}) please check`, "mentions show the current name");
+    const list = await contributor.get<{ items: { id: string; body: string }[] }>(`/api/tasks/${s.r6task}/comments`);
+    assert.equal(list.body.items.find((c) => c.id === root.body.id)?.body, `@[Vivi Renamed](${s.viewerId}) please check`, "mentions show the current name");
     const a = await ask(admin, { kind: "assistant", workspaceId: s.ws, message: `What is ${old} working on?` });
     assert.equal(a.status, 200, a.text);
     const system = (await lastModelRequest()).body.systemInstruction!.parts[0].text;

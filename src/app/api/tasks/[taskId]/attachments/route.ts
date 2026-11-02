@@ -6,6 +6,7 @@ import { notifyTaskDetail } from "@/lib/notifications";
 import { assertUploadAllowed, assertUploadQuota, safeContentType, uploadAttachment, deleteAttachmentBlob, safeFileName } from "@/lib/storage";
 import type { AttachmentRow } from "@/types";
 import { extractDocText, isExtractable } from "@/lib/ai/extract";
+import { assertCursor, pageArgs, readPage, toPage } from "@/lib/pagination";
 
 type P = { taskId: string };
 
@@ -16,12 +17,17 @@ const toRow = (a: Row): AttachmentRow & { uploadKey: string } => {
 };
 const select = { id: true, fileName: true, contentType: true, sizeBytes: true, storageKey: true, createdAt: true, uploadedBy: { select: { id: true, name: true } } } as const;
 
-export const GET = route<P>(async (_req, { params }) => {
+/** `{ items, nextCursor }`, newest first (the upload flow looks for the new file on the first page). */
+export const GET = route<P>(async (req, { params }) => {
   const user = await requireUser();
   const { taskId } = await params;
   await requireWorkspaceRole(user, await workspaceOfTask(taskId), "viewer");
-  const rows = await prisma.attachment.findMany({ where: { taskId, deletedAt: null }, orderBy: { createdAt: "desc" }, select });
-  return NextResponse.json(rows.map(toRow));
+  const page = readPage(req);
+  const where = { taskId, deletedAt: null };
+  if (page.cursor) assertCursor(await prisma.attachment.findFirst({ where: { ...where, id: page.cursor }, select: { id: true } }));
+  const rows = await prisma.attachment.findMany({ where, orderBy: [{ createdAt: "desc" }, { id: "desc" }], ...pageArgs(page), select });
+  const { items, nextCursor } = toPage(rows, page);
+  return NextResponse.json({ items: items.map(toRow), nextCursor });
 });
 
 /** multipart/form-data with a single `file` part. */

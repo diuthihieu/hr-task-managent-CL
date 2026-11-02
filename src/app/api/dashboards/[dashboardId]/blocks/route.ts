@@ -22,6 +22,7 @@ export const POST = route<P>(async (req, { params }) => {
   const ctx = await requireWorkspaceRole(user, await workspaceOfDashboard(dashboardId), "editor");
   const body = widgetSchema.parse(await readJson(req));
   if (body.config) await assertWidgetSource(user, ctx.workspaceId, body.config);
+  // Unpaged on purpose: widgets of one dashboard (a screenful).
   const existing = await prisma.dashboardWidget.findMany({ where: { dashboardId }, select: { y: true, h: true } });
   // Stack new widgets below the tallest existing one so they never overlap.
   const maxY = existing.reduce((m, b) => Math.max(m, b.y + b.h), 0);

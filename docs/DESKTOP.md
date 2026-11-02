@@ -149,13 +149,47 @@ warns, and installed apps will reject the update.
 Keep the private key backed up: losing it means existing installs can't
 verify future updates, and users must reinstall manually.
 
-## Code signing (recommended before wide rollout)
+## Code signing (Authenticode) - prepared, waiting for a certificate
 
-Unsigned installers trigger Windows SmartScreen ("Windows protected your PC").
-Buy an OV/EV code-signing certificate (or use Azure Trusted Signing), then set
-`bundle.windows.certificateThumbprint` / `timestampUrl` in
-`src-tauri/tauri.conf.json` or a `signCommand`, and import the certificate in
-the workflow before `tauri build`. See https://v2.tauri.app/distribute/sign/windows/.
+Today the `.exe` and `.msi` are **not code-signed**: `Get-AuthenticodeSignature` reports `NotSigned`
+and SmartScreen shows "Windows protected your PC". The updater signature (minisign) protects automatic
+updates only, not the first install. IT policies (AppLocker, Intune, EDR) often block unsigned files.
+
+**Company task (not code):** since 1 June 2023 the private key of every new OV/EV code-signing
+certificate must live on hardware or an HSM, so a `.pfx` can't be imported into a GitHub runner, and the
+old `certificateThumbprint` approach no longer works. Choose a remote signing service:
+
+| Option | Login from CI | Notes |
+| --- | --- | --- |
+| Azure Trusted Signing | OIDC (`azure/login`, no stored secret) | Cheapest; check first that a Vietnamese legal entity is eligible (country list and organisation validation) |
+| DigiCert KeyLocker, SSL.com eSigner | API key / credentials in the `release` environment's secrets | OV or EV certificate from the CA, key held in their cloud HSM |
+
+Record here: provider, certificate subject, expiry date, who renews it.
+
+**Wiring (already in the release job, `.github/workflows/desktop-build.yml`):**
+
+1. Add the provider's login/tool-install step to the `release` job before *Build installers*. For Azure:
+   `permissions: id-token: write` on the job, and a federated credential with subject
+   `repo:diuthihieu/hr-task-managent-CL:environment:release`.
+2. Set the `release` environment **variable** `WINDOWS_SIGN_COMMAND` to the provider's sign command with
+   `%1` for the file, e.g. `trusted-signing-cli -e https://weu.codesigning.azure.net -a <account> -c <profile> -d woli %1`.
+   The command must timestamp the signature (the provider tools do by default). Tauri splits it on spaces,
+   so no argument may contain one.
+3. That's it. `desktop/scripts/prepare-signing-config.mjs` turns the variable into
+   `tauri.signing.generated.json`, merged with `--config` into the release build only. Tauri signs the
+   app and both installers while bundling, **before** it writes the updater `.sig`, so the `.sig`
+   matches the signed installer. Never sign in a later job: that would break the `.sig`.
+4. The step *Check Authenticode signatures* then fails the release unless both the `.exe` and the `.msi`
+   are `Valid` and timestamped. Without the variable, releases still build, unsigned, with a warning.
+
+Pull-request and branch builds (the `ci` job) never sign and can't read signing settings.
+
+After the first signed beta release, check on Windows:
+`Get-AuthenticodeSignature .\woli_<version>_x64-setup.exe | Format-List Status, SignerCertificate, TimeStamperCertificate`
+(and the same for the `.msi`), and that the `.sig` verifies against the signed installer with
+`minisign -V -m <installer> -x <decoded .sig> -p <decoded public key>`.
+An EV certificate no longer skips SmartScreen's reputation check, so expect the warning to fade with
+downloads rather than vanish on day one.
 
 ## Limitations / next steps
 

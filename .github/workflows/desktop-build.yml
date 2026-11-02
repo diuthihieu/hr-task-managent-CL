@@ -143,18 +143,29 @@ jobs:
           node ../scripts/prepare-shell.mjs
           cargo test --locked
 
+      # Authenticode signing (BUG-27): set the release environment variable WINDOWS_SIGN_COMMAND to the
+      # signing provider's command and add its login step above (docs/DESKTOP.md, Code signing).
+      # Tauri signs while bundling, so the updater .sig below is made over the signed installer.
       - name: Build installers
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           TAURI_UPDATER_PUBKEY: ${{ vars.TAURI_UPDATER_PUBKEY }}
+          WINDOWS_SIGN_COMMAND: ${{ vars.WINDOWS_SIGN_COMMAND }}
         run: |
+          extra=()
+          if [ -n "$WINDOWS_SIGN_COMMAND" ]; then
+            node scripts/prepare-signing-config.mjs
+            extra=(-- --config src-tauri/tauri.signing.generated.json)
+          else
+            echo "::warning::Installers are not code-signed: WINDOWS_SIGN_COMMAND is not set (docs/DESKTOP.md, Code signing)."
+          fi
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -n "$TAURI_UPDATER_PUBKEY" ]; then
             echo "Auto-update signing enabled"
-            npm run build:updater
+            npm run build:updater "${extra[@]}"
           else
             echo "::notice::Auto-update signing not configured - building without updater artifacts"
-            npm run build
+            npm run build "${extra[@]}"
           fi
 
       - name: Collect installers
@@ -168,6 +179,21 @@ jobs:
           sig="$nsis.sig"
           if [ -f "$sig" ]; then echo "sig=desktop/$sig" >> "$GITHUB_OUTPUT"; fi
           ls -la src-tauri/target/release/bundle/nsis src-tauri/target/release/bundle/msi
+
+      - name: Check Authenticode signatures
+        if: ${{ vars.WINDOWS_SIGN_COMMAND != '' }}
+        shell: pwsh
+        working-directory: .
+        env:
+          NSIS: ${{ steps.files.outputs.nsis }}
+          MSI: ${{ steps.files.outputs.msi }}
+        run: |
+          foreach ($f in @($env:NSIS, $env:MSI)) {
+            $s = Get-AuthenticodeSignature $f
+            Write-Host "$f : $($s.Status) / $($s.SignerCertificate.Subject) / timestamp: $($s.TimeStamperCertificate.Subject)"
+            if ($s.Status -ne 'Valid') { Write-Host "::error::$f signature is $($s.Status)"; exit 1 }
+            if ($null -eq $s.TimeStamperCertificate) { Write-Host "::error::$f has no timestamp"; exit 1 }
+          }
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

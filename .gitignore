@@ -53,6 +53,7 @@ next-env.d.ts
 /desktop/src-tauri/gen
 /desktop/shell/config.js
 /desktop/src-tauri/tauri.updater.generated.json
+/desktop/src-tauri/tauri.signing.generated.json
 
 # Playwright
 /test-results/

@@ -23,6 +23,8 @@ test("summary table: header colours, wrapping header, drag a column wider and it
     config: { dataSource: { projectId: project.id }, dimensionFieldId: "sys_category", measureFieldId: "sys_actual", aggregation: "sum", style: { headerBackground: "#1e3a8a", headerTextColor: "#ffffff" } },
   });
 
+  const fields = (await (await request.get(`/api/projects/${project.id}`)).json()).fields as { id: string; name: string }[];
+  const actualName = fields.find((f) => f.id === "sys_actual")!.name;
   await page.goto(`/w/${seed.slug}/dash/${dash.id}`);
   const head = page.getByTestId("pivot-head");
   await expect(head).toBeVisible({ timeout: 30_000 });
@@ -31,6 +33,19 @@ test("summary table: header colours, wrapping header, drag a column wider and it
   await expect(firstTh).toHaveCSS("color", "rgb(255, 255, 255)");
   await expect(firstTh).toHaveCSS("white-space", "normal");
 
+  // The value column's header becomes the field's name once the dashboard's field list has loaded,
+  // which re-flows the columns: wait for it, then until the column stops moving, before grabbing its edge.
+  await expect(head).toContainText(actualName);
+  const settled = async (loc: typeof firstTh) =>
+    expect
+      .poll(async () => {
+        const a = (await loc.boundingBox())!;
+        await page.waitForTimeout(250);
+        const b = (await loc.boundingBox())!;
+        return Math.abs(a.x - b.x) + Math.abs(a.width - b.width);
+      })
+      .toBeLessThan(0.5);
+  await settled(firstTh);
   const before = (await firstTh.boundingBox())!.width;
   const grip = firstTh.getByTestId("pivot-resize");
   const box = (await grip.boundingBox())!;
@@ -49,6 +64,8 @@ test("summary table: header colours, wrapping header, drag a column wider and it
   await page.reload();
   await expect(page.getByTestId("pivot-head").locator("th[data-col='__rows']")).toBeVisible({ timeout: 30_000 });
   const th = page.getByTestId("pivot-head").locator("th[data-col='__rows']");
+  await expect(page.getByTestId("pivot-head")).toContainText(actualName);
+  await settled(th);
   expect(Math.abs((await th.boundingBox())!.width - widened)).toBeLessThan(4);
 
   // The table doesn't stretch sized columns: dragging an edge left makes the column narrower by that much.

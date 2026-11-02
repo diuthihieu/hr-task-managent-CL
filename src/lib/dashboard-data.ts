@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { HttpError, hiddenProjectIds, type SessionUser } from "@/lib/authz";
+import { appendSources, mergeSource, type Source } from "@/lib/data-combine";
 import { mergeFilters, widgetConfigProblem, parseBlockConfig, resolveCrossFilterConditions, type CrossFilter, type DashboardBlockConfig } from "@/lib/dashboard-engine";
 import { loadProjectGrid } from "@/lib/task-grid";
 import type { FieldRow, RecordRow } from "@/types";
@@ -34,7 +35,7 @@ export async function loadBlockData(
   if (!project || (await hiddenProjectIds(user)).has(projectId)) return { error: "Data source no longer exists" };
 
   const [grid, view, members] = await Promise.all([
-    loadProjectGrid(projectId),
+    loadCombinedGrid(user, workspaceId, projectId, config.dataSource ?? {}),
     config.dataSource?.viewId ? prisma.view.findFirst({ where: { id: config.dataSource.viewId, projectId } }) : Promise.resolve(null),
     prisma.workspaceMember.findMany({ where: { workspaceId }, include: { user: { select: { id: true, name: true, avatarColor: true } } } }),
   ]);
@@ -55,12 +56,42 @@ export async function loadBlockData(
   };
 }
 
-/** A widget may only point at a project of its own workspace that the author can see. */
+/** Projects a widget reads from may at most be this many (main + appended + merged). */
+const MAX_SOURCES = 10;
+
+/** The main project's grid, with appended projects stacked under it and a merged one joined in (U8b). */
+async function loadCombinedGrid(user: SessionUser, workspaceId: string, projectId: string, ds: NonNullable<DashboardBlockConfig["dataSource"]>) {
+  const grid = await loadProjectGrid(projectId);
+  const extra = [...(ds.appendProjectIds ?? []), ...(ds.merge ? [ds.merge.projectId] : [])];
+  if (!grid || !extra.length) return grid;
+  // Only live projects of this workspace the viewer may see; others are skipped silently.
+  const hidden = await hiddenProjectIds(user);
+  const projects = await prisma.project.findMany({ where: { id: { in: [projectId, ...extra].slice(0, MAX_SOURCES) }, workspaceId, deletedAt: null }, select: { id: true, name: true } });
+  const nameOf = new Map(projects.filter((p) => !hidden.has(p.id)).map((p) => [p.id, p.name]));
+  const source = async (id: string): Promise<Source | null> => {
+    if (!nameOf.has(id)) return null;
+    const g = await loadProjectGrid(id);
+    return g ? { name: nameOf.get(id)!, fields: g.fields, records: g.records } : null;
+  };
+  let combined: Source = { name: nameOf.get(projectId) ?? "", fields: grid.fields, records: grid.records };
+  const appended = (await Promise.all((ds.appendProjectIds ?? []).filter((id) => id !== projectId).map(source))).filter((x): x is Source => !!x);
+  if (appended.length) combined = appendSources(combined, appended);
+  if (ds.merge) {
+    const right = await source(ds.merge.projectId);
+    if (right) combined = mergeSource(combined, right, ds.merge);
+  }
+  return { ...grid, fields: combined.fields, records: combined.records };
+}
+
+/** A widget may only point at projects of its own workspace that the author can see. */
 export async function assertWidgetSource(user: SessionUser, workspaceId: string, config: unknown) {
-  const ds = (config as { dataSource?: { projectId?: unknown; viewId?: unknown } } | undefined)?.dataSource;
+  const ds = (config as { dataSource?: { projectId?: unknown; viewId?: unknown; appendProjectIds?: unknown; merge?: { projectId?: unknown } } } | undefined)?.dataSource;
   const projectId = typeof ds?.projectId === "string" ? ds.projectId : null;
   if (!projectId) return;
-  const ok = /^[0-9a-f-]{36}$/i.test(projectId) && (await prisma.project.findFirst({ where: { id: projectId, workspaceId, deletedAt: null }, select: { id: true } }));
-  if (!ok || (await hiddenProjectIds(user)).has(projectId)) throw new HttpError(400, "Unknown data source project");
+  const ids = [projectId, ...(Array.isArray(ds?.appendProjectIds) ? ds.appendProjectIds : []), ...(ds?.merge ? [ds.merge.projectId] : [])];
+  if (ids.length > MAX_SOURCES || ids.some((id) => typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id))) throw new HttpError(400, "Unknown data source project");
+  const found = await prisma.project.count({ where: { id: { in: ids as string[] }, workspaceId, deletedAt: null } });
+  const hidden = await hiddenProjectIds(user);
+  if (found !== new Set(ids).size || ids.some((id) => hidden.has(id as string))) throw new HttpError(400, "Unknown data source project");
   if (typeof ds?.viewId === "string" && !(await prisma.view.findFirst({ where: { id: ds.viewId, projectId }, select: { id: true } }))) throw new HttpError(400, "Unknown data source view");
 }

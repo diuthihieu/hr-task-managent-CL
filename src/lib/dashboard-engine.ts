@@ -37,7 +37,14 @@ export interface WidgetStyleConfig {
 }
 
 export interface DashboardBlockConfig {
-  dataSource?: { projectId?: string; viewId?: string };
+  dataSource?: {
+    projectId?: string;
+    viewId?: string;
+    /** Append: the tasks of these projects are stacked under the main project's (fields matched by name). */
+    appendProjectIds?: string[];
+    /** Merge: left join another project's tasks on a key field, bringing some of its columns (ids "m:<field id>"). */
+    merge?: { projectId: string; leftFieldId: string; rightFieldId: string; fieldIds: string[] };
+  };
   dimensionFieldId?: string;
   dimension2FieldId?: string; // combo chart's line series, or funnel/treemap secondary
   measureFieldId?: string;

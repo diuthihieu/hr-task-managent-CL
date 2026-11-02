@@ -15,7 +15,8 @@ import { AiDashboardActions, AiBuildWidgetsButton } from "@/components/ai/ai-act
 import { AiReportButton, ReportLibraryButton, captureCharts } from "@/components/ai/ai-report";
 import { AiNarrative } from "@/components/ai/ai-narrative";
 import { WidgetEditorDialog, type BlockDraft } from "./widget-editor-dialog";
-import { DashboardFilterBar } from "./filter-bar";
+import { DashboardFilterBar, selectionOf } from "./filter-bar";
+import { normalizeSlicer, slicerActive, type SlicerDef, type SlicerSelection } from "@/lib/dashboard-slicers";
 import type { CrossFilter, SeriesPoint, Segment, SegmentTask } from "@/lib/dashboard-engine";
 import { SegmentPreview, type SegmentPreviewState } from "./segment-preview";
 import { parseBlockConfig } from "@/lib/dashboard-engine";
@@ -35,7 +36,6 @@ interface DashboardDetail {
   projects: { id: string; name: string }[];
 }
 
-type Slicer = CrossFilter & { id: string };
 
 export function DashboardWorkspace({
   dashboardId,
@@ -54,7 +54,9 @@ export function DashboardWorkspace({
   const router = useRouter();
   const [dashboard, setDashboard] = useState<DashboardDetail | null>(null);
   const [allFields, setAllFields] = useState<FieldRow[]>([]);
-  const [slicers, setSlicers] = useState<Slicer[]>([]);
+  // D3: saved slicers (with the author's default selection) and this viewer's own selection.
+  const [slicerDefs, setSlicerDefs] = useState<SlicerDef[]>([]);
+  const [selection, setSelection] = useState<Record<string, SlicerSelection>>({});
   const [crossFilter, setCrossFilter] = useState<{ sourceBlockId: string; filter: CrossFilter } | null>(null);
   const [widgetDialog, setWidgetDialog] = useState<{ open: boolean; block: (DashboardBlockLite & { x: number; y: number; w: number; h: number }) | null }>({
     open: false,
@@ -92,8 +94,14 @@ export function DashboardWorkspace({
     try {
       const detail = await api.get<DashboardDetail>(`/api/dashboards/${dashboardId}`);
       setDashboard(detail);
-      const filters = JSON.parse(detail.filters || "{}") as { slicers?: Slicer[] };
-      setSlicers(filters.slicers ?? []);
+      const filters = JSON.parse(detail.filters || "{}") as { slicers?: unknown[] };
+      const defs = (filters.slicers ?? []).flatMap((raw) => {
+        const sel = normalizeSlicer(raw);
+        const id = raw && typeof raw === "object" && typeof (raw as { id?: unknown }).id === "string" ? (raw as { id: string }).id : null;
+        return sel && id ? [{ id, ...sel }] : [];
+      });
+      setSlicerDefs(defs);
+      setSelection(Object.fromEntries(defs.map((d) => [d.id, selectionOf(d)])));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     } finally {
@@ -123,9 +131,22 @@ export function DashboardWorkspace({
   const fieldNameLookup = useCallback((fieldId: string | undefined) => allFields.find((f) => f.id === fieldId)?.name, [allFields]);
   const fieldNames = useMemo(() => [...new Set(allFields.map((f) => f.name))].sort(), [allFields]);
 
-  function persistSlicers(next: Slicer[]) {
-    setSlicers(next);
+  /** This viewer's slicers: each saved slicer with their own selection (or the author's default). */
+  const currentSlicers: SlicerDef[] = useMemo(() => slicerDefs.map((d) => ({ id: d.id, ...(selection[d.id] ?? selectionOf(d)) })), [slicerDefs, selection]);
+  /** What every widget is filtered by (only slicers with something picked). */
+  const slicers = useMemo(() => currentSlicers.filter(slicerActive).map(selectionOf), [currentSlicers]);
+
+  /** Editors: add / remove slicers or save the current selection as everyone's default. */
+  function persistSlicerDefs(next: SlicerDef[]) {
+    setSlicerDefs(next);
+    setSelection((cur) => Object.fromEntries(next.map((d) => [d.id, cur[d.id] ?? selectionOf(d)])));
     api.patch(`/api/dashboards/${dashboardId}`, { filters: { slicers: next } }).catch(() => toast.error(t("common.failed")));
+  }
+
+  /** Reset filters: back to the author's default selection, no chart click. */
+  function resetFilters() {
+    setSelection(Object.fromEntries(slicerDefs.map((d) => [d.id, selectionOf(d)])));
+    setCrossFilter(null);
   }
 
   async function renameDashboard() {
@@ -218,7 +239,7 @@ export function DashboardWorkspace({
   function snapshot(): string {
     if (!dashboard) return "";
     const lines: string[] = [`Dashboard: ${dashboard.name}`];
-    if (slicers.length) lines.push(`Filters: ${slicers.map((s) => `${s.fieldName}=${s.label}`).join(", ")}`);
+    if (slicers.length) lines.push(`Filters: ${slicers.map((s) => `${s.fieldName}=${s.values?.length ? s.values.join(" or ") : `${s.from ?? "…"}..${s.to ?? "…"}`}`).join(", ")}`);
     if (crossFilter) lines.push(`Cross-filter: ${crossFilter.filter.fieldName}=${crossFilter.filter.label}`);
     for (const b of dashboard.blocks) {
       if (b.type === "narrative") continue;
@@ -333,7 +354,17 @@ export function DashboardWorkspace({
       <DashboardTabs workspaceId={workspaceId} workspaceSlug={workspaceSlug} activeDashboardId={dashboardId} activeName={dashboard.name} canEdit={canEdit} />
 
       <div className="flex items-center justify-between gap-2 px-4 h-10 border-b border-neutral-100 dark:border-neutral-900 shrink-0 overflow-x-auto thin-scroll">
-        <DashboardFilterBar fieldNames={fieldNames} slicers={slicers} onChange={persistSlicers} />
+        <DashboardFilterBar
+          dashboardId={dashboardId}
+          fieldNames={fieldNames}
+          defs={slicerDefs}
+          current={currentSlicers}
+          crossFilter={crossFilter?.filter ?? null}
+          canEdit={canEdit}
+          onSelect={(id, sel) => setSelection((cur) => ({ ...cur, [id]: sel }))}
+          onDefsChange={persistSlicerDefs}
+          onReset={resetFilters}
+        />
         {crossFilter && (
           <button
             onClick={() => setCrossFilter(null)}

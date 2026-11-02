@@ -108,3 +108,11 @@ test("KPI and charts summing hours count a parent only for its own share, under 
   assert.equal(trend?.current, 5);
   assert.equal(computeKpi(rows, fields, { measureFieldId: "sys_actual", aggregation: "max" }), 5, "other aggregations read the task's own value, as before");
 });
+
+test("a chart click on a built-in field filters other widgets whatever language names it", async () => {
+  const { resolveCrossFilterCondition } = await import("../dashboard-engine");
+  const status = field("sys_category", "Category", "single_select", { options: [{ id: "pay", label: "Payroll" }] }, { system: true });
+  const due = field("sys_due_date", "Due Date", "date", undefined, { system: true });
+  assert.equal(resolveCrossFilterCondition([status, due], [], { fieldName: "Hạn chót", label: "2026-10-01", operator: "after" })?.fieldId, "sys_due_date");
+  assert.equal(resolveCrossFilterCondition([status], [], { fieldName: "category", label: "Payroll" })?.value, "pay");
+});

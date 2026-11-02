@@ -5,6 +5,7 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuIte
 import { api } from "@/lib/api-client";
 import { ChartRenderer, CHART_COLORS } from "./chart-renderer";
 import { exportFileName, pivotMatrix, toCsv } from "@/lib/pivot-export";
+import type { SlicerSelection } from "@/lib/dashboard-slicers";
 import { AGGREGATION_LABELS, parseBlockConfig, type PivotTable, type ChartType, type SeriesPoint, type StackedSeries, type ScatterPoint, type CrossFilter, type KpiTrend, type Segment, type WidgetStyleConfig } from "@/lib/dashboard-engine";
 import { cn } from "@/lib/utils";
 import { useT } from "@/components/i18n-provider";
@@ -28,6 +29,8 @@ export interface DataResponse {
   error?: string;
   /** Appended / merged projects hidden from this viewer, left out of the numbers. */
   hiddenSources?: number;
+  /** No task passes the current filters (slicers, chart click, widget filters). */
+  empty?: boolean;
 }
 
 export function WidgetCard({
@@ -55,7 +58,7 @@ export function WidgetCard({
   narrative?: React.ReactNode;
   block: DashboardBlockLite;
   canEdit?: boolean;
-  slicers?: CrossFilter[];
+  slicers?: SlicerSelection[];
   crossFilter?: CrossFilter | null;
   fieldNameLookup: (fieldId: string | undefined) => string | undefined;
   onEdit: () => void;
@@ -159,6 +162,10 @@ export function WidgetCard({
           <div className="h-full w-full animate-pulse bg-neutral-100 dark:bg-neutral-800 rounded-md" />
         ) : data?.error ? (
           <div className="h-full flex items-center justify-center text-xs text-red-500">{data.error}</div>
+        ) : data?.empty ? (
+          <div className="h-full flex items-center justify-center text-xs text-neutral-400 text-center px-2" data-testid="widget-no-data">
+            {t("db.noData")}
+          </div>
         ) : block.type === "kpi" ? (
           <KpiDisplay value={data?.kpi ?? 0} label={measureLabel} trend={data?.kpiTrend} style={widgetStyle} onClick={onSegmentClick ? () => onSegmentClick({ key: "value", label: measureLabel ?? "" }) : undefined} />
         ) : block.type === "table" ? (

@@ -116,3 +116,10 @@ test("a chart click on a built-in field filters other widgets whatever language 
   assert.equal(resolveCrossFilterCondition([status, due], [], { fieldName: "Hạn chót", label: "2026-10-01", operator: "after" })?.fieldId, "sys_due_date");
   assert.equal(resolveCrossFilterCondition([status], [], { fieldName: "category", label: "Payroll" })?.value, "pay");
 });
+
+test("summary table level fields are only checked on summary tables (a chart made from one isn't blocked)", async () => {
+  const { widgetConfigProblem } = await import("../dashboard-engine");
+  const fields = [field("sys_category", "Category", "single_select")];
+  assert.equal(widgetConfigProblem("bar", { dimensionFieldId: "sys_category", rowFieldIds: ["gone"], colFieldIds: ["gone2"] }, fields), null);
+  assert.match(widgetConfigProblem("pivot", { dimensionFieldId: "sys_category", rowFieldIds: ["sys_category", "gone"] }, fields) ?? "", /no longer exists/);
+});

@@ -4,6 +4,7 @@ import { computePivot, computeSeries, computeStackedSeries, computeScatterPoints
 import { applyFilters, applySorts, getCellValue } from "@/lib/query-engine";
 import { formatDisplayValue } from "@/lib/format";
 import { loadBlockData } from "@/lib/dashboard-data";
+import { computeMatrix } from "@/lib/pivot-matrix";
 import type { FieldRow } from "@/types";
 
 type P = { blockId: string };
@@ -15,7 +16,7 @@ export const POST = route<P>(async (req, { params }) => {
   const { blockId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfWidget(blockId), "viewer");
   const userId = user.id;
-  const body = (await req.json().catch(() => ({}))) as { slicers?: unknown[]; crossFilter?: CrossFilter };
+  const body = (await req.json().catch(() => ({}))) as { slicers?: unknown[]; crossFilter?: CrossFilter; pivotLevels?: { rows?: unknown; cols?: unknown } };
 
   const data = await loadBlockData(user, ctx.workspaceId, blockId, body);
   if ("error" in data) return NextResponse.json({ error: data.error, series: [], rows: [], fields: [] });
@@ -47,7 +48,10 @@ export const POST = route<P>(async (req, { params }) => {
   }
 
   if (type === "pivot") {
-    return NextResponse.json({ ...extra, pivot: computePivot(records, fields, config, memberList, userId) });
+    // D4: the matrix (several row / column levels, subtotals); the viewer may hide levels.
+    const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 8) : undefined);
+    const levels = body.pivotLevels ? { rows: ids(body.pivotLevels.rows), cols: ids(body.pivotLevels.cols) } : undefined;
+    return NextResponse.json({ ...extra, pivot: computePivot(records, fields, config, memberList, userId), matrix: computeMatrix(records, fields, config, memberList, userId, levels) });
   }
 
   if (type === "stacked_column" || type === "stacked_bar") {

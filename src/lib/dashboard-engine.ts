@@ -48,6 +48,10 @@ export interface DashboardBlockConfig {
   };
   dimensionFieldId?: string;
   dimension2FieldId?: string; // combo chart's line series, or funnel/treemap secondary
+  /** Summary table: row fields, parent first (the first one is also dimensionFieldId). */
+  rowFieldIds?: string[];
+  /** Summary table: column fields, parent first (the first one is also dimension2FieldId). */
+  colFieldIds?: string[];
   measureFieldId?: string;
   measure2FieldId?: string; // combo chart's second series
   aggregation?: Aggregation;
@@ -92,7 +96,7 @@ function bucketDate(iso: string, bucket: DateBucket): string {
 // populated when a measure field is chosen, but Count (the default
 // aggregation, used whenever the user leaves Measure as "Record count")
 // must still equal the number of records in the group even then.
-function aggregate(values: number[], distinctValues: unknown[], fn: Aggregation, recordCount: number): number {
+export function aggregate(values: number[], distinctValues: unknown[], fn: Aggregation, recordCount: number): number {
   if (fn === "count") return recordCount;
   if (fn === "distinct") return new Set(distinctValues.map((v) => JSON.stringify(v))).size;
   if (!values.length) return 0;
@@ -116,6 +120,7 @@ export function widgetConfigProblem(type: string, config: DashboardBlockConfig, 
   if (agg !== "count" && agg !== "distinct" && !(config.measureFieldId && ids.has(config.measureFieldId))) return `Choose the value field to ${agg} (Edit widget)`;
   if (config.dimensionFieldId && !ids.has(config.dimensionFieldId)) return "The grouping field no longer exists - choose another (Edit widget)";
   if (config.dimension2FieldId && !ids.has(config.dimension2FieldId)) return "The second grouping field no longer exists - choose another (Edit widget)";
+  if (type === "pivot" && [...(config.rowFieldIds ?? []), ...(config.colFieldIds ?? [])].some((id) => !ids.has(id))) return "A row or column field no longer exists - choose another (Edit widget)";
   return null;
 }
 
@@ -187,7 +192,7 @@ const HOUR_FIELDS = new Set(["sys_estimate", "sys_actual"]);
  * share (its total minus its sub-tasks'), worked out over `all` tasks so a filter that drops a sub-task
  * doesn't hand its hours to the parent; every other field / aggregation reads the record's own value.
  */
-function measureValue(all: RecordRow[], fields: FieldRow[], measure: FieldRow | undefined, aggFn: Aggregation): (r: RecordRow) => number {
+export function measureValue(all: RecordRow[], fields: FieldRow[], measure: FieldRow | undefined, aggFn: Aggregation): (r: RecordRow) => number {
   if (!measure) return () => 0;
   if (aggFn !== "sum" || !HOUR_FIELDS.has(measure.id)) return (r) => Number(getCellValue(r, measure, fields)) || 0;
   const minutes = (r: RecordRow) => (typeof r.data[measure.id] === "number" ? Math.round((r.data[measure.id] as number) * 60) : null);

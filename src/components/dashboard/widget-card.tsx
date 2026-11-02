@@ -4,8 +4,9 @@ import { MoreHorizontal, Pencil, Trash2, GripVertical, TrendingDown, TrendingUp,
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api-client";
 import { ChartRenderer, CHART_COLORS } from "./chart-renderer";
-import { exportFileName, pivotMatrix, toCsv } from "@/lib/pivot-export";
 import type { SlicerSelection } from "@/lib/dashboard-slicers";
+import type { MatrixTable } from "@/lib/pivot-matrix";
+import { PivotMatrixView, type PivotLevels } from "./pivot-matrix-view";
 import { AGGREGATION_LABELS, parseBlockConfig, type PivotTable, type ChartType, type SeriesPoint, type StackedSeries, type ScatterPoint, type CrossFilter, type KpiTrend, type Segment, type WidgetStyleConfig } from "@/lib/dashboard-engine";
 import { cn } from "@/lib/utils";
 import { useT } from "@/components/i18n-provider";
@@ -21,6 +22,8 @@ export interface DataResponse {
   kpi?: number;
   kpiTrend?: KpiTrend | null;
   pivot?: PivotTable;
+  /** D4: the summary table as a matrix (several levels, subtotals). */
+  matrix?: MatrixTable;
   series?: SeriesPoint[];
   rows?: string[][];
   seriesKeys?: StackedSeries["seriesKeys"];
@@ -70,6 +73,8 @@ export function WidgetCard({
   const [data, setData] = useState<DataResponse | null>(null);
   const isNarrative = block.type === "narrative";
   const [loading, setLoading] = useState(!isNarrative);
+  /** Summary table levels this viewer hides (null = all shown); kept for the session. */
+  const [pivotLevels, setPivotLevels] = useState<PivotLevels | null>(null);
   const config = parseBlockConfig(block.config);
   const widgetStyle = config.style;
 
@@ -80,7 +85,7 @@ export function WidgetCard({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetching this widget's data on mount / config change is exactly what this effect is for
     setLoading(true);
     api
-      .post<DataResponse>(`/api/dashboard-blocks/${block.id}/data`, { slicers, crossFilter })
+      .post<DataResponse>(`/api/dashboard-blocks/${block.id}/data`, { slicers, crossFilter, ...(pivotLevels ? { pivotLevels } : {}) })
       .then((res) => {
         if (!cancelled) {
           setData(res);
@@ -97,7 +102,7 @@ export function WidgetCard({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- filter objects are rebuilt every render; JSON.stringify keeps the effect from refetching on identity changes alone
-  }, [block.id, block.type, block.config, JSON.stringify(slicers), JSON.stringify(crossFilter)]);
+  }, [block.id, block.type, block.config, JSON.stringify(slicers), JSON.stringify(crossFilter), JSON.stringify(pivotLevels)]);
 
   const measureLabel = fieldNameLookup(config.measureFieldId) ?? AGGREGATION_LABELS[config.aggregation ?? "count"];
   const measure2Label = fieldNameLookup(config.measure2FieldId);
@@ -171,7 +176,11 @@ export function WidgetCard({
         ) : block.type === "table" ? (
           <TableDisplay columns={data?.columns ?? []} rows={data?.rows ?? []} style={widgetStyle} />
         ) : block.type === "pivot" ? (
-          <PivotDisplay pivot={data?.pivot} title={block.title} style={widgetStyle} />
+          data?.matrix ? (
+            <PivotMatrixView matrix={data.matrix} title={block.title} valueLabel={measureLabel} style={widgetStyle} levels={pivotLevels} onLevels={setPivotLevels} />
+          ) : (
+            <div className="h-full flex items-center justify-center text-xs text-neutral-400">{t("db.pivot.empty")}</div>
+          )
         ) : (
           <ChartRenderer
             type={block.type as ChartType}
@@ -221,66 +230,6 @@ function KpiDisplay({ value, label, trend, style, onClick }: { value: number; la
 }
 
 /** Summary table with row / column totals, exportable to CSV or Excel. */
-function PivotDisplay({ pivot, title, style }: { pivot?: PivotTable; title: string; style?: WidgetStyleConfig }) {
-  const { t } = useT();
-  if (!pivot || !pivot.rows.length) return <div className="h-full flex items-center justify-center text-xs text-neutral-400">{t("db.pivot.empty")}</div>;
-  const fileName = exportFileName(title);
-  const download = (blob: Blob, ext: string) => {
-    const url = URL.createObjectURL(blob);
-    const a = Object.assign(document.createElement("a"), { href: url, download: `${fileName}.${ext}` });
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 30_000);
-  };
-  const matrix = pivotMatrix(pivot, t("db.pivot.total"));
-  async function xlsx() {
-    const XLSX = await import("xlsx");
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(matrix), "Summary");
-    download(new Blob([XLSX.write(wb, { type: "array", bookType: "xlsx" })], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "xlsx");
-  }
-  const num = (n: number) => (Number.isInteger(n) ? n.toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: 2 }));
-  const cellCls = "px-2 py-1 border-b border-neutral-100 dark:border-neutral-900 whitespace-nowrap text-right tabular-nums";
-  return (
-    <div className="h-full flex flex-col" data-testid="pivot-table">
-      <div className="flex justify-end gap-1 pb-1">
-        <button type="button" onClick={() => download(new Blob([toCsv(matrix)], { type: "text/csv;charset=utf-8" }), "csv")} className="rounded border border-neutral-200 px-2 py-0.5 text-[11px] text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800" data-testid="pivot-csv">
-          {t("db.pivot.csv")}
-        </button>
-        <button type="button" onClick={() => void xlsx()} className="rounded border border-neutral-200 px-2 py-0.5 text-[11px] text-neutral-600 hover:bg-neutral-50 dark:border-neutral-700 dark:text-neutral-300 dark:hover:bg-neutral-800" data-testid="pivot-xlsx">
-          {t("db.pivot.xlsx")}
-        </button>
-      </div>
-      <div className="flex-1 min-h-0 overflow-auto thin-scroll">
-        <table className="w-full text-xs border-collapse" style={{ color: style?.textColor }}>
-          <thead className="sticky top-0 bg-white dark:bg-neutral-900" style={{ backgroundColor: style?.backgroundColor }}>
-            <tr>
-              {matrix[0].map((h, i) => (
-                <th key={i} className={cn("font-medium text-neutral-500 border-b border-neutral-200 dark:border-neutral-800 px-2 py-1 whitespace-nowrap", i === 0 ? "text-left" : "text-right")}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {matrix.slice(1, -1).map((row, i) => (
-              <tr key={i} className={cn(i % 2 === 1 && "bg-neutral-50/60 dark:bg-neutral-800/30")}>
-                {row.map((v, j) => (j === 0 ? <td key={j} className="px-2 py-1 border-b border-neutral-100 dark:border-neutral-900 whitespace-nowrap text-left">{v}</td> : <td key={j} className={cn(cellCls, pivot.colField && j === row.length - 1 && "font-medium")}>{num(Number(v))}</td>))}
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr className="font-semibold bg-neutral-50 dark:bg-neutral-800/50">
-              {matrix[matrix.length - 1].map((v, j) => (j === 0 ? <td key={j} className="px-2 py-1 text-left">{v}</td> : <td key={j} className={cellCls}>{num(Number(v))}</td>))}
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 function TableDisplay({ columns, rows, style }: { columns: string[]; rows: string[][]; style?: WidgetStyleConfig }) {
   const { t } = useT();
   if (!columns.length) return <div className="h-full flex items-center justify-center text-xs text-neutral-400">{t("db.noColumns")}</div>;

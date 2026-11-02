@@ -112,3 +112,31 @@ test("a team dashboard shows each viewer only the projects they may see, and say
   assert.equal((await viewer.post("/api/ai/report", report)).status, 200);
   assert.equal(await unassignedActual(), "2", "the viewer's report leaves the hidden project out");
 });
+
+// D4: the data route returns the matrix (several levels, subtotals) and honours the levels a viewer hides.
+test("summary table matrix: rows by category then assignee with subtotals; a hidden level is worked out again", async () => {
+  const P = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Matrix data", categories: [{ name: "Payroll" }, { name: "Recruit" }] })).body.id;
+  const cats = (await admin.get<{ id: string; name: string }[]>(`/api/projects/${P}/categories`)).body;
+  const cat = (n: string) => cats.find((c) => c.name === n)!.id;
+  const mk = async (name: string) => {
+    const u = await prisma.user.create({ data: { email: `${name.toLowerCase()}.matrix@integration.test`, name, systemRole: "MEMBER", passwordHash: "x", mustChangePassword: false, emailVerifiedAt: new Date() } });
+    await prisma.workspaceMember.create({ data: { workspaceId: s.ws, userId: u.id, role: "editor" } });
+    return u.id;
+  };
+  const [en, gia] = [await mk("En"), await mk("Gia")];
+  const t1 = await admin.post(`/api/projects/${P}/tasks`, { data: { sys_title: "Shared", sys_category: cat("Payroll"), sys_assignees: [en, gia], sys_actual: 6 } });
+  assert.equal(t1.status, 201, JSON.stringify(t1.body));
+  await admin.post(`/api/projects/${P}/tasks`, { data: { sys_title: "Solo", sys_category: cat("Recruit"), sys_assignees: [en], sys_actual: 2 } });
+  const d = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/dashboards`, { name: "Matrix" });
+  const w = await admin.post<{ id: string }>(`/api/dashboards/${d.body.id}/blocks`, { type: "pivot", title: "M", config: { dataSource: { projectId: P }, dimensionFieldId: "sys_category", rowFieldIds: ["sys_category", "sys_assignees"], measureFieldId: "sys_actual", aggregation: "sum" } });
+  type M = { matrix: { rowFields: string[]; rows: { label: string; total: number; children?: { total: number }[] }[]; total: number; available: { rows: { id: string }[] } } };
+  const full = (await admin.post<M>(`/api/dashboard-blocks/${w.body.id}/data`, {})).body.matrix;
+  assert.deepEqual(full.rows.map((r) => [r.label, r.total, r.children?.map((c) => c.total)]), [["Payroll", 12, [6, 6]], ["Recruit", 2, [2]]]);
+  assert.equal(full.total, 14);
+  assert.deepEqual(full.available.rows.map((f) => f.id), ["sys_category", "sys_assignees"]);
+  const flat = (await admin.post<M>(`/api/dashboard-blocks/${w.body.id}/data`, { pivotLevels: { rows: ["sys_assignees"], cols: [] } })).body.matrix;
+  assert.equal(flat.rowFields.length, 1);
+  assert.deepEqual(flat.rows.map((r) => r.total).sort(), [6, 8]);
+  const bad = await admin.post<{ id: string }>(`/api/dashboards/${d.body.id}/blocks`, { type: "pivot", title: "Bad", config: { dataSource: { projectId: P }, dimensionFieldId: "sys_category", rowFieldIds: ["sys_category", "gone"] } });
+  assert.match((await admin.post<{ error?: string }>(`/api/dashboard-blocks/${bad.body.id}/data`, {})).body.error ?? "", /no longer exists/);
+});

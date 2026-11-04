@@ -18,6 +18,9 @@ function shortDate(value: unknown): string {
   return m ? `${m[3]}/${m[2]}` : "";
 }
 
+// The due column of the sub-task list: one width for the header and every row.
+const DUE_COL = "w-11 shrink-0";
+
 /**
  * "Parent task" and "Sub-tasks" of a task, shown on the task page and in the side drawer: the chain of
  * parent tasks (top-level first) and the direct sub-tasks with status, assignees and due date. Both are
@@ -170,12 +173,12 @@ export function TaskHierarchy({
         {children.length ? (
           <ul className="mt-1.5 divide-y divide-neutral-100 rounded-md border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800" data-testid="th-children">
             {onUpdateTask ? (
-              <li className="hidden items-center gap-x-1.5 bg-neutral-50 px-1.5 py-1 text-[11px] text-neutral-400 dark:bg-neutral-900 sm:flex" aria-hidden>
+              <li className="hidden items-center gap-x-1.5 bg-neutral-50 px-1.5 py-1 text-[11px] text-neutral-400 dark:bg-neutral-900 sm:flex" aria-hidden data-testid="th-children-head">
                 <span className="w-[118px] shrink-0 px-2">{fieldById.get("sys_status")?.name}</span>
-                <span className="flex-1 px-1">{t("th.subtasks")}</span>
-                <span className="w-[150px] shrink-0 px-2">{t("th.pic")}</span>
-                <span className="w-[190px] shrink-0 px-2">{fieldById.get("sys_completed_at")?.name}</span>
-                <span className="w-9 shrink-0">{t("th.due")}</span>
+                <span className="min-w-0 flex-1 px-1">{t("th.subtasks")}</span>
+                <span className="w-[150px] shrink-0 px-2" data-testid="th-head-pic">{t("th.pic")}</span>
+                <span className="w-[190px] shrink-0 px-2" data-testid="th-head-completed">{fieldById.get("sys_completed_at")?.name}</span>
+                <span className={cn(DUE_COL, "text-right")} data-testid="th-head-due">{t("th.due")}</span>
               </li>
             ) : null}
             {children.map((c) => {
@@ -220,7 +223,12 @@ export function TaskHierarchy({
                       {people.length ? <span className="hidden max-w-[140px] shrink-0 truncate text-[11px] text-neutral-500 sm:inline">{people.join(", ")}</span> : null}
                     </>
                   )}
-                  {shortDate(c.data.sys_due_date) ? (
+                  {onUpdateTask ? (
+                    // Always present and fixed-width, so a sub-task without a due date doesn't shift the other columns.
+                    <span className={cn(DUE_COL, "text-right text-[11px] tabular-nums text-neutral-400")} title={t("th.due")} data-testid="th-child-due">
+                      {shortDate(c.data.sys_due_date)}
+                    </span>
+                  ) : shortDate(c.data.sys_due_date) ? (
                     <span className="shrink-0 text-[11px] tabular-nums text-neutral-400" title={t("th.due")}>
                       {shortDate(c.data.sys_due_date)}
                     </span>

@@ -197,6 +197,7 @@ export function WidgetCard({
               levels={pivotLevels}
               onLevels={setPivotLevels}
               onColumnWidths={editable ? (columnWidths) => saveStyle({ columnWidths }) : undefined}
+              nameOf={(id) => (id === "__project" ? t("db.src.projectCol") : id.startsWith("m:") ? undefined : fieldNameLookup(id))}
             />
           ) : (
             <div className="h-full flex items-center justify-center text-xs text-neutral-400">{t("db.pivot.empty")}</div>

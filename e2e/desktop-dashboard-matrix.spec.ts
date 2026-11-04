@@ -31,6 +31,11 @@ test("matrix: rows by category then assignee, drill down, expand / collapse all,
   const table = page.getByTestId("pivot-table");
   const row = (label: string, depth: number) => table.locator(`[data-testid=pivot-row][data-depth="${depth}"][data-label="${label}"]`);
   await expect(row("Payroll", 0)).toContainText("6", { timeout: 30_000 });
+  // Built-in fields are named in the viewer's language (the server names them in English).
+  const fields = (await (await request.get(`/api/projects/${project.id}`)).json()).fields as { id: string; name: string }[];
+  const local = (id: string) => fields.find((f) => f.id === id)!.name;
+  expect(local("sys_assignees")).not.toBe("Assignees");
+  await expect(table.getByTestId("pivot-head")).toContainText(`${local("sys_category")} › ${local("sys_assignees")}`);
   await expect(row("Recruit", 0)).toContainText("2");
   await expect(table.locator("[data-testid=pivot-row][data-depth='1']"), "children start collapsed, like Power BI").toHaveCount(0);
 
@@ -44,6 +49,7 @@ test("matrix: rows by category then assignee, drill down, expand / collapse all,
   await table.getByTestId("pivot-csv").click();
   const csv = readFileSync((await (await csvDl).path())!, "utf8");
   expect(csv).toMatch(/Payroll,,6\r\nPayroll,Hieu Diu-Thi,6\r\nRecruit,,2\r\nRecruit,Hieu Diu-Thi,2/);
+  expect(csv.split("\r\n")[0]).toContain(local("sys_assignees"));
 
   await table.getByTestId("pivot-collapse-all").click();
   await expect(table.locator("[data-testid=pivot-row][data-depth='1']")).toHaveCount(0);

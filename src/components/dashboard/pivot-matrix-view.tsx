@@ -30,13 +30,14 @@ function parentPaths(nodes: MatrixNode[], out: string[] = []): string[] {
  * shows or hides, and CSV / Excel of exactly what is shown.
  */
 export function PivotMatrixView({
-  matrix,
+  matrix: raw,
   title,
   valueLabel,
   style,
   levels,
   onLevels,
   onColumnWidths,
+  nameOf,
 }: {
   matrix: MatrixTable;
   title: string;
@@ -46,8 +47,20 @@ export function PivotMatrixView({
   onLevels: (levels: PivotLevels | null) => void;
   /** Called when the viewer finishes dragging a column edge (editors save it for everyone). */
   onColumnWidths?: (widths: Record<string, number>) => void;
+  /** The viewer's name for a field (built-in fields are named in the viewer's language); falls back to the server's. */
+  nameOf?: (fieldId: string) => string | undefined;
 }) {
   const { t } = useT();
+  // Field names in the viewer's language (the server names built-in fields in English).
+  const matrix = useMemo(() => {
+    const name = (id: string, fallback: string) => nameOf?.(id) ?? fallback;
+    return {
+      ...raw,
+      rowFields: raw.rowFieldIds.map((id, i) => name(id, raw.rowFields[i])),
+      colFields: raw.colFieldIds.map((id, i) => name(id, raw.colFields[i])),
+      available: { rows: raw.available.rows.map((f) => ({ ...f, name: name(f.id, f.name) })), cols: raw.available.cols.map((f) => ({ ...f, name: name(f.id, f.name) })) },
+    };
+  }, [raw, nameOf]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const parents = useMemo(() => parentPaths(matrix.rows), [matrix.rows]);
   const hasCols = matrix.colFields.length > 0;

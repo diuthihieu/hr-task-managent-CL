@@ -9,6 +9,7 @@ import type { FieldRow } from "@/types";
 import { useT } from "@/components/i18n-provider";
 import { AvatarImg } from "@/components/ui/avatar-img";
 import { Barcode, JsonInput, LocationInput, SignatureInput } from "@/components/fields/advanced-field-inputs";
+import { isoToLocalInput, localInputToIso } from "@/lib/datetime-local";
 
 export interface FormMember {
   id: string;
@@ -71,8 +72,8 @@ export function FormFieldInput({
       return (
         <Input
           type="datetime-local"
-          value={value ? String(value).slice(0, 16) : ""}
-          onChange={(e) => onChange(e.target.value ? new Date(e.target.value).toISOString() : null)}
+          value={isoToLocalInput(value)}
+          onChange={(e) => onChange(localInputToIso(e.target.value))}
         />
       );
     case "single_select":

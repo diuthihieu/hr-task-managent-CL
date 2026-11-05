@@ -101,6 +101,11 @@ test("completed time: a built-in column after Progress, set on done, editable, c
   assert.equal((await admin.patch(`/api/tasks/${t.body.id}`, { data: { sys_completed_at: new Date(Date.now() + 3 * 86400_000).toISOString() } })).status, 400, "not in the future");
   const reopened = await admin.patch<Rec>(`/api/tasks/${t.body.id}`, { data: { sys_status: todoStatus } });
   assert.equal(reopened.body.data.sys_completed_at, null, "cleared on reopen");
+  const early = "2026-09-29T02:00:00.000Z";
+  await admin.patch(`/api/tasks/${t.body.id}`, { data: { sys_completed_at: early } });
+  const laterDone = await admin.patch<Rec>(`/api/tasks/${t.body.id}`, { data: { sys_status: doneStatus } });
+  assert.equal(laterDone.body.data.sys_completed_at, early, "a time entered before marking done is kept, not replaced by now");
+  await admin.patch(`/api/tasks/${t.body.id}`, { data: { sys_status: todoStatus } });
   const explicit = await admin.patch<Rec & { doneMissing?: string[] }>(`/api/tasks/${t.body.id}`, { data: { sys_status: doneStatus, sys_completed_at: at, sys_start_date: "2026-09-28", sys_due_date: "2026-09-30" } });
   assert.equal(explicit.body.data.sys_completed_at, at, "an explicit time in the same save wins over now");
   assert.deepEqual(explicit.body.doneMissing, [], "nothing missing");

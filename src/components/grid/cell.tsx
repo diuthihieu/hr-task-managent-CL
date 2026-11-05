@@ -14,6 +14,7 @@ import type { LinkTarget, Member, OkrOptions } from "./cell-types";
 import { DraftInput, DraftTextarea, OptionBadge, PopoverOption, ProgressCell } from "./cell-inputs";
 import { AttachmentEditor, ComputedFieldCell, LinkCell, safeButtonUrl } from "./cell-special";
 import { CellDisplayValue, PeopleChips, readOnlyText } from "./cell-display";
+import { isoToLocalInput, localInputToIso } from "@/lib/datetime-local";
 
 export type { Member, LinkTarget, OkrOptions } from "./cell-types";
 export { CellDisplayValue } from "./cell-display";
@@ -152,8 +153,8 @@ export function Cell({ field, value, record, members, linkTargets, okrOptions, w
         <DateInput
           type="datetime-local"
           className={cn(base, "bg-transparent outline-none text-neutral-800 dark:text-neutral-100 focus:bg-indigo-50/60 dark:focus:bg-indigo-950/40")}
-          value={value ? String(value).slice(0, 16) : ""}
-          onCommit={(v) => onChange(v ? new Date(v).toISOString() : null)}
+          value={isoToLocalInput(value)}
+          onCommit={(v) => onChange(localInputToIso(v))}
         />
       );
     case "single_select":

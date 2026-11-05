@@ -117,9 +117,13 @@ test("a team dashboard shows each viewer only the projects they may see, and say
 // and an editor can save a widget that another member gave a source hidden from the editor.
 test("hidden main project: the viewer sees the appended projects; editors keep others' hidden sources when saving", async () => {
   const proj = async (name: string) => (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name })).body.id;
-  const [secret, open, other] = [await proj("Main hidden"), await proj("Shared one"), await proj("Shared two")];
+  const [secret, other] = [await proj("Main hidden"), await proj("Shared two")];
+  const open = (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name: "Shared one", categories: [{ name: "Ops" }] })).body.id;
+  const ops = (await admin.get<{ id: string }[]>(`/api/projects/${open}/categories`)).body[0].id;
   await admin.post(`/api/projects/${secret}/tasks`, { data: { sys_title: "Payroll secret", sys_actual: 9 } });
-  await admin.post(`/api/projects/${open}/tasks`, { data: { sys_title: "Open A", sys_actual: 2 } });
+  await admin.post(`/api/projects/${open}/tasks`, { data: { sys_title: "Open A", sys_actual: 2, sys_category: ops } });
+  const okr = await admin.post(`/api/workspaces/${s.ws}/objectives`, { title: "Confidential OKR", projectId: secret, keyResults: [{ title: "Secret KR" }] });
+  assert.equal(okr.status, 201, JSON.stringify(okr.body));
   await admin.post(`/api/projects/${other}/tasks`, { data: { sys_title: "Open B", sys_actual: 3 } });
   await admin.post(`/api/projects/${secret}/custom-fields`, { name: "Salary grade", type: "single_select", config: { options: [{ id: "s1", label: "Grade X", color: "#f00" }] } });
   await prisma.projectHiddenMember.create({ data: { projectId: secret, userId: s.viewerId } });
@@ -133,6 +137,14 @@ test("hidden main project: the viewer sees the appended projects; editors keep o
   assert.doesNotMatch(JSON.stringify(seen.body), /Payroll secret|Main hidden|Salary grade|Grade X/);
   const drill = await viewer.post<{ tasks: { title: string }[] }>(`/api/dashboard-blocks/${w.body.id}/records`, { segment: { key: "Shared one", label: "Shared one" } });
   assert.deepEqual(drill.body.tasks.map((t) => t.title), ["Open A"], "drill-down works on the visible projects");
+  // Field settings of the hidden project (objectives, options) never come along, even in an all-fields table.
+  const table = await admin.post<{ id: string }>(`/api/dashboards/${d.body.id}/blocks`, { type: "table", title: "All", config: { dataSource: { projectId: secret, appendProjectIds: [open] } } });
+  const rows = await viewer.post(`/api/dashboard-blocks/${table.body.id}/data`, {});
+  assert.equal(rows.status, 200);
+  assert.doesNotMatch(JSON.stringify(rows.body), /Confidential OKR|Secret KR|Payroll secret|Salary grade|Grade X/);
+  // Slicers on a hidden-main widget offer the visible projects' values.
+  const opts = await viewer.post<{ values: { label: string }[] }>(`/api/dashboards/${d.body.id}/slicer-options`, { fieldName: "Category" });
+  assert.deepEqual(opts.body.values.map((v) => v.label), ["Ops", "(Empty)"], "values of both visible projects (Shared two has no category), none of the hidden one");
 
   // The viewer becomes an editor (still not allowed to see "Main hidden") and edits the widget.
   const where = { workspaceId_userId: { workspaceId: s.ws, userId: s.viewerId } };

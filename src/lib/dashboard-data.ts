@@ -39,7 +39,7 @@ export async function loadBlockData(
   if (!project) return { error: "Data source no longer exists" };
   // Main project hidden from this viewer: the widget still shows the appended projects they may see.
   const mainHidden = (await hiddenProjectIds(user)).has(projectId);
-  if (mainHidden && !(await visibleAppended(user, workspaceId, config.dataSource ?? {}))) return { error: "The data source project of this widget is hidden from you" };
+  if (mainHidden && !(await visibleAppended(user, workspaceId, config.dataSource ?? {})).length) return { error: "The data source project of this widget is hidden from you" };
 
   const [{ grid, hiddenSources }, view, members] = await Promise.all([
     loadCombinedGrid(user, workspaceId, projectId, config.dataSource ?? {}, mainHidden ? config : null),
@@ -86,15 +86,18 @@ export async function dashboardSlicerOptions(user: SessionUser, workspaceId: str
   const members = (await prisma.workspaceMember.findMany({ where: { workspaceId }, include: { user: { select: { id: true, name: true, avatarColor: true } } } })).map((m) => m.user);
   const parts: SlicerOptions[] = [];
   for (const ds of sources.values()) {
-    const mainHidden = hidden.has(ds.projectId!);
-    if (mainHidden && !(await visibleAppended(user, workspaceId, ds))) continue;
     const live = await prisma.project.findFirst({ where: { id: ds.projectId, workspaceId, deletedAt: null }, select: { id: true } });
     if (!live) continue;
-    const { grid } = await loadCombinedGrid(user, workspaceId, ds.projectId!, ds, mainHidden ? { dataSource: ds } : null);
-    if (!grid) continue;
-    const click = resolveCrossFilterConditions(grid.fields, members, crossFilter ? [crossFilter] : undefined);
-    const records = click.length ? applyFilters(grid.records, grid.fields, { conjunction: "AND", conditions: click }) : grid.records;
-    parts.push(slicerOptions(records, grid.fields, members, { fieldName }, slicers));
+    // Slicers match fields by name, so a hidden main project's visible appended projects each give their own values.
+    const grids = hidden.has(ds.projectId!)
+      ? await Promise.all((await visibleAppended(user, workspaceId, ds)).map((id) => loadProjectGrid(id)))
+      : [(await loadCombinedGrid(user, workspaceId, ds.projectId!, ds)).grid];
+    for (const grid of grids) {
+      if (!grid) continue;
+      const click = resolveCrossFilterConditions(grid.fields, members, crossFilter ? [crossFilter] : undefined);
+      const records = click.length ? applyFilters(grid.records, grid.fields, { conjunction: "AND", conditions: click }) : grid.records;
+      parts.push(slicerOptions(records, grid.fields, members, { fieldName }, slicers));
+    }
   }
   const merged = mergeSlicerOptions(parts);
   delete merged.tasks; // ids behind the counts stay on the server
@@ -111,9 +114,8 @@ const MAX_SOURCES = 10;
  */
 async function loadCombinedGrid(user: SessionUser, workspaceId: string, projectId: string, ds: NonNullable<DashboardBlockConfig["dataSource"]>, hiddenMain: DashboardBlockConfig | null = null) {
   const loaded = await loadProjectGrid(projectId);
-  // A main project hidden from the viewer gives only the shape the widget needs: no rows, no options,
-  // and only the system fields plus the fields the widget itself uses (their names are on the widget anyway).
-  const grid = loaded && hiddenMain ? { ...loaded, fields: shapeOnly(loaded.fields, hiddenMain), records: [] } : loaded;
+  // A main project hidden from the viewer gives only the shape the widget needs (see shapeOnly).
+  const grid = loaded && hiddenMain ? { ...loaded, fields: await shapeOnly(loaded.fields, hiddenMain, await visibleAppended(user, workspaceId, ds)), records: [] } : loaded;
   const extra = [...(ds.appendProjectIds ?? []), ...(ds.merge ? [ds.merge.projectId] : [])];
   if (!grid || !extra.length) return { grid, hiddenSources: hiddenMain ? 1 : 0 };
   const hidden = await hiddenProjectIds(user);
@@ -142,27 +144,29 @@ async function loadCombinedGrid(user: SessionUser, workspaceId: string, projectI
   return { grid: { ...grid, fields: combined.fields, records: combined.records }, hiddenSources };
 }
 
-/** Appended projects of a widget the viewer may see (merged ones need the main project's rows). */
-async function visibleAppended(user: SessionUser, workspaceId: string, ds: NonNullable<DashboardBlockConfig["dataSource"]>) {
-  const ids = (ds.appendProjectIds ?? []).filter((id) => id !== ds.projectId);
-  if (!ids.length) return 0;
-  return prisma.project.count({ where: { id: { in: ids.slice(0, MAX_SOURCES) }, workspaceId, deletedAt: null, ...visibleProjectWhere(user) } });
+/** Appended projects of a widget the viewer may see, in widget order (merged ones need the main project's rows). */
+async function visibleAppended(user: SessionUser, workspaceId: string, ds: NonNullable<DashboardBlockConfig["dataSource"]>): Promise<string[]> {
+  const ids = (ds.appendProjectIds ?? []).filter((id) => id !== ds.projectId).slice(0, MAX_SOURCES);
+  if (!ids.length) return [];
+  const ok = new Set((await prisma.project.findMany({ where: { id: { in: ids }, workspaceId, deletedAt: null, ...visibleProjectWhere(user) }, select: { id: true } })).map((p) => p.id));
+  return ids.filter((id) => ok.has(id));
 }
 
-/** Fields of a hidden main project kept for the widget's shape: system fields and the ones the config names, without options. */
-function shapeOnly(fields: FieldRow[], config: DashboardBlockConfig): FieldRow[] {
+/**
+ * The columns a widget keeps when its main project is hidden from the viewer: the system fields and the
+ * fields the widget config names (their names already show on the widget). Nothing else of the hidden
+ * project is kept - no rows, and no field settings at all (options, objectives...): each column takes its
+ * settings from the matching field of a project the viewer may see, or none.
+ */
+async function shapeOnly(fields: FieldRow[], config: DashboardBlockConfig, visibleIds: string[]): Promise<FieldRow[]> {
   const used = JSON.stringify(config);
+  const visibleFields = (await Promise.all(visibleIds.map((id) => loadProjectGrid(id)))).flatMap((g) => g?.fields ?? []);
+  const norm = (x: string) => x.trim().toLowerCase();
   return fields
     .filter((f) => f.id.startsWith("sys_") || used.includes(`"${f.id}"`))
     .map((f) => {
-      if (!f.config) return f;
-      try {
-        const cfg = { ...(JSON.parse(f.config) as Record<string, unknown>) };
-        delete cfg.options;
-        return { ...f, config: JSON.stringify(cfg) };
-      } catch {
-        return { ...f, config: null };
-      }
+      const twin = visibleFields.find((o) => o.id === f.id) ?? visibleFields.find((o) => norm(o.name) === norm(f.name) && o.type === f.type);
+      return { ...f, config: twin?.config ?? null, description: null, defaultValue: null };
     });
 }
 

@@ -88,7 +88,7 @@ test("a team dashboard shows each viewer only the projects they may see, and say
 
   const main = await admin.post<{ id: string }>(`/api/dashboards/${d.body.id}/blocks`, { type: "pivot", title: "Secret only", config: { dataSource: { projectId: secret }, dimensionFieldId: "sys_status" } });
   const none = await viewer.post<{ error?: string; pivot?: unknown }>(`/api/dashboard-blocks/${main.body.id}/data`, {});
-  assert.match(none.body.error ?? "", /no longer exists/);
+  assert.match(none.body.error ?? "", /hidden from you/, "says why, instead of 'no longer exists'");
   assert.equal(none.body.pivot, undefined);
 
   // A hidden merge source: its columns stay (no values), but nothing of its field setup leaks (option labels...).
@@ -111,6 +111,46 @@ test("a team dashboard shows each viewer only the projects they may see, and say
   assert.equal(await unassignedActual(), "7", "the author's report counts the appended project");
   assert.equal((await viewer.post("/api/ai/report", report)).status, 200);
   assert.equal(await unassignedActual(), "2", "the viewer's report leaves the hidden project out");
+});
+
+// A widget whose MAIN project is hidden from the viewer still shows the appended projects they may see,
+// and an editor can save a widget that another member gave a source hidden from the editor.
+test("hidden main project: the viewer sees the appended projects; editors keep others' hidden sources when saving", async () => {
+  const proj = async (name: string) => (await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/projects`, { name })).body.id;
+  const [secret, open, other] = [await proj("Main hidden"), await proj("Shared one"), await proj("Shared two")];
+  await admin.post(`/api/projects/${secret}/tasks`, { data: { sys_title: "Payroll secret", sys_actual: 9 } });
+  await admin.post(`/api/projects/${open}/tasks`, { data: { sys_title: "Open A", sys_actual: 2 } });
+  await admin.post(`/api/projects/${other}/tasks`, { data: { sys_title: "Open B", sys_actual: 3 } });
+  await admin.post(`/api/projects/${secret}/custom-fields`, { name: "Salary grade", type: "single_select", config: { options: [{ id: "s1", label: "Grade X", color: "#f00" }] } });
+  await prisma.projectHiddenMember.create({ data: { projectId: secret, userId: s.viewerId } });
+  const d = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/dashboards`, { name: "Main hidden" });
+  const w = await admin.post<{ id: string }>(`/api/dashboards/${d.body.id}/blocks`, { type: "pivot", title: "Hours", config: { dataSource: { projectId: secret, appendProjectIds: [open, other] }, dimensionFieldId: "__project", measureFieldId: "sys_actual", aggregation: "sum" } });
+  type Out = { pivot?: { rows: { label: string }[]; total: number }; hiddenSources?: number; error?: string };
+  assert.equal((await admin.post<Out>(`/api/dashboard-blocks/${w.body.id}/data`, {})).body.pivot?.total, 14);
+  const seen = await viewer.post<Out>(`/api/dashboard-blocks/${w.body.id}/data`, {});
+  assert.ok(seen.body.pivot, JSON.stringify(seen.body));
+  assert.deepEqual([seen.body.pivot!.rows.map((r) => r.label).sort(), seen.body.pivot!.total, seen.body.hiddenSources], [["Shared one", "Shared two"], 5, 1]);
+  assert.doesNotMatch(JSON.stringify(seen.body), /Payroll secret|Main hidden|Salary grade|Grade X/);
+  const drill = await viewer.post<{ tasks: { title: string }[] }>(`/api/dashboard-blocks/${w.body.id}/records`, { segment: { key: "Shared one", label: "Shared one" } });
+  assert.deepEqual(drill.body.tasks.map((t) => t.title), ["Open A"], "drill-down works on the visible projects");
+
+  // The viewer becomes an editor (still not allowed to see "Main hidden") and edits the widget.
+  const where = { workspaceId_userId: { workspaceId: s.ws, userId: s.viewerId } };
+  const before = (await prisma.workspaceMember.findUniqueOrThrow({ where })).role;
+  await prisma.workspaceMember.update({ where, data: { role: "editor" } });
+  try {
+    const keep = await viewer.patch(`/api/dashboard-blocks/${w.body.id}`, { title: "Hours v2", config: { dataSource: { projectId: secret, appendProjectIds: [open] }, dimensionFieldId: "__project", measureFieldId: "sys_actual", aggregation: "sum" } });
+    assert.equal(keep.status, 200, `a source the widget already had may stay: ${JSON.stringify(keep.body)}`);
+    // Adding a hidden project the widget did not have is still refused.
+    const sneaky = await proj("Never shown");
+    await prisma.projectHiddenMember.create({ data: { projectId: sneaky, userId: s.viewerId } });
+    const add = await viewer.patch(`/api/dashboard-blocks/${w.body.id}`, { config: { dataSource: { projectId: open, appendProjectIds: [sneaky] }, aggregation: "count" } });
+    assert.equal(add.status, 400);
+    const created = await viewer.post(`/api/dashboards/${d.body.id}/blocks`, { type: "pivot", title: "x", config: { dataSource: { projectId: secret } } });
+    assert.equal(created.status, 400, "a new widget can't read a hidden project");
+  } finally {
+    await prisma.workspaceMember.update({ where, data: { role: before } });
+  }
 });
 
 // D4: the data route returns the matrix (several levels, subtotals) and honours the levels a viewer hides.

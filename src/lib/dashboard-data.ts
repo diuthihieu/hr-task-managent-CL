@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { HttpError, hiddenProjectIds, type SessionUser } from "@/lib/authz";
+import { HttpError, hiddenProjectIds, visibleProjectWhere, type SessionUser } from "@/lib/authz";
 import { appendSources, mergeSource, type Source } from "@/lib/data-combine";
 import { mergeFilters, widgetConfigProblem, parseBlockConfig, resolveCrossFilterConditions, type CrossFilter, type DashboardBlockConfig } from "@/lib/dashboard-engine";
 import { mergeSlicerOptions, normalizeSlicer, slicerConditions, slicerOptions, type SlicerOptions, type SlicerSelection } from "@/lib/dashboard-slicers";
@@ -36,11 +36,15 @@ export async function loadBlockData(
 
   // The data source must be a project in this dashboard's own workspace that the caller may see.
   const project = await prisma.project.findFirst({ where: { id: projectId, workspaceId, deletedAt: null }, select: { id: true } });
-  if (!project || (await hiddenProjectIds(user)).has(projectId)) return { error: "Data source no longer exists" };
+  if (!project) return { error: "Data source no longer exists" };
+  // Main project hidden from this viewer: the widget still shows the appended projects they may see.
+  const mainHidden = (await hiddenProjectIds(user)).has(projectId);
+  if (mainHidden && !(await visibleAppended(user, workspaceId, config.dataSource ?? {}))) return { error: "The data source project of this widget is hidden from you" };
 
   const [{ grid, hiddenSources }, view, members] = await Promise.all([
-    loadCombinedGrid(user, workspaceId, projectId, config.dataSource ?? {}),
-    config.dataSource?.viewId ? prisma.view.findFirst({ where: { id: config.dataSource.viewId, projectId } }) : Promise.resolve(null),
+    loadCombinedGrid(user, workspaceId, projectId, config.dataSource ?? {}, mainHidden ? config : null),
+    // A hidden main project's view isn't read (its filters stay unknown to the viewer).
+    config.dataSource?.viewId && !mainHidden ? prisma.view.findFirst({ where: { id: config.dataSource.viewId, projectId } }) : Promise.resolve(null),
     prisma.workspaceMember.findMany({ where: { workspaceId }, include: { user: { select: { id: true, name: true, avatarColor: true } } } }),
   ]);
   const fields = grid!.fields;
@@ -82,10 +86,11 @@ export async function dashboardSlicerOptions(user: SessionUser, workspaceId: str
   const members = (await prisma.workspaceMember.findMany({ where: { workspaceId }, include: { user: { select: { id: true, name: true, avatarColor: true } } } })).map((m) => m.user);
   const parts: SlicerOptions[] = [];
   for (const ds of sources.values()) {
-    if (hidden.has(ds.projectId!)) continue;
+    const mainHidden = hidden.has(ds.projectId!);
+    if (mainHidden && !(await visibleAppended(user, workspaceId, ds))) continue;
     const live = await prisma.project.findFirst({ where: { id: ds.projectId, workspaceId, deletedAt: null }, select: { id: true } });
     if (!live) continue;
-    const { grid } = await loadCombinedGrid(user, workspaceId, ds.projectId!, ds);
+    const { grid } = await loadCombinedGrid(user, workspaceId, ds.projectId!, ds, mainHidden ? { dataSource: ds } : null);
     if (!grid) continue;
     const click = resolveCrossFilterConditions(grid.fields, members, crossFilter ? [crossFilter] : undefined);
     const records = click.length ? applyFilters(grid.records, grid.fields, { conjunction: "AND", conditions: click }) : grid.records;
@@ -104,14 +109,17 @@ const MAX_SOURCES = 10;
  * Sources hidden from the viewer are left out (counted in `hiddenSources`), but the widget keeps its
  * shape: the Project column stays, and merged columns become empty placeholders.
  */
-async function loadCombinedGrid(user: SessionUser, workspaceId: string, projectId: string, ds: NonNullable<DashboardBlockConfig["dataSource"]>) {
-  const grid = await loadProjectGrid(projectId);
+async function loadCombinedGrid(user: SessionUser, workspaceId: string, projectId: string, ds: NonNullable<DashboardBlockConfig["dataSource"]>, hiddenMain: DashboardBlockConfig | null = null) {
+  const loaded = await loadProjectGrid(projectId);
+  // A main project hidden from the viewer gives only the shape the widget needs: no rows, no options,
+  // and only the system fields plus the fields the widget itself uses (their names are on the widget anyway).
+  const grid = loaded && hiddenMain ? { ...loaded, fields: shapeOnly(loaded.fields, hiddenMain), records: [] } : loaded;
   const extra = [...(ds.appendProjectIds ?? []), ...(ds.merge ? [ds.merge.projectId] : [])];
-  if (!grid || !extra.length) return { grid, hiddenSources: 0 };
+  if (!grid || !extra.length) return { grid, hiddenSources: hiddenMain ? 1 : 0 };
   const hidden = await hiddenProjectIds(user);
   const projects = await prisma.project.findMany({ where: { id: { in: [projectId, ...extra].slice(0, MAX_SOURCES) }, workspaceId, deletedAt: null }, select: { id: true, name: true } });
   const nameOf = new Map(projects.filter((p) => !hidden.has(p.id)).map((p) => [p.id, p.name]));
-  const hiddenSources = new Set(extra.filter((id) => id !== projectId && hidden.has(id))).size;
+  const hiddenSources = new Set(extra.filter((id) => id !== projectId && hidden.has(id))).size + (hiddenMain ? 1 : 0);
   const source = async (id: string): Promise<Source | null> => {
     if (!nameOf.has(id)) return null;
     const g = await loadProjectGrid(id);
@@ -134,15 +142,53 @@ async function loadCombinedGrid(user: SessionUser, workspaceId: string, projectI
   return { grid: { ...grid, fields: combined.fields, records: combined.records }, hiddenSources };
 }
 
-/** A widget may only point at projects of its own workspace that the author can see. */
-export async function assertWidgetSource(user: SessionUser, workspaceId: string, config: unknown) {
-  const ds = (config as { dataSource?: { projectId?: unknown; viewId?: unknown; appendProjectIds?: unknown; merge?: { projectId?: unknown } } } | undefined)?.dataSource;
-  const projectId = typeof ds?.projectId === "string" ? ds.projectId : null;
-  if (!projectId) return;
-  const ids = [projectId, ...(Array.isArray(ds?.appendProjectIds) ? ds.appendProjectIds : []), ...(ds?.merge ? [ds.merge.projectId] : [])];
+/** Appended projects of a widget the viewer may see (merged ones need the main project's rows). */
+async function visibleAppended(user: SessionUser, workspaceId: string, ds: NonNullable<DashboardBlockConfig["dataSource"]>) {
+  const ids = (ds.appendProjectIds ?? []).filter((id) => id !== ds.projectId);
+  if (!ids.length) return 0;
+  return prisma.project.count({ where: { id: { in: ids.slice(0, MAX_SOURCES) }, workspaceId, deletedAt: null, ...visibleProjectWhere(user) } });
+}
+
+/** Fields of a hidden main project kept for the widget's shape: system fields and the ones the config names, without options. */
+function shapeOnly(fields: FieldRow[], config: DashboardBlockConfig): FieldRow[] {
+  const used = JSON.stringify(config);
+  return fields
+    .filter((f) => f.id.startsWith("sys_") || used.includes(`"${f.id}"`))
+    .map((f) => {
+      if (!f.config) return f;
+      try {
+        const cfg = { ...(JSON.parse(f.config) as Record<string, unknown>) };
+        delete cfg.options;
+        return { ...f, config: JSON.stringify(cfg) };
+      } catch {
+        return { ...f, config: null };
+      }
+    });
+}
+
+type RawSource = { projectId?: unknown; viewId?: unknown; appendProjectIds?: unknown; merge?: { projectId?: unknown } };
+const dataSourceOf = (config: unknown) => (config as { dataSource?: RawSource } | null | undefined)?.dataSource;
+/** Every project a widget config reads (main, appended, merged), as given. */
+function sourceIdsOf(ds: RawSource | undefined): unknown[] {
+  if (typeof ds?.projectId !== "string") return [];
+  return [ds.projectId, ...(Array.isArray(ds.appendProjectIds) ? ds.appendProjectIds : []), ...(ds.merge ? [ds.merge.projectId] : [])];
+}
+
+/**
+ * A widget may only point at projects of its own workspace that the author can see. When an editor
+ * saves a widget another member built, sources hidden from the editor that the widget already had
+ * (`previous`, the stored config) may stay: the editor can't see or remove them, and keeping them
+ * reads nothing of those projects for the editor. New hidden sources are still refused.
+ */
+export async function assertWidgetSource(user: SessionUser, workspaceId: string, config: unknown, previous?: unknown) {
+  const ds = dataSourceOf(config);
+  const ids = sourceIdsOf(ds);
+  if (!ids.length) return;
+  const projectId = ids[0] as string;
   if (ids.length > MAX_SOURCES || ids.some((id) => typeof id !== "string" || !/^[0-9a-f-]{36}$/i.test(id))) throw new HttpError(400, "Unknown data source project");
   const found = await prisma.project.count({ where: { id: { in: ids as string[] }, workspaceId, deletedAt: null } });
   const hidden = await hiddenProjectIds(user);
-  if (found !== new Set(ids).size || ids.some((id) => hidden.has(id as string))) throw new HttpError(400, "Unknown data source project");
+  const kept = new Set(sourceIdsOf(dataSourceOf(previous)));
+  if (found !== new Set(ids).size || ids.some((id) => hidden.has(id as string) && !kept.has(id))) throw new HttpError(400, "Unknown data source project");
   if (typeof ds?.viewId === "string" && !(await prisma.view.findFirst({ where: { id: ds.viewId, projectId }, select: { id: true } }))) throw new HttpError(400, "Unknown data source view");
 }

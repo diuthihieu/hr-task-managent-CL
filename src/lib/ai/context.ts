@@ -10,6 +10,7 @@ import { isCurrentKnowledge } from "../wiki";
 import { taskCommentsSection } from "./task-comments";
 import { taskRef, type CitationTarget } from "./citations";
 import { ownMinutes } from "../hours";
+import { hoursTotalsSection } from "./hours-totals";
 
 // Grounding context for the AI. Everything given to the model is read with
 // the same permission filters as the rest of the app, so the model can only
@@ -156,7 +157,7 @@ export async function hoursByCategorySection(where: Prisma.TaskWhereInput): Prom
   const list = [...rows.values()].sort((a, b) => a.person.localeCompare(b.person) || b.month.localeCompare(a.month) || a.category.localeCompare(b.category));
   const head = "## Hours per person, category and month (every live task of the report's projects, before any view / chart / slicer filter; a task with several assignees counts in full for each; parents count only their own share - a parent's hours include its sub-tasks'; month = completed, else due, else start date)\nperson | category | month | tasks | estimate h | actual h | actual h of done tasks\n";
   if (!list.length) return head + "(no tasks)";
-  const text = head + list.map((r) => [r.person, r.category, r.month, r.tasks, hours(r.est), hours(r.act), hours(r.actDone)].join(" | ")).join("\n");
+  const text = head + list.map((r) => [r.person, r.category, r.month, r.tasks, hours(r.est), hours(r.act), hours(r.actDone)].join(" | ")).join("\n") + "\n\n" + hoursTotalsSection(tasks, own);
   return tasks.length === HOURS_TASK_LIMIT ? `${text}\n[Note: only the first ${HOURS_TASK_LIMIT} tasks were counted - totals are partial.]` : text;
 }
 

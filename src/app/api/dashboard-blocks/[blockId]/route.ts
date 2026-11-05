@@ -23,7 +23,10 @@ export const PATCH = route<P>(async (req, { params }) => {
   const { blockId } = await params;
   const ctx = await requireWorkspaceRole(user, await workspaceOfWidget(blockId), "editor");
   const body = patchSchema.parse(await readJson(req));
-  if (body.config) await assertWidgetSource(user, ctx.workspaceId, body.config);
+  if (body.config) {
+    const stored = await prisma.dashboardWidget.findUniqueOrThrow({ where: { id: blockId }, select: { config: true } });
+    await assertWidgetSource(user, ctx.workspaceId, body.config, stored.config);
+  }
   const w = await prisma.dashboardWidget.update({ where: { id: blockId }, data: { ...body, config: body.config as Prisma.InputJsonValue | undefined } });
   return NextResponse.json(serializeWidget(w));
 });

@@ -467,6 +467,8 @@ model WorkspaceMember {
   createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
   updatedAt   DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
   createdById String?       @map("created_by") @db.Uuid
+  /// The task this member pinned as "Your focus today" on Home (kept until it is done; checked on read).
+  focusTaskId String?       @map("focus_task_id") @db.Uuid
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   user      User      @relation("MemberUser", fields: [userId], references: [id], onDelete: Cascade)
@@ -1249,6 +1251,8 @@ model Notification {
   snoozedUntil DateTime? @map("snoozed_until") @db.Timestamptz(6)
   /// When the reader acted on it (Accept / Complete / Done) - it leaves the "To do" list.
   actionedAt   DateTime? @map("actioned_at") @db.Timestamptz(6)
+  /// Set by the one Web Push sender that claims the row, so a notification is pushed once (src/lib/push.ts).
+  pushedAt     DateTime? @map("pushed_at") @db.Timestamptz(6)
   createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user      User             @relation("NotificationUser", fields: [userId], references: [id], onDelete: Cascade)

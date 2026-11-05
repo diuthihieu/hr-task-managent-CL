@@ -149,6 +149,10 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
     assigneeNames: x.assignees.filter((a) => a.user.id !== user.id).map((a) => a.user.name),
   });
   const todayStr = today.toISOString().slice(0, 10);
+  // "Your focus today" pinned by this member: kept while the task is open and theirs, else cleared.
+  const member = await prisma.workspaceMember.findUnique({ where: { workspaceId_userId: { workspaceId: workspace.id, userId: user.id } }, select: { focusTaskId: true } });
+  const pinned = member?.focusTaskId ? myTasks.find((x) => x.id === member.focusTaskId && (x.status.category === "todo" || x.status.category === "in_progress")) : undefined;
+  if (member?.focusTaskId && !pinned) await prisma.workspaceMember.update({ where: { workspaceId_userId: { workspaceId: workspace.id, userId: user.id } }, data: { focusTaskId: null } });
   const soonStr = new Date(today.getTime() + 3 * 86400000).toISOString().slice(0, 10);
 
   const openByProject = new Map(projectCounts.map((c) => [c.projectId, c._count._all]));
@@ -169,6 +173,7 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
     soon: soonStr,
     locale,
     tasks: myTasks.map(toHome),
+    pinnedFocusId: pinned?.id ?? null,
     waiting: waitingTasks.map(toHome),
     doneLast30: myDone,
     okrs: okrs.map((o) => ({ id: o.id, title: o.title, progress: o.progress, keyResults: o.keyResults.map((k) => ({ id: k.id, title: k.title, progress: k.progress })) })),

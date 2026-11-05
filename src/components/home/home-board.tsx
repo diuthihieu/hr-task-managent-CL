@@ -52,6 +52,7 @@ function WidgetView({ w, d }: { w: HomeWidget; d: HomeData }) {
         tasks={d.tasks}
         waiting={d.waiting}
         doneLast30={d.doneLast30}
+        pinnedFocusId={d.pinnedFocusId}
       />
     );
   switch (w.type) {

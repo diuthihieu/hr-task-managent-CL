@@ -7,6 +7,7 @@ import { after } from "next/server";
 import type { PrismaClient } from "@prisma/client";
 import { makeT, normalizeLocale, type MessageKey } from "./i18n/core";
 import { notifyGroupOf, type NotifyGroup } from "./notification-prefs";
+import { claimForPush } from "./push-claim";
 
 export interface QueuedNotification {
   id?: string;
@@ -17,6 +18,7 @@ export interface QueuedNotification {
   data?: unknown;
   link?: string | null;
   actorId?: string | null;
+  dedupeKey?: string | null;
 }
 
 /**
@@ -99,10 +101,16 @@ export async function sendPush(db: PrismaClient, rows: QueuedNotification[], sin
     const group = notifyGroupOf(n);
     if (group && (u.notifyNativeOff as NotifyGroup[]).includes(group)) continue; // "Desktop / Mobile" switched off for this group
     // Only rows that really exist (a rolled-back transaction or a skipped duplicate sends nothing).
+    // createMany gives no ids: the dedupe key names the exact row; without one, take the oldest row
+    // like it that has not been pushed yet, so two same-titled notifications each get their push.
     const kept = n.id
       ? await db.notification.findUnique({ where: { id: n.id }, select: { id: true } })
-      : await db.notification.findFirst({ where: { userId: n.userId, type: n.type, title: n.title, createdAt: { gte: since } }, select: { id: true } });
+      : n.dedupeKey
+        ? await db.notification.findFirst({ where: { userId: n.userId, dedupeKey: n.dedupeKey, createdAt: { gte: since } }, select: { id: true } })
+        : await db.notification.findFirst({ where: { userId: n.userId, type: n.type, title: n.title, createdAt: { gte: since }, pushedAt: null }, orderBy: { createdAt: "asc" }, select: { id: true } });
     if (!kept) continue;
+    // Once per notification, even when several requests queued the same reminder (see push-claim.ts).
+    if (!(await claimForPush(db, kept.id))) continue;
     const t = makeT(normalizeLocale(u.locale));
     const actor = (n.actorId && actorName.get(n.actorId)) || t("notif.someone");
     const payload = JSON.stringify({ id: kept.id, title: n.title, body: describe(n, actor, u.locale ?? "vi"), url: n.link || "/workspaces", tag: kept.id });

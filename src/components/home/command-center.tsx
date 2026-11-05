@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { AlarmClock, CalendarClock, CheckCircle2, ClipboardList, Hourglass, Loader, Lock, Play, CalendarPlus, Check, Sun, Sparkles, ShieldAlert, ListTodo, CircleDashed, Target, CircleCheck, UsersRound } from "lucide-react";
+import { AlarmClock, ChevronLeft, ChevronRight, Pin, PinOff, CalendarClock, CheckCircle2, ClipboardList, Hourglass, Loader, Lock, Play, CalendarPlus, Check, Sun, Sparkles, ShieldAlert, ListTodo, CircleDashed, Target, CircleCheck, UsersRound } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
 import { toast } from "@/components/ui/toast";
@@ -122,6 +122,7 @@ export function CommandCenter({
   tasks: initialTasks,
   waiting,
   doneLast30,
+  pinnedFocusId = null,
   part = "all",
   variant,
 }: {
@@ -137,6 +138,8 @@ export function CommandCenter({
   tasks: HomeTask[];
   waiting: HomeTask[];
   doneLast30: number;
+  /** The task the member pinned as their focus (kept until it is done). */
+  pinnedFocusId?: string | null;
 }) {
   const { t } = useT();
   const router = useRouter();
@@ -166,7 +169,58 @@ export function CommandCenter({
     })
     .sort(byFocus);
   const completed = useMemo(() => tasks.filter((x) => x.category === "done").sort((a, b) => (b.completedAt ?? "").localeCompare(a.completedAt ?? "")), [tasks]);
-  const focus = myDay[0] ?? tasks.filter((x) => classify(x, today, soon).open && !x.blockedBy.length).sort(byFocus)[0];
+  // "Your focus today": the pinned task while it is open, then the priority order (focusScore) over today's
+  // tasks - or, when none qualifies today, every open task that isn't blocked. < and > step through it.
+  const [pinnedId, setPinnedId] = useState<string | null>(pinnedFocusId);
+  useEffect(() => {
+    setPinnedId(pinnedFocusId);
+  }, [pinnedFocusId]);
+  const pinnedTask = pinnedId ? tasks.find((x) => x.id === pinnedId && classify(x, today, soon).open) : undefined;
+  const ranked = myDay.length ? myDay : tasks.filter((x) => classify(x, today, soon).open && !x.blockedBy.length).sort(byFocus);
+  const focusOrder = pinnedTask ? [pinnedTask, ...ranked.filter((x) => x.id !== pinnedTask.id)] : ranked;
+  const [focusIdx, setFocusIdx] = useState(0);
+  const focusAt = Math.min(focusIdx, Math.max(0, focusOrder.length - 1));
+  const focus = focusOrder[focusAt];
+  const focusIsPinned = !!pinnedTask && focus?.id === pinnedTask.id;
+  async function pinFocus(taskId: string | null) {
+    const prev = pinnedId;
+    setPinnedId(taskId);
+    setFocusIdx(0);
+    try {
+      await api.put(`/api/workspaces/${workspaceId}/focus`, { taskId });
+      toast.success(t(taskId ? "cc.pinned" : "cc.unpinned"));
+      // The focus card and each task-list widget are separate instances: re-read the page so all of
+      // them get the new pinnedFocusId (synced into pinnedId by the effect above).
+      router.refresh();
+    } catch (e) {
+      setPinnedId(prev);
+      toast.error(e instanceof Error ? e.message : t("common.failed"));
+    }
+  }
+  const focusNav = focusOrder.length > 1 || focus ? (
+    <div className="flex items-center gap-1" data-testid="cc-focus-nav">
+      <button type="button" onClick={() => setFocusIdx(focusAt - 1)} disabled={focusAt === 0} className="h-7 w-7 flex items-center justify-center rounded-md border border-neutral-200 dark:border-neutral-700 text-neutral-500 hover:text-indigo-600 disabled:opacity-40" aria-label={t("cc.focusPrev")} title={t("cc.focusPrev")} data-testid="cc-focus-prev">
+        <ChevronLeft size={14} />
+      </button>
+      <span className="min-w-[2.5rem] text-center text-[11px] tabular-nums text-neutral-500" data-testid="cc-focus-pos">
+        {focusOrder.length ? `${focusAt + 1}/${focusOrder.length}` : "0/0"}
+      </span>
+      <button type="button" onClick={() => setFocusIdx(focusAt + 1)} disabled={focusAt >= focusOrder.length - 1} className="h-7 w-7 flex items-center justify-center rounded-md border border-neutral-200 dark:border-neutral-700 text-neutral-500 hover:text-indigo-600 disabled:opacity-40" aria-label={t("cc.focusNext")} title={t("cc.focusNext")} data-testid="cc-focus-next">
+        <ChevronRight size={14} />
+      </button>
+      {focus ? (
+        <button
+          type="button"
+          onClick={() => void pinFocus(focusIsPinned ? null : focus.id)}
+          className={cn("ml-1 h-7 px-2 flex items-center gap-1 rounded-md border text-xs", focusIsPinned ? "border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-700 dark:bg-indigo-950 dark:text-indigo-300" : "border-neutral-200 dark:border-neutral-700 text-neutral-600 hover:text-indigo-600")}
+          aria-pressed={focusIsPinned}
+          data-testid="cc-focus-pin"
+        >
+          {focusIsPinned ? <PinOff size={12} /> : <Pin size={12} />} {t(focusIsPinned ? "cc.unpin" : "cc.pin")}
+        </button>
+      ) : null}
+    </div>
+  ) : null;
   const list = tasks.filter((x) => matches(filter, x, today, soon)).sort(filter === "done" ? () => 0 : byFocus);
 
   // Built by hand so server and browser render the same text (their ICU data can differ).
@@ -255,6 +309,11 @@ export function CommandCenter({
                 <CalendarPlus size={13} />
               </button>
             )}
+            {task.category === "todo" || task.category === "in_progress" ? (
+              <button onClick={() => void pinFocus(pinnedId === task.id ? null : task.id)} className="p-1 rounded text-neutral-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950" title={t(pinnedId === task.id ? "cc.unpin" : "cc.pin")} aria-pressed={pinnedId === task.id} data-testid="cc-pin">
+                {pinnedId === task.id ? <PinOff size={13} /> : <Pin size={13} />}
+              </button>
+            ) : null}
             <button onClick={() => quick(task, "complete")} disabled={!!busy} className="p-1 rounded text-neutral-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950" title={t("cc.complete")} data-testid="cc-complete">
               <Check size={13} />
             </button>
@@ -336,7 +395,14 @@ export function CommandCenter({
         </span>
         {/* At least 12rem wide: on a phone the buttons wrap below instead of squeezing the text. */}
         <div className="min-w-[12rem] flex-1">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-indigo-600">{t("cc.focusToday")}</div>
+          <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-600">
+            {t("cc.focusToday")}
+            {focusIsPinned ? (
+              <span className="inline-flex items-center gap-0.5 rounded bg-indigo-100 px-1 py-px text-[10px] normal-case tracking-normal text-indigo-700 dark:bg-indigo-900 dark:text-indigo-200" data-testid="cc-focus-pinned">
+                <Pin size={10} /> {t("cc.pinnedBadge")}
+              </span>
+            ) : null}
+          </div>
           {focus ? (
             <>
               <Link href={`${base}/p/${focus.projectId}/t/${focus.id}`} className="block truncate text-base font-semibold text-neutral-900 dark:text-neutral-50 hover:text-indigo-600">
@@ -354,6 +420,7 @@ export function CommandCenter({
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          {focusNav}
           {focus && <StartFocusButton taskId={focus.id} />}
           <AiActionMenu
             targetId={workspaceId}
@@ -386,7 +453,10 @@ export function CommandCenter({
           {focus.dueDate && <MetaDate value={dateFmt(focus.dueDate)} title={t("home.col.due")} />}
         </Meta>
       )}
-      <div className="mt-auto flex flex-wrap gap-2">{focus && <StartFocusButton taskId={focus.id} />}</div>
+      <div className="mt-auto flex flex-wrap items-center gap-2">
+        {focusNav}
+        {focus && <StartFocusButton taskId={focus.id} />}
+      </div>
     </section>
   );
   const compactList = variant === "compact";
@@ -516,7 +586,12 @@ export function CommandCenter({
                                 <CalendarPlus size={13} />
                               </button>
                             )}
-                            <button onClick={() => quick(task, "complete")} disabled={!!busy} className="p-1 rounded text-neutral-400 hover:text-emerald-600" title={t("cc.complete")} data-testid="cc-row-complete">
+                            {task.category === "todo" || task.category === "in_progress" ? (
+              <button onClick={() => void pinFocus(pinnedId === task.id ? null : task.id)} className="p-1 rounded text-neutral-400 hover:text-indigo-600" title={t(pinnedId === task.id ? "cc.unpin" : "cc.pin")} aria-pressed={pinnedId === task.id} data-testid="cc-row-pin">
+                {pinnedId === task.id ? <PinOff size={13} /> : <Pin size={13} />}
+              </button>
+            ) : null}
+            <button onClick={() => quick(task, "complete")} disabled={!!busy} className="p-1 rounded text-neutral-400 hover:text-emerald-600" title={t("cc.complete")} data-testid="cc-row-complete">
                               <Check size={13} />
                             </button>
                           </span>

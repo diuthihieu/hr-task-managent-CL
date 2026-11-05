@@ -44,7 +44,7 @@ test("sub-task list: the completed time typed in is the one shown and stored", a
   }
 });
 
-test("done check: asks for the completed time, empty; 'Now' fills it in; saved as typed", async ({ page, seed }) => {
+test("done check: the completed time is required, starts empty; 'Now' fills it in; saved as typed", async ({ page, seed }) => {
   const { post, p, done, parent } = await setup(page, seed.wsId);
   const child = await post<{ id: string }>(`/api/projects/${p.id}/tasks`, { data: { sys_title: "Hướng dẫn làm lương", sys_parent: [parent.id] } });
   const stored = async () => ((await (await page.request.get(`/api/tasks/${child.id}`)).json()) as Rec).data.sys_completed_at;
@@ -60,10 +60,45 @@ test("done check: asks for the completed time, empty; 'Now' fills it in; saved a
   const completed = dialog.getByTestId("done-check-completed");
   await expect(completed).toHaveValue("");
   expect(await stored(), "nothing guessed while the dialog is open").toBeNull();
+  // Required: Esc doesn't dismiss it, there is no X, "skip" waits for the time, saving empty is refused.
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("button", { name: /close/i })).toHaveCount(0);
+  await expect(dialog.getByTestId("done-check-ignore")).toBeDisabled();
+  await dialog.getByTestId("done-check-save").click();
+  await expect(dialog).toBeVisible();
+  await expect(completed).toHaveAttribute("aria-invalid", "true");
   await dialog.getByTestId("done-check-completed-now").click();
   await expect(completed).not.toHaveValue("");
   await completed.fill("2026-10-26T19:44");
   await dialog.getByTestId("done-check-save").click();
   await expect(dialog).toBeHidden();
   await expect.poll(stored).toBe("2026-10-26T12:44:00.000Z");
+});
+
+test("Home: completing a task asks for the completed time; 'skip the rest' saves just that and Home lists it as completed", async ({ page, seed }) => {
+  const { post, p } = await setup(page, seed.wsId);
+  const me = ((await (await page.request.get("/api/auth/session")).json()) as { user: { id: string } }).user.id;
+  const title = `Đối soát công ${Date.now().toString(36)}`;
+  const task = await post<{ id: string }>(`/api/projects/${p.id}/tasks`, { data: { sys_title: title, sys_assignees: [me] } });
+
+  await page.goto(`/w/${seed.slug}`);
+  const myTasks = page.getByTestId("home-my-tasks");
+  // Home shows "my tasks" as a list or as a table, depending on the layout.
+  const row = myTasks.locator("tr, [data-testid=cc-task]").filter({ hasText: title }).first();
+  await row.hover();
+  await row.locator("[data-testid=cc-complete], [data-testid=cc-row-complete]").first().click();
+  const dialog = page.getByTestId("done-check-dialog");
+  const completed = dialog.getByTestId("done-check-completed");
+  await expect(completed).toHaveValue("");
+  await expect(dialog.getByTestId("done-check-ignore")).toBeDisabled();
+  await completed.fill("2026-11-04T17:00");
+  await completed.press("Tab");
+  await dialog.getByTestId("done-check-ignore").click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(async () => ((await (await page.request.get(`/api/tasks/${task.id}`)).json()) as Rec).data.sys_completed_at).toBe("2026-11-04T10:00:00.000Z");
+
+  await page.reload();
+  await myTasks.getByRole("button", { name: /^(Hoàn thành|Completed) \d+$/ }).click();
+  await expect(myTasks.getByText(title)).toBeVisible();
 });

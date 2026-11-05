@@ -188,7 +188,8 @@ export function CommandCenter({
     setBusy(task.id + action);
     try {
       const rec = await api.post(`/api/tasks/${task.id}/quick`, { action });
-      promptDoneCheck(rec);
+      // Once the done check saves the completed time, reload Home so the task shows under "completed".
+      promptDoneCheck(rec, () => router.refresh());
       setTasks((prev) =>
         prev.map((x) =>
           x.id !== task.id

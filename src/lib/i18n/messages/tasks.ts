@@ -374,6 +374,8 @@ export const TASKS = {
   "hoursCheck.saved": ["Parent task hours updated", "Đã cập nhật giờ task mẹ"],
   "doneCheck.ignore": ["Ignore", "Bỏ qua"],
   "doneCheck.now": ["Now", "Bây giờ"],
+  "doneCheck.ignoreRest": ["Skip the rest", "Bỏ qua phần còn lại"],
+  "doneCheck.completedRequired": ["Enter the completed time - it is required", "Nhập ngày hoàn thành - đây là thông tin bắt buộc"],
   "doneCheck.saved": ["Details saved", "Đã lưu thông tin bổ sung"],
   "doneCheck.badHours": ["Enter the actual time in hours, e.g. 1.5", "Nhập thời gian thực tế theo giờ, VD 1.5"],
   "focus.planned": ["Session goal: {min} min", "Mục tiêu phiên: {min} phút"],

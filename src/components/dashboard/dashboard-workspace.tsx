@@ -317,7 +317,7 @@ export function DashboardWorkspace({
         )}
         <div className="ml-auto flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
           {dashboard.blocks.length > 0 && <AiDashboardActions dashboardId={dashboardId} getData={snapshot} />}
-          {dashboard.blocks.length > 0 && <AiReportButton workspaceId={workspaceId} targetKind="dashboard" targetId={dashboardId} getData={snapshot} getCharts={() => captureCharts(gridRef.current)} />}
+          {dashboard.blocks.length > 0 && <AiReportButton workspaceId={workspaceId} targetKind="dashboard" targetId={dashboardId} getData={snapshot} getCharts={() => captureCharts(gridRef.current)} getSlicers={() => slicers} />}
           <ReportLibraryButton workspaceId={workspaceId} dashboardId={dashboardId} />
           {canEdit && <AiBuildWidgetsButton
               target="dashboard"

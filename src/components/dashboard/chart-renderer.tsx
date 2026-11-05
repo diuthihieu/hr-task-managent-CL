@@ -30,7 +30,7 @@ import {
   RadialBar,
   ComposedChart,
 } from "recharts";
-import { fmtChartNumber } from "@/lib/chart-format";
+import { fmtChartNumber, wrapLabel } from "@/lib/chart-format";
 import type { SeriesPoint, StackedSeries, ScatterPoint, ChartType, Segment, WidgetStyleConfig } from "@/lib/dashboard-engine";
 
 export const CHART_COLORS = ["#6366f1", "#0ea5e9", "#22c55e", "#f97316", "#ec4899", "#8b5cf6", "#eab308", "#ef4444", "#14b8a6", "#a855f7"];
@@ -47,6 +47,20 @@ const tooltipFormatter = (v: unknown) => fmtChartNumber(v);
 function labelRoom(values: unknown[], fontSize: number) {
   const longest = values.reduce<number>((m, v) => Math.max(m, fmtChartNumber(v).length), 0);
   return Math.ceil(longest * fontSize * 0.62) + 10;
+}
+
+type RadarTickProps = { x: number; y: number; textAnchor?: "start" | "middle" | "end" | "inherit"; payload: { value: unknown }; fontSize?: number; fill?: string };
+function RadarTick({ x, y, textAnchor, payload, fontSize = 11, fill }: RadarTickProps) {
+  const lines = wrapLabel(String(payload.value ?? ""));
+  return (
+    <text x={x} y={y} textAnchor={textAnchor} fontSize={fontSize} fill={fill ?? "currentColor"}>
+      {lines.map((l, i) => (
+        <tspan key={i} x={x} dy={i === 0 ? (lines.length > 1 ? -fontSize * 0.4 : fontSize * 0.35) : fontSize * 1.15}>
+          {l}
+        </tspan>
+      ))}
+    </text>
+  );
 }
 
 export function ChartRenderer({
@@ -251,9 +265,9 @@ export function ChartRenderer({
     const data = series ?? [];
     return (
       <ResponsiveContainer width="100%" height="100%">
-        <RadarChart data={data} onClick={chartClick(data)}>
+        <RadarChart data={data} onClick={chartClick(data)} outerRadius="62%" margin={{ top: 12, right: 24, bottom: 12, left: 24 }}>
           {showGrid && <PolarGrid stroke={gridColor} />}
-          <PolarAngleAxis dataKey="label" tick={axisTick} />
+          <PolarAngleAxis dataKey="label" tick={(p: unknown) => <RadarTick {...(p as RadarTickProps)} fontSize={axisTick.fontSize} fill={axisTick.fill} />} />
           <PolarRadiusAxis tick={axisTick} />
           <Tooltip contentStyle={tooltipStyle} formatter={tooltipFormatter} />
           <Radar dataKey="value" name={measureLabel ?? "Value"} stroke={primary} strokeWidth={lineWidth} fill={primary} fillOpacity={0.35} />

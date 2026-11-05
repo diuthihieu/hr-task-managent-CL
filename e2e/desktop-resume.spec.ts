@@ -23,6 +23,9 @@ test("stays signed in for weeks and reopens the workspace last used (Home)", asy
   await expect(page, "installed app start -> same").toHaveURL(new RegExp(`/w/${second.slug}$`));
 
   await page.goto(`/w/${seed.slug}/my-work`);
+  // The page that was open just before may still write its own workspace as it unloads: wait until the
+  // remembered workspace settles on the one now open (a person never reopens woli within milliseconds).
+  await expect.poll(async () => (await context.cookies()).find((c) => c.name === "woli_last_ws")?.value).toBe(seed.slug);
   await page.goto("/workspaces?resume=1");
   await expect(page, "follows the workspace opened last").toHaveURL(new RegExp(`/w/${seed.slug}$`));
 

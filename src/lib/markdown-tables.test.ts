@@ -31,3 +31,12 @@ test("pipes inside code fences are untouched", () => {
   const md = "```\n| a | b |\n```";
   assert.equal(repairTables(md), md);
 });
+
+test("a second delimiter row and a delimiter with the wrong cell count are fixed (AI reports printed ':---' rows)", () => {
+  const twice = repairTables("| a | b |\n| :--- | :---: |\n| :--- | :---: |\n| 1 | 2 |").split("\n");
+  assert.deepEqual(twice, ["| a | b |", "| :--- | :---: |", "| 1 | 2 |"]);
+  const wide = repairTables("| a | b |\n| :--- | :--- | :--- |\n| 1 | 2 |").split("\n");
+  assert.deepEqual(wide, ["| a | b |", "| :--- | :--- |", "| 1 | 2 |"]);
+  const narrow = repairTables("| a | b | c |\n|:---|:---:|\n| 1 | 2 | 3 |").split("\n");
+  assert.deepEqual(narrow, ["| a | b | c |", "| :--- | :---: | --- |", "| 1 | 2 | 3 |"]);
+});

@@ -28,7 +28,12 @@ export function repairTables(md: string): string {
     while (j < lines.length && (j === i || isRow(lines[j]) || isSeparator(lines[j]))) run.push(lines[j++]);
     const hasHeader = run.length >= 2 && isRow(run[0]) && isSeparator(run[1]);
     if (hasHeader) {
-      out.push(...run);
+      // The delimiter row must match the header's cell count, and only one may follow it: a second
+      // ":---" line would otherwise print as a body row (seen in AI reports).
+      const n = cells(run[0]);
+      const sep = run[1].trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+      const delimiter = sep.length === n ? run[1] : `| ${Array.from({ length: n }, (_, k) => sep[k] ?? "---").join(" | ")} |`;
+      out.push(run[0], delimiter, ...run.slice(2).filter((l) => !isSeparator(l)));
     } else {
       const rows = run.filter((l) => !isSeparator(l)).map((l) => (isRow(l) ? l : `| ${l.trim()}`));
       const n = Math.max(...rows.map(cells));

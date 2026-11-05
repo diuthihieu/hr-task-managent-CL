@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { hoursTotalsSection, type HoursTask } from "./hours-totals";
 
 const oct = new Date("2026-10-15T05:00:00Z");
-const task = (id: string, names: string[], done = true): HoursTask => ({ id, completedAt: done ? oct : null, dueDate: oct, startDate: null, status: { category: done ? "done" : "todo" }, assignees: names.map((name) => ({ user: { name } })) });
+const task = (id: string, names: string[], done = true): HoursTask => ({ id, completedAt: done ? oct : null, dueDate: oct, startDate: null, status: { category: done ? "done" : "todo" }, assignees: names.map((name) => ({ user: { id: `id-${name}`, name } })) });
 const rowOf = (text: string, prefix: string) => (text.split("\n").find((l) => l.startsWith(prefix)) ?? "").split(" | ");
 
 test("totals on both bases: team counts a shared task once, people count it for each assignee", () => {
@@ -27,4 +27,11 @@ test("no tasks gives no section; unassigned tasks count under (unassigned)", () 
   assert.equal(hoursTotalsSection([], new Map()), "");
   const text = hoursTotalsSection([task("x", [])], new Map([["x", { est: 0, act: 6 }]]));
   assert.deepEqual(rowOf(text, "(unassigned) | 2026-10").slice(0, 8), ["(unassigned)", "2026-10", "1", "1", "0", "0.1", "0.1", "-"]);
+});
+
+test("two people with the same display name are two assignees", () => {
+  const t: HoursTask = { ...task("d", []), assignees: [{ user: { id: "u1", name: "Alex" } }, { user: { id: "u2", name: "Alex" } }] };
+  const text = hoursTotalsSection([t], new Map([["d", { est: 0, act: 60 }]]));
+  assert.equal(text.split("\n").filter((l) => l.startsWith("Alex | 2026-10")).length, 2);
+  assert.deepEqual(rowOf(text, "2026-10 | 2 |"), ["2026-10", "2", "1", "2", "1", "1", "1"]);
 });

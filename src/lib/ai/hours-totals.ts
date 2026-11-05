@@ -9,7 +9,7 @@ export interface HoursTask {
   dueDate: Date | null;
   startDate: Date | null;
   status: { category: string };
-  assignees: { user: { name: string } }[];
+  assignees: { user: { id: string; name: string } }[];
 }
 /** A task's own estimate / actual minutes (a parent's total minus its sub-tasks', see lib/hours.ts). */
 export type OwnShare = { est: number; act: number };
@@ -48,14 +48,16 @@ export function hoursTotalsSection(tasks: HoursTask[], own: Map<string, OwnShare
     const share = own.get(t.id) ?? { est: 0, act: 0 };
     const m = monthOf(t);
     add(team.get(m) ?? team.set(m, empty()).get(m)!, t, share);
-    const names = t.assignees.length ? [...new Set(t.assignees.map((a) => a.user.name))] : ["(unassigned)"];
+    // One entry per distinct user (by id: display names are not unique).
+    const byId = new Map(t.assignees.map((a) => [a.user.id, a.user.name]));
+    const names = byId.size ? [...byId.entries()] : [["", "(unassigned)"]];
     const pm = personMonth.get(m) ?? personMonth.set(m, { ...empty(), shared: 0, sharedAct: 0 }).get(m)!;
     if (names.length > 1) {
       pm.shared++;
       pm.sharedAct += share.act * (names.length - 1);
     }
-    for (const person of names) {
-      const key = `${person}\u0000${m}`;
+    for (const [userId, person] of names) {
+      const key = `${userId}\u0000${person}\u0000${m}`;
       add(people.get(key) ?? people.set(key, { ...empty(), person, month: m }).get(key)!, t, share);
       add(pm, t, share);
     }

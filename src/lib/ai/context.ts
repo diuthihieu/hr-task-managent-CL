@@ -135,7 +135,7 @@ export async function hoursSection(where: Prisma.TaskWhereInput): Promise<string
 export async function hoursByCategorySection(where: Prisma.TaskWhereInput): Promise<string> {
   const tasks = await prisma.task.findMany({
     where,
-    select: { id: true, parentTaskId: true, estimateMinutes: true, actualMinutes: true, completedAt: true, dueDate: true, startDate: true, status: { select: { category: true } }, category: { select: { name: true } }, assignees: { select: { user: { select: { name: true } } } } },
+    select: { id: true, parentTaskId: true, estimateMinutes: true, actualMinutes: true, completedAt: true, dueDate: true, startDate: true, status: { select: { category: true } }, category: { select: { name: true } }, assignees: { select: { user: { select: { id: true, name: true } } } } },
     take: HOURS_TASK_LIMIT,
   });
   const own = ownMinutes(tasks);

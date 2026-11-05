@@ -24,6 +24,7 @@ import { applyFilters, applySorts, applyGroup, filterConditionCount, getCellValu
 import { parseFieldConfig } from "@/lib/field-types";
 import { groupFieldPatch } from "@/lib/grid-group";
 import { orderVisibleFields } from "@/lib/grid-columns";
+import { localDateToIso } from "@/lib/datetime-local";
 import { NewTaskDialog } from "@/components/tasks/new-task-dialog";
 import { EisenhowerView } from "@/components/eisenhower/eisenhower-view";
 import { ReportView } from "@/components/report/report-view";
@@ -301,6 +302,17 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
     setNewTask({ initialData: newTaskSlot().data });
   }
 
+  /**
+   * Calendar "+" on a day: the form starts on that day. The start date is the day clicked, and so is the
+   * calendar's own date field when it is another one (e.g. Due date), so the new task shows on that day.
+   */
+  function openNewTaskOnDay(day: string) {
+    const data: Record<string, unknown> = { sys_start_date: day };
+    const dateField = fields.find((f) => f.id === config.calendar?.dateFieldId) ?? fields.find((f) => f.type === "date" || f.type === "datetime");
+    if (dateField && dateField.id !== "sys_start_date") data[dateField.id] = dateField.type === "datetime" ? localDateToIso(day) : day;
+    setNewTask({ initialData: data });
+  }
+
   /** Saves the form: the task goes to the top of the view, then the grid scrolls to it. */
   async function submitNewTask(data: Record<string, unknown>): Promise<boolean> {
     const { anchor } = newTaskSlot();
@@ -483,6 +495,7 @@ export function ProjectWorkspace({ projectId, breadcrumb }: { projectId: string;
           onConfigChange={(patch) => updateConfig({ calendar: { ...(config.calendar ?? {}), ...patch } })}
           onCellChange={handleCellChange}
           onOpenRecord={setOpenRecordId}
+          onCreateOnDay={caps.has("task.create") ? openNewTaskOnDay : undefined}
         />
       ) : activeView?.type === "gallery" ? (
         <GalleryView

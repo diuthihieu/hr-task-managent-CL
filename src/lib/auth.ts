@@ -82,7 +82,11 @@ async function upsertMicrosoftUser(id: { key: string; email: string; name: strin
 }
 
 export const { handlers, auth, signIn, signOut, unstable_update } = NextAuth({
-  session: { strategy: "jwt", maxAge: 60 * 60 * 12 },
+  // Stay signed in on this device for 30 days after the last use (the cookie is renewed at most once a
+  // day while woli is used), so closing the laptop or the phone app doesn't sign anyone out. Revocation is
+  // still immediate: a password change or reset, or an admin disabling / changing the account bumps sessionVersion,
+  // which every request checks (authz.ts).
+  session: { strategy: "jwt", maxAge: 60 * 60 * 24 * 30, updateAge: 60 * 60 * 24 },
   pages: { signIn: "/login" },
   trustHost: true,
   providers: [

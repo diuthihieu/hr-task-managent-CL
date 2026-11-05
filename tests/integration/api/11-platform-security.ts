@@ -482,7 +482,8 @@ test("security: stolen sessions die on reset, sign-in is throttled, public forms
   for (const evil of ["%2F%5Cexample.com", "%2F%09%2Fexample.com", "%2F%2Fexample.com", "https%3A%2F%2Fexample.com"]) {
     const r = await home(`callbackUrl=${evil}`);
     assert.ok([303, 307, 308].includes(r.status), `${evil}: ${r.status}`);
-    assert.equal(new URL(r.headers.get("location")!, BASE).href, `${BASE}/workspaces`, `${evil} stays on the site`);
+    // The safe fallback: back to the workspace last used on this device (resolved by /workspaces?resume=1).
+    assert.equal(new URL(r.headers.get("location")!, BASE).href, `${BASE}/workspaces?resume=1`, `${evil} stays on the site`);
   }
   const inApp = await home("callbackUrl=%2Finvite%2Fabc");
   assert.equal(new URL(inApp.headers.get("location")!, BASE).pathname, "/invite/abc", "an in-app path is kept");

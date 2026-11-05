@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { LAST_WORKSPACE_COOKIE, LAST_WORKSPACE_MAX_AGE, workspaceSlugOf } from "@/lib/resume-target";
 
 const MARKETING = new Set(["/", "/privacy", "/terms"]);
 
@@ -48,6 +49,13 @@ export function proxy(request: NextRequest) {
   else headers.delete("x-woli-marketing");
   const response = NextResponse.next({ request: { headers } });
   response.headers.set("Content-Security-Policy-Report-Only", policy);
+  // Remember the workspace open on this device, so reopening woli lands back in it (see last-workspace.ts;
+  // membership is checked there). Only the slug, and only when it changes. Not HttpOnly: the workspace
+  // shell also writes it for client-side navigations that never reach the proxy (rememberWorkspaceInBrowser).
+  const slug = workspaceSlugOf(path);
+  if (slug && request.cookies.get(LAST_WORKSPACE_COOKIE)?.value !== slug) {
+    response.cookies.set(LAST_WORKSPACE_COOKIE, slug, { sameSite: "lax", secure: request.nextUrl.protocol === "https:", path: "/", maxAge: LAST_WORKSPACE_MAX_AGE });
+  }
   return response;
 }
 

@@ -326,6 +326,16 @@ test("web push: devices register with the browsers' push services only; notifica
   assert.equal(reminders.length, 1, "one reminder row");
   await new Promise((r) => setTimeout(r, 1500));
   assert.ok((await prisma.notification.findUniqueOrThrow({ where: { id: reminders[0].id } })).pushedAt, "claimed for push");
+  // Two tasks with the same title give two reminders (different dedupe keys): each one is pushed.
+  const twinTitle = `Push twin ${Date.now()}`;
+  const twins = await Promise.all([1, 2].map(() => admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: twinTitle, sys_assignees: [s.contributorId], sys_due_date: tomorrow } })));
+  assert.deepEqual(twins.map((x) => x.status), [201, 201]);
+  await contributor.get("/api/notifications");
+  await new Promise((r) => setTimeout(r, 1500));
+  const twinRows = await prisma.notification.findMany({ where: { userId: s.contributorId, type: "task_due_soon", taskId: { in: twins.map((x) => x.body.id) } } });
+  assert.equal(twinRows.length, 2, "two reminder rows");
+  assert.ok(twinRows.every((r) => r.pushedAt), "both same-titled reminders claimed for push");
+  for (const x of twins) await admin.del(`/api/tasks/${x.body.id}`);
   const fresh = await prisma.notification.create({ data: { userId: s.viewerId, type: "reminder", title: "claim race" } });
   await prisma.notification.update({ where: { id: fresh.id }, data: { pushedAt: null } }); // the viewer has no device: nothing claimed it yet
   const claims = await Promise.all([1, 2, 3, 4, 5].map(() => claimForPush(prisma, fresh.id)));

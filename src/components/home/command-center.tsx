@@ -189,6 +189,9 @@ export function CommandCenter({
     try {
       await api.put(`/api/workspaces/${workspaceId}/focus`, { taskId });
       toast.success(t(taskId ? "cc.pinned" : "cc.unpinned"));
+      // The focus card and each task-list widget are separate instances: re-read the page so all of
+      // them get the new pinnedFocusId (synced into pinnedId by the effect above).
+      router.refresh();
     } catch (e) {
       setPinnedId(prev);
       toast.error(e instanceof Error ? e.message : t("common.failed"));

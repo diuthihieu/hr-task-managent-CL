@@ -42,6 +42,8 @@ export interface HomeData {
   soon: string;
   locale: string;
   tasks: HomeTask[];
+  /** The task this member pinned as "Your focus today" (null: the focus follows the priority order). */
+  pinnedFocusId: string | null;
   waiting: HomeTask[];
   doneLast30: number;
   okrs: HomeOkr[];

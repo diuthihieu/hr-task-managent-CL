@@ -28,3 +28,15 @@ export function workspaceSlugOf(path: string): string | null {
   const m = /^\/w\/([^/?#]+)/.exec(path);
   return m && isWorkspaceSlug(m[1]) ? m[1] : null;
 }
+
+/** Cookie attributes for LAST_WORKSPACE_COOKIE (a year; readable by the page so client-side workspace changes update it too). */
+export const LAST_WORKSPACE_MAX_AGE = 60 * 60 * 24 * 365;
+
+/** Remembers `slug` from the browser (client-side navigation, e.g. Back to a cached workspace page, never reaches proxy.ts). */
+export function rememberWorkspaceInBrowser(slug: string) {
+  if (typeof document === "undefined" || !isWorkspaceSlug(slug)) return;
+  const current = document.cookie.split("; ").find((c) => c.startsWith(`${LAST_WORKSPACE_COOKIE}=`))?.slice(LAST_WORKSPACE_COOKIE.length + 1);
+  if (current === slug) return;
+  const secure = location.protocol === "https:" ? "; secure" : "";
+  document.cookie = `${LAST_WORKSPACE_COOKIE}=${slug}; path=/; max-age=${LAST_WORKSPACE_MAX_AGE}; samesite=lax${secure}`;
+}

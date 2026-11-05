@@ -13,7 +13,7 @@ test("stays signed in for weeks and reopens the workspace last used (Home)", asy
   // A second workspace, so the landing comes from the remembered one, not from "your only workspace".
   const res = await page.request.post("/api/workspaces", { data: { name: `Resume ${Date.now()}` } });
   expect(res.ok(), `create workspace ${res.status()}`).toBeTruthy();
-  const second = (await res.json()) as { slug: string };
+  const second = (await res.json()) as { slug: string; name: string };
 
   await page.goto(`/w/${second.slug}`);
   await expect(page).toHaveURL(new RegExp(`/w/${second.slug}$`));
@@ -28,4 +28,16 @@ test("stays signed in for weeks and reopens the workspace last used (Home)", asy
 
   await page.goto("/workspaces");
   await expect(page, "switching workspace still shows the chooser").toHaveURL(/\/workspaces$/);
+
+  // Client-side switches count too: switch workspace in the app, then Back (served from the router cache,
+  // which may never reach the server) - reopening lands on the workspace shown last.
+  await page.goto(`/w/${seed.slug}`);
+  await page.getByTestId("workspace-switcher").click();
+  await page.getByRole("menuitem", { name: second.name }).click();
+  await expect(page).toHaveURL(new RegExp(`/w/${second.slug}$`));
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/w/${seed.slug}$`));
+  await expect.poll(async () => (await context.cookies()).find((c) => c.name === "woli_last_ws")?.value).toBe(seed.slug);
+  await page.goto("/workspaces?resume=1");
+  await expect(page).toHaveURL(new RegExp(`/w/${seed.slug}$`));
 });

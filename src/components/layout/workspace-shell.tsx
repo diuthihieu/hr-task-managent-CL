@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { MobileAppButton } from "@/components/pwa/mobile-app-prompt";
+import { rememberWorkspaceInBrowser } from "@/lib/resume-target";
 import { MobileTabBar } from "@/components/layout/mobile-tab-bar";
 import { ShellNavContext, type ShellNav } from "@/components/layout/shell-context";
 import { NotificationBell, RecognitionCount, UnreadCount } from "@/components/notifications/notification-bell";
@@ -74,6 +75,9 @@ export function WorkspaceShell({
   // Compact (icon-only) sidebar on desktop, and the dismissible desktop-app link: per-viewer conveniences.
   const [compact, setCompact] = useState(false);
   const [promoHidden, setPromoHidden] = useState(false);
+  // Reopening woli lands in the workspace shown last, also after client-side navigation (Back to a cached
+  // page of another workspace never reaches the proxy).
+  useEffect(() => rememberWorkspaceInBrowser(workspace.slug), [workspace.slug]);
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- restore per-viewer sidebar prefs after hydration
     setCompact(readPref("woli.sidebar.compact") === "1");

@@ -23,3 +23,19 @@ export function localInputToIso(value: string | null | undefined): string | null
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
+
+/** A stored date-time -> its "YYYY-MM-DD" day in the viewer's local time ("" when empty / invalid). */
+export function isoToLocalDate(value: unknown): string {
+  return isoToLocalInput(value).slice(0, 10);
+}
+
+/**
+ * A picked day -> UTC ISO string, for date-time fields shown as a date only (e.g. the completed time in
+ * the sub-task list). The time of day already stored is kept; with none, local noon is used so the day
+ * stays the same however a report buckets it (server UTC, or any viewer's time zone).
+ */
+export function localDateToIso(day: string | null | undefined, previous?: unknown): string | null {
+  if (!day || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return null;
+  const time = isoToLocalInput(previous).slice(11, 16) || "12:00";
+  return localInputToIso(`${day}T${time}`);
+}

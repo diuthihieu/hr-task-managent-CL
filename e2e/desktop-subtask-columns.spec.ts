@@ -12,7 +12,8 @@ test("sub-task list: status, PIC, completed and due columns line up on every row
   };
   const p = await post<{ id: string }>(`/api/workspaces/${seed.wsId}/projects`, { name: `Subtask cols ${Date.now()}` });
   const parent = await post<{ id: string }>(`/api/projects/${p.id}/tasks`, { data: { sys_title: "Quyết định khen thưởng", sys_due_date: "2026-11-20" } });
-  await post(`/api/projects/${p.id}/tasks`, { data: { sys_title: "Không có hạn chót", sys_parent: [parent.id] } });
+  const longTitle = "Làm quyết định phân công trách nhiệm cho bộ phận C&B về việc rà soát bảng lương, bảo hiểm và thuế TNCN quý 4";
+  await post(`/api/projects/${p.id}/tasks`, { data: { sys_title: longTitle, sys_parent: [parent.id] } });
   const me = ((await (await page.request.get("/api/auth/session")).json()) as { user: { id: string } }).user.id;
   // Two more workspace members, so one sub-task has three people.
   const prisma = new PrismaClient();
@@ -59,4 +60,12 @@ test("sub-task list: status, PIC, completed and due columns line up on every row
     return natural <= shown + 1;
   });
   expect(fits, "completed input shown at its natural width").toBe(true);
+  // A long sub-task name wraps onto more lines and is shown in full (no "…").
+  const name = list.getByTestId("th-child").filter({ hasText: "quyết định phân công" });
+  await expect(name).toHaveText(longTitle);
+  const wrap = await name.evaluate((el) => ({ fits: el.scrollWidth <= el.clientWidth + 1, lines: Math.round(el.getBoundingClientRect().height / parseFloat(getComputedStyle(el).lineHeight)) }));
+  expect(wrap.fits, "nothing cut off").toBe(true);
+  expect(wrap.lines, "wraps onto several lines").toBeGreaterThan(1);
+  // The completed column shows a day only.
+  await expect(list.getByTestId("th-child-completed").first().locator("input")).toHaveAttribute("type", "date");
 });

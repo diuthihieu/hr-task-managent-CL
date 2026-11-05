@@ -1,7 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Client } from "../client";
-import { ADMIN_EMAIL, BASE, prisma, admin, contributor, viewer, outsider, s, lastModelRequest } from "./context";
+import { claimForPush } from "../../../src/lib/push-claim";
+import { ADMIN_EMAIL, BASE, prisma, admin, contributor, viewer, outsider, s, lastModelRequest, type Rec } from "./context";
 
 test("recognition: points from real activity, leaderboards, supporters, visibility and delegation", async () => {
   type Board = { rows: { rank: number; user: { id: string }; value: number; detail?: Record<string, number> }[]; me: { rank: number } | null; total: number };
@@ -315,6 +316,22 @@ test("web push: devices register with the browsers' push services only; notifica
   assert.equal(await prisma.notification.count({ where: { userId: s.contributorId, type: "mention" } }), before + 1);
   await new Promise((r) => setTimeout(r, 1500)); // let the after-response push attempt run
   assert.equal((await contributor.get("/api/notifications")).status, 200, "the server keeps serving after a failed delivery");
+  // A reminder created by several requests at once (bell, Home, Action center opening together) is one row,
+  // pushed once: only one sender claims it (it used to reach the phone three times).
+  const tomorrow = new Date(Date.now() + 86400_000).toISOString().slice(0, 10);
+  const due = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: `Push once ${Date.now()}`, sys_assignees: [s.contributorId], sys_due_date: tomorrow } });
+  assert.equal(due.status, 201);
+  await Promise.all([contributor.get("/api/notifications"), contributor.get("/api/notifications"), contributor.get("/api/notifications")]);
+  const reminders = await prisma.notification.findMany({ where: { userId: s.contributorId, taskId: due.body.id, type: "task_due_soon" } });
+  assert.equal(reminders.length, 1, "one reminder row");
+  await new Promise((r) => setTimeout(r, 1500));
+  assert.ok((await prisma.notification.findUniqueOrThrow({ where: { id: reminders[0].id } })).pushedAt, "claimed for push");
+  const fresh = await prisma.notification.create({ data: { userId: s.viewerId, type: "reminder", title: "claim race" } });
+  await prisma.notification.update({ where: { id: fresh.id }, data: { pushedAt: null } }); // the viewer has no device: nothing claimed it yet
+  const claims = await Promise.all([1, 2, 3, 4, 5].map(() => claimForPush(prisma, fresh.id)));
+  assert.equal(claims.filter(Boolean).length, 1, "exactly one sender wins");
+  await prisma.notification.delete({ where: { id: fresh.id } });
+  await admin.del(`/api/tasks/${due.body.id}`);
   // Only the owner removes a device.
   await viewer.req("DELETE", "/api/account/push", { endpoint });
   assert.equal(await prisma.pushSubscription.count({ where: { endpoint } }), 1, "someone else's device stays");

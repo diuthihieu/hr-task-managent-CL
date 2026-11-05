@@ -71,7 +71,7 @@ export const HELP_TABS: HelpTab[] = [
           ["Forgot it? Press Forgot password, enter your email and open the reset link (valid 1 hour, single use).", "Quên mật khẩu? Bấm Quên mật khẩu, nhập email và mở link đặt lại (hiệu lực 1 giờ, dùng một lần)."],
         ],
         tips: [
-          ["A session expires after 12 hours. Changing your password signs out your other devices.", "Phiên đăng nhập hết hạn sau 12 giờ. Đổi mật khẩu sẽ đăng xuất các thiết bị khác."],
+          ["You stay signed in on a device for 30 days after you last used woli, and reopening it brings you back to the workspace you had open (Home on a computer, the All page on a phone). Changing your password signs out your other devices.", "Bạn được giữ đăng nhập trên mỗi thiết bị 30 ngày kể từ lần dùng gần nhất, và mở lại woli sẽ vào đúng workspace đang dùng (Trang chủ trên máy tính, trang Tất cả trên điện thoại). Đổi mật khẩu sẽ đăng xuất các thiết bị khác."],
           ["No email? Look in the Spam folder.", "Không thấy thư? Kiểm tra mục Spam."],
         ],
       },

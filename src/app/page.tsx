@@ -44,7 +44,9 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
 // benefits and the Windows download. Signed-in users go to their workspaces.
 export default async function HomePage({ searchParams }: { searchParams: Promise<{ auth?: string; callbackUrl?: string | string[]; ws?: string; error?: string }> }) {
   const [{ auth, callbackUrl: rawCallback, ws, error }, user] = await Promise.all([searchParams, getSessionUser()]);
-  const callbackUrl = safeRedirectPath(rawCallback);
+  // After signing in (or when already signed in) with no explicit target: back to the workspace last open
+  // on this device (/workspaces?resume=1 resolves it).
+  const callbackUrl = safeRedirectPath(rawCallback, "/workspaces?resume=1");
   if (user) redirect(callbackUrl);
   const { t, locale } = await getServerT();
   const [latest, invited] = await Promise.all([

@@ -4,12 +4,21 @@ import { workspaceLogoUrl } from "@/lib/workspace-logo";
 import { requirePageUser } from "@/lib/page-context";
 import { WorkspaceChooser, type WorkspaceCard } from "@/components/workspaces/workspace-chooser";
 import { pendingInvitationsFor, syncInvitations } from "@/lib/invitations";
+import { resumePath } from "@/lib/last-workspace";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
 /** After sign-in: pick one of your workspaces (or create one). */
-export default async function WorkspacesPage() {
+export default async function WorkspacesPage({ searchParams }: { searchParams: Promise<{ source?: string; resume?: string }> }) {
   const user = await requirePageUser();
+  // Opening woli (installed app: ?source=app; site root / after sign-in: ?resume=1) reopens the workspace
+  // last used on this device. A plain visit (switching workspace) still shows the chooser.
+  const { source, resume } = await searchParams;
+  if (source === "app" || resume === "1") {
+    const target = await resumePath(user.id);
+    if (target) redirect(target);
+  }
   const memberships = await prisma.workspaceMember.findMany({
     where: { userId: user.id, workspace: { deletedAt: null } },
     orderBy: { createdAt: "asc" },

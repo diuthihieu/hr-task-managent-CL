@@ -21,7 +21,7 @@ async function setup(page: import("@playwright/test").Page, wsId: string) {
   return { post, p, done, parent };
 }
 
-test("sub-task list: the completed time typed in is the one shown and stored", async ({ page, seed }) => {
+test("sub-task list: the completed day typed in is the one shown and stored; the time of day is kept", async ({ page, seed }) => {
   const { post, p, done, parent } = await setup(page, seed.wsId);
   const child = await post<{ id: string }>(`/api/projects/${p.id}/tasks`, {
     data: { sys_title: "Đóng dấu hồ sơ", sys_parent: [parent.id], sys_status: done, sys_actual: 1, sys_start_date: "2026-10-20", sys_due_date: "2026-10-25" },
@@ -30,18 +30,23 @@ test("sub-task list: the completed time typed in is the one shown and stored", a
   expect(await stored(), "done does not mean finished now").toBeNull();
 
   await page.goto(`/w/${seed.slug}/p/${p.id}/t/${parent.id}`);
+  // The list shows the completed time as a day only.
   const input = () => page.getByTestId("th-child-completed").first().locator("input");
+  await expect(input()).toHaveAttribute("type", "date");
   await expect(input()).toHaveValue("");
-  for (const [typed, utc] of [
-    ["2026-10-24T09:30", "2026-10-24T02:30:00.000Z"],
-    ["2026-10-25T06:15", "2026-10-24T23:15:00.000Z"], // before 07:00: must not slip to the 24th on screen
-  ]) {
-    await input().fill(typed);
-    await input().press("Enter");
-    await expect.poll(stored).toBe(utc);
-    await page.reload();
-    await expect(input()).toHaveValue(typed);
-  }
+  // No time yet: the picked day is stored at local noon (05:00 UTC), the same day in any report.
+  await input().fill("2026-10-24");
+  await input().press("Enter");
+  await expect.poll(stored).toBe("2026-10-24T05:00:00.000Z");
+  await page.reload();
+  await expect(input()).toHaveValue("2026-10-24");
+  // A time of day already stored (06:15 local = 23:15 UTC the day before) is kept and shown on its local day.
+  expect((await page.request.patch(`/api/tasks/${child.id}`, { data: { data: { sys_completed_at: "2026-10-24T23:15:00.000Z" } } })).ok()).toBeTruthy();
+  await page.reload();
+  await expect(input()).toHaveValue("2026-10-25");
+  await input().fill("2026-10-26");
+  await input().press("Enter");
+  await expect.poll(stored).toBe("2026-10-25T23:15:00.000Z");
 });
 
 test("done check: the completed time is required, starts empty; 'Now' fills it in; saved as typed", async ({ page, seed }) => {

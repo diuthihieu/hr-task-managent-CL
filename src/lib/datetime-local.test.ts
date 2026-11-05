@@ -29,3 +29,15 @@ test("empty, invalid and zone-less values", () => {
   assert.equal(localInputToIso(null), null);
   assert.equal(localInputToIso("garbage"), null);
 });
+
+test("date-only editing of a date-time keeps the stored time of day, or uses local noon", async () => {
+  const { isoToLocalDate, localDateToIso } = await import("./datetime-local");
+  assert.equal(isoToLocalDate("2026-10-31T23:00:00.000Z"), "2026-11-01", "the local day, not the UTC one");
+  assert.equal(isoToLocalDate(null), "");
+  // No time yet: noon in Vietnam = 05:00 UTC, the same day everywhere a report looks.
+  assert.equal(localDateToIso("2026-11-04", null), "2026-11-04T05:00:00.000Z");
+  // A time already stored (14:45 local) is kept when only the day changes.
+  assert.equal(localDateToIso("2026-11-02", "2026-11-04T07:45:00.000Z"), "2026-11-02T07:45:00.000Z");
+  assert.equal(localDateToIso("", "2026-11-04T07:45:00.000Z"), null);
+  assert.equal(localDateToIso("04/11/2026"), null);
+});

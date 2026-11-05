@@ -5,6 +5,8 @@ import { useT } from "@/components/i18n-provider";
 import { SearchPicker } from "@/components/ui/search-list";
 import { parseFieldConfig } from "@/lib/field-types";
 import { cn } from "@/lib/utils";
+import { isoToLocalDate, localDateToIso } from "@/lib/datetime-local";
+import { DateInput } from "@/components/ui/date-input";
 import type { FieldRow, RecordRow } from "@/types";
 import { Cell, type LinkTarget, type Member } from "@/components/grid/cell";
 import { getCellValue } from "@/lib/query-engine";
@@ -12,6 +14,12 @@ import { QuickTaskDialog } from "./quick-task-dialog";
 
 const parentOf = (r: RecordRow) => (Array.isArray(r.data.sys_parent) ? String((r.data.sys_parent as unknown[])[0] ?? "") : "") || null;
 const titleOf = (r: RecordRow, fallback: string) => String(r.data.sys_title ?? "").trim() || fallback;
+
+/** "DD/MM/YYYY" of a stored date-time, in the viewer's local time. */
+function fullDate(value: unknown): string {
+  const d = isoToLocalDate(value);
+  return d ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}` : "";
+}
 
 function shortDate(value: unknown): string {
   const m = typeof value === "string" ? /^(\d{4})-(\d{2})-(\d{2})/.exec(value) : null;
@@ -211,7 +219,8 @@ export function TaskHierarchy({
                 <button
                   type="button"
                   onClick={() => (onUpdateTask ? setQuickId(c.id) : onOpen(c.id))}
-                  className={cn("min-w-0 flex-1 truncate px-1 text-left hover:text-indigo-600 hover:underline", isDone && "text-neutral-400 line-through")}
+                  // The whole name, wrapping onto as many lines as it needs.
+                  className={cn("min-w-0 flex-1 whitespace-normal break-words px-1 py-0.5 text-left hover:text-indigo-600 hover:underline", isDone && "text-neutral-400 line-through")}
                   title={titleOf(c, untitled)}
                   data-testid="th-child"
                 >
@@ -228,7 +237,19 @@ export function TaskHierarchy({
                       {nestedNote}
                     </div>
                     {inline("sys_assignees", "w-[200px] shrink-0 sm:w-auto", "th-child-pic", true)}
-                    {inline("sys_completed_at", "shrink-0", "th-child-completed")}
+                    {/* The completed time as a day only; changing the day keeps the stored time of day. */}
+                    <div className="h-8 shrink-0 rounded hover:bg-neutral-100 dark:hover:bg-neutral-800" data-testid="th-child-completed" onClick={(e) => e.stopPropagation()}>
+                      {editable(c) ? (
+                        <DateInput
+                          value={isoToLocalDate(c.data.sys_completed_at)}
+                          onCommit={(day) => onUpdateTask?.(c.id, { sys_completed_at: localDateToIso(day, c.data.sys_completed_at) })}
+                          className="h-full w-full bg-transparent px-2 text-sm text-neutral-800 outline-none focus:bg-indigo-50/60 dark:text-neutral-100 dark:focus:bg-indigo-950/40"
+                          aria-label={fieldById.get("sys_completed_at")?.name}
+                        />
+                      ) : (
+                        <span className="flex h-full items-center px-2 text-sm tabular-nums text-neutral-700 dark:text-neutral-300">{fullDate(c.data.sys_completed_at)}</span>
+                      )}
+                    </div>
                     {/* Always present, so a sub-task without a due date doesn't shift the other columns. */}
                     <span className={cn(DUE_COL, "text-right text-[11px] tabular-nums text-neutral-400")} title={t("th.due")} data-testid="th-child-due">
                       {shortDate(c.data.sys_due_date)}

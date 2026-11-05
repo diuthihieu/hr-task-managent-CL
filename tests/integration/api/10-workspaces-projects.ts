@@ -113,6 +113,18 @@ test("completed time: a built-in column after Progress, never guessed as now, ed
   const quick = await admin.post<Rec & { doneMissing?: string[] }>(`/api/tasks/${q.body.id}/quick`, { action: "complete" });
   assert.equal(quick.body.data.sys_completed_at, null);
   assert.deepEqual(quick.body.doneMissing, ["sys_actual", "sys_start_date", "sys_due_date", "sys_completed_at"]);
+  // A status turned into a "done" status in Settings: its tasks become done without a guessed completed date.
+  const review = await admin.post<{ id: string }>(`/api/workspaces/${s.ws}/statuses`, { name: `Review ${Date.now()}`, category: "in_progress" });
+  assert.equal(review.status, 201);
+  const pending = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Waiting review", sys_status: review.body.id } });
+  const dated = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Waiting review, dated", sys_status: review.body.id, sys_completed_at: at } });
+  assert.equal((await admin.patch(`/api/statuses/${review.body.id}`, { category: "done" })).status, 200);
+  const p1 = await prisma.task.findUniqueOrThrow({ where: { id: pending.body.id } });
+  assert.equal(p1.completedAt, null, "no completed date invented by the settings change");
+  assert.equal(p1.progress, 100);
+  assert.equal((await prisma.task.findUniqueOrThrow({ where: { id: dated.body.id } })).completedAt?.toISOString(), at, "an entered date is kept");
+  await admin.del(`/api/tasks/${pending.body.id}`);
+  await admin.del(`/api/tasks/${dated.body.id}`);
   await admin.del(`/api/tasks/${t.body.id}`);
   await admin.del(`/api/tasks/${q.body.id}`);
 });

@@ -22,7 +22,9 @@ export const PATCH = route<P>(async (req, { params }) => {
     const s = await tx.status.update({ where: { id: statusId }, data: { ...body, sortOrder: order, updatedById: user.id } });
     // A status moving in or out of "done" re-counts its tasks the same way a status change would.
     if (body.category && body.category !== before.category) {
-      if (body.category === "done") await tx.task.updateMany({ where: { statusId, completedAt: null }, data: { completedAt: new Date(), progress: 100 } });
+      // The completed date is not guessed as "now" (the work was finished earlier): it stays as it is,
+      // empty if none was entered, for the assignee to fill in.
+      if (body.category === "done") await tx.task.updateMany({ where: { statusId }, data: { progress: 100 } });
       else if (before.category === "done") await tx.task.updateMany({ where: { statusId }, data: { completedAt: null } });
     }
     const changes = diff(before, s, ["name", "color", "category", "isDefault"]);

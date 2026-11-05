@@ -44,12 +44,16 @@ test("validation and database constraints reject bad data", async () => {
   assert.equal(row.dueDate?.toISOString().slice(0, 10), "2036-10-05");
 });
 
-test("status change to a done-category status completes the task", async () => {
-  const res = await contributor.patch<Rec>(`/api/tasks/${s.task1}`, { data: { sys_status: s.statusDone } });
+test("status change to a done-category status completes the task; the completed time is asked for, not guessed", async () => {
+  const res = await contributor.patch<Rec & { doneMissing?: string[] }>(`/api/tasks/${s.task1}`, { data: { sys_status: s.statusDone } });
   assert.equal(res.status, 200);
   assert.equal(res.body.data.sys_progress, 100);
-  const row = await prisma.task.findUniqueOrThrow({ where: { id: s.task1 } });
-  assert.ok(row.completedAt);
+  assert.equal((await prisma.task.findUniqueOrThrow({ where: { id: s.task1 } })).completedAt, null, "not the moment Done was clicked");
+  assert.ok(res.body.doneMissing?.includes("sys_completed_at"), "the done check asks for it");
+  // What the done check saves when the user fills it in.
+  const at = new Date(Date.now() - 3600_000).toISOString();
+  assert.equal((await contributor.patch(`/api/tasks/${s.task1}`, { data: { sys_completed_at: at } })).status, 200);
+  assert.equal((await prisma.task.findUniqueOrThrow({ where: { id: s.task1 } })).completedAt?.toISOString(), at);
 });
 
 test("dependencies: self-reference and cycles are rejected", async () => {

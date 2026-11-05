@@ -39,7 +39,7 @@ export function Cell({ field, value, record, members, linkTargets, okrOptions, w
   const base = "h-full w-full flex items-center px-2 text-sm";
 
   if (readOnlyOverride) {
-    const showFullText = wrapText && (field.type === "text" || field.type === "long_text");
+    const showFullText = wrapText && ["text", "long_text", "person", "people"].includes(field.type);
     return <div className={cn(base, "text-neutral-700 dark:text-neutral-300", showFullText ? "h-auto min-h-[32px] items-start whitespace-pre-wrap break-words py-1.5" : "truncate")}>{readOnlyText(field, value, members, linkTargets, okrOptions) || <span className="text-neutral-300">—</span>}</div>;
   }
 

@@ -80,7 +80,7 @@ test("focus: the session goal is a 25-minute block; the estimate is never touche
   await admin.del(`/api/tasks/${task.body.id}`);
 });
 
-test("completed time: a built-in column after Progress, set on done, editable, cleared on reopen; done reports missing details", async () => {
+test("completed time: a built-in column after Progress, never guessed as now, editable, kept, cleared on reopen; done reports missing details", async () => {
   const fields = (await admin.get<{ fields: { id: string; type: string }[] }>(`/api/projects/${s.project}`)).body.fields;
   const ids = fields.map((f) => f.id);
   assert.equal(ids[ids.indexOf("sys_progress") + 1], "sys_completed_at", "right after Progress");
@@ -91,8 +91,8 @@ test("completed time: a built-in column after Progress, set on done, editable, c
   assert.equal(t.body.data.sys_completed_at, null);
   const done = await admin.patch<Rec & { doneMissing?: string[] }>(`/api/tasks/${t.body.id}`, { data: { sys_status: doneStatus } });
   assert.equal(done.status, 200);
-  assert.ok(done.body.data.sys_completed_at, "set automatically");
-  assert.deepEqual(done.body.doneMissing, ["sys_actual", "sys_start_date", "sys_due_date"], "what is still empty");
+  assert.equal(done.body.data.sys_completed_at, null, "not set to the moment Done was clicked");
+  assert.deepEqual(done.body.doneMissing, ["sys_actual", "sys_start_date", "sys_due_date", "sys_completed_at"], "what is still empty, completed time included");
   const again = await admin.patch<Rec & { doneMissing?: string[] }>(`/api/tasks/${t.body.id}`, { data: { sys_actual: 2 } });
   assert.equal(again.body.doneMissing, undefined, "only when the task becomes done");
   const at = "2026-10-01T09:30:00.000Z";
@@ -111,7 +111,8 @@ test("completed time: a built-in column after Progress, set on done, editable, c
   assert.deepEqual(explicit.body.doneMissing, [], "nothing missing");
   const q = await admin.post<Rec>(`/api/projects/${s.project}/tasks`, { data: { sys_title: "Quick finish" } });
   const quick = await admin.post<Rec & { doneMissing?: string[] }>(`/api/tasks/${q.body.id}/quick`, { action: "complete" });
-  assert.deepEqual(quick.body.doneMissing, ["sys_actual", "sys_start_date", "sys_due_date"]);
+  assert.equal(quick.body.data.sys_completed_at, null);
+  assert.deepEqual(quick.body.doneMissing, ["sys_actual", "sys_start_date", "sys_due_date", "sys_completed_at"]);
   await admin.del(`/api/tasks/${t.body.id}`);
   await admin.del(`/api/tasks/${q.body.id}`);
 });

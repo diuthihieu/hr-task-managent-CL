@@ -1,4 +1,5 @@
 // The parent's sub-task list lines its columns up, whether or not a sub-task has a due date.
+import { PrismaClient } from "@prisma/client";
 import { AUTH_FILE, expect, test } from "./fixtures";
 
 test.use({ storageState: AUTH_FILE });
@@ -12,7 +13,19 @@ test("sub-task list: status, PIC, completed and due columns line up on every row
   const p = await post<{ id: string }>(`/api/workspaces/${seed.wsId}/projects`, { name: `Subtask cols ${Date.now()}` });
   const parent = await post<{ id: string }>(`/api/projects/${p.id}/tasks`, { data: { sys_title: "Quyết định khen thưởng", sys_due_date: "2026-11-20" } });
   await post(`/api/projects/${p.id}/tasks`, { data: { sys_title: "Không có hạn chót", sys_parent: [parent.id] } });
-  await post(`/api/projects/${p.id}/tasks`, { data: { sys_title: "Có hạn chót", sys_parent: [parent.id], sys_due_date: "2026-11-02" } });
+  const me = ((await (await page.request.get("/api/auth/session")).json()) as { user: { id: string } }).user.id;
+  // Two more workspace members, so one sub-task has three people.
+  const prisma = new PrismaClient();
+  const tag = Date.now().toString(36);
+  const extra: string[] = [];
+  for (const name of ["Trần Ngọc Lan", "Lê Quang Minh"]) {
+    const u = await prisma.user.create({ data: { email: `${tag}.${extra.length}@cols.test`, name, systemRole: "MEMBER", passwordHash: "x", mustChangePassword: false, emailVerifiedAt: new Date() } });
+    await prisma.workspaceMember.create({ data: { workspaceId: seed.wsId, userId: u.id, role: "editor" } });
+    extra.push(u.id);
+  }
+  await prisma.$disconnect();
+  const many = [me, ...extra];
+  await post(`/api/projects/${p.id}/tasks`, { data: { sys_title: "Có hạn chót", sys_parent: [parent.id], sys_due_date: "2026-11-02", sys_assignees: many } });
 
   await page.goto(`/w/${seed.slug}/p/${p.id}/t/${parent.id}`);
   const list = page.getByTestId("th-children");
@@ -32,4 +45,18 @@ test("sub-task list: status, PIC, completed and due columns line up on every row
     const c = await list.getByTestId(cell).first().boundingBox();
     expect(Math.round(h!.x), col).toBe(Math.round(c!.x));
   }
+  // Several people: every one is shown (wrapping onto more lines), none folded into "+N".
+  const pic = list.getByTestId("th-child-pic").nth(1);
+  await expect(pic.locator("[data-chip]")).toHaveCount(many.length);
+  await expect(pic.getByTestId("people-more")).toHaveCount(0);
+  for (const chip of await pic.locator("[data-chip]").all()) await expect(chip).toBeVisible();
+  // The completed column is as wide as its date-time input, so the picker icon is not cut off.
+  const fits = await list.getByTestId("th-child-completed").first().locator("input").evaluate((el: HTMLInputElement) => {
+    const shown = el.getBoundingClientRect().width;
+    el.style.width = "max-content";
+    const natural = el.getBoundingClientRect().width;
+    el.style.width = "";
+    return natural <= shown + 1;
+  });
+  expect(fits, "completed input shown at its natural width").toBe(true);
 });

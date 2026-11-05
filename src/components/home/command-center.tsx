@@ -194,7 +194,7 @@ export function CommandCenter({
           x.id !== task.id
             ? x
             : action === "complete"
-              ? { ...x, category: "done", progress: 100, completedAt: new Date().toISOString() }
+              ? { ...x, category: "done", progress: 100 }
               : action === "start"
                 ? { ...x, category: "in_progress" }
                 : { ...x, startDate: today }

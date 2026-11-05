@@ -91,7 +91,7 @@ export async function taskContext(taskId: string, user: SessionUser) {
     `Task: ${t.title}`,
     `Project: ${t.project.name}`,
     `Status: ${t.status.name} [${t.status.category}] · Priority: ${t.priority} · Progress: ${t.progress}%`,
-    `Start: ${day(t.startDate)} · Due: ${day(t.dueDate)}${t.dueDate && t.dueDate < new Date() && !t.completedAt ? " (OVERDUE)" : ""}`,
+    `Start: ${day(t.startDate)} · Due: ${day(t.dueDate)}${t.dueDate && t.dueDate < new Date() && t.status.category !== "done" ? " (OVERDUE)" : ""}`,
     `Estimate: ${t.estimateMinutes ? `${t.estimateMinutes / 60} h` : "-"} · Actual so far: ${t.actualMinutes ? `${Math.round((t.actualMinutes / 60) * 10) / 10} h` : "-"}`,
     `Assignees: ${t.assignees.map((a) => a.user.name).join(", ") || "none"} · Report to: ${t.reportTo.map((r) => r.user.name).join(", ") || "none"}`,
     `Category: ${t.category?.name ?? "-"} · Objective/KR: ${t.keyResult ? `${t.keyResult.objective.title} → ${t.keyResult.title}` : (t.objective?.title ?? "-")}`,

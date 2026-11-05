@@ -68,7 +68,8 @@ function DoneCheckForm({ pending, onClose }: { pending: Pending; onClose: () => 
   const [actual, setActual] = useState("");
   const [start, setStart] = useState<string | null>(null);
   const [due, setDue] = useState<string | null>(null);
-  const [completed, setCompleted] = useState<string | null>(pending.missing.includes("sys_completed_at") ? localNow() : null);
+  // Empty on purpose: the moment Done was clicked is often not when the work was finished.
+  const [completed, setCompleted] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const has = (f: DoneCheckField) => pending.missing.includes(f);
 
@@ -129,7 +130,12 @@ function DoneCheckForm({ pending, onClose }: { pending: Pending; onClose: () => 
         {has("sys_completed_at") && (
           <label className="block text-xs">
             <span className="font-medium">{label("sys_completed_at")}</span>
-            <DateInput type="datetime-local" value={completed} onCommit={setCompleted} className="mt-1 w-full h-8 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-2 text-sm" data-testid="done-check-completed" />
+            <span className="mt-1 flex items-center gap-2">
+              <DateInput type="datetime-local" value={completed} onCommit={setCompleted} className="w-full h-8 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-2 text-sm" data-testid="done-check-completed" />
+              <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => setCompleted(localNow())} data-testid="done-check-completed-now">
+                {t("doneCheck.now")}
+              </Button>
+            </span>
           </label>
         )}
       </div>

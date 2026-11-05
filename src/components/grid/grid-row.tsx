@@ -260,15 +260,19 @@ export function Row({
                       data-testid="subtask-toggle"
                     >
                       {interactions.tree.collapsed.has(record.id) ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                      {/* Sits on the chevron's corner, inside the same 20px slot every row has, so a parent's
+                          title starts exactly where the title of a task without sub-tasks starts. */}
+                      <span
+                        className="pointer-events-none absolute -right-1.5 -top-1 min-w-[14px] rounded-full bg-indigo-50 px-0.5 text-center text-[9px] font-medium leading-[14px] text-indigo-700 tabular-nums dark:bg-indigo-950 dark:text-indigo-300"
+                        title={t("grid.subtaskCount", { n: childCount })}
+                        data-testid="subtask-count"
+                      >
+                        {childCount}
+                      </span>
                     </button>
                   ) : (
                     <span className="w-5" />
                   )}
-                  {childCount > 0 ? (
-                    <span className="ml-0.5 rounded-full bg-indigo-50 px-1.5 text-[10px] font-medium leading-4 text-indigo-700 tabular-nums dark:bg-indigo-950 dark:text-indigo-300" title={t("grid.subtaskCount", { n: childCount })} data-testid="subtask-count">
-                      {childCount}
-                    </span>
-                  ) : null}
                 </span>
               )}
               {field.isPrimary && (
@@ -291,7 +295,7 @@ export function Row({
                   <ListTree size={13} />
                 </button>
               )}
-              <div className={cn("flex-1 overflow-hidden", autoFit ? "" : "h-full", field.isPrimary && autoFit && "md:pr-7", field.isPrimary && childCount > 0 && "[&_input]:font-semibold [&_textarea]:font-semibold", field.isPrimary && depth > 0 && "[&_input]:text-[13px] [&_textarea]:text-[13px] [&_input]:text-neutral-500 [&_textarea]:text-neutral-500 dark:[&_input]:text-neutral-400 dark:[&_textarea]:text-neutral-400")}>
+              <div className={cn("flex-1 overflow-hidden", autoFit ? "" : "h-full", field.isPrimary && autoFit && "md:pr-7", field.isPrimary && depth > 0 && "[&_input]:text-[13px] [&_textarea]:text-[13px] [&_input]:text-neutral-500 [&_textarea]:text-neutral-500 dark:[&_input]:text-neutral-400 dark:[&_textarea]:text-neutral-400")}>
                 <Cell
                   field={field}
                   value={value}

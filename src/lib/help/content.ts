@@ -303,7 +303,7 @@ export const HELP_TABS: HelpTab[] = [
         title: ["Built-in fields", "Các trường có sẵn"],
         body: ["Name, description, status, assignees, report to, priority, category, start and due dates, estimate, actual time, progress, completed date, objective / key result and attachments. Owners can add custom columns.", "Tên, mô tả, trạng thái, người phụ trách, báo cáo cho, ưu tiên, category, ngày bắt đầu và hạn chót, ước tính, giờ thực tế, tiến độ, ngày hoàn thành, mục tiêu / key result và file đính kèm. Chủ dự án có thể thêm cột riêng."],
         tips: [
-          ["Completed date fills in by itself when a task moves to a Done status, and can be edited.", "Ngày hoàn thành tự điền khi task chuyển sang trạng thái Done, và sửa được."],
+          ["Completed date is the day the work was really finished: when a task moves to a Done status without one, the Done check asks for it. It can be edited at any time.", "Ngày hoàn thành là ngày thực sự làm xong: khi task chuyển sang Done mà chưa có, popup kiểm tra sẽ hỏi bạn nhập. Sửa được bất cứ lúc nào."],
           ["Report to: the people who get notified about status and updates.", "Báo cáo cho: những người nhận thông báo khi task đổi trạng thái hay cập nhật."],
         ],
       },

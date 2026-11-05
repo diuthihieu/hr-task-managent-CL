@@ -9,6 +9,7 @@ import { DateInput } from "@/components/ui/date-input";
 import { toast } from "@/components/ui/toast";
 import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
+import { cn } from "@/lib/utils";
 import type { DoneCheckField } from "@/lib/done-check";
 import type { MessageKey } from "@/lib/i18n/core";
 import type { RecordRow } from "@/types";
@@ -51,10 +52,13 @@ const localNow = () => {
 export function DoneCheckDialog() {
   const pending = useDoneCheck((s) => s.queue[0] ?? null);
   const close = () => useDoneCheck.getState().shift();
+  // The completed time is required: while it is missing the dialog can't be dismissed (Esc, outside
+  // click, X); it closes once the form saves it.
+  const required = !!pending?.missing.includes("sys_completed_at");
   return (
-    <Dialog open={!!pending} onOpenChange={(o) => !o && close()}>
+    <Dialog open={!!pending} onOpenChange={(o) => !o && !required && close()}>
       {pending && (
-        <DialogContent data-testid="done-check-dialog">
+        <DialogContent data-testid="done-check-dialog" hideClose={required}>
           {/* Remount per task so the form starts empty. */}
           <DoneCheckForm key={pending.taskId} pending={pending} onClose={close} />
         </DialogContent>
@@ -68,12 +72,25 @@ function DoneCheckForm({ pending, onClose }: { pending: Pending; onClose: () => 
   const [actual, setActual] = useState("");
   const [start, setStart] = useState<string | null>(null);
   const [due, setDue] = useState<string | null>(null);
-  const [completed, setCompleted] = useState<string | null>(pending.missing.includes("sys_completed_at") ? localNow() : null);
+  // Empty on purpose: the moment Done was clicked is often not when the work was finished.
+  const [completed, setCompleted] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const has = (f: DoneCheckField) => pending.missing.includes(f);
 
-  async function save() {
+  const required = has("sys_completed_at");
+  const [completedError, setCompletedError] = useState(false);
+
+  /** `completedOnly`: "skip the rest" - save just the (required) completed time. */
+  async function save(completedOnly = false) {
+    if (required && !completed) {
+      setCompletedError(true);
+      return toast.error(t("doneCheck.completedRequired"));
+    }
     const data: Record<string, unknown> = {};
+    if (completedOnly) {
+      data.sys_completed_at = new Date(completed!).toISOString();
+      return send(data);
+    }
     if (has("sys_actual") && actual.trim()) {
       const h = Number(actual.replace(",", "."));
       if (!Number.isFinite(h) || h < 0) return toast.error(t("doneCheck.badHours"));
@@ -83,6 +100,10 @@ function DoneCheckForm({ pending, onClose }: { pending: Pending; onClose: () => 
     if (has("sys_due_date") && due) data.sys_due_date = due;
     if (has("sys_completed_at") && completed) data.sys_completed_at = new Date(completed).toISOString();
     if (!Object.keys(data).length) return onClose();
+    return send(data);
+  }
+
+  async function send(data: Record<string, unknown>) {
     setSaving(true);
     try {
       const saved = await api.patch<RecordRow>(`/api/tasks/${pending.taskId}`, { data });
@@ -128,16 +149,51 @@ function DoneCheckForm({ pending, onClose }: { pending: Pending; onClose: () => 
         )}
         {has("sys_completed_at") && (
           <label className="block text-xs">
-            <span className="font-medium">{label("sys_completed_at")}</span>
-            <DateInput type="datetime-local" value={completed} onCommit={setCompleted} className="mt-1 w-full h-8 rounded-md border border-neutral-300 dark:border-neutral-700 bg-transparent px-2 text-sm" data-testid="done-check-completed" />
+            <span className="font-medium">
+              {label("sys_completed_at")} <span className="text-red-600">*</span>
+            </span>
+            <span className="mt-1 flex items-center gap-2">
+              <DateInput
+                type="datetime-local"
+                value={completed}
+                onCommit={(v) => {
+                  setCompleted(v);
+                  if (v) setCompletedError(false);
+                }}
+                aria-required
+                aria-invalid={completedError || undefined}
+                className={cn("w-full h-8 rounded-md border bg-transparent px-2 text-sm", completedError ? "border-red-500" : "border-neutral-300 dark:border-neutral-700")}
+                data-testid="done-check-completed"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="shrink-0"
+                onClick={() => {
+                  setCompleted(localNow());
+                  setCompletedError(false);
+                }}
+                data-testid="done-check-completed-now"
+              >
+                {t("doneCheck.now")}
+              </Button>
+            </span>
           </label>
         )}
       </div>
       <div className="mt-4 flex justify-end gap-2">
-        <Button variant="ghost" onClick={onClose} data-testid="done-check-ignore">
-          {t("doneCheck.ignore")}
-        </Button>
-        <Button onClick={save} disabled={saving} data-testid="done-check-save">
+        {required ? (
+          // Skipping is only for the optional details: the completed time is still saved.
+          <Button variant="ghost" onClick={() => void save(true)} disabled={saving || !completed} data-testid="done-check-ignore">
+            {t("doneCheck.ignoreRest")}
+          </Button>
+        ) : (
+          <Button variant="ghost" onClick={onClose} data-testid="done-check-ignore">
+            {t("doneCheck.ignore")}
+          </Button>
+        )}
+        <Button onClick={() => void save()} disabled={saving} data-testid="done-check-save">
           {t("doneCheck.fill")}
         </Button>
       </div>

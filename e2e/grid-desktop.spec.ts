@@ -132,7 +132,13 @@ test("each kind of cell saves what is typed or picked", async ({ page, seed }) =
   await page.getByRole("dialog").getByText(done.name, { exact: true }).click();
   await expect.poll(async () => (await saved()).data.sys_status).toBe(done.id);
   await expect.poll(async () => (await saved()).data.sys_progress, { message: "done means 100%" }).toBe(100);
-  await page.keyboard.press("Escape");
+  // Done asks for the completed time (required): fill it in with "Now" and skip the other details.
+  const doneCheck = page.getByTestId("done-check-dialog");
+  await expect(doneCheck).toBeVisible();
+  await doneCheck.getByTestId("done-check-completed-now").click();
+  await doneCheck.getByTestId("done-check-ignore").click();
+  await expect(doneCheck).toBeHidden();
+  expect((await saved()).data.sys_completed_at, "completed time saved from the dialog").toBeTruthy();
   await cell("sys_assignees").getByRole("button").first().click();
   await page.getByRole("dialog").getByText("Hieu Diu-Thi").first().click();
   await expect.poll(async () => ((await saved()).data.sys_assignees as string[] | undefined)?.length ?? 0).toBe(1);

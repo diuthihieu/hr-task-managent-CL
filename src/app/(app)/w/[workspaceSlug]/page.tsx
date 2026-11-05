@@ -22,6 +22,12 @@ import { MobileAppPrompt } from "@/components/pwa/mobile-app-prompt";
 const requestTime = () => new Date().getTime();
 import type { MessageKey } from "@/lib/i18n/core";
 
+/**
+ * Done tasks finished since `from`. A task marked done without a completed time (the done check was
+ * skipped) counts by its last change, so it stays on Home where the time can still be filled in.
+ */
+const finishedSince = (from: Date) => ({ OR: [{ completedAt: { gte: from } }, { completedAt: null, updatedAt: { gte: from } }] });
+
 export default async function WorkspaceHomePage({ params }: { params: Promise<{ workspaceSlug: string }> }) {
   const { workspaceSlug } = await params;
   const [{ user, workspace, role }, { t, locale }] = await Promise.all([requireWorkspacePage(workspaceSlug), getServerT()]);
@@ -57,10 +63,10 @@ export default async function WorkspaceHomePage({ params }: { params: Promise<{ 
     prisma.project.findMany({ where: { workspaceId: workspace.id, deletedAt: null, ...visible }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }] }),
     prisma.task.groupBy({ by: ["projectId"], where: { workspaceId: workspace.id, deletedAt: null, project: visible, ...open }, _count: { _all: true } }),
     prisma.task.groupBy({ by: ["projectId"], where: { workspaceId: workspace.id, deletedAt: null, project: visible, status: { category: "done" } }, _count: { _all: true } }),
-    prisma.task.count({ where: { ...mine, status: { category: "done" }, completedAt: { gte: monthAgo } } }),
+    prisma.task.count({ where: { ...mine, status: { category: "done" }, ...finishedSince(monthAgo) } }),
     // Every open task of mine + what I finished this week (the list scrolls).
     prisma.task.findMany({
-      where: { ...mine, OR: [open, { status: { category: "done" }, completedAt: { gte: weekAgo } }] },
+      where: { ...mine, OR: [open, { status: { category: "done" }, ...finishedSince(weekAgo) }] },
       orderBy: [{ dueDate: { sort: "asc", nulls: "last" } }, { updatedAt: "desc" }],
       take: 1000,
       select: taskSelect,

@@ -19,7 +19,10 @@ function shortDate(value: unknown): string {
 }
 
 // The due column of the sub-task list: one width for the header and every row.
-const DUE_COL = "w-11 shrink-0";
+const DUE_COL = "w-11 shrink-0 sm:w-auto";
+// Editable sub-task list columns (sm and up): status | title | PIC (wraps) | completed (fits its input) | due.
+const SUB_GRID = "sm:grid sm:grid-cols-[118px_minmax(0,1fr)_200px_max-content_44px] sm:gap-x-1.5";
+const SUB_ROW = "sm:grid sm:grid-cols-subgrid sm:col-span-5 sm:items-center";
 
 /**
  * "Parent task" and "Sub-tasks" of a task, shown on the task page and in the side drawer: the chain of
@@ -171,14 +174,23 @@ export function TaskHierarchy({
           {children.length ? <span className="ml-auto font-normal normal-case tracking-normal text-neutral-400">{t("th.done", { done, total: children.length })}</span> : null}
         </h3>
         {children.length ? (
-          <ul className="mt-1.5 divide-y divide-neutral-100 rounded-md border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800" data-testid="th-children">
+          // Editable list: one CSS grid, every row a subgrid of it, so the header and all rows share column
+          // widths. "Completed" is as wide as its date-time input (its picker icon is never cut off) and the
+          // PIC column wraps when a sub-task has several people. Below "sm" each row wraps freely instead.
+          <ul
+            className={cn(
+              "mt-1.5 divide-y divide-neutral-100 rounded-md border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800",
+              onUpdateTask && SUB_GRID,
+            )}
+            data-testid="th-children"
+          >
             {onUpdateTask ? (
-              <li className="hidden items-center gap-x-1.5 bg-neutral-50 px-1.5 py-1 text-[11px] text-neutral-400 dark:bg-neutral-900 sm:flex" aria-hidden data-testid="th-children-head">
-                <span className="w-[118px] shrink-0 px-2">{fieldById.get("sys_status")?.name}</span>
-                <span className="min-w-0 flex-1 px-1">{t("th.subtasks")}</span>
-                <span className="w-[150px] shrink-0 px-2" data-testid="th-head-pic">{t("th.pic")}</span>
-                <span className="w-[190px] shrink-0 px-2" data-testid="th-head-completed">{fieldById.get("sys_completed_at")?.name}</span>
-                <span className={cn(DUE_COL, "text-right")} data-testid="th-head-due">{t("th.due")}</span>
+              <li className={cn("hidden items-center bg-neutral-50 px-1.5 py-1 text-[11px] text-neutral-400 dark:bg-neutral-900", SUB_ROW)} aria-hidden data-testid="th-children-head">
+                <span className="px-2">{fieldById.get("sys_status")?.name}</span>
+                <span className="min-w-0 px-1">{t("th.subtasks")}</span>
+                <span className="px-2" data-testid="th-head-pic">{t("th.pic")}</span>
+                <span className="px-2" data-testid="th-head-completed">{fieldById.get("sys_completed_at")?.name}</span>
+                <span className="text-right" data-testid="th-head-due">{t("th.due")}</span>
               </li>
             ) : null}
             {children.map((c) => {
@@ -186,49 +198,52 @@ export function TaskHierarchy({
               const people = ((c.data.sys_assignees as string[] | undefined) ?? []).map((id) => members.find((m) => m.id === id)?.name).filter(Boolean);
               const nested = childCount(c.id);
               const isDone = status?.category === "done";
-              const inline = (fieldId: string, width: string, testId: string) => {
+              const inline = (fieldId: string, className: string, testId: string, wrap = false) => {
                 const field = fieldById.get(fieldId);
                 if (!field) return null;
                 return (
-                  <div className={cn("h-8 shrink-0 overflow-hidden rounded hover:bg-neutral-100 dark:hover:bg-neutral-800", width)} data-testid={testId} onClick={(e) => e.stopPropagation()}>
-                    <Cell field={field} value={getCellValue(c, field, fields)} record={c} members={members} linkTargets={linkTargets} readOnlyOverride={!editable(c)} onChange={(v) => onUpdateTask?.(c.id, { [fieldId]: v })} />
+                  <div className={cn("rounded hover:bg-neutral-100 dark:hover:bg-neutral-800", wrap ? "min-h-8" : "h-8", className)} data-testid={testId} onClick={(e) => e.stopPropagation()}>
+                    <Cell field={field} value={getCellValue(c, field, fields)} record={c} members={members} linkTargets={linkTargets} wrapText={wrap} readOnlyOverride={!editable(c)} onChange={(v) => onUpdateTask?.(c.id, { [fieldId]: v })} />
                   </div>
                 );
               };
-              return (
-                <li key={c.id} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 text-sm sm:flex-nowrap">
-                  {onUpdateTask ? (
-                    inline("sys_status", "w-[118px]", "th-child-status")
-                  ) : (
-                    <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: status?.color ?? "#a3a3a3" }} title={status?.label} />
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => (onUpdateTask ? setQuickId(c.id) : onOpen(c.id))}
-                    className={cn("min-w-0 flex-1 truncate px-1 text-left hover:text-indigo-600 hover:underline", isDone && "text-neutral-400 line-through")}
-                    title={titleOf(c, untitled)}
-                    data-testid="th-child"
-                  >
-                    {titleOf(c, untitled)}
-                  </button>
-                  {nested ? <span className="shrink-0 text-[11px] text-neutral-400">{t("th.nested", { n: nested })}</span> : null}
-                  {onUpdateTask ? (
-                    <>
-                      {inline("sys_assignees", "w-[150px]", "th-child-pic")}
-                      {inline("sys_completed_at", "w-[190px]", "th-child-completed")}
-                    </>
-                  ) : (
-                    <>
-                      {status ? <span className="hidden shrink-0 text-[11px] text-neutral-500 sm:inline">{status.label}</span> : null}
-                      {people.length ? <span className="hidden max-w-[140px] shrink-0 truncate text-[11px] text-neutral-500 sm:inline">{people.join(", ")}</span> : null}
-                    </>
-                  )}
-                  {onUpdateTask ? (
-                    // Always present and fixed-width, so a sub-task without a due date doesn't shift the other columns.
+              const title = (
+                <button
+                  type="button"
+                  onClick={() => (onUpdateTask ? setQuickId(c.id) : onOpen(c.id))}
+                  className={cn("min-w-0 flex-1 truncate px-1 text-left hover:text-indigo-600 hover:underline", isDone && "text-neutral-400 line-through")}
+                  title={titleOf(c, untitled)}
+                  data-testid="th-child"
+                >
+                  {titleOf(c, untitled)}
+                </button>
+              );
+              const nestedNote = nested ? <span className="shrink-0 text-[11px] text-neutral-400">{t("th.nested", { n: nested })}</span> : null;
+              if (onUpdateTask) {
+                return (
+                  <li key={c.id} className={cn("flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 text-sm", SUB_ROW)}>
+                    {inline("sys_status", "w-[118px] shrink-0 overflow-hidden sm:w-auto", "th-child-status")}
+                    <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                      {title}
+                      {nestedNote}
+                    </div>
+                    {inline("sys_assignees", "w-[200px] shrink-0 sm:w-auto", "th-child-pic", true)}
+                    {inline("sys_completed_at", "shrink-0", "th-child-completed")}
+                    {/* Always present, so a sub-task without a due date doesn't shift the other columns. */}
                     <span className={cn(DUE_COL, "text-right text-[11px] tabular-nums text-neutral-400")} title={t("th.due")} data-testid="th-child-due">
                       {shortDate(c.data.sys_due_date)}
                     </span>
-                  ) : shortDate(c.data.sys_due_date) ? (
+                  </li>
+                );
+              }
+              return (
+                <li key={c.id} className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 px-1.5 py-1 text-sm sm:flex-nowrap">
+                  <span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: status?.color ?? "#a3a3a3" }} title={status?.label} />
+                  {title}
+                  {nestedNote}
+                  {status ? <span className="hidden shrink-0 text-[11px] text-neutral-500 sm:inline">{status.label}</span> : null}
+                  {people.length ? <span className="hidden max-w-[140px] shrink-0 truncate text-[11px] text-neutral-500 sm:inline">{people.join(", ")}</span> : null}
+                  {shortDate(c.data.sys_due_date) ? (
                     <span className="shrink-0 text-[11px] tabular-nums text-neutral-400" title={t("th.due")}>
                       {shortDate(c.data.sys_due_date)}
                     </span>

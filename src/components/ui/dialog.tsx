@@ -22,8 +22,9 @@ export function DialogContent({
   children,
   onPointerDownOutside,
   onInteractOutside,
+  hideClose,
   ...props
-}: React.ComponentProps<typeof RDialog.Content>) {
+}: React.ComponentProps<typeof RDialog.Content> & { /** No X button (a dialog that must be answered). */ hideClose?: boolean }) {
   return (
     <RDialog.Portal>
       <RDialog.Overlay className="fixed inset-0 bg-black/40 z-40 animate-in fade-in" />
@@ -43,9 +44,11 @@ export function DialogContent({
         {...props}
       >
         {children}
-        <RDialog.Close className="absolute right-3 top-3 rounded-sm text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
-          <X size={16} />
-        </RDialog.Close>
+        {hideClose ? null : (
+          <RDialog.Close className="absolute right-3 top-3 rounded-sm text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200">
+            <X size={16} />
+          </RDialog.Close>
+        )}
       </RDialog.Content>
     </RDialog.Portal>
   );

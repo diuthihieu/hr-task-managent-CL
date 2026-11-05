@@ -252,7 +252,8 @@ test("second brain: highlight -> task (recurring, OKR), reminder, decisions, gra
   // Completing a recurring task creates the next occurrence once (a week later).
   let done = await prisma.status.findFirst({ where: { workspaceId: s.ws, category: "done" } });
   done ??= await prisma.status.create({ data: { workspaceId: s.ws, name: "Done", category: "done", color: "#22c55e", sortOrder: 99 } });
-  assert.equal((await contributor.patch(`/api/tasks/${tk.body.id}`, { data: { sys_status: done.id } })).status, 200);
+  // Completed now (as entered in the done check): the journal and the points read the completed time.
+  assert.equal((await contributor.patch(`/api/tasks/${tk.body.id}`, { data: { sys_status: done.id, sys_completed_at: new Date().toISOString() } })).status, 200);
   const next = await prisma.task.findFirst({ where: { recurrenceParentId: tk.body.id }, include: { assignees: true } });
   assert.ok(next, "next occurrence created");
   assert.equal(next!.dueDate!.toISOString().slice(0, 10), "2026-11-09");
@@ -260,7 +261,7 @@ test("second brain: highlight -> task (recurring, OKR), reminder, decisions, gra
   assert.deepEqual(next!.assignees.map((x) => x.userId), [s.contributorId]);
   const todo = await prisma.status.findFirst({ where: { workspaceId: s.ws, category: "todo" } });
   await contributor.patch(`/api/tasks/${tk.body.id}`, { data: { sys_status: todo!.id } });
-  await contributor.patch(`/api/tasks/${tk.body.id}`, { data: { sys_status: done.id } });
+  await contributor.patch(`/api/tasks/${tk.body.id}`, { data: { sys_status: done.id, sys_completed_at: new Date().toISOString() } });
   assert.equal(await prisma.task.count({ where: { recurrenceParentId: tk.body.id } }), 1, "re-completing doesn't duplicate");
   s.brainTask = tk.body.id;
 

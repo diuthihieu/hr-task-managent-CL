@@ -96,9 +96,10 @@ export async function applyTaskPatch(
           result.statusChanged = true;
           result.newStatusName = status.name;
           becameDone = result.becameDone = status.category === "done";
-          // An explicit completed time in the same patch wins over "now", and so does one entered earlier
-          // (a task logged late keeps the day it was really finished). Leaving "done" still clears it.
-          if (!(SYS.completedAt in data)) update.completedAt = becameDone ? (before.completedAt ?? new Date()) : null;
+          // The completed time is never guessed as "now": a task is often logged as done later than it was
+          // finished. One sent in the same patch or entered earlier is kept; otherwise it stays empty and the
+          // done check asks for it. Leaving "done" clears it.
+          if (!(SYS.completedAt in data)) update.completedAt = becameDone ? before.completedAt : null;
           if (status.category === "done") update.progress = 100;
         }
         record("status", before.statusId, statusId);

@@ -188,13 +188,14 @@ export function CommandCenter({
     setBusy(task.id + action);
     try {
       const rec = await api.post(`/api/tasks/${task.id}/quick`, { action });
-      promptDoneCheck(rec);
+      // Once the done check saves the completed time, reload Home so the task shows under "completed".
+      promptDoneCheck(rec, () => router.refresh());
       setTasks((prev) =>
         prev.map((x) =>
           x.id !== task.id
             ? x
             : action === "complete"
-              ? { ...x, category: "done", progress: 100, completedAt: new Date().toISOString() }
+              ? { ...x, category: "done", progress: 100 }
               : action === "start"
                 ? { ...x, category: "in_progress" }
                 : { ...x, startDate: today }

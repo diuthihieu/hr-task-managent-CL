@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, workspaceOfDashboard, workspaceOfProject, visibleProjectWhere, HttpError } from "@/lib/authz";
-import { hoursByCategorySection } from "@/lib/ai/context";
+import { duePeriodSection, hoursByCategorySection } from "@/lib/ai/context";
+import { dashboardScopeTaskIds, parseSlicers } from "@/lib/dashboard-data";
 import { aiConfigured, generate, parseJsonAnswer, ROUTE_120_BUDGET } from "@/lib/ai/gemini";
 import { actionSystemPrompt } from "@/lib/ai/actions";
 import { personalPromptBlock } from "@/lib/ai/personal";
@@ -22,6 +23,8 @@ const schema = z.object({
   data: z.string().min(1).max(60_000),
   /** Charts on screen the report may embed, by id. */
   charts: z.array(z.object({ id: z.string().min(1).max(64), title: z.string().max(200) })).max(REPORT_CHARTS_MAX).default([]),
+  /** The dashboard slicers the user has picked: the report's totals use the same scope as the charts. */
+  slicers: z.array(z.unknown()).max(20).optional(),
 });
 
 /**
@@ -58,8 +61,19 @@ export const POST = route(async (req) => {
   }
   // Hours facts straight from the tasks the user may see, so an hours report never depends on how a
   // chart happens to be configured (a chart with no value field shows 0).
+  const taskWhere = { workspaceId, deletedAt: null, projectId: { in: projectIds }, project: { deletedAt: null, ...visibleProjectWhere(user) } };
+  const slicers = body.targetKind === "dashboard" ? parseSlicers(body.slicers) : [];
+  const scopeIds = slicers.length ? await dashboardScopeTaskIds(user, workspaceId, body.targetId, slicers) : null;
+  const scope = scopeIds ? `the dashboard's current filters (${slicers.map((sl) => `${sl.fieldName}=${sl.values?.length ? sl.values.join(" or ") : `${sl.from ?? "…"}..${sl.to ?? "…"}`}`).join(", ")}) - the same tasks the charts show` : undefined;
+  // A date-range slicer sets the period: tasks DUE in it (any status) give a real completion rate.
+  const period = slicers.find((sl) => sl.from && sl.to);
   const facts = projectIds.length
-    ? await hoursByCategorySection({ workspaceId, deletedAt: null, projectId: { in: projectIds }, project: { deletedAt: null, ...visibleProjectWhere(user) } })
+    ? [
+        await hoursByCategorySection(scopeIds ? { ...taskWhere, id: { in: scopeIds } } : taskWhere, scope),
+        period ? await duePeriodSection(taskWhere, period.from!, period.to!) : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n")
     : "";
   const ws = await prisma.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { slug: true, name: true, logoUpdatedAt: true } });
   const chartList = body.charts.length ? body.charts.map((c) => `- [[chart:${c.id}]] ${c.title || "(untitled chart)"}`).join("\n") : "(no charts)";
@@ -79,6 +93,10 @@ Answer ONLY with JSON: {"title":"<report title>","fileName":"<short file name wi
 - A chart over a date field puts each task's whole hours on that one date (completed date: when it was closed; due / start date: when it was due / started) - a peak is many tasks sharing that date, not many hours worked that day. Name the date field the chart uses, and don't call a peak a workload spike unless the data shows the work itself.
 - Estimate exactly equal to actual on every task of a group is a data pattern (actual copied from estimate, or estimate filled in afterwards), not proof of accurate estimating - say so if you mention it.
 - Facts vs judgement: state as fact only what DATA shows (numbers, task titles, categories, dates). Causes, impact ("removes legal risk", "ensures quality") and system issues are inferences: mark them as such or leave them out. Targets in recommendations (e.g. "-50% time") are proposals: label them "proposed target" and give the baseline from DATA when there is one.
+- Scope: every pre-computed table states its SCOPE. Use one scope for a whole section and name it (filter, counting basis, denominator) next to every share or rate. Never compare or combine numbers from two scopes (e.g. a chart filtered by completed date with an unfiltered table).
+- Completion: when the scope holds only done tasks (e.g. filtered by completed date), report "completed tasks in the period = N" and never a completion rate or "N/N = 100%". Give a completion rate only from the "Tasks due ..." table (done / due, and on-time rate), naming both counts; without that table, say a completion rate needs the tasks due in the period.
+- Contributions: write each key piece of work as Activity (task, hours from DATA) -> Deliverable (only if a task title, comment or file names it) -> Outcome (only if DATA states a result; otherwise write that no outcome data is recorded). Call it a key activity, not "high business impact", unless DATA shows the outcome.
+- Tables: GitHub Markdown, one header row, then one delimiter row with exactly as many cells as the header, then data rows. Never repeat the delimiter row.
 - Hours: at most 2 decimals.
 - If the user names the file, use that name for fileName.
 CHARTS:

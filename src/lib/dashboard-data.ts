@@ -76,6 +76,24 @@ export function parseSlicers(raw: unknown[] | undefined): SlicerSelection[] {
  * slicers. Hidden projects are left out, as everywhere.
  */
 export async function dashboardSlicerOptions(user: SessionUser, workspaceId: string, dashboardId: string, fieldName: string, slicers: SlicerSelection[], crossFilter: CrossFilter | null): Promise<SlicerOptions> {
+  const { grids, members } = await dashboardGrids(user, workspaceId, dashboardId);
+  const parts: SlicerOptions[] = [];
+  for (const grid of grids) {
+    const click = resolveCrossFilterConditions(grid.fields, members, crossFilter ? [crossFilter] : undefined);
+    const records = click.length ? applyFilters(grid.records, grid.fields, { conjunction: "AND", conditions: click }) : grid.records;
+    parts.push(slicerOptions(records, grid.fields, members, { fieldName }, slicers));
+  }
+  const merged = mergeSlicerOptions(parts);
+  delete merged.tasks; // ids behind the counts stay on the server
+  return merged;
+}
+
+/**
+ * Every data source of a dashboard's widgets as the viewer may see it: one grid per distinct source
+ * (main + appended + merged), or, when the main project is hidden from the viewer, one grid per visible
+ * appended project (slicers and report scopes match fields by name).
+ */
+async function dashboardGrids(user: SessionUser, workspaceId: string, dashboardId: string) {
   const widgets = await prisma.dashboardWidget.findMany({ where: { dashboardId }, select: { config: true }, take: 100 });
   const sources = new Map<string, NonNullable<DashboardBlockConfig["dataSource"]>>();
   for (const w of widgets) {
@@ -84,24 +102,32 @@ export async function dashboardSlicerOptions(user: SessionUser, workspaceId: str
   }
   const hidden = await hiddenProjectIds(user);
   const members = (await prisma.workspaceMember.findMany({ where: { workspaceId }, include: { user: { select: { id: true, name: true, avatarColor: true } } } })).map((m) => m.user);
-  const parts: SlicerOptions[] = [];
+  const grids: NonNullable<Awaited<ReturnType<typeof loadProjectGrid>>>[] = [];
   for (const ds of sources.values()) {
     const live = await prisma.project.findFirst({ where: { id: ds.projectId, workspaceId, deletedAt: null }, select: { id: true } });
     if (!live) continue;
-    // Slicers match fields by name, so a hidden main project's visible appended projects each give their own values.
-    const grids = hidden.has(ds.projectId!)
+    const found = hidden.has(ds.projectId!)
       ? await Promise.all((await visibleAppended(user, workspaceId, ds)).map((id) => loadProjectGrid(id)))
       : [(await loadCombinedGrid(user, workspaceId, ds.projectId!, ds)).grid];
-    for (const grid of grids) {
-      if (!grid) continue;
-      const click = resolveCrossFilterConditions(grid.fields, members, crossFilter ? [crossFilter] : undefined);
-      const records = click.length ? applyFilters(grid.records, grid.fields, { conjunction: "AND", conditions: click }) : grid.records;
-      parts.push(slicerOptions(records, grid.fields, members, { fieldName }, slicers));
-    }
+    for (const g of found) if (g) grids.push(g);
   }
-  const merged = mergeSlicerOptions(parts);
-  delete merged.tasks; // ids behind the counts stay on the server
-  return merged;
+  return { grids, members };
+}
+
+/**
+ * The tasks a dashboard's current slicers keep, over every source the viewer may see - the scope an
+ * AI report's totals must use so they match the charts. `null` when no slicer is active (no narrowing).
+ */
+export async function dashboardScopeTaskIds(user: SessionUser, workspaceId: string, dashboardId: string, slicers: SlicerSelection[]): Promise<string[] | null> {
+  if (!slicers.length) return null;
+  const { grids, members } = await dashboardGrids(user, workspaceId, dashboardId);
+  const ids = new Set<string>();
+  for (const grid of grids) {
+    const cond = slicerConditions(grid.records, grid.fields, members, slicers);
+    const kept = cond.length ? applyFilters(grid.records, grid.fields, { conjunction: "AND", conditions: cond }) : grid.records;
+    for (const r of kept) ids.add(r.id);
+  }
+  return [...ids];
 }
 
 /** Projects a widget reads from may at most be this many (main + appended + merged). */

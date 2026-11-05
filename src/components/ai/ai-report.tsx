@@ -95,12 +95,15 @@ export function AiReportButton({
   targetId,
   getData,
   getCharts,
+  getSlicers,
 }: {
   workspaceId: string;
   targetKind: "project" | "dashboard";
   targetId: string;
   getData: () => string;
   getCharts: () => ReportChart[];
+  /** Dashboards: the slicers picked now, so the report's totals match the charts. */
+  getSlicers?: () => unknown[];
 }) {
   const { t, locale } = useT();
   const [open, setOpen] = useState(false);
@@ -125,6 +128,7 @@ export function AiReportButton({
         fileName: fileName.trim() || undefined,
         data: getData().slice(0, 60_000),
         charts: charts.map((c) => ({ id: c.id, title: c.title })),
+        slicers: getSlicers?.(),
       });
       setDraft({ ...r, charts, prompt: prompt.trim() });
       setSaved(false);

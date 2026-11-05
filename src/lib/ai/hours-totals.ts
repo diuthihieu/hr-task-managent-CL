@@ -40,7 +40,7 @@ function add(s: Sum, t: HoursTask, share: OwnShare) {
   }
 }
 
-export function hoursTotalsSection(tasks: HoursTask[], own: Map<string, OwnShare>): string {
+export function hoursTotalsSection(tasks: HoursTask[], own: Map<string, OwnShare>, scope?: string): string {
   const team = new Map<string, Sum>();
   const people = new Map<string, Sum & { person: string; month: string }>();
   const personMonth = new Map<string, Sum & { shared: number; sharedAct: number }>();
@@ -80,7 +80,7 @@ export function hoursTotalsSection(tasks: HoursTask[], own: Map<string, OwnShare
     return [m, pm.tasks, s.tasks, hours(pm.act), hours(s.act), pm.shared, hours(pm.sharedAct)].join(" | ");
   });
   return [
-    "## Pre-computed totals (quote these; never add up rows yourself)",
+    `## Pre-computed totals (quote these; never add up rows yourself) - SCOPE: ${scope ?? "every live task of the report's projects, no dashboard filter"}`,
     "### Team totals per month (BASIS A: each task counted once, even when it has several assignees)",
     "month | tasks | done tasks | estimate h | actual h | actual h of done tasks",
     ...teamRows,

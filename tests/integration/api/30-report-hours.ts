@@ -33,6 +33,12 @@ test("hours reports use the tasks' hours (each assignee in full, parents once); 
   // person | category | month | tasks | estimate h | actual h | actual h of done tasks
   assert.equal(row("Hieu").split(" | ")[5], "11", "6 shared + 5 parent total (3 own + 2 child) = 11");
   assert.equal(row("Tam").split(" | ")[5], "6", "the other assignee gets the full 6 hours too");
+  // Pre-computed totals on both bases, so the model never adds rows up or mixes the bases.
+  assert.match(prompt, /Pre-computed totals/);
+  assert.match(prompt, /never mixed/);
+  const line = (start: string) => prompt.split("\n").find((l) => l.startsWith(start)) ?? "";
+  assert.equal(line("2026-10 | 3 |").split(" | ")[4], "11", "team actual counts the shared task once: 6 + 3 + 2");
+  assert.deepEqual(line("2026-10 | 4 |").split(" | ").slice(3), ["17", "11", "1", "6"], "person-hours 11 + 6 = 17; one shared task adds 6 h");
 });
 
 test("time focused on a sub-task also counts for its parent (a parent's hours include its sub-tasks')", async () => {

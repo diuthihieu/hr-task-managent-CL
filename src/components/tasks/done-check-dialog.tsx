@@ -10,6 +10,7 @@ import { toast } from "@/components/ui/toast";
 import { useT } from "@/components/i18n-provider";
 import { api } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { isoToLocalDate, localDateToIso } from "@/lib/datetime-local";
 import type { DoneCheckField } from "@/lib/done-check";
 import type { MessageKey } from "@/lib/i18n/core";
 import type { RecordRow } from "@/types";
@@ -42,11 +43,8 @@ export function promptDoneCheckFor(taskId: string, missing: DoneCheckField[] | u
   if (missing?.length) useDoneCheck.getState().push({ taskId, title, missing, onSaved });
 }
 
-const pad = (n: number) => String(n).padStart(2, "0");
-const localNow = () => {
-  const d = new Date();
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-};
+/** Today's "YYYY-MM-DD" in the viewer's local time. */
+const localToday = () => isoToLocalDate(new Date().toISOString());
 
 /** Mounted once in the workspace shell. */
 export function DoneCheckDialog() {
@@ -88,7 +86,7 @@ function DoneCheckForm({ pending, onClose }: { pending: Pending; onClose: () => 
     }
     const data: Record<string, unknown> = {};
     if (completedOnly) {
-      data.sys_completed_at = new Date(completed!).toISOString();
+      data.sys_completed_at = localDateToIso(completed);
       return send(data);
     }
     if (has("sys_actual") && actual.trim()) {
@@ -98,7 +96,7 @@ function DoneCheckForm({ pending, onClose }: { pending: Pending; onClose: () => 
     }
     if (has("sys_start_date") && start) data.sys_start_date = start;
     if (has("sys_due_date") && due) data.sys_due_date = due;
-    if (has("sys_completed_at") && completed) data.sys_completed_at = new Date(completed).toISOString();
+    if (has("sys_completed_at") && completed) data.sys_completed_at = localDateToIso(completed);
     if (!Object.keys(data).length) return onClose();
     return send(data);
   }
@@ -153,8 +151,8 @@ function DoneCheckForm({ pending, onClose }: { pending: Pending; onClose: () => 
               {label("sys_completed_at")} <span className="text-red-600">*</span>
             </span>
             <span className="mt-1 flex items-center gap-2">
+              {/* A day is enough (stored at local noon, like the sub-task list). */}
               <DateInput
-                type="datetime-local"
                 value={completed}
                 onCommit={(v) => {
                   setCompleted(v);
@@ -171,7 +169,7 @@ function DoneCheckForm({ pending, onClose }: { pending: Pending; onClose: () => 
                 size="sm"
                 className="shrink-0"
                 onClick={() => {
-                  setCompleted(localNow());
+                  setCompleted(localToday());
                   setCompletedError(false);
                 }}
                 data-testid="done-check-completed-now"

@@ -1,7 +1,7 @@
 "use client";
 import { useMemo, useState } from "react";
 import { DndContext, PointerSensor, useSensor, useSensors, useDraggable, useDroppable, type DragEndEvent } from "@dnd-kit/core";
-import { ChevronLeft, ChevronRight, Settings2, Maximize2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Settings2, Maximize2, Plus } from "lucide-react";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Select } from "@/components/ui/misc";
 import { Button } from "@/components/ui/button";
@@ -50,6 +50,7 @@ export function CalendarView({
   onConfigChange,
   onCellChange,
   onOpenRecord,
+  onCreateOnDay,
 }: {
   fields: FieldRow[];
   flatRecords: RecordRow[];
@@ -58,6 +59,8 @@ export function CalendarView({
   onConfigChange: (patch: Partial<CalendarConfig>) => void;
   onCellChange: (recordId: string, fieldId: string, value: unknown) => void;
   onOpenRecord: (id: string) => void;
+  /** "+" on a day: create a task starting that day ("YYYY-MM-DD"). Omitted when the viewer can't create tasks. */
+  onCreateOnDay?: (day: string) => void;
 }) {
   const { t, locale } = useT();
   const dl = dateLocale(locale);
@@ -185,15 +188,40 @@ export function CalendarView({
       </div>
 
       <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
-        {mode === "month" && <MonthGrid cursor={cursor} eventsByDay={eventsByDay} onOpenRecord={onOpenRecord} />}
-        {mode === "week" && <WeekRow cursor={cursor} eventsByDay={eventsByDay} onOpenRecord={onOpenRecord} />}
-        {mode === "day" && <DayList cursor={cursor} eventsByDay={eventsByDay} onOpenRecord={onOpenRecord} />}
+        {mode === "month" && <MonthGrid cursor={cursor} eventsByDay={eventsByDay} onOpenRecord={onOpenRecord} onCreateOnDay={onCreateOnDay} />}
+        {mode === "week" && <WeekRow cursor={cursor} eventsByDay={eventsByDay} onOpenRecord={onOpenRecord} onCreateOnDay={onCreateOnDay} />}
+        {mode === "day" && <DayList cursor={cursor} eventsByDay={eventsByDay} onOpenRecord={onOpenRecord} onCreateOnDay={onCreateOnDay} />}
       </DndContext>
     </div>
   );
 }
 
-function DayCell({ day, inMonth, events, onOpenRecord, tall }: { day: Date; inMonth: boolean; events: EventItem[]; onOpenRecord: (id: string) => void; tall?: boolean }) {
+type CreateOnDay = ((day: string) => void) | undefined;
+
+/** The "+" that adds a task on a day: shown on hover (always on touch screens). */
+function AddOnDay({ day, onCreateOnDay, className }: { day: string; onCreateOnDay: CreateOnDay; className?: string }) {
+  const { t } = useT();
+  if (!onCreateOnDay) return null;
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onCreateOnDay(day);
+      }}
+      onPointerDown={(e) => e.stopPropagation()}
+      className={cn("flex h-5 w-5 items-center justify-center rounded text-neutral-400 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950", className)}
+      title={t("cal.addOnDay")}
+      aria-label={t("cal.addOnDay")}
+      data-testid="cal-add"
+      data-day={day}
+    >
+      <Plus size={13} />
+    </button>
+  );
+}
+
+function DayCell({ day, inMonth, events, onOpenRecord, onCreateOnDay, tall }: { day: Date; inMonth: boolean; events: EventItem[]; onOpenRecord: (id: string) => void; onCreateOnDay: CreateOnDay; tall?: boolean }) {
   const key = isoKey(day);
   const { setNodeRef, isOver } = useDroppable({ id: key });
   const isToday = sameDay(day, new Date());
@@ -204,15 +232,16 @@ function DayCell({ day, inMonth, events, onOpenRecord, tall }: { day: Date; inMo
     <div
       ref={setNodeRef}
       className={cn(
-        "border-b border-r border-neutral-100 dark:border-neutral-900 p-1 flex flex-col gap-0.5 overflow-hidden",
+        "group/day border-b border-r border-neutral-100 dark:border-neutral-900 p-1 flex flex-col gap-0.5 overflow-hidden",
         !inMonth && "bg-neutral-50/60 dark:bg-neutral-900/40",
         isOver && "ring-2 ring-inset ring-indigo-400"
       )}
       style={{ minHeight: tall ? 400 : 92 }}
     >
-      <span className={cn("text-xs shrink-0", isToday ? "h-5 w-5 rounded-full bg-indigo-600 text-white flex items-center justify-center" : "text-neutral-400 px-1", !inMonth && "opacity-50")}>
-        {day.getDate()}
-      </span>
+      <div className="flex shrink-0 items-center justify-between">
+        <span className={cn("text-xs", isToday ? "h-5 w-5 rounded-full bg-indigo-600 text-white flex items-center justify-center" : "text-neutral-400 px-1", !inMonth && "opacity-50")}>{day.getDate()}</span>
+        <AddOnDay day={key} onCreateOnDay={onCreateOnDay} className="opacity-0 group-hover/day:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100" />
+      </div>
       <div className="flex-1 overflow-y-auto thin-scroll space-y-0.5">
         {visible.map((ev) => (
           <EventChip key={ev.record.id + key} event={ev} onOpen={() => onOpenRecord(ev.record.id)} />
@@ -244,7 +273,7 @@ function EventChip({ event, onOpen }: { event: EventItem; onOpen: () => void }) 
   );
 }
 
-function MonthGrid({ cursor, eventsByDay, onOpenRecord }: { cursor: Date; eventsByDay: Map<string, EventItem[]>; onOpenRecord: (id: string) => void }) {
+function MonthGrid({ cursor, eventsByDay, onOpenRecord, onCreateOnDay }: { cursor: Date; eventsByDay: Map<string, EventItem[]>; onOpenRecord: (id: string) => void; onCreateOnDay: CreateOnDay }) {
   const { locale } = useT();
   const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
   const gridStart = addDays(monthStart, -monthStart.getDay());
@@ -261,14 +290,14 @@ function MonthGrid({ cursor, eventsByDay, onOpenRecord }: { cursor: Date; events
       </div>
       <div className="grid grid-cols-7 border-l border-neutral-100 dark:border-neutral-900">
         {days.map((day) => (
-          <DayCell key={isoKey(day)} day={day} inMonth={day.getMonth() === cursor.getMonth()} events={eventsByDay.get(isoKey(day)) ?? []} onOpenRecord={onOpenRecord} />
+          <DayCell key={isoKey(day)} day={day} inMonth={day.getMonth() === cursor.getMonth()} events={eventsByDay.get(isoKey(day)) ?? []} onOpenRecord={onOpenRecord} onCreateOnDay={onCreateOnDay} />
         ))}
       </div>
     </div>
   );
 }
 
-function WeekRow({ cursor, eventsByDay, onOpenRecord }: { cursor: Date; eventsByDay: Map<string, EventItem[]>; onOpenRecord: (id: string) => void }) {
+function WeekRow({ cursor, eventsByDay, onOpenRecord, onCreateOnDay }: { cursor: Date; eventsByDay: Map<string, EventItem[]>; onOpenRecord: (id: string) => void; onCreateOnDay: CreateOnDay }) {
   const { locale } = useT();
   const weekStart = addDays(cursor, -cursor.getDay());
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
@@ -283,19 +312,24 @@ function WeekRow({ cursor, eventsByDay, onOpenRecord }: { cursor: Date; eventsBy
       </div>
       <div className="grid grid-cols-7 border-l border-neutral-100 dark:border-neutral-900">
         {days.map((day) => (
-          <DayCell key={isoKey(day)} day={day} inMonth onOpenRecord={onOpenRecord} events={eventsByDay.get(isoKey(day)) ?? []} tall />
+          <DayCell key={isoKey(day)} day={day} inMonth onOpenRecord={onOpenRecord} onCreateOnDay={onCreateOnDay} events={eventsByDay.get(isoKey(day)) ?? []} tall />
         ))}
       </div>
     </div>
   );
 }
 
-function DayList({ cursor, eventsByDay, onOpenRecord }: { cursor: Date; eventsByDay: Map<string, EventItem[]>; onOpenRecord: (id: string) => void }) {
+function DayList({ cursor, eventsByDay, onOpenRecord, onCreateOnDay }: { cursor: Date; eventsByDay: Map<string, EventItem[]>; onOpenRecord: (id: string) => void; onCreateOnDay: CreateOnDay }) {
   const { t } = useT();
   const events = eventsByDay.get(isoKey(cursor)) ?? [];
   const { setNodeRef, isOver } = useDroppable({ id: isoKey(cursor) });
   return (
     <div ref={setNodeRef} className={cn("flex-1 overflow-y-auto thin-scroll p-4 space-y-2", isOver && "ring-2 ring-inset ring-indigo-400")}>
+      {onCreateOnDay ? (
+        <button type="button" onClick={() => onCreateOnDay(isoKey(cursor))} className="flex items-center gap-1 rounded px-1.5 py-1 text-xs text-neutral-500 hover:bg-indigo-50 hover:text-indigo-600 dark:hover:bg-indigo-950" data-testid="cal-add" data-day={isoKey(cursor)}>
+          <Plus size={13} /> {t("cal.addOnDay")}
+        </button>
+      ) : null}
       {events.length === 0 && <p className="text-sm text-neutral-400">{t("cal.noRecords")}</p>}
       {events.map((ev) => (
         <div key={ev.record.id} className="max-w-md">

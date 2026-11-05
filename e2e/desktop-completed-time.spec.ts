@@ -49,7 +49,7 @@ test("sub-task list: the completed day typed in is the one shown and stored; the
   await expect.poll(stored).toBe("2026-10-25T23:15:00.000Z");
 });
 
-test("done check: the completed time is required, starts empty; 'Now' fills it in; saved as typed", async ({ page, seed }) => {
+test("done check: the completed date is required, starts empty; 'Today' fills it in; saved as the day picked", async ({ page, seed }) => {
   const { post, p, done, parent } = await setup(page, seed.wsId);
   const child = await post<{ id: string }>(`/api/projects/${p.id}/tasks`, { data: { sys_title: "Hướng dẫn làm lương", sys_parent: [parent.id] } });
   const stored = async () => ((await (await page.request.get(`/api/tasks/${child.id}`)).json()) as Rec).data.sys_completed_at;
@@ -75,10 +75,12 @@ test("done check: the completed time is required, starts empty; 'Now' fills it i
   await expect(completed).toHaveAttribute("aria-invalid", "true");
   await dialog.getByTestId("done-check-completed-now").click();
   await expect(completed).not.toHaveValue("");
-  await completed.fill("2026-10-26T19:44");
+  await expect(completed).toHaveAttribute("type", "date");
+  await completed.fill("2026-10-26");
   await dialog.getByTestId("done-check-save").click();
   await expect(dialog).toBeHidden();
-  await expect.poll(stored).toBe("2026-10-26T12:44:00.000Z");
+  // A day only, stored at local noon (05:00 UTC in Vietnam).
+  await expect.poll(stored).toBe("2026-10-26T05:00:00.000Z");
 });
 
 test("Home: completing a task asks for the completed time; 'skip the rest' saves just that and Home lists it as completed", async ({ page, seed }) => {
@@ -97,11 +99,11 @@ test("Home: completing a task asks for the completed time; 'skip the rest' saves
   const completed = dialog.getByTestId("done-check-completed");
   await expect(completed).toHaveValue("");
   await expect(dialog.getByTestId("done-check-ignore")).toBeDisabled();
-  await completed.fill("2026-11-04T17:00");
+  await completed.fill("2026-11-04");
   await completed.press("Tab");
   await dialog.getByTestId("done-check-ignore").click();
   await expect(dialog).toBeHidden();
-  await expect.poll(async () => ((await (await page.request.get(`/api/tasks/${task.id}`)).json()) as Rec).data.sys_completed_at).toBe("2026-11-04T10:00:00.000Z");
+  await expect.poll(async () => ((await (await page.request.get(`/api/tasks/${task.id}`)).json()) as Rec).data.sys_completed_at).toBe("2026-11-04T05:00:00.000Z");
 
   await page.reload();
   await myTasks.getByRole("button", { name: /^(Hoàn thành|Completed) \d+$/ }).click();

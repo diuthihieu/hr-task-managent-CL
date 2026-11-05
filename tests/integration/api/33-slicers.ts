@@ -72,4 +72,10 @@ test("slicers filter every widget of a dashboard like Power BI, and their option
   const ranged = await report([{ fieldName: "Due date", from: "2026-10-01", to: "2026-10-15" }]);
   assert.match(ranged, /## Tasks due 2026-10-01\.\.2026-10-15/);
   assert.deepEqual(line(ranged, "TEAM (each task once)").slice(1), ["2", "0", "0", "2", "0%", "0%"], "2 tasks due in the range, none done yet");
+  // A parent kept by the slicer counts only its own share, even when its sub-task is filtered out (like the charts).
+  const parent = (await admin.post<{ id: string }>(`/api/projects/${P}/tasks`, { data: { sys_title: "Hiring wave", sys_category: cat("Recruit"), sys_actual: 10, sys_due_date: "2026-10-20" } })).body.id;
+  await admin.post(`/api/projects/${P}/tasks`, { data: { sys_title: "Payroll check", sys_parent: [parent], sys_category: cat("Payroll"), sys_actual: 6, sys_due_date: "2026-10-20" } });
+  const recruit = await report([{ fieldName: "Category", values: ["Recruit"] }]);
+  assert.deepEqual(line(recruit, "2026-10 | 2 |").slice(0, 5), ["2026-10", "2", "0", "0", "10"], "Hiring 6 h + the parent's own 4 h (10 - its 6 h sub-task)");
+  assert.match(recruit, /slicers only/);
 });

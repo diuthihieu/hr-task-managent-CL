@@ -64,12 +64,12 @@ export const POST = route(async (req) => {
   const taskWhere = { workspaceId, deletedAt: null, projectId: { in: projectIds }, project: { deletedAt: null, ...visibleProjectWhere(user) } };
   const slicers = body.targetKind === "dashboard" ? parseSlicers(body.slicers) : [];
   const scopeIds = slicers.length ? await dashboardScopeTaskIds(user, workspaceId, body.targetId, slicers) : null;
-  const scope = scopeIds ? `the dashboard's current filters (${slicers.map((sl) => `${sl.fieldName}=${sl.values?.length ? sl.values.join(" or ") : `${sl.from ?? "…"}..${sl.to ?? "…"}`}`).join(", ")}) - the same tasks the charts show` : undefined;
+  const scope = scopeIds ? `the dashboard's current filters (${slicers.map((sl) => `${sl.fieldName}=${sl.values?.length ? sl.values.join(" or ") : `${sl.from ?? "…"}..${sl.to ?? "…"}`}`).join(", ")}) - slicers only: a widget's own filters, its saved view or a chart click may narrow a chart further, so for such a chart quote the chart's numbers` : undefined;
   // A date-range slicer sets the period: tasks DUE in it (any status) give a real completion rate.
   const period = slicers.find((sl) => sl.from && sl.to);
   const facts = projectIds.length
     ? [
-        await hoursByCategorySection(scopeIds ? { ...taskWhere, id: { in: scopeIds } } : taskWhere, scope),
+        await hoursByCategorySection(taskWhere, scope, scopeIds ? new Set(scopeIds) : undefined),
         period ? await duePeriodSection(taskWhere, period.from!, period.to!) : "",
       ]
         .filter(Boolean)

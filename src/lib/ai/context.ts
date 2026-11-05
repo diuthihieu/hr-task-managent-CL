@@ -132,13 +132,16 @@ export async function hoursSection(where: Prisma.TaskWhereInput): Promise<string
  * whatever charts a dashboard shows). A task with several assignees counts in full for each of them; a
  * parent counts only its own share (its total minus its sub-tasks), so a branch is never counted twice.
  */
-export async function hoursByCategorySection(where: Prisma.TaskWhereInput, scope?: string): Promise<string> {
-  const tasks = await prisma.task.findMany({
+export async function hoursByCategorySection(where: Prisma.TaskWhereInput, scope?: string, only?: Set<string>): Promise<string> {
+  const all = await prisma.task.findMany({
     where,
     select: { id: true, parentTaskId: true, estimateMinutes: true, actualMinutes: true, completedAt: true, dueDate: true, startDate: true, status: { select: { category: true } }, category: { select: { name: true } }, assignees: { select: { user: { select: { id: true, name: true } } } } },
     take: HOURS_TASK_LIMIT,
   });
-  const own = ownMinutes(tasks);
+  // Own shares over the whole task tree first (a parent minus all its sub-tasks, like the charts), then
+  // only the tasks in scope (e.g. the dashboard's slicers) are counted.
+  const own = ownMinutes(all);
+  const tasks = only ? all.filter((t) => only.has(t.id)) : all;
   const rows = new Map<string, { person: string; category: string; month: string; tasks: number; est: number; act: number; actDone: number }>();
   for (const t of tasks) {
     const share = own.get(t.id)!;
@@ -159,7 +162,7 @@ export async function hoursByCategorySection(where: Prisma.TaskWhereInput, scope
   const head = `## Hours per person, category and month (${scopeText}; a task with several assignees counts in full for each; parents count only their own share - a parent's hours include its sub-tasks'; month = completed, else due, else start date)\nperson | category | month | tasks | estimate h | actual h | actual h of done tasks\n`;
   if (!list.length) return head + "(no tasks)";
   const text = head + list.map((r) => [r.person, r.category, r.month, r.tasks, hours(r.est), hours(r.act), hours(r.actDone)].join(" | ")).join("\n") + "\n\n" + hoursTotalsSection(tasks, own, scope);
-  return tasks.length === HOURS_TASK_LIMIT ? `${text}\n[Note: only the first ${HOURS_TASK_LIMIT} tasks were counted - totals are partial.]` : text;
+  return all.length === HOURS_TASK_LIMIT ? `${text}\n[Note: only the first ${HOURS_TASK_LIMIT} tasks were counted - totals are partial.]` : text;
 }
 
 /**

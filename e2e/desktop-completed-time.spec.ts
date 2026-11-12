@@ -99,11 +99,13 @@ test("Home: completing a task asks for the completed time; 'skip the rest' saves
   const completed = dialog.getByTestId("done-check-completed");
   await expect(completed).toHaveValue("");
   await expect(dialog.getByTestId("done-check-ignore")).toBeDisabled();
-  await completed.fill("2026-11-04");
+  // Yesterday in Vietnam time: Home's "Completed" list only covers recent days, so a fixed date would age out.
+  const yesterday = new Date(Date.now() - 86_400_000 + 7 * 3_600_000).toISOString().slice(0, 10);
+  await completed.fill(yesterday);
   await completed.press("Tab");
   await dialog.getByTestId("done-check-ignore").click();
   await expect(dialog).toBeHidden();
-  await expect.poll(async () => ((await (await page.request.get(`/api/tasks/${task.id}`)).json()) as Rec).data.sys_completed_at).toBe("2026-11-04T05:00:00.000Z");
+  await expect.poll(async () => ((await (await page.request.get(`/api/tasks/${task.id}`)).json()) as Rec).data.sys_completed_at).toBe(`${yesterday}T05:00:00.000Z`);
 
   await page.reload();
   await myTasks.getByRole("button", { name: /^(Hoàn thành|Completed) \d+$/ }).click();

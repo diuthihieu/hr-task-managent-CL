@@ -42,3 +42,4 @@ test.after(async () => {
   await prisma.$disconnect();
 });
 import "./api/33-slicers";
+import "./api/34-my-export";

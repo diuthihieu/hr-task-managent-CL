@@ -14,9 +14,10 @@ import { HoursCheckDialog } from "@/components/tasks/hours-check-dialog";
 import { AgentSuggestionPopup } from "@/components/agent-work/agent-suggestion-popup";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { signOutAndUnsubscribe } from "@/components/notifications/web-push";
-import { ChevronDown, ChevronRight, ShieldCheck, KeyRound, MonitorDown, Smartphone, Plus, Settings, Clock3, Search, Menu, UserCircle, Sun, Moon, LogOut, Target, MoreHorizontal, Pencil, Trash2, BarChart3, Target as TargetIcon, BookOpen, Brain, Bot, Award, SlidersHorizontal, Palette, Building2, Home, ListChecks, Inbox, Sparkles, Lock, X, PanelLeftClose, PanelLeftOpen, CircleHelp } from "lucide-react";
+import { ChevronDown, ChevronRight, ShieldCheck, KeyRound, MonitorDown, Smartphone, Plus, Settings, Clock3, Search, Menu, UserCircle, Sun, Moon, LogOut, Target, MoreHorizontal, Pencil, Trash2, BarChart3, Target as TargetIcon, BookOpen, Brain, Bot, Award, SlidersHorizontal, Palette, Building2, FileDown, Home, ListChecks, Inbox, Sparkles, Lock, X, PanelLeftClose, PanelLeftOpen, CircleHelp } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { PreferencesDialog } from "@/components/preferences/preferences-dialog";
+import { MyExportDialog } from "@/components/account/my-export-dialog";
 import { NewProjectDialog } from "@/components/projects/new-project-dialog";
 import { ProjectIcon } from "@/components/projects/project-icon";
 import type { MessageKey } from "@/lib/i18n/core";
@@ -102,6 +103,7 @@ export function WorkspaceShell({
   }
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [okrOpen, setOkrOpen] = useState(() => /\/okrs(\/|$)/.test(pathname));
   const isAdmin = user.systemRole === "ADMIN";
@@ -551,6 +553,9 @@ export function WorkspaceShell({
                 <DropdownMenuItem onSelect={() => router.push("/workspaces")}>
                   <Building2 size={14} /> {t("ws.all")}
                 </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => setExportOpen(true)} data-testid="menu-my-export">
+                  <FileDown size={14} /> {t("mx.menu")}
+                </DropdownMenuItem>
                 {isAdmin && (
                   <DropdownMenuItem onSelect={() => router.push("/admin")}>
                     <ShieldCheck size={14} /> {t("nav.adminConsole")}
@@ -585,6 +590,7 @@ export function WorkspaceShell({
       <HoursCheckDialog />
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} workspaceId={workspace.id} workspaceSlug={workspace.slug} />
       <PreferencesDialog open={prefsOpen} onOpenChange={setPrefsOpen} />
+      {exportOpen && <MyExportDialog open={exportOpen} onOpenChange={setExportOpen} />}
 
       <CommandPalette open={searchOpen} onOpenChange={setSearchOpen} workspaceId={workspace.id} workspaceSlug={workspace.slug} />
       <AgentSuggestionPopup workspaceId={workspace.id} workspaceSlug={workspace.slug} />

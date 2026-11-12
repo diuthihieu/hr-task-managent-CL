@@ -229,6 +229,9 @@ test("second brain: [[links]], backlinks, block links, tags, related, versions a
 
 test("second brain: highlight -> task (recurring, OKR), reminder, decisions, graph and search", async () => {
   const A = s.brainPageA;
+  // Due a few days ahead (a fixed date would fall in the past and the next occurrence would skip ahead).
+  const dayIso = (offset: number) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+  const firstDue = dayIso(3);
   // Viewers can't create tasks in the project; contributors can.
   assert.equal((await viewer.post(`/api/wiki/${A}/to-task`, { projectId: s.project, title: "x" })).status, 403);
   const tk = await contributor.post<{ id: string; href: string }>(`/api/wiki/${A}/to-task`, {
@@ -236,7 +239,7 @@ test("second brain: highlight -> task (recurring, OKR), reminder, decisions, gra
     title: "Run probation review",
     text: "Probation lasts 60 days for new hires.",
     blockId: "blk00001",
-    dueDate: "2026-11-02",
+    dueDate: firstDue,
     recurrence: { freq: "weekly", interval: 1 },
     okr: `kr:${s.krLaptop}`,
   });
@@ -256,7 +259,7 @@ test("second brain: highlight -> task (recurring, OKR), reminder, decisions, gra
   assert.equal((await contributor.patch(`/api/tasks/${tk.body.id}`, { data: { sys_status: done.id, sys_completed_at: new Date().toISOString() } })).status, 200);
   const next = await prisma.task.findFirst({ where: { recurrenceParentId: tk.body.id }, include: { assignees: true } });
   assert.ok(next, "next occurrence created");
-  assert.equal(next!.dueDate!.toISOString().slice(0, 10), "2026-11-09");
+  assert.equal(next!.dueDate!.toISOString().slice(0, 10), dayIso(10), "a week after the first due date");
   assert.equal(next!.keyResultId, s.krLaptop);
   assert.deepEqual(next!.assignees.map((x) => x.userId), [s.contributorId]);
   const todo = await prisma.status.findFirst({ where: { workspaceId: s.ws, category: "todo" } });

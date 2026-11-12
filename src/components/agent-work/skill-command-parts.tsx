@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 import { ChevronDown, Download, Loader2, Play, Plus, Trash2 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -138,13 +139,18 @@ export function SkillRunDialog({ workspaceId, skill, initialNote = "", onClose, 
   const [members, setMembers] = useState<{ value: string; label: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<RunResult | null>(null);
+  // Approvals live in Agent Work, wherever the dialog was opened from (Ask AI or the Skill card).
+  const { workspaceSlug } = useParams<{ workspaceSlug: string }>();
 
   useEffect(() => {
     if (params.some((p) => p.type === "projects")) api.get<{ id: string; name: string }[]>(`/api/workspaces/${workspaceId}/projects`).then((r) => setProjects(r.map((p) => ({ value: p.id, label: p.name })))).catch(() => {});
-    if (params.some((p) => p.type === "people")) api.get<{ id: string; name: string; email: string }[]>(`/api/workspaces/${workspaceId}/members`).then((r) => setMembers([{ value: "me", label: t("cmd.people.me") }, ...r.map((m) => ({ value: m.id, label: `${m.name} · ${m.email}` }))])).catch(() => {});
+    if (params.some((p) => p.type === "people")) api.get<{ id: string; name: string; email: string }[]>(`/api/workspaces/${workspaceId}/members`).then((r) => setMembers([{ value: "me", label: t("cmd.people.me") }, ...r.map((m) => ({ value: m.id, label: `${m.name} - ${m.email}` }))])).catch(() => {});
   }, [params, workspaceId, t]);
 
   async function run() {
+    // A custom range needs both ends: never fall back silently to the default or to no date filter.
+    const half = params.find((p) => p.type === "date_range" && !!ranges[p.key] && !ranges[p.key].from !== !ranges[p.key].to);
+    if (half) return toast.error(t("cmd.rangeIncomplete", { label: half.label }));
     setBusy(true);
     try {
       const args: Record<string, unknown> = {};
@@ -221,7 +227,7 @@ export function SkillRunDialog({ workspaceId, skill, initialNote = "", onClose, 
           <div className="mt-4 space-y-3" data-testid="run-waiting">
             <p className="text-sm text-amber-700 dark:text-amber-300">{t("cmd.waiting")}</p>
             <div className="flex justify-end gap-2">
-              <a href={`?run=${result.run.id}`}>
+              <a href={`/w/${workspaceSlug}/agent-work?run=${result.run.id}`}>
                 <Button variant="outline">{t("cmd.openRun")}</Button>
               </a>
               <Button onClick={onClose}>{t("common.close")}</Button>

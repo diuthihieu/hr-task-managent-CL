@@ -597,6 +597,12 @@ async function commandContext(user: SessionUser, run: { workspaceId: string; inp
 
 const COMMAND_TASK_LIMIT = 300;
 
+/** Free-text arguments of a command run: checked for sensitive wording like the note. */
+function commandTextArgs(inputs: Prisma.JsonValue): string {
+  const args = ((inputs ?? {}) as { args?: Record<string, unknown> }).args ?? {};
+  return Object.values(args).filter((v): v is string => typeof v === "string").join("\n");
+}
+
 /**
  * Runs a Skill now from its slash command (or the Run button): no suggestion and no source task. Typing
  * the command is the confirmation; sensitive wording in the request still pauses for approval.
@@ -666,7 +672,7 @@ export async function executeAgentRun(user: SessionUser, runId: string, confirme
 
   const fileContext: AgentFileContext[] = !task ? [] : readFiles ? await readAgentTaskFiles(task.attachments, run.workspaceId) : task.attachments.map((file) => ({ id: file.id, fileName: file.fileName, contentType: file.contentType, sizeBytes: file.sizeBytes, skippedReason: "Skill does not allow file.read" }));
   // A command run is checked on what the user asked for (its tasks are data, often HR data by nature).
-  const sensitiveText = task ? `${run.goal}\n${task.title}\n${task.description ?? ""}\n${htmlToText(task.content)}\n${task.comments.map((comment) => comment.body).join("\n")}\n${fileContext.map((file) => file.text ?? "").join("\n")}` : run.goal;
+  const sensitiveText = task ? `${run.goal}\n${task.title}\n${task.description ?? ""}\n${htmlToText(task.content)}\n${task.comments.map((comment) => comment.body).join("\n")}\n${fileContext.map((file) => file.text ?? "").join("\n")}` : `${run.goal}\n${commandTextArgs(run.inputs)}`;
   const approvalKind = requiredApprovalForText(sensitiveText);
   const approved = approvalKind ? await prisma.agentApproval.findFirst({ where: { runId, kind: approvalKind, status: "approved" }, orderBy: { createdAt: "desc" } }) : null;
   if (approvalKind && !approved) {

@@ -25,6 +25,7 @@ test("skill commands: unique, validated, permission-scoped, and stuck runs are c
       { key: "period", label: "Period", type: "date_range", default: "this_week", dateField: "completed" },
       { key: "projects", label: "Projects", type: "projects" },
       { key: "people", label: "People", type: "people", default: "me" },
+      { key: "focus", label: "Focus", type: "text" },
     ],
   };
   const created = await admin.post<{ id: string }>(`${base}/skills`, skill);
@@ -59,6 +60,8 @@ test("skill commands: unique, validated, permission-scoped, and stuck runs are c
   const sensitive = await viewer.post<Run>(`${base}/commands`, { command: "weekly-digest", note: "include salary and payroll details" });
   assert.equal(sensitive.status, 200, JSON.stringify(sensitive.body));
   assert.equal(sensitive.body.run.status, "waiting_approval");
+  const viaText = await viewer.post<Run>(`${base}/commands`, { command: "weekly-digest", args: { focus: "salary bands" } });
+  assert.equal(viaText.body.run.status, "waiting_approval", "a text argument is checked like the note");
 
   // A run left in "running" for over an hour is closed when Agent Work is opened.
   await prisma.agentRun.update({ where: { id: ran.body.run.id }, data: { status: "running" } });

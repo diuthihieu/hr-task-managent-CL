@@ -652,6 +652,7 @@ export const TASKS = {
   "cmd.again": ["Run again", "Chạy lại"],
   "cmd.waiting": ["The request mentions sensitive data (payroll, legal…). Confirm it in Agent Work to continue.", "Yêu cầu có dữ liệu nhạy cảm (lương, pháp lý…). Hãy xác nhận trong Agent Work để tiếp tục."],
   "cmd.openRun": ["Open the run", "Mở lần chạy"],
+  "cmd.rangeIncomplete": ["{label}: choose both the start and the end date, or a preset", "{label}: chọn đủ ngày bắt đầu và ngày kết thúc, hoặc chọn kỳ có sẵn"],
   "cmd.pick": ["Skills you can run", "Skill có thể chạy"],
   "cmd.none": ["No Skill has a command yet - add one in Agent Work → Skills.", "Chưa có Skill nào có lệnh - thêm ở Agent Work → Skill."],
   "mx.menu": ["Export my data", "Xuất dữ liệu của tôi"],

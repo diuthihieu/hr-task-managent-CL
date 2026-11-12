@@ -130,6 +130,17 @@ export function serializeAgentRun(run: RunWithDetails) {
 }
 
 export async function ensureAgentFoundation(workspaceId: string, userId: string) {
+  // Two first requests at once (the page loads several) race on the same upserts; the loser retries
+  // once and then finds the rows the winner created.
+  try {
+    return await createAgentFoundation(workspaceId, userId);
+  } catch (e) {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") return createAgentFoundation(workspaceId, userId);
+    throw e;
+  }
+}
+
+async function createAgentFoundation(workspaceId: string, userId: string) {
   const [settings, skill] = await prisma.$transaction(async (tx) => {
     const nextSettings = await tx.agentSettings.upsert({
       where: { workspaceId_userId: { workspaceId, userId } },
@@ -607,7 +618,7 @@ function commandTextArgs(inputs: Prisma.JsonValue): string {
  * Runs a Skill now from its slash command (or the Run button): no suggestion and no source task. Typing
  * the command is the confirmation; sensitive wording in the request still pauses for approval.
  */
-export async function startCommandRun(user: SessionUser, workspaceId: string, input: { skillId?: string; command?: string; args?: Record<string, unknown>; note?: string }) {
+export async function startCommandRun(user: SessionUser, workspaceId: string, input: { skillId?: string; command?: string; args?: Record<string, unknown>; note?: string; workflowId?: string }) {
   await requireWorkspaceRole(user, workspaceId, "viewer");
   if (!aiConfigured()) throw badRequest("AI is not configured on this server");
   const skill = await prisma.agentSkill.findFirst({
@@ -632,8 +643,8 @@ export async function startCommandRun(user: SessionUser, workspaceId: string, in
   const goal = `${skill.command ? `/${skill.command}` : skill.name}${note ? `: ${note}` : ""}`.slice(0, 4000);
   const plan = Array.isArray(skill.workflow) && skill.workflow.length ? (skill.workflow as unknown[]).filter((x): x is string => typeof x === "string").slice(0, 12) : ["Read the permitted data", "Apply the Skill instructions", "Validate the output", "Save the output"];
   const run = await prisma.$transaction(async (tx) => {
-    const created = await tx.agentRun.create({ data: { workspaceId, userId: user.id, skillId: skill.id, skillVersion: skill.version, skillSnapshot: json(snapshotSkill(skill, skill.ownerId === user.id)), originType: "command", status: "planning", goal, plan: json(plan), inputs: json({ args, note, types: Object.fromEntries(parameters.map((p) => [p.key, p.type])) }), confirmedAt: new Date() } });
-    await tx.agentRunEvent.create({ data: { runId: created.id, actorId: user.id, toStatus: "planning", message: "Started from the Skill command", data: json({ args }) } });
+    const created = await tx.agentRun.create({ data: { workspaceId, userId: user.id, skillId: skill.id, skillVersion: skill.version, skillSnapshot: json(snapshotSkill(skill, skill.ownerId === user.id)), originType: "command", originId: input.workflowId ?? null, status: "planning", goal, plan: json(plan), inputs: json({ args, note, types: Object.fromEntries(parameters.map((p) => [p.key, p.type])) }), confirmedAt: new Date() } });
+    await tx.agentRunEvent.create({ data: { runId: created.id, actorId: user.id, toStatus: "planning", message: input.workflowId ? "Started by its scheduled workflow" : "Started from the Skill command", data: json({ args }) } });
     await logActivity(tx, { workspaceId, actorId: user.id, entityType: "agent_run", entityId: created.id, action: "created", summary: `Ran the Skill ${skill.name} on demand` });
     return created;
   });

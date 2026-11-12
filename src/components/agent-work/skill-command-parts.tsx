@@ -125,42 +125,108 @@ function MultiSelect({ items, value, onChange, all, testId }: { items: { value: 
   );
 }
 
+export type ParamValues = Record<string, unknown>;
+export type ParamRanges = Record<string, Range>;
+
+/** Form values for a Skill's parameters: saved arguments when given, else the parameter defaults. */
+export function initialParamState(params: SkillParameter[], saved?: Record<string, unknown>): { values: ParamValues; ranges: ParamRanges } {
+  const values: ParamValues = {};
+  const ranges: ParamRanges = {};
+  for (const p of params) {
+    const v = saved?.[p.key];
+    if (p.type === "date_range" && v && typeof v === "object" && !Array.isArray(v)) {
+      const r = v as { from?: string; to?: string };
+      ranges[p.key] = { from: r.from ?? null, to: r.to ?? null };
+      values[p.key] = "";
+    } else if (v !== undefined) values[p.key] = v;
+    else values[p.key] = p.type === "people" && p.default === "me" ? ["me"] : p.type === "projects" || p.type === "people" ? [] : (p.default ?? "");
+  }
+  return { values, ranges };
+}
+
+/** Arguments to send, or the label of a date range with only one end filled. */
+export function collectArgs(params: SkillParameter[], values: ParamValues, ranges: ParamRanges): { args: Record<string, unknown> } | { incomplete: string } {
+  // A custom range needs both ends: never fall back silently to the default or to no date filter.
+  const half = params.find((p) => p.type === "date_range" && !!ranges[p.key] && !ranges[p.key].from !== !ranges[p.key].to);
+  if (half) return { incomplete: half.label };
+  const args: Record<string, unknown> = {};
+  for (const p of params) {
+    if (p.type === "date_range") {
+      const r = ranges[p.key];
+      args[p.key] = r?.from && r?.to ? { from: r.from, to: r.to } : values[p.key] || undefined;
+    } else args[p.key] = values[p.key];
+  }
+  return { args };
+}
+
+/** The inputs for a Skill's parameters (presets or dates, projects, people, text). */
+export function ParamFields({ workspaceId, params, values, setValues, ranges, setRanges }: { workspaceId: string; params: SkillParameter[]; values: ParamValues; setValues: React.Dispatch<React.SetStateAction<ParamValues>>; ranges: ParamRanges; setRanges: React.Dispatch<React.SetStateAction<ParamRanges>> }) {
+  const { t } = useT();
+  const [projects, setProjects] = useState<{ value: string; label: string }[]>([]);
+  const [members, setMembers] = useState<{ value: string; label: string }[]>([]);
+  useEffect(() => {
+    if (params.some((p) => p.type === "projects")) api.get<{ id: string; name: string }[]>(`/api/workspaces/${workspaceId}/projects`).then((r) => setProjects(r.map((p) => ({ value: p.id, label: p.name })))).catch(() => {});
+    if (params.some((p) => p.type === "people")) api.get<{ id: string; name: string; email: string }[]>(`/api/workspaces/${workspaceId}/members`).then((r) => setMembers([{ value: "me", label: t("cmd.people.me") }, ...r.map((m) => ({ value: m.id, label: `${m.name} - ${m.email}` }))])).catch(() => {});
+  }, [params, workspaceId, t]);
+  return (
+    <>
+      {params.map((p) => (
+        <div key={p.key} className="space-y-1">
+          <div className="text-[11px] font-medium text-neutral-600 dark:text-neutral-300">
+            {p.label}
+            {p.required ? " *" : ""}
+            {p.type === "date_range" && <span className="font-normal text-neutral-400"> - {t(`cmd.field.${p.dateField ?? "completed"}` as MessageKey)}</span>}
+          </div>
+          {p.type === "date_range" ? (
+            <div className="grid grid-cols-[1fr_auto_auto] gap-1.5 items-center">
+              <select className={field} value={String(values[p.key] ?? "")} onChange={(e) => { setValues((v) => ({ ...v, [p.key]: e.target.value })); setRanges((r) => ({ ...r, [p.key]: { from: null, to: null } })); }} data-testid={`run-param-${p.key}`}>
+                <option value="">{t("cmd.preset.custom")}</option>
+                {DATE_PRESETS.map((d) => (
+                  <option key={d} value={d}>
+                    {t(`cmd.preset.${d}` as MessageKey)}
+                  </option>
+                ))}
+              </select>
+              <DateInput className={field} value={ranges[p.key]?.from ?? null} onCommit={(from) => { setRanges((r) => ({ ...r, [p.key]: { from, to: r[p.key]?.to ?? null } })); setValues((v) => ({ ...v, [p.key]: "" })); }} aria-label={t("mx.from")} />
+              <DateInput className={field} value={ranges[p.key]?.to ?? null} onCommit={(to) => { setRanges((r) => ({ ...r, [p.key]: { from: r[p.key]?.from ?? null, to } })); setValues((v) => ({ ...v, [p.key]: "" })); }} aria-label={t("mx.to")} />
+            </div>
+          ) : p.type === "projects" ? (
+            <MultiSelect items={projects} value={(values[p.key] as string[]) ?? []} onChange={(v) => setValues((x) => ({ ...x, [p.key]: v }))} all={t("cmd.projects.all")} testId={`run-param-${p.key}`} />
+          ) : p.type === "people" ? (
+            <MultiSelect items={members} value={(values[p.key] as string[]) ?? []} onChange={(v) => setValues((x) => ({ ...x, [p.key]: v }))} all={t("cmd.people.all")} testId={`run-param-${p.key}`} />
+          ) : (
+            <Input className="h-8 text-xs" value={String(values[p.key] ?? "")} onChange={(e) => setValues((v) => ({ ...v, [p.key]: e.target.value }))} data-testid={`run-param-${p.key}`} />
+          )}
+        </div>
+      ))}
+    </>
+  );
+}
+
+export const skillParams = (skill: { parameters: unknown }): SkillParameter[] => (Array.isArray(skill.parameters) ? (skill.parameters as SkillParameter[]) : []);
+
 /**
  * Run a Skill now: fill its parameters (defaults pre-filled), add a note, Run. Shows the result and its
  * files when done, or the approval request when the request touches sensitive data.
  */
 export function SkillRunDialog({ workspaceId, skill, initialNote = "", onClose, onDone }: { workspaceId: string; skill: RunnableSkill; initialNote?: string; onClose: () => void; onDone?: () => void }) {
   const { t } = useT();
-  const params = useMemo(() => (Array.isArray(skill.parameters) ? (skill.parameters as SkillParameter[]) : []), [skill.parameters]);
-  const [values, setValues] = useState<Record<string, unknown>>(() => Object.fromEntries(params.map((p) => [p.key, p.type === "people" && p.default === "me" ? ["me"] : p.type === "projects" || p.type === "people" ? [] : (p.default ?? "")])));
-  const [ranges, setRanges] = useState<Record<string, Range>>({});
+  const params = useMemo(() => skillParams(skill), [skill]);
+  const [initial] = useState(() => initialParamState(params));
+  const [values, setValues] = useState<ParamValues>(initial.values);
+  const [ranges, setRanges] = useState<ParamRanges>(initial.ranges);
   const [note, setNote] = useState(initialNote);
-  const [projects, setProjects] = useState<{ value: string; label: string }[]>([]);
-  const [members, setMembers] = useState<{ value: string; label: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<RunResult | null>(null);
   // Approvals live in Agent Work, wherever the dialog was opened from (Ask AI or the Skill card).
   const { workspaceSlug } = useParams<{ workspaceSlug: string }>();
 
-  useEffect(() => {
-    if (params.some((p) => p.type === "projects")) api.get<{ id: string; name: string }[]>(`/api/workspaces/${workspaceId}/projects`).then((r) => setProjects(r.map((p) => ({ value: p.id, label: p.name })))).catch(() => {});
-    if (params.some((p) => p.type === "people")) api.get<{ id: string; name: string; email: string }[]>(`/api/workspaces/${workspaceId}/members`).then((r) => setMembers([{ value: "me", label: t("cmd.people.me") }, ...r.map((m) => ({ value: m.id, label: `${m.name} - ${m.email}` }))])).catch(() => {});
-  }, [params, workspaceId, t]);
-
   async function run() {
-    // A custom range needs both ends: never fall back silently to the default or to no date filter.
-    const half = params.find((p) => p.type === "date_range" && !!ranges[p.key] && !ranges[p.key].from !== !ranges[p.key].to);
-    if (half) return toast.error(t("cmd.rangeIncomplete", { label: half.label }));
+    const collected = collectArgs(params, values, ranges);
+    if ("incomplete" in collected) return toast.error(t("cmd.rangeIncomplete", { label: collected.incomplete }));
     setBusy(true);
     try {
-      const args: Record<string, unknown> = {};
-      for (const p of params) {
-        if (p.type === "date_range") {
-          const r = ranges[p.key];
-          args[p.key] = r?.from && r?.to ? { from: r.from, to: r.to } : values[p.key] || undefined;
-        } else args[p.key] = values[p.key];
-      }
-      const r = await api.post<RunResult>(`/api/workspaces/${workspaceId}/agent-work/commands`, { skillId: skill.id, args, note: note.trim() || undefined });
+      const r = await api.post<RunResult>(`/api/workspaces/${workspaceId}/agent-work/commands`, { skillId: skill.id, args: collected.args, note: note.trim() || undefined });
       setResult(r);
       onDone?.();
     } catch (e) {
@@ -180,35 +246,7 @@ export function SkillRunDialog({ workspaceId, skill, initialNote = "", onClose, 
         {skill.description && <p className="mt-1 text-xs text-neutral-500">{skill.description}</p>}
         {!result ? (
           <div className="mt-4 space-y-3">
-            {params.map((p) => (
-              <div key={p.key} className="space-y-1">
-                <div className="text-[11px] font-medium text-neutral-600 dark:text-neutral-300">
-                  {p.label}
-                  {p.required ? " *" : ""}
-                  {p.type === "date_range" && <span className="font-normal text-neutral-400"> · {t(`cmd.field.${p.dateField ?? "completed"}` as MessageKey)}</span>}
-                </div>
-                {p.type === "date_range" ? (
-                  <div className="grid grid-cols-[1fr_auto_auto] gap-1.5 items-center">
-                    <select className={field} value={String(values[p.key] ?? "")} onChange={(e) => { setValues((v) => ({ ...v, [p.key]: e.target.value })); setRanges((r) => ({ ...r, [p.key]: { from: null, to: null } })); }} data-testid={`run-param-${p.key}`}>
-                      <option value="">{t("cmd.preset.custom")}</option>
-                      {DATE_PRESETS.map((d) => (
-                        <option key={d} value={d}>
-                          {t(`cmd.preset.${d}` as MessageKey)}
-                        </option>
-                      ))}
-                    </select>
-                    <DateInput className={field} value={ranges[p.key]?.from ?? null} onCommit={(from) => { setRanges((r) => ({ ...r, [p.key]: { from, to: r[p.key]?.to ?? null } })); setValues((v) => ({ ...v, [p.key]: "" })); }} aria-label={t("mx.from")} />
-                    <DateInput className={field} value={ranges[p.key]?.to ?? null} onCommit={(to) => { setRanges((r) => ({ ...r, [p.key]: { from: r[p.key]?.from ?? null, to } })); setValues((v) => ({ ...v, [p.key]: "" })); }} aria-label={t("mx.to")} />
-                  </div>
-                ) : p.type === "projects" ? (
-                  <MultiSelect items={projects} value={(values[p.key] as string[]) ?? []} onChange={(v) => setValues((x) => ({ ...x, [p.key]: v }))} all={t("cmd.projects.all")} testId={`run-param-${p.key}`} />
-                ) : p.type === "people" ? (
-                  <MultiSelect items={members} value={(values[p.key] as string[]) ?? []} onChange={(v) => setValues((x) => ({ ...x, [p.key]: v }))} all={t("cmd.people.all")} testId={`run-param-${p.key}`} />
-                ) : (
-                  <Input className="h-8 text-xs" value={String(values[p.key] ?? "")} onChange={(e) => setValues((v) => ({ ...v, [p.key]: e.target.value }))} data-testid={`run-param-${p.key}`} />
-                )}
-              </div>
-            ))}
+            <ParamFields workspaceId={workspaceId} params={params} values={values} setValues={setValues} ranges={ranges} setRanges={setRanges} />
             <div className="space-y-1">
               <div className="text-[11px] font-medium text-neutral-600 dark:text-neutral-300">{t("cmd.note")}</div>
               <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} maxLength={2000} placeholder={t("cmd.notePh")} className="w-full rounded-md border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-2 py-1.5 text-sm" data-testid="run-note" />

@@ -29,9 +29,25 @@ test("summary: own hours per project (no double counting), person-hours per assi
   const s = exportSummary([
     task({ id: "p", title: "Parent", actualMinutes: 600, ownActualMinutes: 360, assignees: [lan] }),
     task({ id: "c", title: "Child", parent: "Parent", actualMinutes: 240, ownActualMinutes: 240, assignees: [lan, minh] }),
-    task({ id: "o", workspace: "WS B", project: "P2", ownActualMinutes: 180, assignees: [] }),
+    task({ id: "o", workspace: "WS B", workspaceSlug: "ws-b", projectId: "p2", project: "P2", ownActualMinutes: 180, assignees: [] }),
   ]);
   assert.equal(s.totalActualH, 13);
   assert.deepEqual(s.projects.map((p) => [p.workspace, p.project, p.tasks, p.actualH]), [["WS A", "P1", 2, 10], ["WS B", "P2", 1, 3]]);
   assert.deepEqual(s.people.map((p) => [p.person, p.workspace, p.tasks, p.actualH]), [["(unassigned)", "WS B", 1, 3], ["Lan", "WS A", 2, 10], ["Minh", "WS A", 1, 4]]);
+});
+
+test("CSV: text that looks like a formula is shown as text, numbers stay numbers", () => {
+  const csv = toCsv(["Task", "Hours"], [["=1+1", -2], ["@SUM(A1)", 1], ["+x", 0], ["-y", 3]]);
+  assert.equal(csv.slice(1), "Task,Hours\r\n'=1+1,-2\r\n'@SUM(A1),1\r\n'+x,0\r\n'-y,3\r\n");
+});
+
+test("summary: projects and workspaces with the same name stay apart", () => {
+  const lan = { id: "a", name: "Lan" };
+  const s = exportSummary([
+    task({ id: "1", projectId: "p1", project: "Same", ownActualMinutes: 60, assignees: [lan] }),
+    task({ id: "2", projectId: "p9", project: "Same", ownActualMinutes: 120, assignees: [lan] }),
+    task({ id: "3", workspaceSlug: "ws-a2", projectId: "p3", project: "Other", ownActualMinutes: 30, assignees: [lan] }),
+  ]);
+  assert.deepEqual(s.projects.map((p) => [p.project, p.actualH]).sort(), [["Other", 0.5], ["Same", 1], ["Same", 2]]);
+  assert.deepEqual(s.people.map((p) => p.actualH).sort(), [0.5, 3]);
 });

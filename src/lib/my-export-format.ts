@@ -107,7 +107,8 @@ export function exportRows(tasks: ExportTask[], columns: ExportColumn[], origin:
 /** RFC 4180 CSV with a UTF-8 BOM so Excel shows Vietnamese correctly. */
 export function toCsv(header: string[], rows: (string | number)[][]): string {
   const cell = (v: string | number) => {
-    const s = String(v);
+    // Text starting with = + - @ is prefixed so a spreadsheet shows it instead of running it as a formula.
+    const s = typeof v === "string" && /^[=+\-@]/.test(v) ? `'${v}` : String(v);
     return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return "﻿" + [header, ...rows].map((r) => r.map(cell).join(",")).join("\r\n") + "\r\n";
@@ -139,7 +140,7 @@ export function exportSummary(tasks: ExportTask[]): { projects: ProjectTotal[]; 
   const people = new Map<string, { person: string; workspace: string; tasks: number; act: number }>();
   let total = 0;
   for (const t of tasks) {
-    const pk = `${t.workspace}\u0000${t.project}`;
+    const pk = t.projectId;
     const p = projects.get(pk) ?? { workspace: t.workspace, project: t.project, tasks: 0, est: 0, act: 0 };
     p.tasks++;
     p.est += t.ownEstimateMinutes;
@@ -148,7 +149,7 @@ export function exportSummary(tasks: ExportTask[]): { projects: ProjectTotal[]; 
     total += t.ownActualMinutes;
     const who = t.assignees.length ? t.assignees : [{ id: "", name: "(unassigned)" }];
     for (const a of who) {
-      const key = `${a.id}\u0000${a.name}\u0000${t.workspace}`;
+      const key = `${a.id}\u0000${a.name}\u0000${t.workspaceSlug}`;
       const r = people.get(key) ?? { person: a.name, workspace: t.workspace, tasks: 0, act: 0 };
       r.tasks++;
       r.act += t.ownActualMinutes;

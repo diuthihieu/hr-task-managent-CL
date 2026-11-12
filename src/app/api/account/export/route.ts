@@ -43,7 +43,8 @@ export const GET = route(async () => {
 export const POST = route(async (req) => {
   const user = await requireUser();
   const body = schema.parse(await readJson(req));
-  if (!(await rateLimit(`my-export:${user.id}`, body.preview ? 120 : 20, 10 * 60_000))) throw new HttpError(429, "Too many exports - please wait a few minutes");
+  // Separate buckets: the dialog previews on every filter change, which must not use up the download allowance.
+  if (!(await rateLimit(body.preview ? `my-export-preview:${user.id}` : `my-export:${user.id}`, body.preview ? 120 : 20, 10 * 60_000))) throw new HttpError(429, "Too many exports - please wait a few minutes");
   const { tasks, tooMany, count, workspaceIds } = await loadMyExport(user, body.filters);
   const summary = exportSummary(tasks);
   if (body.preview || tooMany) {
@@ -51,7 +52,7 @@ export const POST = route(async (req) => {
   }
   const columns = (body.columns.length ? EXPORT_COLUMNS.filter((c) => body.columns.includes(c)) : []) as ExportColumn[];
   if (!columns.length) throw new HttpError(400, "Choose at least one column");
-  const me = await prisma.user.findUnique({ where: { id: user.id }, select: { locale: true } });
+  const me = await prisma.user.findUnique({ where: { id: user.id, deletedAt: null }, select: { locale: true } });
   const t = makeT(normalizeLocale(me?.locale));
   const header = columns.map((c) => t(`mx.col.${c}` as MessageKey));
   const origin = new URL(req.url).origin;

@@ -21,6 +21,7 @@ import {
   Sparkles,
   Target,
   UserRound,
+  MessageCircle,
 } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { useShellNav } from "@/components/layout/shell-context";
@@ -100,6 +101,7 @@ export function AllFeatures() {
           <Tile href={base} icon={Home} label={t("nav.home")} tint={tint.indigo} />
           <Tile href={`${base}/my-work`} icon={ListChecks} label={t("nav.myWork")} tint={tint.sky} />
           <Tile href={`${base}/inbox`} icon={Inbox} label={t("nav.inbox")} tint={tint.rose} badge={unread} testId="all-inbox" />
+          <Tile href={`${base}/messages`} icon={MessageCircle} label={t("nav.messages")} tint={tint.sky} testId="all-messages" />
         </Group>
 
         <Group title={t("nav.group.intelligence")} testId="all-group-intelligence">

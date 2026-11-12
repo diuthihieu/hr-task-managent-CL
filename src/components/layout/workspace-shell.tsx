@@ -6,6 +6,7 @@ import { rememberWorkspaceInBrowser } from "@/lib/resume-target";
 import { MobileTabBar } from "@/components/layout/mobile-tab-bar";
 import { ShellNavContext, type ShellNav } from "@/components/layout/shell-context";
 import { NotificationBell, RecognitionCount, UnreadCount } from "@/components/notifications/notification-bell";
+import { ChatUnread } from "@/components/messages/chat-unread";
 import { WorkspaceAvatar } from "@/components/workspaces/workspace-avatar";
 import { emitViewsChanged } from "@/lib/view-events";
 import { FocusDock } from "@/components/focus/focus-mode";
@@ -14,7 +15,7 @@ import { HoursCheckDialog } from "@/components/tasks/hours-check-dialog";
 import { AgentSuggestionPopup } from "@/components/agent-work/agent-suggestion-popup";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { signOutAndUnsubscribe } from "@/components/notifications/web-push";
-import { ChevronDown, ChevronRight, ShieldCheck, KeyRound, MonitorDown, Smartphone, Plus, Settings, Clock3, Search, Menu, UserCircle, Sun, Moon, LogOut, Target, MoreHorizontal, Pencil, Trash2, BarChart3, Target as TargetIcon, BookOpen, Brain, Bot, Award, SlidersHorizontal, Palette, Building2, FileDown, Home, ListChecks, Inbox, Sparkles, Lock, X, PanelLeftClose, PanelLeftOpen, CircleHelp } from "lucide-react";
+import { ChevronDown, ChevronRight, ShieldCheck, KeyRound, MonitorDown, Smartphone, Plus, Settings, Clock3, Search, Menu, UserCircle, Sun, Moon, LogOut, Target, MoreHorizontal, Pencil, Trash2, BarChart3, Target as TargetIcon, BookOpen, Brain, Bot, Award, SlidersHorizontal, Palette, Building2, FileDown, Home, ListChecks, Inbox, Sparkles, Lock, X, PanelLeftClose, PanelLeftOpen, CircleHelp, MessageCircle } from "lucide-react";
 import { useT } from "@/components/i18n-provider";
 import { PreferencesDialog } from "@/components/preferences/preferences-dialog";
 import { MyExportDialog } from "@/components/account/my-export-dialog";
@@ -223,6 +224,7 @@ export function WorkspaceShell({
   const isApps = pathname === `/w/${workspace.slug}/apps`;
   const isAi = pathname.includes("/ai");
   const isAgentWork = pathname.includes("/agent-work");
+  const isMessages = pathname.endsWith("/messages");
   const okrActive = isTeamOkrs || isMyOkrs || isOkrDashboard || isOkrDetail;
   const wikiOpenNow = wikiOpen ?? (isWikiHome || !!activeWikiId);
 
@@ -282,6 +284,7 @@ export function WorkspaceShell({
           <NavLink href={`/w/${workspace.slug}`} active={isHome} icon={Home} label={t("nav.home")} compact={compact} testId="nav-home" />
           <NavLink href={`/w/${workspace.slug}/my-work`} active={isMyWork} icon={ListChecks} label={t("nav.myWork")} compact={compact} />
           <NavLink href={`/w/${workspace.slug}/inbox`} active={isInbox} icon={Inbox} label={t("nav.inbox")} compact={compact} testId="nav-inbox" badge={<UnreadCount />} />
+          <NavLink href={`/w/${workspace.slug}/messages`} active={isMessages} icon={MessageCircle} label={t("nav.messages")} compact={compact} testId="nav-messages" badge={<ChatUnread />} />
 
           <NavSection label={t("nav.group.intelligence")} compact={compact} />
           <NavLink href={`/w/${workspace.slug}/ai`} active={isAi} icon={Sparkles} label={t("nav.ai")} compact={compact} testId="nav-ai" badge={<span className="text-[9px] font-semibold tracking-wide text-indigo-500/80">AI</span>} />

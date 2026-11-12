@@ -14,5 +14,6 @@ import { DASHBOARDS } from "./messages/dashboards";
 import { NOTIFICATIONS } from "./messages/notifications";
 import { TASKS } from "./messages/tasks";
 import { WORKSPACE } from "./messages/workspace";
+import { CHAT } from "./messages/chat";
 
-export const MESSAGES = { ...COMMON, ...KNOWLEDGE, ...RECOGNITION, ...LANDING, ...ACCOUNT, ...AI, ...OKR, ...DASHBOARDS, ...NOTIFICATIONS, ...TASKS, ...WORKSPACE } as const;
+export const MESSAGES = { ...COMMON, ...KNOWLEDGE, ...RECOGNITION, ...LANDING, ...ACCOUNT, ...AI, ...OKR, ...DASHBOARDS, ...NOTIFICATIONS, ...TASKS, ...WORKSPACE, ...CHAT } as const;

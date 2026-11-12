@@ -392,6 +392,14 @@ model User {
   agentApprovalsToAct   AgentApproval[]           @relation("AgentApprovalApprover")
   agentOutputs          AgentOutput[]             @relation("AgentOutputCreator")
 
+  contactsA         Contact[]            @relation("ContactA")
+  contactsB         Contact[]            @relation("ContactB")
+  contactsRequested Contact[]            @relation("ContactRequester")
+  chatMemberships   ConversationMember[]
+  chatMessages      ChatMessage[]
+  chatsCreated      Conversation[]       @relation("ConversationCreator")
+  chatBotInbox      Conversation[]       @relation("ConversationBotOwner")
+
   @@index([isActive, deletedAt])
   @@map("users")
 }
@@ -2512,4 +2520,105 @@ model PushSubscription {
 
   @@index([userId])
   @@map("push_subscriptions")
+}
+
+// ---------------------------------------------------------------------------
+// Messages: contacts (friends among people who share a workspace), 1-1 / group chats and the
+// "Woli AI" bot inbox. Messages are not tied to a workspace; a tagged task is shown to a reader only
+// if that reader may see it.
+
+enum ContactStatus {
+  pending
+  accepted
+  blocked
+
+  @@map("contact_status")
+}
+
+enum ConversationKind {
+  direct
+  group
+  bot
+
+  @@map("conversation_kind")
+}
+
+/// One row per pair of people (userAId < userBId).
+model Contact {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userAId       String        @map("user_a_id") @db.Uuid
+  userBId       String        @map("user_b_id") @db.Uuid
+  status        ContactStatus
+  /// Who sent the request (pending) or who blocked (blocked).
+  requestedById String        @map("requested_by_id") @db.Uuid
+  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  userA       User @relation("ContactA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB       User @relation("ContactB", fields: [userBId], references: [id], onDelete: Cascade)
+  requestedBy User @relation("ContactRequester", fields: [requestedById], references: [id], onDelete: Cascade)
+
+  @@unique([userAId, userBId])
+  @@index([userBId])
+  @@map("contacts")
+}
+
+model Conversation {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kind          ConversationKind
+  name          String?          @db.VarChar(120)
+  /// direct: "<smaller user id>:<larger user id>"; bot: "bot:<user id>"; group: null.
+  pairKey       String?          @unique @map("pair_key") @db.VarChar(100)
+  createdById   String?          @map("created_by_id") @db.Uuid
+  /// bot conversations: whose inbox it is.
+  botOwnerId    String?          @map("bot_owner_id") @db.Uuid
+  lastMessageAt DateTime         @default(now()) @map("last_message_at") @db.Timestamptz(6)
+  createdAt     DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  createdBy User?                @relation("ConversationCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  botOwner  User?                @relation("ConversationBotOwner", fields: [botOwnerId], references: [id], onDelete: Cascade)
+  members   ConversationMember[]
+  messages  ChatMessage[]
+
+  @@index([lastMessageAt])
+  @@map("conversations")
+}
+
+model ConversationMember {
+  conversationId String    @map("conversation_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  isAdmin        Boolean   @default(false) @map("is_admin")
+  joinedAt       DateTime  @default(now()) @map("joined_at") @db.Timestamptz(6)
+  /// Set when the member left or was removed: they keep what they saw before, nothing after.
+  leftAt         DateTime? @map("left_at") @db.Timestamptz(6)
+  lastReadAt     DateTime  @default(now()) @map("last_read_at") @db.Timestamptz(6)
+  muted          Boolean   @default(false)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+  @@index([userId, leftAt])
+  @@map("conversation_members")
+}
+
+model ChatMessage {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId String    @map("conversation_id") @db.Uuid
+  /// null: the Woli AI bot.
+  authorId       String?   @map("author_id") @db.Uuid
+  body           String    @db.VarChar(4000)
+  taskIds        String[]  @default([]) @map("task_ids") @db.Uuid
+  /// Agent outputs attached by the bot (downloads are checked against the output's owner).
+  outputIds      String[]  @default([]) @map("output_ids") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  editedAt       DateTime? @map("edited_at") @db.Timestamptz(6)
+  /// Recalled by its author (within an hour): the text is wiped, the row stays as "message recalled".
+  recalledAt     DateTime? @map("recalled_at") @db.Timestamptz(6)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       User?        @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([conversationId, createdAt])
+  @@map("chat_messages")
 }

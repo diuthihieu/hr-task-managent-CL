@@ -132,3 +132,41 @@ export async function sendPush(db: PrismaClient, rows: QueuedNotification[], sin
   if (gone.length) await db.pushSubscription.deleteMany({ where: { id: { in: [...new Set(gone)] } } });
   if (used.length) await db.pushSubscription.updateMany({ where: { id: { in: [...new Set(used)] } }, data: { lastUsedAt: new Date() } });
 }
+
+/**
+ * A push that is not a bell notification (chat messages): sent after the response to every browser the
+ * users subscribed, same delivery and clean-up rules as sendPush. `tag` replaces an older push with the
+ * same tag on the device (one per conversation instead of a pile).
+ */
+export function pushDirect(db: PrismaClient, userIds: string[], message: { title: string; body: string; url: string; tag: string }) {
+  if (!userIds.length || !pushConfigured()) return;
+  const job = async () => {
+    setVapid();
+    const subs = await db.pushSubscription.findMany({ where: { userId: { in: userIds }, user: { isActive: true, deletedAt: null } } });
+    const gone: string[] = [];
+    const used: string[] = [];
+    const payload = JSON.stringify({ id: message.tag, title: message.title, body: message.body, url: message.url, tag: message.tag });
+    for (const s of subs) {
+      if (!isPushEndpoint(s.endpoint)) {
+        gone.push(s.id);
+        continue;
+      }
+      try {
+        await webpush.sendNotification({ endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } }, payload, { TTL: 24 * 3600, urgency: "high" });
+        used.push(s.id);
+      } catch (e) {
+        const code = (e as { statusCode?: number }).statusCode;
+        if (code === 404 || code === 410) gone.push(s.id);
+        else console.error("[push] delivery failed", code ?? e);
+      }
+    }
+    if (gone.length) await db.pushSubscription.deleteMany({ where: { id: { in: gone } } });
+    if (used.length) await db.pushSubscription.updateMany({ where: { id: { in: used } }, data: { lastUsedAt: new Date() } });
+  };
+  const run = () => job().catch((e) => console.error("[push] direct send failed", e));
+  try {
+    after(run);
+  } catch {
+    void run();
+  }
+}

@@ -331,12 +331,15 @@ export interface TaskRef {
   done: boolean;
 }
 
-/** A page of messages (oldest first), only from the time I was a member. */
-export async function listMessages(user: SessionUser, conversationId: string, before?: Date) {
+/**
+ * A page of messages (oldest first), only from the time I was a member. `ids` instead re-reads given
+ * messages (an edit or recall of one older than the latest page), under the same window.
+ */
+export async function listMessages(user: SessionUser, conversationId: string, before?: Date, ids?: string[]) {
   const m = await membership(user, conversationId);
   const window: Prisma.DateTimeFilter = { gte: m.joinedAt, ...(m.leftAt ? { lte: m.leftAt } : {}), ...(before ? { lt: before } : {}) };
   const rows = await prisma.chatMessage.findMany({
-    where: { conversationId, createdAt: window },
+    where: { conversationId, createdAt: window, ...(ids ? { id: { in: ids.slice(0, PAGE) } } : {}) },
     orderBy: { createdAt: "desc" },
     take: PAGE + 1,
     include: { author: { select: { id: true, name: true, avatarColor: true } } },
@@ -431,6 +434,9 @@ export async function recallMessage(user: SessionUser, messageId: string) {
 export async function markRead(user: SessionUser, conversationId: string) {
   const m = await membership(user, conversationId);
   if (m.leftAt) return;
+  // Only when something from others was unread: reading a read receipt must not send one back.
+  const unseen = await prisma.chatMessage.count({ where: { conversationId, createdAt: { gt: m.lastReadAt }, OR: [{ authorId: null }, { authorId: { not: user.id } }] } });
+  if (!unseen) return;
   await prisma.conversationMember.update({ where: { conversationId_userId: { conversationId, userId: user.id } }, data: { lastReadAt: new Date() } });
   if (m.conversation.kind === "direct") publish(m.conversation.members.map((x) => x.userId).filter((id) => id !== user.id), "read", { c: conversationId });
 }

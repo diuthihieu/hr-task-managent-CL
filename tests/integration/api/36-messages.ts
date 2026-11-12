@@ -64,6 +64,14 @@ test("messages: contacts, direct chat, task tags, recall window, blocks, groups,
   assert.ok(viewerTasks.body.some((x) => x.id === tv) && !viewerTasks.body.some((x) => x.id === th), "the # picker never offers hidden tasks");
   assert.equal((await viewer.post(`/api/messages/${conv}/read`)).status, 200);
   assert.equal((await viewer.get<{ count: number }>("/api/messages/unread")).body.count, 0);
+  // Reading again with nothing new changes nothing (so two open tabs never ping-pong read receipts).
+  const readAt = (await prisma.conversationMember.findUniqueOrThrow({ where: { conversationId_userId: { conversationId: conv, userId: s.viewerId } } })).lastReadAt;
+  await viewer.post(`/api/messages/${conv}/read`);
+  assert.equal((await prisma.conversationMember.findUniqueOrThrow({ where: { conversationId_userId: { conversationId: conv, userId: s.viewerId } } })).lastReadAt.getTime(), readAt.getTime());
+  // ?ids= re-reads given messages (an edit of one older than the latest page); others' conversations stay out.
+  const one = await viewer.get<Page>(`/api/messages/${conv}?ids=${sent.body.id}`);
+  assert.deepEqual(one.body.messages.map((x) => x.id), [sent.body.id]);
+  assert.equal((await viewer.get(`/api/messages/${conv}?ids=not-a-uuid`)).status, 400);
 
   // --- edit / recall: author only, within an hour
   assert.equal((await viewer.patch(`/api/messages/items/${sent.body.id}`, { body: "hijack" })).status, 403);

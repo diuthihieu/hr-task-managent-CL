@@ -13,7 +13,9 @@ export const GET = route<P>(async (req, { params }) => {
   const raw = new URL(req.url).searchParams.get("before");
   const before = raw ? new Date(raw) : undefined;
   if (before && Number.isNaN(before.getTime())) throw badRequest("Invalid date");
-  return NextResponse.json(await listMessages(user, id, before), { headers: { "Cache-Control": "private, no-store" } });
+  const rawIds = new URL(req.url).searchParams.get("ids");
+  const ids = rawIds ? z.array(uuid).max(50).parse(rawIds.split(",")) : undefined;
+  return NextResponse.json(await listMessages(user, id, before, ids), { headers: { "Cache-Control": "private, no-store" } });
 });
 
 const send = z.object({ body: z.string().max(MESSAGE_MAX + 100), taskIds: z.array(uuid).max(10).optional() });

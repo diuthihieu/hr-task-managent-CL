@@ -187,7 +187,8 @@ function Thread({ meId, conversation, title, onBack, onChanged, onLeft }: { meId
     api.post(`/api/messages/${id}/read`).then(() => chatChanged()).catch(() => {});
   }, [id]);
 
-  const loadLatest = useCallback(() => {
+  /** The latest page, merged into what is loaded; `read` false for a read receipt (never answer one with another). */
+  const loadLatest = useCallback((read = true) => {
     return api.get<Page>(`/api/messages/${id}`).then((p) => {
       setMsgs((prev) => {
         if (!prev) {
@@ -200,7 +201,7 @@ function Thread({ meId, conversation, title, onBack, onChanged, onLeft }: { meId
         return [...byId.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
       });
       setOtherReadAt(p.otherReadAt);
-      markRead();
+      if (read) markRead();
     }, (e: unknown) => toast.error(e instanceof Error ? e.message : t("common.failed")));
   }, [id, markRead, t]);
 
@@ -211,8 +212,22 @@ function Thread({ meId, conversation, title, onBack, onChanged, onLeft }: { meId
     if (stick.current) endRef.current?.scrollIntoView({ block: "end" });
   }, [msgs]);
 
+  /** Re-read messages already on screen (an edit or recall of one older than the latest page). */
+  const refresh = useCallback(
+    (ids: string[]) => {
+      if (!ids.length) return;
+      api.get<Page>(`/api/messages/${id}?ids=${ids.join(",")}`).then((p) => {
+        const fresh = new Map(p.messages.map((m) => [m.id, m]));
+        setMsgs((prev) => prev && prev.map((m) => fresh.get(m.id) ?? m));
+      }, () => {});
+    },
+    [id],
+  );
+
   useChatSignals((s) => {
-    if (s.event === "poll" || ((s.event === "message" || s.event === "read") && s.payload.c === id)) void loadLatest();
+    if (s.event === "poll" || (s.event === "message" && s.payload.c === id)) void loadLatest();
+    if (s.event === "read" && s.payload.c === id) void loadLatest(false);
+    if (s.event === "message" && s.payload.c === id && typeof s.payload.m === "string") refresh([s.payload.m]);
     if (s.event === "typing" && s.payload.c === id && s.payload.u !== meId) {
       setTypingName(String(s.payload.n ?? ""));
       if (typingTimer.current) clearTimeout(typingTimer.current);
@@ -234,6 +249,7 @@ function Thread({ meId, conversation, title, onBack, onChanged, onLeft }: { meId
     try {
       await api.delete(`/api/messages/items/${m.id}`);
       await loadLatest();
+      refresh([m.id]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));
     }
@@ -345,7 +361,7 @@ function Thread({ meId, conversation, title, onBack, onChanged, onLeft }: { meId
         <div ref={endRef} />
       </div>
       {canWrite ? (
-        <Composer key={editing?.id ?? "new"} conversationId={id} editing={editing} onCancelEdit={() => setEditing(null)} onSent={() => { stick.current = true; setEditing(null); void loadLatest(); onChanged(); }} />
+        <Composer key={editing?.id ?? "new"} conversationId={id} editing={editing} onCancelEdit={() => setEditing(null)} onSent={() => { stick.current = !editing; if (editing) refresh([editing.id]); setEditing(null); void loadLatest(); onChanged(); }} />
       ) : (
         <p className="px-5 py-3 text-xs text-neutral-500 border-t border-neutral-200 dark:border-neutral-800">{t("chat.botReadOnly")}</p>
       )}

@@ -400,6 +400,8 @@ model User {
   chatsCreated      Conversation[]       @relation("ConversationCreator")
   chatBotInbox      Conversation[]       @relation("ConversationBotOwner")
 
+  agentWorkflows AgentWorkflow[]
+
   @@index([isActive, deletedAt])
   @@map("users")
 }
@@ -464,6 +466,8 @@ model Workspace {
   agentRuns           AgentRun[]
   agentSuggestions    AgentSuggestion[]
   agentOutputs        AgentOutput[]
+
+  agentWorkflows AgentWorkflow[]
 
   @@map("workspaces")
 }
@@ -1555,6 +1559,8 @@ model AgentSkill {
   sourceConversation AiConversation?        @relation("AgentSkillSourceConversation", fields: [sourceConversationId], references: [id], onDelete: SetNull)
   attachments        Attachment[]
 
+  workflows AgentWorkflow[]
+
   @@unique([workspaceId, systemKey])
   @@index([workspaceId, command])
   @@index([workspaceId, visibility, deletedAt])
@@ -2621,4 +2627,40 @@ model ChatMessage {
 
   @@index([conversationId, createdAt])
   @@map("chat_messages")
+}
+
+/// A Skill run on a schedule for its owner (with the owner's permissions at each run); results go to the
+/// owner's Woli AI inbox. Triggered by Supabase pg_cron calling /api/workflows/tick.
+model AgentWorkflow {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workspaceId  String    @map("workspace_id") @db.Uuid
+  ownerId      String    @map("owner_id") @db.Uuid
+  skillId      String    @map("skill_id") @db.Uuid
+  name         String    @db.VarChar(160)
+  /// What the person described when creating it.
+  description  String?   @db.VarChar(2000)
+  /// Raw Skill arguments (date presets stay relative: "last_week" is re-read at every run).
+  args         Json      @default("{}")
+  note         String?   @db.VarChar(2000)
+  /// { freq, minute, hour, weekdays, monthDay } in Vietnam time (src/lib/agent-work/schedule.ts).
+  schedule     Json
+  active       Boolean   @default(true)
+  nextRunAt    DateTime  @map("next_run_at") @db.Timestamptz(6)
+  lastRunAt    DateTime? @map("last_run_at") @db.Timestamptz(6)
+  lastRunId    String?   @map("last_run_id") @db.Uuid
+  lastStatus   String?   @map("last_status") @db.VarChar(40)
+  lastError    String?   @map("last_error") @db.VarChar(1000)
+  failureCount Int       @default(0) @map("failure_count")
+  /// Set while a run is in progress (a second tick never runs it twice).
+  lockedUntil  DateTime? @map("locked_until") @db.Timestamptz(6)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  workspace Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  owner     User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  skill     AgentSkill @relation(fields: [skillId], references: [id], onDelete: Cascade)
+
+  @@index([active, nextRunAt])
+  @@index([ownerId])
+  @@map("agent_workflows")
 }

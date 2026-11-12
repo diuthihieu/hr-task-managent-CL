@@ -40,6 +40,15 @@ test("workflows: validated, owner-only, run by the tick into the Woli AI inbox, 
   assert.equal(hourly.status, 200);
   assert.ok(new Date(hourly.body.nextRunAt).getTime() - Date.now() <= 3_600_000, "the next run follows the new schedule");
 
+  // A partial change touches only what it sends: pausing keeps the arguments, an edit doesn't switch it on.
+  assert.equal((await viewer.patch(`/api/agent-work/workflows/${wf.id}`, { active: false })).status, 200);
+  let row = await prisma.agentWorkflow.findUniqueOrThrow({ where: { id: wf.id } });
+  assert.deepEqual([row.active, row.args, row.name], [false, { period: "last_week" }, "Monday digest"]);
+  assert.equal((await viewer.patch(`/api/agent-work/workflows/${wf.id}`, { name: "Monday digest v2" })).status, 200);
+  row = await prisma.agentWorkflow.findUniqueOrThrow({ where: { id: wf.id } });
+  assert.deepEqual([row.active, row.args, row.name], [false, { period: "last_week" }, "Monday digest v2"], "editing a paused workflow leaves it paused");
+  assert.equal((await viewer.patch(`/api/agent-work/workflows/${wf.id}`, { active: true, name: "Monday digest" })).status, 200);
+
   // At most 10 active per person.
   const extra: string[] = [];
   for (let i = 0; i < 9; i++) extra.push((await viewer.post<WF>(`${base}/workflows`, { name: `Extra ${i}`, skillId: sk.body.id, schedule: weekly })).body.id);

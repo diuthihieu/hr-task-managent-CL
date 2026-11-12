@@ -30,6 +30,21 @@ export const workflowBody = z.object({
 });
 export type WorkflowBody = z.infer<typeof workflowBody>;
 
+/**
+ * A change to a workflow: only the fields sent. Not `workflowBody.partial()` - with Zod 4 that still
+ * fills the creation defaults in, so pausing would wipe the arguments and any edit would switch it on.
+ */
+export const workflowPatch = z.object({
+  name: z.string().trim().min(2).max(160).optional(),
+  description: z.string().trim().max(2000).nullable().optional(),
+  skillId: z.string().uuid().optional(),
+  args: z.record(z.string(), z.unknown()).optional(),
+  note: z.string().trim().max(2000).nullable().optional(),
+  schedule: workflowSchedule.optional(),
+  active: z.boolean().optional(),
+});
+export type WorkflowPatch = z.infer<typeof workflowPatch>;
+
 const json = (v: unknown) => JSON.parse(JSON.stringify(v)) as Prisma.InputJsonValue;
 
 /** Checks the Skill is usable by this person and the arguments fit its parameters (as of now). */
@@ -80,7 +95,7 @@ async function owned(user: SessionUser, id: string) {
   return w;
 }
 
-export async function updateWorkflow(user: SessionUser, id: string, patch: Partial<WorkflowBody>) {
+export async function updateWorkflow(user: SessionUser, id: string, patch: WorkflowPatch) {
   const w = await owned(user, id);
   const merged = { skillId: patch.skillId ?? w.skillId, args: (patch.args ?? w.args) as Record<string, unknown> };
   if (patch.skillId || patch.args) await validate(user, w.workspaceId, merged);

@@ -3,7 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { aiConfigured, generate, parseJsonAnswer } from "@/lib/ai/gemini";
 import { requireUser, requireWorkspaceRole, route, readJson, badRequest, notFound } from "@/lib/authz";
-import { assertAgentAiQuota, listAgentSkills } from "@/lib/agent-work/engine";
+import { assertAgentAiQuota, assertSkillCommandFree, listAgentSkills } from "@/lib/agent-work/engine";
 import { agentSkillBodySchema, createAgentSkillSchema, defaultAgentSkillFields } from "@/lib/agent-work/skill-schema";
 
 type P = { workspaceId: string };
@@ -63,6 +63,8 @@ export const POST = route<P>(async (req, { params }) => {
     outputDefinitions: body.outputDefinitions ?? defaults.outputDefinitions,
     visibility: body.visibility,
     shareWithUserIds: body.shareWithUserIds,
+    command: body.command,
+    parameters: body.parameters,
   });
 
   if (fields.visibility === "specific_people" && !fields.shareWithUserIds.length) throw badRequest("Choose at least one person to share this Skill with");
@@ -71,7 +73,8 @@ export const POST = route<P>(async (req, { params }) => {
     if (count !== new Set(fields.shareWithUserIds).size) throw badRequest("Every shared person must belong to this workspace");
   }
   const skill = await prisma.$transaction(async (tx) => {
-    const created = await tx.agentSkill.create({ data: { workspaceId, ownerId: user.id, name: fields.name, description: fields.description, instructions: fields.instructions, triggers: asJson(fields.triggers), inputSchema: asJson(fields.inputSchema), workflow: asJson(fields.workflow), toolsAllowed: fields.toolsAllowed, referenceFiles: asJson(fields.referenceFiles), templates: asJson(fields.templates), validationRules: asJson(fields.validationRules), outputDefinitions: asJson(fields.outputDefinitions), visibility: fields.visibility, sourceConversationId: body.sourceConversationId } });
+    await assertSkillCommandFree(tx, workspaceId, fields.command);
+    const created = await tx.agentSkill.create({ data: { workspaceId, ownerId: user.id, command: fields.command ?? null, parameters: asJson(fields.parameters), name: fields.name, description: fields.description, instructions: fields.instructions, triggers: asJson(fields.triggers), inputSchema: asJson(fields.inputSchema), workflow: asJson(fields.workflow), toolsAllowed: fields.toolsAllowed, referenceFiles: asJson(fields.referenceFiles), templates: asJson(fields.templates), validationRules: asJson(fields.validationRules), outputDefinitions: asJson(fields.outputDefinitions), visibility: fields.visibility, sourceConversationId: body.sourceConversationId } });
     await tx.agentSkillActivation.create({ data: { skillId: created.id, userId: user.id, active: false } });
     if (fields.visibility === "specific_people") await tx.agentSkillShare.createMany({ data: fields.shareWithUserIds.map((userId) => ({ skillId: created.id, userId })), skipDuplicates: true });
     return created;

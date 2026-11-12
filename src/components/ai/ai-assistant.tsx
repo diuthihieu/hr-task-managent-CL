@@ -123,6 +123,7 @@ export function AiAssistant({ workspaceId, workspaceName, logoUrl, userName }: {
           emptyBody={t("ai.emptyBody")}
           suggestions={suggestions}
           placeholder={t("ai.placeholder")}
+          commandWorkspaceId={workspaceId}
         />
         )}
       </main>

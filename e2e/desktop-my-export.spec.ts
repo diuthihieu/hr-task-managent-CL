@@ -29,13 +29,13 @@ test("export my data: preview follows the filters and the download holds the cho
   await page.getByTestId("mx-projects-search").fill(`Xuất ${tag}`);
   await page.getByTestId("mx-projects-list").getByRole("option").first().click();
   await page.keyboard.press("Escape");
-  await expect(dialog.getByTestId("mx-preview")).toContainText(/^1 task · 2.5 giờ|^1 task\(s\) · 2.5 actual hours/);
+  await expect(dialog.getByTestId("mx-preview")).toContainText(/^1 task - 2.5 giờ|^1 task\(s\) - 2.5 actual hours/);
 
   // Clearing the assignee filter takes every task I can see.
   await dialog.getByTestId("mx-assignees").click();
   await page.getByTestId("mx-assignees-clear").click();
   await page.keyboard.press("Escape");
-  await expect(dialog.getByTestId("mx-preview")).toContainText(/^2 task · 3.5 giờ|^2 task\(s\) · 3.5 actual hours/);
+  await expect(dialog.getByTestId("mx-preview")).toContainText(/^2 task - 3.5 giờ|^2 task\(s\) - 3.5 actual hours/);
 
   await dialog.getByTestId("mx-col-dueDate").check();
   const [download] = await Promise.all([page.waitForEvent("download"), dialog.getByTestId("mx-download").click()]);

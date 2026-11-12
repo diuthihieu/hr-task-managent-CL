@@ -190,6 +190,8 @@ enum AgentOriginType {
   dashboard
   chat
   workspace
+  /// Run on demand with the Skill's slash command (no source task needed).
+  command
 
   @@map("agent_origin_type")
 }
@@ -1523,6 +1525,10 @@ model AgentSkill {
   templates            Json                 @default("[]")
   validationRules      Json                 @default("[]") @map("validation_rules")
   outputDefinitions    Json                 @default("[]") @map("output_definitions")
+  /// Slash command that runs the Skill on demand ("bao-cao-tuan" for /bao-cao-tuan); unique per workspace among live Skills (checked by the API).
+  command              String?              @db.VarChar(60)
+  /// Inputs asked when the command runs: [{ key, label, type: text|date_range|projects|people, required?, default? }].
+  parameters           Json                 @default("[]")
   version              Int                  @default(1)
   visibility           AgentSkillVisibility @default(private)
   sourceConversationId String?              @map("source_conversation_id") @db.Uuid
@@ -1542,6 +1548,7 @@ model AgentSkill {
   attachments        Attachment[]
 
   @@unique([workspaceId, systemKey])
+  @@index([workspaceId, command])
   @@index([workspaceId, visibility, deletedAt])
   @@index([ownerId, deletedAt])
   @@index([sourceConversationId])

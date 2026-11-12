@@ -10,6 +10,7 @@ import { AiHealthCheck } from "./ai-health-check";
 import type { ChatMessage } from "./use-ai-chat";
 import { useAutosize } from "./use-autosize";
 import { AttachButton, MessageFiles, PendingFiles, dropRing, useChatFiles, useFileDrop } from "./chat-attachments";
+import { SkillRunDialog, SlashMenu, useSlashCommands, type RunnableSkill } from "@/components/agent-work/skill-command-parts";
 
 /** Message list + composer shared by the wiki assistant panel and the AI Assistant page. */
 /** Matches the chat API's message limit. */
@@ -32,6 +33,7 @@ export function ChatThread({
   suggestions = [],
   placeholder,
   compact,
+  commandWorkspaceId,
 }: {
   messages: ChatMessage[];
   busy: boolean;
@@ -49,6 +51,8 @@ export function ChatThread({
   suggestions?: string[];
   placeholder: string;
   compact?: boolean;
+  /** Set to let "/command" run one of my Skills in this workspace. */
+  commandWorkspaceId?: string;
 }) {
   const { t } = useT();
   const [draft, setDraft] = useState("");
@@ -62,8 +66,17 @@ export function ChatThread({
     endRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
 
+  const slash = useSlashCommands(commandWorkspaceId, draft);
+  function runSkill(skill: RunnableSkill, note: string) {
+    slash.start(skill, note);
+    setDraft("");
+  }
+
   function submit() {
     if ((!draft.trim() && !attach.files.length) || busy) return;
+    // "/command [note]" for a Skill I can run opens its run dialog instead of sending a chat message.
+    if (slash.exact) return runSkill(slash.exact, slash.note);
+    if (slash.open && slash.matches.length) return runSkill(slash.matches[slash.active], "");
     onSend(draft.trim() || t("ai.attach.defaultPrompt"), attach.files);
     setDraft("");
     attach.clear();
@@ -172,7 +185,8 @@ export function ChatThread({
         <div className={cn("mx-auto", !compact && "max-w-3xl")}>
           <PendingFiles chat={attach} />
         </div>
-        <div {...drop.zone} className={cn("mx-auto flex items-end gap-2 rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-950", !compact && "max-w-3xl", dropRing(drop.over))}>
+        <div {...drop.zone} className={cn("relative mx-auto flex items-end gap-2 rounded-2xl border border-neutral-300 dark:border-neutral-700 bg-white dark:bg-neutral-900 px-3 py-2 focus-within:border-indigo-400 focus-within:ring-2 focus-within:ring-indigo-100 dark:focus-within:ring-indigo-950", !compact && "max-w-3xl", dropRing(drop.over))}>
+          <SlashMenu slash={slash} onPick={(s) => runSkill(s, "")} />
           <AttachButton onPick={attach.add} disabled={!configured || busy} />
           <textarea
             onPaste={drop.onPaste}
@@ -180,6 +194,16 @@ export function ChatThread({
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
+              if (slash.open && slash.matches.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+                e.preventDefault();
+                slash.setActive((slash.active + (e.key === "ArrowDown" ? 1 : slash.matches.length - 1)) % slash.matches.length);
+                return;
+              }
+              if (slash.open && e.key === "Escape") {
+                e.preventDefault();
+                setDraft("");
+                return;
+              }
               if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 submit();
@@ -205,6 +229,7 @@ export function ChatThread({
         <CharCount value={draft} max={CHAT_MAX} className={cn("mx-auto px-3", !compact && "max-w-3xl")} />
         <p className="text-[10px] text-neutral-400 text-center mt-1.5">{t("ai.disclaimer")}</p>
       </div>
+      {slash.running && commandWorkspaceId && <SkillRunDialog workspaceId={commandWorkspaceId} skill={slash.running.skill} initialNote={slash.running.note} onClose={slash.close} />}
     </div>
   );
 }

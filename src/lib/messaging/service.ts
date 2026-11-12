@@ -117,7 +117,7 @@ export async function requestContact(user: SessionUser, targetId: string) {
       if (!(e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002")) throw e; // a request crossing mine
     });
     publish([targetId], "contact", { u: user.id });
-    const recipient = await prisma.user.findUnique({ where: { id: targetId }, select: { locale: true } });
+    const recipient = await prisma.user.findFirst({ where: { id: targetId, deletedAt: null }, select: { locale: true } });
     pushDirect(prisma, [targetId], { title: user.name, body: makeT(normalizeLocale(recipient?.locale))("chat.pushRequest"), url: "/messages?tab=contacts", tag: `contact:${user.id}` });
   }
   return { status: "outgoing" as const };

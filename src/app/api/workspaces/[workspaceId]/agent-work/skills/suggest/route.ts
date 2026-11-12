@@ -4,6 +4,7 @@ import { aiConfigured, generate, parseJsonAnswer } from "@/lib/ai/gemini";
 import { badRequest, requireUser, requireWorkspaceRole, readJson, route } from "@/lib/authz";
 import { AGENT_ARTIFACT_FORMATS } from "@/lib/agent-work/artifact-contract";
 import { AGENT_TOOLS } from "@/lib/agent-work/tools";
+import { DATE_FIELDS, DATE_PRESETS, SKILL_COMMAND, SKILL_PARAMETER_TYPES, skillParameter } from "@/lib/agent-work/skill-schema";
 import { assertAgentAiQuota } from "@/lib/agent-work/engine";
 
 type P = { workspaceId: string };
@@ -23,6 +24,8 @@ const draftSchema = z.object({
   validationRules: z.array(z.string().trim().min(1).max(1000)).min(1).max(20),
   outputFormats: z.array(z.enum(AGENT_ARTIFACT_FORMATS)).min(1).max(5),
   questions: z.array(z.string().trim().min(1).max(500)).max(5).default([]),
+  command: z.string().trim().toLowerCase().regex(SKILL_COMMAND).nullable().optional().catch(null),
+  parameters: z.array(skillParameter).max(8).default([]).catch([]),
 });
 
 export const POST = route<P>(async (req, { params }) => {
@@ -39,7 +42,7 @@ export const POST = route<P>(async (req, { params }) => {
     temperature: body.previousDraft ? 0.55 : 0.25,
     maxOutputTokens: 3000,
     system: "You are Woli's no-code Skill designer. Turn a short business request into a safe, reusable Agent Skill. Return JSON only. Never include source data or permissions in a reusable Skill. The workflow must be plain language, one concrete action per step. Pick only tools from AVAILABLE_TOOLS. Sensitive or external actions must remain approval-gated. Ask concise questions only when an answer would materially change the Skill; still produce a usable draft.",
-    contents: [{ role: "user", parts: [{ text: JSON.stringify({ request: body.description, clarification: body.clarification ?? null, previousDraft: body.previousDraft ?? null, availableInputFields: ["goal", "task", "project", "dueDate", "files", "extraInstructions"], availableOutputFormats: AGENT_ARTIFACT_FORMATS, availableTools, requiredShape: { name: "string", description: "string", triggers: ["string"], workflow: ["string"], inputFields: ["allowed input field"], toolsAllowed: ["available tool name"], validationRules: ["string"], outputFormats: ["available format"], questions: ["string"] } }) }] }],
+    contents: [{ role: "user", parts: [{ text: JSON.stringify({ request: body.description, clarification: body.clarification ?? null, previousDraft: body.previousDraft ?? null, availableInputFields: ["goal", "task", "project", "dueDate", "files", "extraInstructions"], availableOutputFormats: AGENT_ARTIFACT_FORMATS, availableTools, requiredShape: { name: "string", description: "string", triggers: ["string"], workflow: ["string"], inputFields: ["allowed input field"], toolsAllowed: ["available tool name"], validationRules: ["string"], outputFormats: ["available format"], questions: ["string"], command: "short-slug-without-accents (how the user will type it after /, e.g. bao-cao-tuan)", parameters: [{ key: "snake_case", label: "label in the user's language", type: SKILL_PARAMETER_TYPES, required: "boolean", default: `date_range: one of ${DATE_PRESETS.join("|")}; people: me or empty`, dateField: DATE_FIELDS }] }, parameterGuide: "Add parameters only for what changes between runs: a period to report on (date_range with dateField), projects, people (assignees) or free text. A Skill run by command reads the tasks its parameters select." }) }] }],
   });
   const parsed = draftSchema.safeParse(parseJsonAnswer<unknown>(response.text));
   if (!parsed.success) throw badRequest("AI returned an incomplete Skill draft. Please try regenerating it.");

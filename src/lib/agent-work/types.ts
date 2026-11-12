@@ -53,6 +53,8 @@ export interface AgentSkillDto {
   outputDefinitions: Array<{ format: "markdown" | "text" | "json" | "docx" | "xlsx" | "pptx" | "pdf"; name: string }>;
   shareWithUserIds: string[];
   owner: { id: string; name: string } | null;
+  command: string | null;
+  parameters: unknown;
 }
 
 export interface AgentOutputDto {

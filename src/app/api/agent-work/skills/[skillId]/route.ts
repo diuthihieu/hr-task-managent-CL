@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUser, requireWorkspaceRole, route, readJson, notFound, badRequest } from "@/lib/authz";
 import { agentSkillBodySchema } from "@/lib/agent-work/skill-schema";
+import { assertSkillCommandFree } from "@/lib/agent-work/engine";
 
 type P = { skillId: string };
 const schema = z.object({ active: z.boolean() });
@@ -34,6 +35,7 @@ export const PUT = route<P>(async (req, { params }) => {
     if (count !== new Set(body.shareWithUserIds).size) throw badRequest("Every shared person must belong to this workspace");
   }
   const updated = await prisma.$transaction(async (tx) => {
+    await assertSkillCommandFree(tx, skill.workspaceId, body.command, skill.id);
     const row = await tx.agentSkill.update({
       where: { id: skill.id },
       data: {
@@ -49,6 +51,8 @@ export const PUT = route<P>(async (req, { params }) => {
         validationRules: asJson(body.validationRules),
         outputDefinitions: asJson(body.outputDefinitions),
         visibility: body.visibility,
+        command: body.command ?? null,
+        parameters: asJson(body.parameters),
         version: { increment: 1 },
       },
       select: { id: true, version: true },

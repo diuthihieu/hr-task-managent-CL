@@ -167,7 +167,7 @@ export const AI = {
   "ai.scopeNote": ["Answers use only the projects, tasks, OKRs, wikis and documents you have access to. Out-of-scope questions are declined.", "AI chỉ dùng project, task, OKR, wiki và tài liệu mà bạn có quyền xem. Câu hỏi ngoài phạm vi sẽ bị từ chối."],
   "ai.emptyTitle": ["Hi {name}, what should we look at today?", "Chào {name}, hôm nay mình xem gì nhé?"],
   "ai.emptyBody": ["Ask about your work or have a report drafted — then export it to PDF.", "Hỏi về công việc hoặc nhờ soạn báo cáo — sau đó xuất ra PDF."],
-  "ai.placeholder": ["E.g. Write a weekly progress report for the Recruitment project, with a table of overdue tasks", "VD: Viết báo cáo tiến độ tuần của project Tuyển dụng, kèm bảng task quá hạn"],
+  "ai.placeholder": ["E.g. Write a weekly progress report for the Recruitment project, with a table of overdue tasks · type / to run a Skill", "VD: Viết báo cáo tiến độ tuần của project Tuyển dụng, kèm bảng task quá hạn · gõ / để chạy Skill"],
   "ai.s.weekly": ["Write this week's progress report for all projects", "Viết báo cáo tiến độ tuần này cho tất cả project"],
   "ai.s.overdue": ["Which tasks are overdue, and who owns them?", "Những task nào đang quá hạn và ai phụ trách?"],
   "ai.s.okr": ["Summarize OKR progress and flag key results at risk", "Tóm tắt tiến độ OKR và chỉ ra key result có rủi ro"],

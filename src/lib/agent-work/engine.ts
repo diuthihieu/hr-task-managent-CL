@@ -13,6 +13,10 @@ import { logActivity } from "@/lib/activity";
 import { deleteAttachmentBlob, uploadAgentArtifact } from "@/lib/storage";
 import { accessibleAgentSkillWhere } from "./access";
 import { HttpError } from "@/lib/http-errors";
+import { z } from "zod";
+import { hoursByCategorySection } from "@/lib/ai/context";
+import { normalizeCommandArgs, type CommandArgs, type DateRangeArg } from "./command-args";
+import { skillParameter } from "./skill-schema";
 import { rateLimit } from "@/lib/rate-limit";
 
 const STARTER_SKILL_KEY = "task-brief";
@@ -43,6 +47,8 @@ const SKILL_CONFIG_SELECT = {
   templates: true,
   validationRules: true,
   outputDefinitions: true,
+  command: true,
+  parameters: true,
   version: true,
 } satisfies Prisma.AgentSkillSelect;
 
@@ -186,7 +192,16 @@ export async function listAgentSkills(workspaceId: string, userId: string) {
     ownedByMe: skill.ownerId === userId,
     shareWithUserIds: skill.ownerId === userId ? skill.shares.map((share) => share.userId) : [],
     active: skill.activations[0]?.active ?? false,
+    command: skill.command,
+    parameters: skill.parameters,
   }));
+}
+
+/** A slash command may name only one live Skill per workspace. */
+export async function assertSkillCommandFree(db: Pick<typeof prisma, "agentSkill">, workspaceId: string, command: string | null | undefined, exceptSkillId?: string) {
+  if (!command) return;
+  const taken = await db.agentSkill.findFirst({ where: { workspaceId, command, deletedAt: null, ...(exceptSkillId ? { id: { not: exceptSkillId } } : {}) }, select: { name: true } });
+  if (taken) throw badRequest(`The command /${command} is already used by the Skill "${taken.name}"`);
 }
 
 export async function getAgentSettings(workspaceId: string, userId: string) {
@@ -532,25 +547,122 @@ async function executableTask(user: SessionUser, taskId: string) {
   });
 }
 
+/**
+ * Data of a command run (no source task): the tasks its arguments select, read with the caller's
+ * permissions, plus hours tables computed from them so the model quotes totals instead of adding.
+ */
+async function commandContext(user: SessionUser, run: { workspaceId: string; inputs: Prisma.JsonValue }) {
+  const inputs = (run.inputs ?? {}) as { args?: CommandArgs; types?: Record<string, string> };
+  const args = inputs.args ?? {};
+  const types = inputs.types ?? {};
+  const base: Prisma.TaskWhereInput = { workspaceId: run.workspaceId, deletedAt: null, project: { deletedAt: null, ...visibleProjectWhere(user) } };
+  const and: Prisma.TaskWhereInput[] = [base];
+  const scope: string[] = [];
+  for (const [key, value] of Object.entries(args)) {
+    if (Array.isArray(value) && value.length) {
+      const isProject = types[key] === "projects";
+      and.push(isProject ? { projectId: { in: value } } : { assignees: { some: { userId: { in: value } } } });
+      scope.push(`${key}: ${value.length} ${isProject ? "project(s)" : "assignee(s)"}`);
+    } else if (value && typeof value === "object" && !Array.isArray(value)) {
+      const r = value as DateRangeArg;
+      // Whole days in Vietnam time, like the presets.
+      const range = { gte: new Date(`${r.from}T00:00:00.000+07:00`), lt: new Date(new Date(`${r.to}T00:00:00.000+07:00`).getTime() + 86_400_000) };
+      and.push(r.field === "due" ? { dueDate: range } : r.field === "start" ? { startDate: range } : r.field === "updated" ? { updatedAt: range } : { completedAt: range });
+      scope.push(`${key}: ${r.field} ${r.from}..${r.to}`);
+    }
+  }
+  const where: Prisma.TaskWhereInput = { AND: and };
+  const tasks = await prisma.task.findMany({
+    where,
+    orderBy: [{ projectId: "asc" }, { dueDate: "asc" }],
+    take: COMMAND_TASK_LIMIT,
+    select: { id: true, title: true, description: true, priority: true, progress: true, startDate: true, dueDate: true, completedAt: true, estimateMinutes: true, actualMinutes: true, parentTaskId: true, project: { select: { name: true } }, status: { select: { name: true, category: true } }, category: { select: { name: true } }, assignees: { select: { user: { select: { name: true } } } }, reportTo: { select: { user: { select: { name: true } } } } },
+  });
+  const total = await prisma.task.count({ where });
+  const scopeText = scope.length ? scope.join("; ") : "every task of the workspace you may see";
+  const hours = await hoursByCategorySection(base, `command arguments (${scopeText})`, new Set((await prisma.task.findMany({ where, select: { id: true }, take: 50_000 })).map((t) => t.id)));
+  const day = (d: Date | null) => d?.toISOString().slice(0, 10) ?? null;
+  return {
+    scopeText,
+    context: {
+      arguments: args,
+      scope: scopeText,
+      taskCount: total,
+      tasksListed: tasks.length,
+      tasks: tasks.map((t) => ({ title: t.title, project: t.project.name, status: t.status.name, statusGroup: t.status.category, category: t.category?.name ?? null, priority: t.priority, progress: t.progress, start: day(t.startDate), due: day(t.dueDate), completed: day(t.completedAt), estimateH: t.estimateMinutes == null ? null : t.estimateMinutes / 60, actualH: t.actualMinutes == null ? null : t.actualMinutes / 60, isSubTask: !!t.parentTaskId, assignees: t.assignees.map((a) => a.user.name), reportTo: t.reportTo.map((a) => a.user.name), description: t.description?.slice(0, 300) ?? null })),
+      hoursTables: hours,
+    },
+  };
+}
+
+const COMMAND_TASK_LIMIT = 300;
+
+/** Free-text arguments of a command run: checked for sensitive wording like the note. */
+function commandTextArgs(inputs: Prisma.JsonValue): string {
+  const args = ((inputs ?? {}) as { args?: Record<string, unknown> }).args ?? {};
+  return Object.values(args).filter((v): v is string => typeof v === "string").join("\n");
+}
+
+/**
+ * Runs a Skill now from its slash command (or the Run button): no suggestion and no source task. Typing
+ * the command is the confirmation; sensitive wording in the request still pauses for approval.
+ */
+export async function startCommandRun(user: SessionUser, workspaceId: string, input: { skillId?: string; command?: string; args?: Record<string, unknown>; note?: string }) {
+  await requireWorkspaceRole(user, workspaceId, "viewer");
+  if (!aiConfigured()) throw badRequest("AI is not configured on this server");
+  const skill = await prisma.agentSkill.findFirst({
+    where: { workspaceId, ...accessibleAgentSkillWhere(user.id), ...(input.skillId ? { id: input.skillId } : { command: input.command ?? "__none__" }) },
+    select: SKILL_CONFIG_SELECT,
+  });
+  if (!skill) throw notFound("Skill");
+  await assertAgentAiQuota(user.id);
+  const [projects, members] = await Promise.all([
+    prisma.project.findMany({ where: { workspaceId, deletedAt: null, ...visibleProjectWhere(user) }, select: { id: true } }),
+    prisma.workspaceMember.findMany({ where: { workspaceId }, select: { userId: true } }),
+  ]);
+  const parsedParams = z.array(skillParameter).safeParse(skill.parameters);
+  const parameters = parsedParams.success ? parsedParams.data : [];
+  let args: CommandArgs;
+  try {
+    args = normalizeCommandArgs(parameters, input.args ?? {}, { userId: user.id, projectIds: new Set(projects.map((p) => p.id)), memberIds: new Set(members.map((m) => m.userId)) });
+  } catch (error) {
+    throw badRequest(error instanceof Error ? error.message : "Invalid arguments");
+  }
+  const note = input.note?.trim().slice(0, 2000) ?? "";
+  const goal = `${skill.command ? `/${skill.command}` : skill.name}${note ? `: ${note}` : ""}`.slice(0, 4000);
+  const plan = Array.isArray(skill.workflow) && skill.workflow.length ? (skill.workflow as unknown[]).filter((x): x is string => typeof x === "string").slice(0, 12) : ["Read the permitted data", "Apply the Skill instructions", "Validate the output", "Save the output"];
+  const run = await prisma.$transaction(async (tx) => {
+    const created = await tx.agentRun.create({ data: { workspaceId, userId: user.id, skillId: skill.id, skillVersion: skill.version, skillSnapshot: json(snapshotSkill(skill, skill.ownerId === user.id)), originType: "command", status: "planning", goal, plan: json(plan), inputs: json({ args, note, types: Object.fromEntries(parameters.map((p) => [p.key, p.type])) }), confirmedAt: new Date() } });
+    await tx.agentRunEvent.create({ data: { runId: created.id, actorId: user.id, toStatus: "planning", message: "Started from the Skill command", data: json({ args }) } });
+    await logActivity(tx, { workspaceId, actorId: user.id, entityType: "agent_run", entityId: created.id, action: "created", summary: `Ran the Skill ${skill.name} on demand` });
+    return created;
+  });
+  const result = await executeAgentRun(user, run.id, true);
+  // Same shape whether it ran or paused for approval: { run, outputIds?, content? }.
+  return "run" in result ? result : { run: result };
+}
+
 export async function executeAgentRun(user: SessionUser, runId: string, confirmed: boolean) {
   const run = await ownedRun(user, runId);
+  const isCommand = run.originType === "command";
   if (run.status !== "planning") throw badRequest(`Agent Run is not ready to execute (is ${run.status})`);
-  if (!run.skill.activations[0]?.active) throw badRequest("Activate this Skill before the Agent can use it");
+  // Activation only governs proactive suggestions; a command run is started by the user on purpose.
+  if (!isCommand && !run.skill.activations[0]?.active) throw badRequest("Activate this Skill before the Agent can use it");
   const settings = await getAgentSettings(run.workspaceId, user.id);
-  if (settings.requireConfirmation && !confirmed) throw badRequest("Execution confirmation is required");
-  if (!run.task) throw badRequest("This phase executes Task-origin Agent Runs only");
+  if (!isCommand && settings.requireConfirmation && !confirmed) throw badRequest("Execution confirmation is required");
+  if (!run.task && !isCommand) throw badRequest("This Agent Run has no source task");
   if (!Array.isArray(run.plan) || !run.plan.length) throw badRequest("The execution plan is still being prepared");
   const skill = runSkillSnapshot(run);
   const definitions = normalizeOutputDefinitions(skill.outputDefinitions);
-  const task = await executableTask(user, run.task.id);
+  const task = run.task ? await executableTask(user, run.task.id) : null;
   const allowedTools = new Set(skill.toolsAllowed);
-  const readFiles = task.attachments.length > 0 && allowedTools.has("file.read");
+  const readFiles = !!task && task.attachments.length > 0 && allowedTools.has("file.read");
   const requestedTools = [
     "woli.read_task",
     ...(readFiles ? ["file.read"] : []),
     ...(definitions.some((definition) => ["markdown", "text", "json"].includes(definition.format)) ? ["artifact.save_text"] : []),
     ...(definitions.some((definition) => ["docx", "xlsx", "pptx", "pdf"].includes(definition.format)) ? ["artifact.generate"] : []),
-    "woli.create_task_comment",
+    ...(task ? ["woli.create_task_comment"] : []),
   ];
   try {
     assertAgentToolsAllowed(skill.toolsAllowed, requestedTools);
@@ -558,8 +670,10 @@ export async function executeAgentRun(user: SessionUser, runId: string, confirme
     throw badRequest(error instanceof Error ? error.message : "Skill tool policy is invalid");
   }
 
-  const fileContext: AgentFileContext[] = readFiles ? await readAgentTaskFiles(task.attachments, run.workspaceId) : task.attachments.map((file) => ({ id: file.id, fileName: file.fileName, contentType: file.contentType, sizeBytes: file.sizeBytes, skippedReason: "Skill does not allow file.read" }));
-  const approvalKind = requiredApprovalForText(`${run.goal}\n${task.title}\n${task.description ?? ""}\n${htmlToText(task.content)}\n${task.comments.map((comment) => comment.body).join("\n")}\n${fileContext.map((file) => file.text ?? "").join("\n")}`);
+  const fileContext: AgentFileContext[] = !task ? [] : readFiles ? await readAgentTaskFiles(task.attachments, run.workspaceId) : task.attachments.map((file) => ({ id: file.id, fileName: file.fileName, contentType: file.contentType, sizeBytes: file.sizeBytes, skippedReason: "Skill does not allow file.read" }));
+  // A command run is checked on what the user asked for (its tasks are data, often HR data by nature).
+  const sensitiveText = task ? `${run.goal}\n${task.title}\n${task.description ?? ""}\n${htmlToText(task.content)}\n${task.comments.map((comment) => comment.body).join("\n")}\n${fileContext.map((file) => file.text ?? "").join("\n")}` : `${run.goal}\n${commandTextArgs(run.inputs)}`;
+  const approvalKind = requiredApprovalForText(sensitiveText);
   const approved = approvalKind ? await prisma.agentApproval.findFirst({ where: { runId, kind: approvalKind, status: "approved" }, orderBy: { createdAt: "desc" } }) : null;
   if (approvalKind && !approved) {
     await requestSensitiveApproval(user, run.id, approvalKind, `The goal or Task contains sensitive ${approvalKind.replaceAll("_", " ")} context.`);
@@ -570,7 +684,7 @@ export async function executeAgentRun(user: SessionUser, runId: string, confirme
   const executionClaimed = await prisma.$transaction(async (tx) => {
     const claimed = await tx.agentRun.updateMany({ where: { id: run.id, userId: user.id, status: "planning" }, data: { status: "running", confirmedAt: new Date(), startedAt: new Date() } });
     if (!claimed.count) return false;
-    await tx.agentRunEvent.create({ data: { runId: run.id, actorId: user.id, fromStatus: "planning", toStatus: "running", message: "User confirmed goal and plan; execution started" } });
+    await tx.agentRunEvent.create({ data: { runId: run.id, actorId: user.id, fromStatus: "planning", toStatus: "running", message: isCommand ? "Command run started" : "User confirmed goal and plan; execution started" } });
     return true;
   });
   if (!executionClaimed) return getAgentRun(user, run.id);
@@ -588,22 +702,27 @@ export async function executeAgentRun(user: SessionUser, runId: string, confirme
       take: 10,
       select: { fileName: true, contentType: true, extractedText: true },
     }) : [];
-    const context = {
-      task: { title: task.title, description: task.description, content: htmlToText(task.content), project: task.project.name, status: task.status, priority: task.priority, progress: task.progress, startDate: task.startDate, dueDate: task.dueDate, assignees: task.assignees.map((row) => row.user.name) },
-      recentComments: task.comments.reverse().map((comment) => ({ author: comment.author?.name ?? "Unknown", at: comment.createdAt, body: comment.body })),
-      files: fileContext.map((file) => ({ fileName: file.fileName, contentType: file.contentType, sizeBytes: file.sizeBytes, text: file.text, skippedReason: file.skippedReason })),
-      skillReferences: skillReferences.map((file) => ({ fileName: file.fileName, contentType: file.contentType, text: file.extractedText?.slice(0, 40_000) ?? "" })),
-    };
+    const references = skillReferences.map((file) => ({ fileName: file.fileName, contentType: file.contentType, text: file.extractedText?.slice(0, 40_000) ?? "" }));
+    const command = task ? null : await commandContext(user, run);
+    const context = task
+      ? {
+          task: { title: task.title, description: task.description, content: htmlToText(task.content), project: task.project.name, status: task.status, priority: task.priority, progress: task.progress, startDate: task.startDate, dueDate: task.dueDate, assignees: task.assignees.map((row) => row.user.name) },
+          recentComments: task.comments.reverse().map((comment) => ({ author: comment.author?.name ?? "Unknown", at: comment.createdAt, body: comment.body })),
+          files: fileContext.map((file) => ({ fileName: file.fileName, contentType: file.contentType, sizeBytes: file.sizeBytes, text: file.text, skippedReason: file.skippedReason })),
+          skillReferences: references,
+        }
+      : { ...command!.context, today: new Date().toISOString().slice(0, 10), skillReferences: references };
     const response = await generate({
       workspaceId: run.workspaceId,
-      system: `You are executing an approved Woli Work Agent run.\n\nSKILL: ${skill.name} v${skill.version}\nINSTRUCTIONS:\n${skill.instructions}\nWORKFLOW:\n${JSON.stringify(skill.workflow)}\nVALIDATION RULES:\n${JSON.stringify(skill.validationRules)}\nTEMPLATES:\n${JSON.stringify(skill.templates)}\nREFERENCE FILE LABELS (no extra permission is implied):\n${JSON.stringify(skill.referenceFiles)}\n\nUse only the supplied context. Never claim an action was performed unless it appears in the context. Return one well-structured Markdown source that the Artifact Engine can render into the requested output formats.`,
-      contents: [{ role: "user", parts: [{ text: `GOAL:\n${run.goal}\n\nPLAN:\n${JSON.stringify(run.plan)}\n\nTASK CONTEXT:\n${JSON.stringify(context)}` }] }],
+      system: `You are executing an approved Woli Work Agent run.\n\nSKILL: ${skill.name} v${skill.version}\nINSTRUCTIONS:\n${skill.instructions}\nWORKFLOW:\n${JSON.stringify(skill.workflow)}\nVALIDATION RULES:\n${JSON.stringify(skill.validationRules)}\nTEMPLATES (follow their structure exactly when given):\n${JSON.stringify(skill.templates)}\nREFERENCE FILE LABELS (no extra permission is implied):\n${JSON.stringify(skill.referenceFiles)}\n\nUse only the supplied context. Never claim an action was performed unless it appears in the context.${task ? "" : " The context is the set of tasks selected by the command arguments (SCOPE); quote totals from hoursTables instead of adding numbers yourself, and say which scope they cover. If tasksListed < taskCount, say the list is partial."} Return one well-structured Markdown source that the Artifact Engine can render into the requested output formats.`,
+      contents: [{ role: "user", parts: [{ text: `GOAL:\n${run.goal}\n\nPLAN:\n${JSON.stringify(run.plan)}\n\n${task ? "TASK CONTEXT" : "DATA"}:\n${JSON.stringify(context)}` }] }],
       temperature: 0.2,
-      maxOutputTokens: 5000,
+      maxOutputTokens: 6000,
     });
     const content = response.text.trim() || "No output was generated.";
     const summary = content.replace(/[#*_`>-]/g, "").replace(/\s+/g, " ").slice(0, 500);
-    const artifacts = await generateAgentArtifacts({ taskTitle: task.title, markdown: content, definitions });
+    const artifactTitle = task?.title ?? `${skill.name} ${new Date().toISOString().slice(0, 10)}`;
+    const artifacts = await generateAgentArtifacts({ taskTitle: artifactTitle, markdown: content, definitions });
     const prepared = [] as Array<{ artifact: (typeof artifacts)[number]; storage: { url: string; pathname: string; provider: string } | null }>;
     for (const artifact of artifacts) {
       if (artifact.type !== "file") {
@@ -615,26 +734,29 @@ export async function executeAgentRun(user: SessionUser, runId: string, confirme
       prepared.push({ artifact, storage });
     }
     const conversation = await prisma.aiConversation.findUnique({ where: { agentRunId: run.id }, select: { id: true } });
-    const stillVisible = await prisma.task.count({ where: { id: task.id, deletedAt: null, project: { deletedAt: null, ...visibleProjectWhere(user) } } });
-    if (!stillVisible) throw notFound("Task");
+    if (task) {
+      const stillVisible = await prisma.task.count({ where: { id: task.id, deletedAt: null, project: { deletedAt: null, ...visibleProjectWhere(user) } } });
+      if (!stillVisible) throw notFound("Task");
+    }
     const result = await prisma.$transaction(async (tx) => {
       const completed = await tx.agentRun.updateMany({
         where: { id: run.id, userId: user.id, status: "running" },
-        data: { status: "completed", completedAt: new Date(), outputSummary: summary, toolsUsed: json(requestedTools), logs: json([{ level: "info", message: "Execution completed", fileCount: fileContext.length, outputCount: prepared.length, at: new Date().toISOString() }]) },
+        data: { status: "completed", completedAt: new Date(), outputSummary: summary, toolsUsed: json(requestedTools), logs: json([{ level: "info", message: "Execution completed", fileCount: fileContext.length, outputCount: prepared.length, ...(command ? { scope: command.scopeText } : {}), at: new Date().toISOString() }]) },
       });
       if (!completed.count) return null;
       const outputs = [];
       for (const item of prepared) {
-        outputs.push(await tx.agentOutput.create({ data: { workspaceId: run.workspaceId, runId: run.id, skillId: run.skillId, conversationId: conversation?.id, taskId: task.id, projectId: task.projectId, createdById: user.id, filename: item.artifact.filename, type: item.artifact.type, mimeType: item.artifact.mimeType, sizeBytes: item.artifact.bytes.length, contentText: item.artifact.contentText, storageProvider: item.storage?.provider, storageKey: item.storage?.pathname, url: item.storage?.url } }));
+        outputs.push(await tx.agentOutput.create({ data: { workspaceId: run.workspaceId, runId: run.id, skillId: run.skillId, conversationId: conversation?.id, taskId: task?.id ?? null, projectId: task?.projectId ?? run.projectId, createdById: user.id, filename: item.artifact.filename, type: item.artifact.type, mimeType: item.artifact.mimeType, sizeBytes: item.artifact.bytes.length, contentText: item.artifact.contentText, storageProvider: item.storage?.provider, storageKey: item.storage?.pathname, url: item.storage?.url } }));
       }
-      const outputLinks = outputs.map((output) => `[${output.filename}](/api/agent-work/outputs/${output.id}/download)`).join(" · ");
-      const comment = await tx.comment.create({ data: { taskId: task.id, authorId: user.id, agentRunId: run.id, body: `🤖 **Agent Work completed**\n\n${summary}\n\n${outputLinks}\n\n[Open Agent Run](/w/${task.workspace.slug}/agent-work?run=${run.id})` } });
+      const comment = task
+        ? await tx.comment.create({ data: { taskId: task.id, authorId: user.id, agentRunId: run.id, body: `🤖 **Agent Work completed**\n\n${summary}\n\n${outputs.map((output) => `[${output.filename}](/api/agent-work/outputs/${output.id}/download)`).join(" · ")}\n\n[Open Agent Run](/w/${task.workspace.slug}/agent-work?run=${run.id})` } })
+        : null;
       const toolUses = [
-        { runId: run.id, toolName: "woli.read_task", riskLevel: "safe", status: "completed", input: json({ taskId: task.id }), output: json({ title: task.title, commentCount: task.comments.length, fileCount: task.attachments.length }), completedAt: new Date() },
-        ...(readFiles ? [{ runId: run.id, toolName: "file.read", riskLevel: "safe", status: "completed", input: json({ taskId: task.id, attachmentIds: task.attachments.map((file) => file.id) }), output: json({ files: fileContext.map((file) => ({ id: file.id, fileName: file.fileName, readable: Boolean(file.text), skippedReason: file.skippedReason })) }), completedAt: new Date() }] : []),
+        { runId: run.id, toolName: "woli.read_task", riskLevel: "safe", status: "completed", input: json(task ? { taskId: task.id } : { scope: command!.scopeText }), output: json(task ? { title: task.title, commentCount: task.comments.length, fileCount: task.attachments.length } : { taskCount: command!.context.taskCount, tasksListed: command!.context.tasksListed }), completedAt: new Date() },
+        ...(readFiles && task ? [{ runId: run.id, toolName: "file.read", riskLevel: "safe", status: "completed", input: json({ taskId: task.id, attachmentIds: task.attachments.map((file) => file.id) }), output: json({ files: fileContext.map((file) => ({ id: file.id, fileName: file.fileName, readable: Boolean(file.text), skippedReason: file.skippedReason })) }), completedAt: new Date() }] : []),
         ...(outputs.some((output) => output.type !== "file") ? [{ runId: run.id, toolName: "artifact.save_text", riskLevel: "safe", status: "completed", input: json({ formats: definitions.filter((definition) => ["markdown", "text", "json"].includes(definition.format)).map((definition) => definition.format) }), output: json({ outputIds: outputs.filter((output) => output.type !== "file").map((output) => output.id) }), completedAt: new Date() }] : []),
         ...(outputs.some((output) => output.type === "file") ? [{ runId: run.id, toolName: "artifact.generate", riskLevel: "safe", status: "completed", input: json({ formats: definitions.filter((definition) => ["docx", "xlsx", "pptx", "pdf"].includes(definition.format)).map((definition) => definition.format) }), output: json({ outputIds: outputs.filter((output) => output.type === "file").map((output) => output.id) }), completedAt: new Date() }] : []),
-        { runId: run.id, toolName: "woli.create_task_comment", riskLevel: "confirmation", status: "completed", input: json({ taskId: task.id }), output: json({ commentId: comment.id }), completedAt: new Date() },
+        ...(comment && task ? [{ runId: run.id, toolName: "woli.create_task_comment", riskLevel: "confirmation", status: "completed", input: json({ taskId: task.id }), output: json({ commentId: comment.id }), completedAt: new Date() }] : []),
       ];
       await tx.agentToolUse.createMany({ data: toolUses });
       if (conversation) {
@@ -642,9 +764,9 @@ export async function executeAgentRun(user: SessionUser, runId: string, confirme
         await tx.aiConversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
       }
       await tx.agentRun.update({ where: { id: run.id }, data: { outputsMeta: json(outputs.map((output) => ({ id: output.id, filename: output.filename, type: output.type, mimeType: output.mimeType, sizeBytes: output.sizeBytes }))) } });
-      await tx.agentRunEvent.create({ data: { runId: run.id, actorId: user.id, fromStatus: "running", toStatus: "completed", message: "Artifact Bundle saved and result commented back to the Task", data: json({ outputIds: outputs.map((output) => output.id), commentId: comment.id }) } });
-      await logActivity(tx, { workspaceId: run.workspaceId, actorId: user.id, entityType: "comment", entityId: comment.id, action: "created", summary: "Agent Work commented its completed result on the task", changes: { taskId: { from: null, to: task.id }, agentRunId: { from: null, to: run.id } } });
-      await logActivity(tx, { workspaceId: run.workspaceId, actorId: user.id, entityType: "agent_run", entityId: run.id, action: "updated", summary: `Agent Run completed for task: ${task.title}`, changes: { status: { from: "running", to: "completed" } } });
+      await tx.agentRunEvent.create({ data: { runId: run.id, actorId: user.id, fromStatus: "running", toStatus: "completed", message: comment ? "Artifact Bundle saved and result commented back to the Task" : "Artifact Bundle saved", data: json({ outputIds: outputs.map((output) => output.id), commentId: comment?.id ?? null }) } });
+      if (comment && task) await logActivity(tx, { workspaceId: run.workspaceId, actorId: user.id, entityType: "comment", entityId: comment.id, action: "created", summary: "Agent Work commented its completed result on the task", changes: { taskId: { from: null, to: task.id }, agentRunId: { from: null, to: run.id } } });
+      await logActivity(tx, { workspaceId: run.workspaceId, actorId: user.id, entityType: "agent_run", entityId: run.id, action: "updated", summary: task ? `Agent Run completed for task: ${task.title}` : `Agent Run completed: ${skill.name}`, changes: { status: { from: "running", to: "completed" } } });
       return outputs;
     });
     if (!result) {
@@ -652,7 +774,7 @@ export async function executeAgentRun(user: SessionUser, runId: string, confirme
       return getAgentRun(user, run.id);
     }
     committed = true;
-    return { run: await getAgentRun(user, run.id), outputIds: result.map((output) => output.id) };
+    return { run: await getAgentRun(user, run.id), outputIds: result.map((output) => output.id), content: isCommand ? content : undefined };
   } catch (error) {
     await cleanupUploads();
     const message = error instanceof Error ? error.message.slice(0, 4000) : "Agent execution failed";
@@ -678,8 +800,22 @@ export async function cancelAgentRun(user: SessionUser, runId: string) {
   return getAgentRun(user, run.id);
 }
 
+/** Runs stuck mid-step (the request died while planning or executing) for this long are closed as failed. */
+const STUCK_RUN_MS = 60 * 60_000;
+async function failStuckRuns(userId: string, workspaceId: string) {
+  const before = new Date(Date.now() - STUCK_RUN_MS);
+  const stuck = await prisma.agentRun.findMany({ where: { userId, workspaceId, status: { in: ["confirming", "running"] }, updatedAt: { lt: before } }, select: { id: true, status: true } });
+  for (const run of stuck) {
+    await prisma.$transaction(async (tx) => {
+      const failed = await tx.agentRun.updateMany({ where: { id: run.id, status: run.status, updatedAt: { lt: before } }, data: { status: "failed", failureReason: "Stopped: this step did not finish within an hour. Run the Skill again." } });
+      if (failed.count) await tx.agentRunEvent.create({ data: { runId: run.id, fromStatus: run.status, toStatus: "failed", level: "error", message: "Closed after being stuck for over an hour" } });
+    });
+  }
+}
+
 export async function getAgentWorkSnapshot(user: SessionUser, workspaceId: string) {
   const ctx = await requireWorkspaceRole(user, workspaceId, "viewer");
+  await failStuckRuns(user.id, workspaceId);
   const projectVisibility: Prisma.AgentRunWhereInput = {
     OR: [{ projectId: null }, { project: { deletedAt: null, ...visibleProjectWhere(user) } }],
   };

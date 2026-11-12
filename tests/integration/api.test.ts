@@ -43,3 +43,4 @@ test.after(async () => {
 });
 import "./api/33-slicers";
 import "./api/34-my-export";
+import "./api/35-skill-commands";

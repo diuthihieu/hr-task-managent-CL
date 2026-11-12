@@ -74,9 +74,17 @@ function RangePick({ label, value, onChange, testId }: { label: string; value: R
   return (
     <div className="space-y-1">
       <div className="text-[11px] font-medium text-neutral-500">{label}</div>
-      <div className="grid grid-cols-2 gap-1.5">
-        <DateInput value={value.from} onCommit={(from) => onChange({ ...value, from })} className={cls} aria-label={`${label} ${t("mx.from")}`} data-testid={`${testId}-from`} />
-        <DateInput value={value.to} onCommit={(to) => onChange({ ...value, to })} className={cls} aria-label={`${label} ${t("mx.to")}`} data-testid={`${testId}-to`} />
+      {/* One range (from - to), not two separate fields. */}
+      <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-1.5">
+        <label className="min-w-0 space-y-0.5">
+          <span className="block text-[10px] text-neutral-400">{t("mx.from")}</span>
+          <DateInput value={value.from} onCommit={(from) => onChange({ ...value, from })} className={cls} aria-label={`${label} ${t("mx.from")}`} data-testid={`${testId}-from`} />
+        </label>
+        <span className="pb-1.5 text-xs text-neutral-400" aria-hidden>-</span>
+        <label className="min-w-0 space-y-0.5">
+          <span className="block text-[10px] text-neutral-400">{t("mx.to")}</span>
+          <DateInput value={value.to} onCommit={(to) => onChange({ ...value, to })} className={cls} aria-label={`${label} ${t("mx.to")}`} data-testid={`${testId}-to`} />
+        </label>
       </div>
     </div>
   );
@@ -126,8 +134,8 @@ export function MyExportDialog({ open, onOpenChange }: { open: boolean; onOpenCh
   const wsItems = (opts?.workspaces ?? []).map((w) => ({ value: w.id, label: w.name }));
   const inWs = (ids: string[]) => (filters.workspaceIds.length ? ids.some((id) => filters.workspaceIds.includes(id)) : true);
   const wsName = new Map((opts?.workspaces ?? []).map((w) => [w.id, w.name]));
-  const projectItems = (opts?.projects ?? []).filter((p) => inWs([p.workspaceId])).map((p) => ({ value: p.id, label: (opts?.workspaces.length ?? 0) > 1 ? `${p.name} · ${wsName.get(p.workspaceId) ?? ""}` : p.name }));
-  const peopleItems = (opts?.people ?? []).filter((p) => inWs(p.workspaceIds)).map((p) => ({ value: p.id, label: p.id === opts?.me ? `${p.name} (${t("mx.me")})` : `${p.name} · ${p.email}` }));
+  const projectItems = (opts?.projects ?? []).filter((p) => inWs([p.workspaceId])).map((p) => ({ value: p.id, label: (opts?.workspaces.length ?? 0) > 1 ? `${p.name} - ${wsName.get(p.workspaceId) ?? ""}` : p.name }));
+  const peopleItems = (opts?.people ?? []).filter((p) => inWs(p.workspaceIds)).map((p) => ({ value: p.id, label: p.id === opts?.me ? `${p.name} (${t("mx.me")})` : `${p.name} - ${p.email}` }));
   const statusItems = (opts?.statuses ?? []).map((s) => ({ value: s, label: s }));
   const set = <K extends keyof Filters>(k: K, v: Filters[K]) => setFilters((f) => ({ ...f, [k]: v }));
 

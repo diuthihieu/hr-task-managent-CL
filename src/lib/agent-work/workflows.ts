@@ -8,6 +8,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { badRequest, notFound, forbidden, requireWorkspaceRole, visibleProjectWhere, type SessionUser } from "@/lib/authz";
 import { postBotMessage } from "@/lib/messaging/service";
+import { runWithAiContext } from "@/lib/ai/usage";
 import { accessibleAgentSkillWhere } from "./access";
 import { normalizeCommandArgs } from "./command-args";
 import { skillParameter } from "./skill-schema";
@@ -132,7 +133,8 @@ export async function executeWorkflow(workflowId: string): Promise<Outcome> {
   }
   try {
     if (w.skill.deletedAt) throw new Error("The Skill was deleted");
-    const result = await startCommandRun(user, w.workspaceId, { skillId: w.skillId, args: (w.args ?? {}) as Record<string, unknown>, note: w.note ?? undefined, workflowId: w.id });
+    // The tick has no signed-in request: AI calls are counted against, and limited for, the owner.
+    const result = await runWithAiContext({ feature: "agent-workflow", userId: user.id }, () => startCommandRun(user, w.workspaceId, { skillId: w.skillId, args: (w.args ?? {}) as Record<string, unknown>, note: w.note ?? undefined, workflowId: w.id }));
     const run = result.run as { id: string; status: string; failureReason?: string | null; outputs?: { id: string }[] };
     const link = `/w/${w.workspace.slug}/agent-work?run=${run.id}`;
     if (run.status === "completed") {

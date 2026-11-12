@@ -63,6 +63,8 @@ test("workflows: validated, owner-only, run by the tick into the Woli AI inbox, 
   const posted = await prisma.chatMessage.findFirstOrThrow({ where: { conversationId: inbox.id }, orderBy: { createdAt: "desc" } });
   assert.match(posted.body, /Monday digest/);
   assert.equal(posted.authorId, null, "written by Woli AI");
+  const usage = await prisma.aiUsageEvent.findFirst({ where: { feature: "agent-workflow" }, orderBy: { createdAt: "desc" } });
+  assert.equal(usage?.userId, s.viewerId, "the AI call is counted against the owner, not left anonymous");
   const r2 = await tick(`Bearer ${process.env.CRON_SECRET}`);
   assert.ok(!((await r2.json()) as { ran: { id: string }[] }).ran.some((x) => x.id === wf.id), "not run twice");
 

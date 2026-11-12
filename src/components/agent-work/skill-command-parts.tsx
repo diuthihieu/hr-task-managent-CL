@@ -13,6 +13,7 @@ import { toast } from "@/components/ui/toast";
 import { api } from "@/lib/api-client";
 import { useT } from "@/components/i18n-provider";
 import type { MessageKey } from "@/lib/i18n/core";
+import { initialParamState, type ParamValues, type ParamRanges } from "./param-state";
 import { DATE_FIELDS, DATE_PRESETS, SKILL_PARAMETER_TYPES, type SkillParameter } from "@/lib/agent-work/skill-schema";
 
 /** "Báo cáo tuần" -> "bao-cao-tuan". */
@@ -105,7 +106,6 @@ interface RunResult {
   outputIds?: string[];
   content?: string;
 }
-type Range = { from: string | null; to: string | null };
 
 function MultiSelect({ items, value, onChange, all, testId }: { items: { value: string; label: string }[]; value: string[]; onChange: (v: string[]) => void; all: string; testId: string }) {
   const { t } = useT();
@@ -125,24 +125,7 @@ function MultiSelect({ items, value, onChange, all, testId }: { items: { value: 
   );
 }
 
-export type ParamValues = Record<string, unknown>;
-export type ParamRanges = Record<string, Range>;
-
-/** Form values for a Skill's parameters: saved arguments when given, else the parameter defaults. */
-export function initialParamState(params: SkillParameter[], saved?: Record<string, unknown>): { values: ParamValues; ranges: ParamRanges } {
-  const values: ParamValues = {};
-  const ranges: ParamRanges = {};
-  for (const p of params) {
-    const v = saved?.[p.key];
-    if (p.type === "date_range" && v && typeof v === "object" && !Array.isArray(v)) {
-      const r = v as { from?: string; to?: string };
-      ranges[p.key] = { from: r.from ?? null, to: r.to ?? null };
-      values[p.key] = "";
-    } else if (v !== undefined) values[p.key] = v;
-    else values[p.key] = p.type === "people" && p.default === "me" ? ["me"] : p.type === "projects" || p.type === "people" ? [] : (p.default ?? "");
-  }
-  return { values, ranges };
-}
+export { initialParamState, type ParamValues, type ParamRanges } from "./param-state";
 
 /** Arguments to send, or the label of a date range with only one end filled. */
 export function collectArgs(params: SkillParameter[], values: ParamValues, ranges: ParamRanges): { args: Record<string, unknown> } | { incomplete: string } {

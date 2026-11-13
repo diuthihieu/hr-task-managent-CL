@@ -10,7 +10,7 @@ Cập nhật lần cuối: 13/11/2026.
 
 | Hạng mục | Kết quả |
 | --- | --- |
-| PR đã merge | 5 (#173, #174, #175, #177, #178) |
+| PR đã merge | 7 (#173, #174, #175, #177, #178, #179, #180) |
 | Commit làm việc | 14 |
 | Phạm vi | 79 file, +5.682 / −119 dòng, 2 migration |
 | Lỗi chủ sản phẩm báo sau khi dùng trên production | 9, đã sửa (mục 4.1) |
@@ -59,7 +59,7 @@ Giữ nguyên quy trình ở mục 2 của
 | P4 | Excel chỉ một cột toàn dòng Markdown. | Nội dung được ghi từng dòng, không tách bảng. | Sheet `Report` chứa toàn bộ, bảng thành cột thật. Mỗi bảng thêm một sheet riêng có filter. Số và phần trăm lưu dạng số. |
 | P5 | Bảng trong Word là dòng chữ. | Như P4. | Bảng thật, dòng tiêu đề tô nền. |
 
-Sửa trong PR thông báo tin nhắn (sau #179):
+Sửa trong #180:
 
 | # | Hiện tượng | Nguyên nhân | Cách sửa |
 | --- | --- | --- | --- |

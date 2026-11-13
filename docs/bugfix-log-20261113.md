@@ -14,12 +14,12 @@ Cập nhật lần cuối: 13/11/2026.
 | Commit làm việc | 14 |
 | Phạm vi | 79 file, +5.682 / −119 dòng, 2 migration |
 | Lỗi chủ sản phẩm báo sau khi dùng trên production | 10, đã sửa (mục 4.1) |
-| Lỗi review tự động bắt được trước khi merge | 12, đã sửa (mục 4.2) |
+| Lỗi review tự động bắt được trước khi merge | 13, đã sửa (mục 4.2) |
 | Lỗi CI và kiểm thử nội bộ bắt được trước khi merge | 3, đã sửa (mục 4.3) |
 | Việc còn mở | 3 cần kiểm chứng, 3 chưa làm (mục 5) |
 | Test tự động khi merge #178 | unit 253, integration 142, E2E 57 |
 
-Trong 25 lỗi, 15 lỗi được chặn trước khi tới người dùng. 10 lỗi lọt ra
+Trong 26 lỗi, 16 lỗi được chặn trước khi tới người dùng. 10 lỗi lọt ra
 production thuộc hai nhóm: kết quả của workflow (file xuất ra và tin Woli AI),
 vì test chỉ kiểm tra file được tạo chứ không kiểm tra nội dung; và thông báo
 tin nhắn, vì test chỉ kiểm tra số chưa đọc chứ không kiểm tra người nhận có
@@ -95,6 +95,8 @@ Sửa trong #181:
 | R11 | #178 | Codex, Vercel | Ba lỗi trong chính bản sửa: tên sheet Excel vẫn có thể trùng sau khi đánh số (làm hỏng cả lần chạy); dòng bảng PDF cao hơn một trang bị vẽ ra ngoài trang; tin dài bị cắt giữa một dòng bảng. | Đánh số tới khi tên chưa dùng; dòng cao được vẽ tiếp sang trang sau dưới dòng tiêu đề lặp lại; cắt tin ở cuối dòng. |
 
 | R12 | #180 | Codex, Vercel | Hai lỗi trong chính bản sửa thông báo: khi mất realtime và thiết bị chưa bật push, tab chạy nền không tự kiểm tra nên không báo được tin mới; hai lần tải về sai thứ tự có thể làm popup báo trùng một tin. | Tab nền tự kiểm tra mỗi 2 phút; chỉ dùng kết quả của lần tải mới nhất. |
+
+| R13 | #181 | Codex, Vercel | Khi chia một báo cáo dài hơn 30.000 ký tự, bảng viết không có dấu `|` ở đầu dòng, hoặc bảng nằm ngay dưới tiêu đề (không cách dòng), không được nhận ra là bảng nên các phần sau mất dòng tiêu đề cột. | Nhận diện bảng ở bất kỳ vị trí nào trong đoạn, có hay không có dấu `|` ngoài cùng; mỗi phần đều lặp lại đúng dòng tiêu đề của bảng. |
 
 ### 4.3. CI và kiểm thử nội bộ bắt được trước khi merge
 

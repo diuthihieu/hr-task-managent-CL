@@ -24,27 +24,45 @@ export function splitMessage(text: string, max: number): string[] {
   return parts;
 }
 
+const SEPARATOR = /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/;
+/** The "---|---" row under a table's header (with or without the outer pipes). */
+function isSeparator(line: string | undefined): boolean {
+  return !!line && line.includes("|") && line.includes("-") && SEPARATOR.test(line);
+}
+
 function divideBlock(block: string, max: number): string[] {
   if (block.length <= max) return [block];
   const lines = block.split("\n");
-  const table = lines.length > 2 && /^\s*\|/.test(lines[0]) && /^\s*\|?\s*:?-{3,}/.test(lines[1]);
-  const head = table ? `${lines[0]}\n${lines[1]}\n` : "";
-  // A header that leaves no room for rows is treated as plain lines.
-  const prefix = head.length < max / 2 ? head : "";
-  const room = max - prefix.length;
-  const rows = (prefix ? lines.slice(2) : lines).flatMap((line) => {
-    const out: string[] = [];
-    for (let i = 0; i < line.length || i === 0; i += room) out.push(line.slice(i, i + room));
-    return out;
-  });
   const out: string[] = [];
   let current = "";
-  for (const row of rows) {
-    if (current && current.length + 1 + row.length > room) {
-      out.push(prefix + current);
-      current = row;
-    } else current = current ? `${current}\n${row}` : row;
+  // The header of the table the walk is inside (it may start anywhere in the block, e.g. under a heading).
+  let head = "";
+  const push = () => {
+    if (current) out.push(current);
+    current = "";
+  };
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line.includes("|") && isSeparator(lines[i + 1])) {
+      const header = `${line}\n${lines[i + 1]}`;
+      // A header too long to repeat is treated as plain lines.
+      head = header.length < max / 2 ? header : "";
+      if (head) {
+        if (current && current.length + 1 + head.length > max) push();
+        current = current ? `${current}\n${head}` : head;
+        i++;
+        continue;
+      }
+    } else if (head && !line.includes("|")) head = ""; // the table ended
+    const room = max - (head ? head.length + 1 : 0);
+    for (let at = 0; at < line.length || at === 0; at += room) {
+      const piece = line.slice(at, at + room);
+      if (current && current.length + 1 + piece.length > max) {
+        push();
+        current = head ? `${head}\n${piece}` : piece;
+      } else current = current ? `${current}\n${piece}` : piece;
+    }
   }
-  if (current) out.push(prefix + current);
+  push();
   return out;
 }

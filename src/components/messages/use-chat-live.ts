@@ -2,7 +2,7 @@
 // Live signals for Messages: one Supabase Realtime connection per tab, on the topic only this user is
 // told (see src/lib/messaging/realtime.ts). Signals carry no message text; listeners re-read through the
 // API. Without realtime (not configured, blocked network, connection lost) a "poll" signal fires every
-// 30 seconds instead, and whenever the tab comes back into view.
+// 30 seconds instead (every 2 minutes in a background tab), and whenever the tab comes back into view.
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
 export interface ChatSignal {
@@ -28,8 +28,12 @@ function setLive(v: boolean) {
 async function start() {
   if (started || typeof window === "undefined") return;
   started = true;
+  let ticks = 0;
   setInterval(() => {
-    if (!live && document.visibilityState === "visible") emit({ event: "poll", payload: {} });
+    if (live) return;
+    ticks++;
+    // A tab in the background still looks, every 2 minutes, so its system notification can be raised.
+    if (document.visibilityState === "visible" || ticks % 4 === 0) emit({ event: "poll", payload: {} });
   }, 30_000);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") emit({ event: "poll", payload: {} });

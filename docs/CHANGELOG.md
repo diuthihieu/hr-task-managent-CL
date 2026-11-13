@@ -46,7 +46,8 @@ vi sẵn có), **Vận hành** (cấu hình, hạ tầng, không đổi code).
 - Tắt "Tin nhắn" ở cột popup chỉ tắt popup và âm báo; số chưa đọc cạnh Messages
   vẫn đếm.
 - Số cạnh Messages = tin chưa đọc + lời mời kết bạn đang chờ bạn trả lời.
-- Nếu kết nối realtime bị gián đoạn, popup có thể trễ tối đa 30 giây.
+- Nếu kết nối realtime bị gián đoạn, popup có thể trễ tối đa 30 giây (tab đang
+  chạy nền: tối đa 2 phút).
 
 **Changelog (#179)**: Không có.
 

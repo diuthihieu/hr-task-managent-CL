@@ -76,12 +76,18 @@ export function ChatPopups() {
     [router],
   );
 
+  // Answers can come back out of order (a slow request, then a fast one): only the latest request of
+  // each kind is used, so an older answer never rewinds what this tab has seen.
+  const asked = useRef({ chats: 0, requests: 0 });
   const check = useCallback(
     (what: { chats: boolean; requests: boolean }) => {
+      const chatsId = what.chats ? ++asked.current.chats : 0;
+      const requestsId = what.requests ? ++asked.current.requests : 0;
       if (what.chats)
         api
           .get<Row[]>("/api/messages")
           .then((rows) => {
+            if (chatsId !== asked.current.chats) return;
             const before = seenChats.current;
             const fresh: Popup[] = [];
             for (const r of rows) {
@@ -101,6 +107,7 @@ export function ChatPopups() {
         api
           .get<{ incoming: { id: string; name: string }[] }>("/api/messages/contacts")
           .then((lists) => {
+            if (requestsId !== asked.current.requests) return;
             const before = seenRequests.current;
             const fresh = before ? lists.incoming.filter((p) => !before.has(p.id)).map((p) => ({ key: `contact:${p.id}`, title: p.name, body: t("chat.pushRequest"), url: "/messages?tab=contacts", request: true })) : [];
             seenRequests.current = new Set(lists.incoming.map((p) => p.id));

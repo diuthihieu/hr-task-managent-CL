@@ -12,11 +12,13 @@ import { badRequest, forbidden, notFound, HttpError, type SessionUser } from "@/
 import { rateLimit } from "@/lib/rate-limit";
 import { pushDirect, sendDirectPush } from "@/lib/push";
 import { publish } from "./realtime";
-import { fitMessage } from "./fit-message";
+import { splitMessage } from "./split-message";
 import { plainInline } from "@/lib/agent-work/markdown-blocks";
 import { makeT, normalizeLocale } from "@/lib/i18n/core";
 
 export const MESSAGE_MAX = 4000;
+/** One Woli AI message. A longer report continues in the next message; nothing is cut. */
+export const BOT_MESSAGE_MAX = 30_000;
 export const EDIT_WINDOW_MS = 60 * 60_000;
 export const GROUP_MAX_MEMBERS = 100;
 const PAGE = 50;
@@ -477,16 +479,28 @@ export async function searchTasks(user: SessionUser, q: string) {
   return tasks.map((t) => ({ id: t.id, title: t.title, project: t.project.name, workspace: t.workspace.name }));
 }
 
-/** Woli AI writes into a user's inbox (scheduled workflows, background Skill runs). */
+/**
+ * Woli AI writes into a user's inbox (scheduled workflows, background Skill runs). The whole text is
+ * delivered: beyond BOT_MESSAGE_MAX it continues in further messages, divided between blocks (a table
+ * keeps its header). Attached files come with the last message. Returns the first message's id.
+ */
 export async function postBotMessage(userId: string, body: string, opts: { outputIds?: string[]; taskIds?: string[] } = {}) {
   const conversationId = await botInbox(userId);
-  const now = new Date();
-  const msg = await prisma.$transaction(async (tx) => {
-    const created = await tx.chatMessage.create({ data: { conversationId, authorId: null, body: fitMessage(body, MESSAGE_MAX), outputIds: opts.outputIds ?? [], taskIds: opts.taskIds ?? [], createdAt: now } });
-    await tx.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: now } });
+  const parts = splitMessage(body, BOT_MESSAGE_MAX);
+  const start = Date.now();
+  const ids = await prisma.$transaction(async (tx) => {
+    const created: string[] = [];
+    for (const [i, part] of parts.entries()) {
+      const last = i === parts.length - 1;
+      // One millisecond apart, so the parts keep their order.
+      const row = await tx.chatMessage.create({ data: { conversationId, authorId: null, body: part, outputIds: last ? (opts.outputIds ?? []) : [], taskIds: last ? (opts.taskIds ?? []) : [], createdAt: new Date(start + i) } });
+      created.push(row.id);
+    }
+    await tx.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: new Date(start + parts.length - 1) } });
     return created;
   });
-  publish([userId], "message", { c: conversationId, m: msg.id });
+  const msg = { id: ids[0] };
+  publish([userId], "message", { c: conversationId, m: ids[ids.length - 1] ?? null });
   // Awaited: this runs in background jobs (the workflow tick), where work queued for "after the response"
   // was dropped once the job finished. A failed push never fails the message.
   await sendDirectPush(prisma, [userId], { title: "Woli AI", body: plainInline(body).replace(/\s+/g, " ").slice(0, 140), url: `/messages?c=${conversationId}`, tag: `chat:${conversationId}` }).catch((e) => console.error("[push] bot message", e));

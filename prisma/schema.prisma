@@ -2613,7 +2613,8 @@ model ChatMessage {
   conversationId String    @map("conversation_id") @db.Uuid
   /// null: the Woli AI bot.
   authorId       String?   @map("author_id") @db.Uuid
-  body           String    @db.VarChar(4000)
+  /// People: at most 4,000 characters (checked in the app). Woli AI: a whole report, see BOT_MESSAGE_MAX.
+  body           String
   taskIds        String[]  @default([]) @map("task_ids") @db.Uuid
   /// Agent outputs attached by the bot (downloads are checked against the output's owner).
   outputIds      String[]  @default([]) @map("output_ids") @db.Uuid

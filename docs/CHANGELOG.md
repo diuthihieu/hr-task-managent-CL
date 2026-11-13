@@ -25,12 +25,27 @@ vi sẵn có), **Vận hành** (cấu hình, hạ tầng, không đổi code).
 
 | Giờ | Loại | PR | Thay đổi | Bug log |
 | --- | --- | --- | --- | --- |
+| 13:30 | Đổi | #181 | Tin Woli AI hiển thị trọn báo cáo: bỏ giới hạn 3.600 ký tự và không còn cắt ở cuối. Báo cáo rất dài được nối sang tin kế tiếp, không mất nội dung. AI được dặn viết cô đọng nhưng đủ mọi mục. Migration `20270115000000_chat_message_long_body`. | [12–13/11](bugfix-log-20261113.md) |
 | 10:40 | Sửa, Mới | #180 | Thông báo tin nhắn: khi woli đang mở, tin nhắn mới và lời mời kết bạn hiện popup kèm âm báo; báo cáo Woli AI chạy theo lịch gửi được push tới thiết bị; Settings → Notifications có dòng "Tin nhắn" để bật/tắt popup và push; lời mời kết bạn đang chờ được cộng vào số cạnh Messages và hiện số trên tab Bạn bè. | [12–13/11](bugfix-log-20261113.md) |
 | 09:46 | Vận hành | #179 | Thêm `docs/CHANGELOG.md` và bug log đợt 12–13/11. Từ đây mọi thay đổi đều phải ghi changelog (quy ước trong `CLAUDE.md`). | – |
 | 08:25 | Sửa | #178 | File Agent xuất ra đọc được: PDF đủ chữ và có bảng, Excel và Word có bảng thật. Tin Woli AI hiển thị có định dạng và được tính vào số chưa đọc cạnh Messages. | [12–13/11](bugfix-log-20261113.md) |
 | 01:28 | Mới | #177 | Workflow chạy theo lịch (giờ / ngày / tuần / tháng, tối thiểu 1 lần/giờ), kết quả gửi vào hộp thư Woli AI của người tạo. Migration `20270114000000_agent_workflows`. | [12–13/11](bugfix-log-20261113.md) |
 
 ### Lưu ý khi dùng
+
+**Tin Woli AI trọn báo cáo (#181)**
+
+- Một tin Woli AI chứa tối đa 30.000 ký tự. Báo cáo dài hơn tự nối sang tin kế
+  tiếp, chia giữa các đoạn; bảng bị chia thì mỗi phần lặp lại dòng tiêu đề.
+  File đính kèm nằm ở tin cuối.
+- AI được yêu cầu giữ báo cáo trong khoảng 12.000 ký tự bằng cách tóm tắt danh
+  sách dài (các mục đứng đầu kèm tổng), không bỏ mục nào. Danh sách chi tiết
+  đầy đủ vẫn nên lấy từ file Excel đính kèm.
+- Giới hạn độ dài câu trả lời của AI cho một lần chạy tăng từ 6.000 lên 12.000
+  token: báo cáo dài tốn chi phí Gemini hơn, tối đa khoảng gấp đôi phần đầu ra.
+- Tin do người gửi vẫn tối đa 4.000 ký tự.
+- Các tin Woli AI đã gửi trước thay đổi này vẫn là bản bị cắt; chạy lại
+  workflow để có bản đầy đủ.
 
 **Thông báo tin nhắn (#180)**
 
@@ -55,7 +70,8 @@ vi sẵn có), **Vận hành** (cấu hình, hạ tầng, không đổi code).
 
 - File của các lần chạy trước ngày 13/11 không tự đổi; chạy lại để có file mới.
 - Tin Woli AI dài hơn khoảng 3.600 ký tự được cắt ở cuối dòng và kèm link mở
-  lần chạy; bản đầy đủ nằm trong file đính kèm và trong Agent Work.
+  lần chạy; bản đầy đủ nằm trong file đính kèm và trong Agent Work. (Đã đổi ở
+  thay đổi "Tin Woli AI trọn báo cáo": không còn cắt.)
 - Trong Excel, phần trăm lưu dạng số (59,61% là 0,5961, định dạng %), dùng
   được ngay cho công thức.
 

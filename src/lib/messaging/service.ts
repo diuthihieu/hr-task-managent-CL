@@ -10,9 +10,10 @@ import { Prisma, type ConversationKind } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { badRequest, forbidden, notFound, HttpError, type SessionUser } from "@/lib/authz";
 import { rateLimit } from "@/lib/rate-limit";
-import { pushDirect } from "@/lib/push";
+import { pushDirect, sendDirectPush } from "@/lib/push";
 import { publish } from "./realtime";
 import { fitMessage } from "./fit-message";
+import { plainInline } from "@/lib/agent-work/markdown-blocks";
 import { makeT, normalizeLocale } from "@/lib/i18n/core";
 
 export const MESSAGE_MAX = 4000;
@@ -308,6 +309,11 @@ export async function listConversations(user: SessionUser) {
   });
 }
 
+/** Contact requests waiting for my answer (counted in the sidebar badge and on the Contacts tab). */
+export async function pendingRequests(user: SessionUser): Promise<number> {
+  return (await listContacts(user)).incoming.length;
+}
+
 /** Total unread messages (the sidebar badge). */
 export async function unreadTotal(user: SessionUser): Promise<number> {
   const rows = await prisma.conversationMember.findMany({ where: { ...activeMember(user.id), muted: false }, select: { conversationId: true, lastReadAt: true } });
@@ -481,6 +487,8 @@ export async function postBotMessage(userId: string, body: string, opts: { outpu
     return created;
   });
   publish([userId], "message", { c: conversationId, m: msg.id });
-  pushDirect(prisma, [userId], { title: "Woli AI", body: body.slice(0, 140), url: `/messages?c=${conversationId}`, tag: `chat:${conversationId}` });
+  // Awaited: this runs in background jobs (the workflow tick), where work queued for "after the response"
+  // was dropped once the job finished. A failed push never fails the message.
+  await sendDirectPush(prisma, [userId], { title: "Woli AI", body: plainInline(body).replace(/\s+/g, " ").slice(0, 140), url: `/messages?c=${conversationId}`, tag: `chat:${conversationId}` }).catch((e) => console.error("[push] bot message", e));
   return msg.id;
 }

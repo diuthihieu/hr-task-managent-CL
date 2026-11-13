@@ -11,6 +11,7 @@ test("messages: contact request, 1-1 chat with a task tag, recall, group, unread
   const me = await prisma.user.findUniqueOrThrow({ where: { email: seed.email } });
   const lan = await prisma.user.create({ data: { email: `lan.${tag}@chat.test`, name: `Lan ${tag}`, systemRole: "MEMBER", passwordHash: "x", mustChangePassword: false, emailVerifiedAt: new Date() } });
   await prisma.workspaceMember.create({ data: { workspaceId: seed.wsId, userId: lan.id, role: "editor" } });
+  const extra = [lan.id]; // people to remove afterwards
   const task = await prisma.task.findUniqueOrThrow({ where: { id: seed.taskId }, select: { title: true } });
 
   try {
@@ -65,13 +66,38 @@ test("messages: contact request, 1-1 chat with a task tag, recall, group, unread
     // Lan answers in the 1-1 chat while I'm on Home: the sidebar badge shows it.
     const direct = await prisma.conversation.findFirstOrThrow({ where: { kind: "direct", members: { some: { userId: lan.id } } } });
     await prisma.chatMessage.create({ data: { conversationId: direct.id, authorId: lan.id, body: "Dạ em xem rồi" } });
+    const baseline = page.waitForResponse((r) => new URL(r.url()).pathname === "/api/messages/contacts" && r.request().method() === "GET");
     await page.goto(`/w/${seed.slug}`);
     await expect(page.getByTestId("nav-messages").getByTestId("chat-unread")).toHaveText("1");
+    await baseline; // the pop-ups know what was already there
+    await expect(page.getByTestId("chat-popup")).toHaveCount(0);
+
+    // Another message while woli is open on another page: a pop-up says who and what. (No realtime in
+    // tests: coming back to the tab is what makes woli look.)
+    const look = () => page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+    await prisma.chatMessage.create({ data: { conversationId: direct.id, authorId: lan.id, body: "Chị gửi lại file nhé" } });
+    await prisma.conversation.update({ where: { id: direct.id }, data: { lastMessageAt: new Date() } });
+    await look();
+    const popup = page.getByTestId("chat-popup").filter({ hasText: `Lan ${tag}` });
+    await expect(popup).toContainText("Chị gửi lại file nhé");
+    await expect(page.getByTestId("nav-messages").getByTestId("chat-unread")).toHaveText("2");
+
+    // Mai asks to connect: a pop-up, one more on the badge, and a number on the Contacts tab.
+    const mai = await prisma.user.create({ data: { email: `mai.${tag}@chat.test`, name: `Mai ${tag}`, systemRole: "MEMBER", passwordHash: "x", mustChangePassword: false, emailVerifiedAt: new Date() } });
+    extra.push(mai.id);
+    await prisma.workspaceMember.create({ data: { workspaceId: seed.wsId, userId: mai.id, role: "editor" } });
+    const [c, d] = me.id < mai.id ? [me.id, mai.id] : [mai.id, me.id];
+    await prisma.contact.create({ data: { userAId: c, userBId: d, status: "pending", requestedById: mai.id } });
+    await look();
+    await expect(page.getByTestId("chat-popup").filter({ hasText: `Mai ${tag}` })).toContainText(/lời mời kết bạn|contact request/);
+    await expect(page.getByTestId("nav-messages").getByTestId("chat-unread")).toHaveText("3");
+    await page.getByTestId("chat-popup").filter({ hasText: `Mai ${tag}` }).getByRole("button").first().click();
+    await expect(page.getByTestId("chat-requests-count")).toHaveText("1");
   } finally {
     await prisma.conversation.deleteMany({ where: { members: { some: { userId: lan.id } } } });
-    await prisma.contact.deleteMany({ where: { OR: [{ userAId: lan.id }, { userBId: lan.id }] } });
-    await prisma.workspaceMember.deleteMany({ where: { userId: lan.id } });
-    await prisma.user.delete({ where: { id: lan.id } });
+    await prisma.contact.deleteMany({ where: { OR: [{ userAId: { in: extra } }, { userBId: { in: extra } }] } });
+    await prisma.workspaceMember.deleteMany({ where: { userId: { in: extra } } });
+    await prisma.user.deleteMany({ where: { id: { in: extra } } });
     await prisma.$disconnect();
   }
 });

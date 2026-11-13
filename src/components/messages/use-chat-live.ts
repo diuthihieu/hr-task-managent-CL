@@ -34,6 +34,10 @@ async function start() {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") emit({ event: "poll", payload: {} });
   });
+  // A push reached this device while woli is open (see public/sw.js): look now, whatever the connection.
+  navigator.serviceWorker?.addEventListener("message", (e: MessageEvent) => {
+    if ((e.data as { type?: string } | null)?.type === "woli:push") emit({ event: "poll", payload: {} });
+  });
   try {
     const res = await fetch("/api/messages/realtime", { credentials: "same-origin" });
     if (!res.ok) return;

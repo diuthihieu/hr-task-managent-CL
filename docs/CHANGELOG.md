@@ -3,8 +3,8 @@
 Ghi các thay đổi đã lên production của woli, theo ngày (giờ Việt Nam), mỗi PR
 một dòng. Ngày mới nhất ở trên cùng.
 
-**Cách cập nhật:** sau mỗi lần merge vào `master`, thêm một dòng vào ngày tương
-ứng trong cùng PR hoặc PR kế tiếp. Lỗi phát hiện trong lúc làm được ghi chi tiết
+**Cách cập nhật (bắt buộc, xem `CLAUDE.md`):** mỗi PR tự thêm dòng của mình
+vào ngày merge. Lỗi phát hiện trong lúc làm được ghi chi tiết
 ở file bug log của đợt đó (cột "Bug log").
 
 **Lịch sử trước 12/11/2026** không chép lại ở đây:
@@ -20,6 +20,8 @@ vi sẵn có), **Vận hành** (cấu hình, hạ tầng, không đổi code).
 
 | Giờ | Loại | PR | Thay đổi | Bug log |
 | --- | --- | --- | --- | --- |
+| __:__ | Sửa, Mới | #___ | Thông báo tin nhắn: khi woli đang mở, tin nhắn mới và lời mời kết bạn hiện popup kèm âm báo; báo cáo Woli AI chạy theo lịch gửi được push tới thiết bị; Settings → Notifications có dòng "Tin nhắn" để bật/tắt popup và push; lời mời kết bạn đang chờ được cộng vào số cạnh Messages và hiện số trên tab Bạn bè. | [12–13/11](bugfix-log-20261113.md) |
+| 09:46 | Vận hành | #179 | Thêm `docs/CHANGELOG.md` và bug log đợt 12–13/11. Từ đây mọi thay đổi đều phải ghi changelog (quy ước trong `CLAUDE.md`). | – |
 | 08:25 | Sửa | #178 | File Agent xuất ra đọc được: PDF đủ chữ và có bảng, Excel và Word có bảng thật. Tin Woli AI hiển thị có định dạng và được tính vào số chưa đọc cạnh Messages. | [12–13/11](bugfix-log-20261113.md) |
 | 01:28 | Mới | #177 | Workflow chạy theo lịch (giờ / ngày / tuần / tháng, tối thiểu 1 lần/giờ), kết quả gửi vào hộp thư Woli AI của người tạo. Migration `20270114000000_agent_workflows`. | [12–13/11](bugfix-log-20261113.md) |
 

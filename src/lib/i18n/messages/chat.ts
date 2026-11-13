@@ -63,6 +63,8 @@ export const CHAT = {
   "chat.botReadOnly": ["Woli AI writes here; you can't reply.", "Woli AI gửi tin vào đây; bạn không trả lời được."],
   "chat.download": ["Download", "Tải xuống"],
   "chat.back": ["Back", "Quay lại"],
+  "chat.popup.more": ["{count} new messages", "{count} tin nhắn mới"],
+  "chat.popup.recalled": ["Recalled a message", "Đã thu hồi một tin nhắn"],
   "chat.pushRequest": ["Sent you a contact request", "Đã gửi cho bạn lời mời kết bạn"],
   // Scheduled workflows (Agent Work → Workflows).
   "agent.tab.workflows": ["Workflows", "Workflow"],

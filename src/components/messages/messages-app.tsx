@@ -77,8 +77,15 @@ export function MessagesApp({ meId, initialConversationId, initialTab }: { meId:
     api.get<ConversationRow[]>("/api/messages").then(setRows).catch((e) => toast.error(e instanceof Error ? e.message : t("common.failed")));
   }, [t]);
   useEffect(() => load(), [load]);
+  // Contact requests waiting for my answer: the number on the Contacts tab.
+  const [requests, setRequests] = useState(0);
+  const loadRequests = useCallback(() => {
+    api.get<{ requests?: number }>("/api/messages/unread").then((r) => setRequests(r.requests ?? 0)).catch(() => {});
+  }, []);
+  useEffect(() => loadRequests(), [loadRequests]);
   useChatSignals((s) => {
     if (s.event === "message" || s.event === "conversation" || s.event === "poll" || s.event === "read") load();
+    if (s.event === "contact" || s.event === "poll" || s.event === "read") loadRequests();
   });
 
   const open = useCallback(
@@ -118,6 +125,7 @@ export function MessagesApp({ meId, initialConversationId, initialTab }: { meId:
           {(["chats", "contacts"] as const).map((k) => (
             <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={cn("h-9 px-3 text-xs font-medium border-b-2", tab === k ? "border-indigo-600 text-indigo-700 dark:text-indigo-300" : "border-transparent text-neutral-500")} data-testid={`chat-tab-${k}`}>
               {t(k === "chats" ? "chat.tab.chats" : "chat.tab.contacts")}
+              {k === "contacts" && requests > 0 && <span className="ml-1.5 inline-block min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-semibold leading-4 text-center align-middle" data-testid="chat-requests-count">{requests > 99 ? "99+" : requests}</span>}
             </button>
           ))}
         </div>
@@ -536,6 +544,7 @@ function ContactsPanel({ onMessage }: { onMessage: (userId: string) => void }) {
       if (action === "request") await api.post("/api/messages/contacts", { userId });
       else await api.patch(`/api/messages/contacts/${userId}`, { action });
       load();
+      chatChanged(); // the badges count requests waiting for me
       if (q.trim()) setResults(await api.get<PersonStatus[]>(`/api/messages/people?q=${encodeURIComponent(q)}`));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : t("common.failed"));

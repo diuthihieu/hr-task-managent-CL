@@ -27,9 +27,19 @@ test("messages: contacts, direct chat, task tags, recall window, blocks, groups,
   assert.equal((await admin.post("/api/messages", { kind: "direct", userId: s.viewerId })).status, 403, "no chat before the request is accepted");
   type Lists = { friends: { id: string }[]; incoming: { id: string }[] };
   assert.ok((await viewer.get<Lists>("/api/messages/contacts")).body.incoming.some((p) => p.id === adminId));
+  // A request waiting for my answer is counted for the sidebar badge and the Contacts tab; not for the sender.
+  type Unread = { count: number; requests: number };
+  assert.equal((await viewer.get<Unread>("/api/messages/unread")).body.requests, 1);
+  assert.equal((await admin.get<Unread>("/api/messages/unread")).body.requests, 0);
   assert.equal((await admin.patch(`/api/messages/contacts/${s.viewerId}`, { action: "accept" })).status, 400, "the requester can't accept their own request");
   assert.equal((await viewer.patch(`/api/messages/contacts/${adminId}`, { action: "accept" })).status, 200);
   assert.ok((await admin.get<Lists>("/api/messages/contacts")).body.friends.some((p) => p.id === s.viewerId));
+  assert.equal((await viewer.get<Unread>("/api/messages/unread")).body.requests, 0, "answered: no longer counted");
+  // "Messages" is a notification group of its own in Settings (pop-up and device).
+  assert.equal((await viewer.put("/api/account/notification-settings", { nativeOff: ["chat"], popupOff: ["chat"] })).status, 200);
+  const prefs = await viewer.get<{ nativeOff: string[]; popupOff: string[] }>("/api/account/notification-settings");
+  assert.deepEqual([prefs.body.nativeOff, prefs.body.popupOff], [["chat"], ["chat"]]);
+  assert.equal((await viewer.put("/api/account/notification-settings", { nativeOff: [], popupOff: [] })).status, 200);
 
   // --- direct chat with task tags
   const open = await admin.post<{ id: string }>("/api/messages", { kind: "direct", userId: s.viewerId });

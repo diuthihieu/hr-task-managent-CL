@@ -13,6 +13,8 @@ export const NOTIFY_GROUPS = [
   { key: "okr", types: ["objective_risk"] },
   { key: "ai", types: ["ai_suggestion"] },
   { key: "recognition", types: ["kudos", "kudos_reaction", "reward_request", "reward_result"] },
+  // Chat messages are not bell notifications: this group only switches their pop-up and device push.
+  { key: "chat", types: ["chat_message"] },
 ] as const;
 export type NotifyGroup = (typeof NOTIFY_GROUPS)[number]["key"];
 export const NOTIFY_GROUP_KEYS = NOTIFY_GROUPS.map((g) => g.key) as NotifyGroup[];

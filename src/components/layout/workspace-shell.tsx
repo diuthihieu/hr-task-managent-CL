@@ -7,6 +7,7 @@ import { MobileTabBar } from "@/components/layout/mobile-tab-bar";
 import { ShellNavContext, type ShellNav } from "@/components/layout/shell-context";
 import { NotificationBell, RecognitionCount, UnreadCount } from "@/components/notifications/notification-bell";
 import { ChatUnread } from "@/components/messages/chat-unread";
+import { ChatPopups } from "@/components/messages/chat-popups";
 import { WorkspaceAvatar } from "@/components/workspaces/workspace-avatar";
 import { emitViewsChanged } from "@/lib/view-events";
 import { FocusDock } from "@/components/focus/focus-mode";
@@ -518,6 +519,7 @@ export function WorkspaceShell({
           </button>
           <div className="ml-auto flex items-center gap-0.5 sm:gap-1.5 shrink-0">
             <NotificationBell align="end" />
+            <ChatPopups />
             <Link href={`/w/${workspace.slug}/ai`} className="hidden sm:block rounded-md p-1.5 text-neutral-500 hover:bg-neutral-100 dark:hover:bg-neutral-800" title={t("nav.ai")}>
               <Sparkles size={16} />
             </Link>

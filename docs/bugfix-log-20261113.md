@@ -10,19 +10,20 @@ Cập nhật lần cuối: 13/11/2026.
 
 | Hạng mục | Kết quả |
 | --- | --- |
-| PR đã merge | 5 (#173, #174, #175, #177, #178) |
+| PR đã merge | 7 (#173, #174, #175, #177, #178, #179, #180) |
 | Commit làm việc | 14 |
 | Phạm vi | 79 file, +5.682 / −119 dòng, 2 migration |
-| Lỗi chủ sản phẩm báo sau khi dùng trên production | 5, đã sửa (mục 4.1) |
-| Lỗi review tự động bắt được trước khi merge | 11, đã sửa (mục 4.2) |
+| Lỗi chủ sản phẩm báo sau khi dùng trên production | 9, đã sửa (mục 4.1) |
+| Lỗi review tự động bắt được trước khi merge | 12, đã sửa (mục 4.2) |
 | Lỗi CI và kiểm thử nội bộ bắt được trước khi merge | 3, đã sửa (mục 4.3) |
 | Việc còn mở | 3 cần kiểm chứng, 3 chưa làm (mục 5) |
 | Test tự động khi merge #178 | unit 253, integration 142, E2E 57 |
 
-Trong 19 lỗi, 14 lỗi được chặn trước khi tới người dùng. 5 lỗi lọt ra
-production đều nằm ở kết quả của workflow (file xuất ra và tin Woli AI): các
-test lúc đó chỉ kiểm tra file được tạo, không kiểm tra nội dung file hiển thị
-ra sao.
+Trong 24 lỗi, 15 lỗi được chặn trước khi tới người dùng. 9 lỗi lọt ra
+production thuộc hai nhóm: kết quả của workflow (file xuất ra và tin Woli AI),
+vì test chỉ kiểm tra file được tạo chứ không kiểm tra nội dung; và thông báo
+tin nhắn, vì test chỉ kiểm tra số chưa đọc chứ không kiểm tra người nhận có
+được báo hay không.
 
 ## 2. Cách làm
 
@@ -58,6 +59,15 @@ Giữ nguyên quy trình ở mục 2 của
 | P4 | Excel chỉ một cột toàn dòng Markdown. | Nội dung được ghi từng dòng, không tách bảng. | Sheet `Report` chứa toàn bộ, bảng thành cột thật. Mỗi bảng thêm một sheet riêng có filter. Số và phần trăm lưu dạng số. |
 | P5 | Bảng trong Word là dòng chữ. | Như P4. | Bảng thật, dòng tiêu đề tô nền. |
 
+Sửa trong #180:
+
+| # | Hiện tượng | Nguyên nhân | Cách sửa |
+| --- | --- | --- | --- |
+| P6 | Có tin nhắn mới nhưng không thấy thông báo nào khi woli đang mở. | Push tới thiết bị vẫn được gửi (đã kiểm chứng trên production), nhưng service worker cố ý không hiện thông báo hệ thống khi woli đang mở, vì với thông báo thường thì chuông đã hiện popup. Tin nhắn không đi qua chuông nên không có gì hiện. | Thêm popup tin nhắn trong app (kèm âm báo, bấm để mở hội thoại); không hiện khi đang ở trang Messages. Trên thiết bị chưa bật push, tab chạy nền tự hiện thông báo hệ thống. |
+| P7 | Báo cáo Woli AI chạy theo lịch không có push. | Lần chạy theo lịch chạy sau khi request đã trả lời; push lại được xếp "gửi sau khi trả lời" thêm một lần nữa và bị bỏ khi job kết thúc. Production: tin bot lúc 10:00 ngày 13/11 không cập nhật thời điểm gửi push của thiết bị nào. | Tin của Woli AI gửi push ngay và chờ gửi xong. Nội dung push bỏ ký hiệu Markdown. |
+| P8 | Settings → Notifications không có mục cho tin nhắn. | Tin nhắn không thuộc nhóm thông báo nào. | Thêm nhóm "Tin nhắn" với hai công tắc: popup trong app và push tới thiết bị. Máy chủ bỏ qua người đã tắt push tin nhắn. |
+| P9 | Lời mời kết bạn: người nhận không thấy thông báo, số cạnh Messages không tăng, tab Bạn bè không có số. | Số cạnh Messages chỉ đếm tin chưa đọc; lời mời chỉ có push (bị ẩn khi app đang mở, như P6). | API trả thêm số lời mời đang chờ; số này cộng vào badge Messages và hiện trên tab Bạn bè; có popup khi lời mời tới. |
+
 Đi kèm trong #178: file đặt tên theo Skill và ngày thay cho tên định dạng; AI
 được dặn viết cho người đọc nghiệp vụ, không đưa tên trường nội bộ (ví dụ
 `tasksListed`) vào báo cáo.
@@ -78,6 +88,8 @@ Giữ nguyên quy trình ở mục 2 của
 | R10 | #177 | Vercel | Sửa một phần workflow (ví dụ tạm dừng) làm mất tham số và tự bật lại workflow. Nguyên nhân: Zod 4 vẫn áp giá trị mặc định khi dùng `.partial()`. | Schema riêng cho cập nhật, không có giá trị mặc định; chỉ đổi trường được gửi lên. |
 | R11 | #178 | Codex, Vercel | Ba lỗi trong chính bản sửa: tên sheet Excel vẫn có thể trùng sau khi đánh số (làm hỏng cả lần chạy); dòng bảng PDF cao hơn một trang bị vẽ ra ngoài trang; tin dài bị cắt giữa một dòng bảng. | Đánh số tới khi tên chưa dùng; dòng cao được vẽ tiếp sang trang sau dưới dòng tiêu đề lặp lại; cắt tin ở cuối dòng. |
 
+| R12 | #180 | Codex, Vercel | Hai lỗi trong chính bản sửa thông báo: khi mất realtime và thiết bị chưa bật push, tab chạy nền không tự kiểm tra nên không báo được tin mới; hai lần tải về sai thứ tự có thể làm popup báo trùng một tin. | Tab nền tự kiểm tra mỗi 2 phút; chỉ dùng kết quả của lần tải mới nhất. |
+
 ### 4.3. CI và kiểm thử nội bộ bắt được trước khi merge
 
 | # | PR | Nguồn | Lỗi | Cách sửa |
@@ -94,7 +106,7 @@ Giữ nguyên quy trình ở mục 2 của
 | --- | --- |
 | Gemini trả 402 | Billing đã bật, AI chạy được. Log còn một lần 402 lúc 07:23 ngày 13/11 (giờ Việt Nam); chưa rõ có lặp lại. |
 | Realtime giữa hai người | Chưa thử được vì lời mời kết bạn đang chờ chấp nhận. |
-| Push notification khi Woli AI gửi báo cáo | Chỉ đến khi trình duyệt hoặc điện thoại đã bật nhận thông báo; chưa xác nhận trên máy chủ sản phẩm. |
+| Push notification khi Woli AI gửi báo cáo | Đã sửa (P7); cần chủ sản phẩm xác nhận lại sau lần chạy theo lịch kế tiếp. |
 
 ### 5.2. Chưa làm (đã thống nhất để sau)
 
@@ -110,6 +122,10 @@ Giữ nguyên quy trình ở mục 2 của
    một cột có thể NULL sẽ bỏ sót dòng NULL.
 3. **Zod 4: không dùng `.partial()` trên schema có `.default()` cho API cập
    nhật.** Viết schema cập nhật riêng.
-4. **Font chia theo bộ ký tự phải nhúng đủ các phần** (Latin, Vietnamese,
+4. **Việc chạy nền không dùng "gửi sau khi trả lời" (`after`) cho bước cuối.**
+   Trong job chạy nền, chờ (await) trực tiếp việc cần làm.
+5. **Mỗi kênh thông báo mới phải có test "người nhận được báo"** cho cả hai
+   trường hợp: app đang mở và app đang đóng.
+6. **Font chia theo bộ ký tự phải nhúng đủ các phần** (Latin, Vietnamese,
    Latin-ext) và khai báo trong `outputFileTracingIncludes` để có mặt trên
    serverless.

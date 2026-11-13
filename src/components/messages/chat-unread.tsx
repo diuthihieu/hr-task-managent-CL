@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/api-client";
 import { useChatSignals } from "./use-chat-live";
 
-/** Unread messages badge for the sidebar "Messages" link. */
+/** Badge for the sidebar "Messages" link: unread messages plus contact requests waiting for an answer. */
 export function ChatUnread() {
   const [count, setCount] = useState(0);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -11,7 +11,7 @@ export function ChatUnread() {
     if (timer.current) clearTimeout(timer.current);
     // Several signals in a burst (a busy group) cost one request.
     timer.current = setTimeout(() => {
-      api.get<{ count: number }>("/api/messages/unread").then((r) => setCount(r.count)).catch(() => {});
+      api.get<{ count: number; requests?: number }>("/api/messages/unread").then((r) => setCount(r.count + (r.requests ?? 0))).catch(() => {});
     }, 400);
   }, []);
   useEffect(() => {

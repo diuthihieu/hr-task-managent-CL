@@ -9,7 +9,7 @@ import PptxGenJS from "pptxgenjs";
 import * as XLSX from "xlsx";
 import { safeFileName } from "@/lib/storage";
 import { normalizeOutputDefinitions, type AgentArtifactFormat } from "./artifact-contract";
-import { cellValue, markdownBlocks, type MdBlock } from "./markdown-blocks";
+import { cellValue, markdownBlocks, sheetName, type MdBlock } from "./markdown-blocks";
 
 export interface GeneratedAgentArtifact {
   filename: string;
@@ -108,10 +108,7 @@ function makeXlsx(title: string, markdown: string) {
   XLSX.utils.book_append_sheet(workbook, sheet, "Report");
   const used = new Set(["report"]);
   for (const [n, { name, table }] of tables.entries()) {
-    // Sheet names: at most 31 characters, none of : \\ / ? * [ ], unique.
-    let base = name.replace(/[:\\/?*[\]]/g, " ").replace(/\s+/g, " ").trim().slice(0, 27) || `Table ${n + 1}`;
-    if (used.has(base.toLowerCase())) base = `${base.slice(0, 24)} ${n + 1}`;
-    used.add(base.toLowerCase());
+    const base = sheetName(name, used, n + 1);
     const ws = XLSX.utils.aoa_to_sheet([table.header, ...table.rows.map((r) => r.map(xlsxCell))]);
     ws["!cols"] = table.header.map((h, i) => ({ wch: Math.min(60, Math.max(10, h.length, ...table.rows.map((r) => (r[i] ?? "").length)) + 2) }));
     ws["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: table.rows.length, c: table.header.length - 1 } }) };

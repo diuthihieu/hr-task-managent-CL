@@ -79,3 +79,18 @@ export function cellValue(text: string): string | number | { percent: number } {
   if (pct) return { percent: Math.round(Number(pct[1]) * 1e6) / 1e8 };
   return text;
 }
+
+/**
+ * A worksheet name Excel accepts and that is not taken yet: at most 31 characters, none of : \ / ? * [ ],
+ * compared without case. A taken name gets a number, counted up until it is free. `used` is updated.
+ */
+export function sheetName(wanted: string, used: Set<string>, index: number): string {
+  const clean = wanted.replace(/[:\\/?*[\]]/g, " ").replace(/\s+/g, " ").replace(/^'+|'+$/g, "").trim() || `Table ${index}`;
+  let name = clean.slice(0, 31).trimEnd();
+  for (let n = index; used.has(name.toLowerCase()); n++) {
+    const suffix = ` ${n}`;
+    name = `${clean.slice(0, 31 - suffix.length).trimEnd()}${suffix}`;
+  }
+  used.add(name.toLowerCase());
+  return name;
+}

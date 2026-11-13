@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cellValue, markdownBlocks, plainInline } from "./markdown-blocks";
+import { cellValue, markdownBlocks, plainInline, sheetName } from "./markdown-blocks";
 
 test("tables become cells; the :--- row and --- rules are dropped", () => {
   const md = ["# Báo cáo", "", "- **Ngày:** 13/11", "---", "| Tên | Giờ | Tỷ lệ |", "| :--- | :---: | ---: |", "| **Hieu** | 45.8 | 59.61% |", "| Tam | 4.5 |", "", "Hết."].join("\n");
@@ -32,4 +32,18 @@ test("cell values: numbers and percentages become numbers, codes stay text", () 
   assert.equal(cellValue("2026-11"), "2026-11");
   assert.equal(cellValue("007"), "007");
   assert.equal(cellValue("-"), "-");
+});
+
+test("sheet names: valid for Excel and never repeated, even when the numbered name is taken too", () => {
+  const used = new Set(["report"]);
+  assert.equal(sheetName("Sales", used, 1), "Sales");
+  assert.equal(sheetName("Sales 3", used, 2), "Sales 3");
+  assert.equal(sheetName("sales", used, 3), "sales 4", "\"sales 3\" is taken, so it counts on");
+  assert.equal(sheetName("Report", used, 4), "Report 4");
+  assert.equal(sheetName("A/B: [x]?*", used, 5), "A B x");
+  assert.equal(sheetName("", used, 6), "Table 6");
+  const long = sheetName("3. Tình trạng tiến độ các task tồn đọng / đang triển khai", used, 7);
+  assert.ok(long.length <= 31);
+  const again = sheetName("3. Tình trạng tiến độ các task tồn đọng / đang triển khai", used, 8);
+  assert.ok(again.length <= 31 && again !== long);
 });

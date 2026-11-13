@@ -14,12 +14,12 @@ Cập nhật lần cuối: 13/11/2026.
 | Commit làm việc | 14 |
 | Phạm vi | 79 file, +5.682 / −119 dòng, 2 migration |
 | Lỗi chủ sản phẩm báo sau khi dùng trên production | 9, đã sửa (mục 4.1) |
-| Lỗi review tự động bắt được trước khi merge | 11, đã sửa (mục 4.2) |
+| Lỗi review tự động bắt được trước khi merge | 12, đã sửa (mục 4.2) |
 | Lỗi CI và kiểm thử nội bộ bắt được trước khi merge | 3, đã sửa (mục 4.3) |
 | Việc còn mở | 3 cần kiểm chứng, 3 chưa làm (mục 5) |
 | Test tự động khi merge #178 | unit 253, integration 142, E2E 57 |
 
-Trong 23 lỗi, 14 lỗi được chặn trước khi tới người dùng. 9 lỗi lọt ra
+Trong 24 lỗi, 15 lỗi được chặn trước khi tới người dùng. 9 lỗi lọt ra
 production thuộc hai nhóm: kết quả của workflow (file xuất ra và tin Woli AI),
 vì test chỉ kiểm tra file được tạo chứ không kiểm tra nội dung; và thông báo
 tin nhắn, vì test chỉ kiểm tra số chưa đọc chứ không kiểm tra người nhận có
@@ -87,6 +87,8 @@ Sửa trong #180:
 | R9 | #177 | Codex | Lần chạy theo lịch không gắn với người tạo nên không tính vào hạn mức AI của họ. Tham số dạng danh sách có lúc lưu thành chuỗi. | Chạy trong ngữ cảnh AI của người tạo; chuẩn hoá tham số danh sách thành mảng. |
 | R10 | #177 | Vercel | Sửa một phần workflow (ví dụ tạm dừng) làm mất tham số và tự bật lại workflow. Nguyên nhân: Zod 4 vẫn áp giá trị mặc định khi dùng `.partial()`. | Schema riêng cho cập nhật, không có giá trị mặc định; chỉ đổi trường được gửi lên. |
 | R11 | #178 | Codex, Vercel | Ba lỗi trong chính bản sửa: tên sheet Excel vẫn có thể trùng sau khi đánh số (làm hỏng cả lần chạy); dòng bảng PDF cao hơn một trang bị vẽ ra ngoài trang; tin dài bị cắt giữa một dòng bảng. | Đánh số tới khi tên chưa dùng; dòng cao được vẽ tiếp sang trang sau dưới dòng tiêu đề lặp lại; cắt tin ở cuối dòng. |
+
+| R12 | #180 | Codex, Vercel | Hai lỗi trong chính bản sửa thông báo: khi mất realtime và thiết bị chưa bật push, tab chạy nền không tự kiểm tra nên không báo được tin mới; hai lần tải về sai thứ tự có thể làm popup báo trùng một tin. | Tab nền tự kiểm tra mỗi 2 phút; chỉ dùng kết quả của lần tải mới nhất. |
 
 ### 4.3. CI và kiểm thử nội bộ bắt được trước khi merge
 

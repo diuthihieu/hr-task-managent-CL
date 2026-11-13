@@ -10,7 +10,7 @@ Cập nhật lần cuối: 13/11/2026.
 
 | Hạng mục | Kết quả |
 | --- | --- |
-| PR đã merge | 7 (#173, #174, #175, #177, #178, #179, #180) |
+| PR đã merge | 8 (#173, #174, #175, #177, #178, #179, #180, #181) |
 | Commit làm việc | 14 |
 | Phạm vi | 79 file, +5.682 / −119 dòng, 2 migration |
 | Lỗi chủ sản phẩm báo sau khi dùng trên production | 10, đã sửa (mục 4.1) |
@@ -68,7 +68,7 @@ Sửa trong #180:
 | P8 | Settings → Notifications không có mục cho tin nhắn. | Tin nhắn không thuộc nhóm thông báo nào. | Thêm nhóm "Tin nhắn" với hai công tắc: popup trong app và push tới thiết bị. Máy chủ bỏ qua người đã tắt push tin nhắn. |
 | P9 | Lời mời kết bạn: người nhận không thấy thông báo, số cạnh Messages không tăng, tab Bạn bè không có số. | Số cạnh Messages chỉ đếm tin chưa đọc; lời mời chỉ có push (bị ẩn khi app đang mở, như P6). | API trả thêm số lời mời đang chờ; số này cộng vào badge Messages và hiện trên tab Bạn bè; có popup khi lời mời tới. |
 
-Sửa trong #___:
+Sửa trong #181:
 
 | # | Hiện tượng | Nguyên nhân | Cách sửa |
 | --- | --- | --- | --- |

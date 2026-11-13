@@ -25,7 +25,7 @@ vi sẵn có), **Vận hành** (cấu hình, hạ tầng, không đổi code).
 
 | Giờ | Loại | PR | Thay đổi | Bug log |
 | --- | --- | --- | --- | --- |
-| __:__ | Đổi | #___ | Tin Woli AI hiển thị trọn báo cáo: bỏ giới hạn 3.600 ký tự và không còn cắt ở cuối. Báo cáo rất dài được nối sang tin kế tiếp, không mất nội dung. AI được dặn viết cô đọng nhưng đủ mọi mục. Migration `20270115000000_chat_message_long_body`. | [12–13/11](bugfix-log-20261113.md) |
+| 13:30 | Đổi | #181 | Tin Woli AI hiển thị trọn báo cáo: bỏ giới hạn 3.600 ký tự và không còn cắt ở cuối. Báo cáo rất dài được nối sang tin kế tiếp, không mất nội dung. AI được dặn viết cô đọng nhưng đủ mọi mục. Migration `20270115000000_chat_message_long_body`. | [12–13/11](bugfix-log-20261113.md) |
 | 10:40 | Sửa, Mới | #180 | Thông báo tin nhắn: khi woli đang mở, tin nhắn mới và lời mời kết bạn hiện popup kèm âm báo; báo cáo Woli AI chạy theo lịch gửi được push tới thiết bị; Settings → Notifications có dòng "Tin nhắn" để bật/tắt popup và push; lời mời kết bạn đang chờ được cộng vào số cạnh Messages và hiện số trên tab Bạn bè. | [12–13/11](bugfix-log-20261113.md) |
 | 09:46 | Vận hành | #179 | Thêm `docs/CHANGELOG.md` và bug log đợt 12–13/11. Từ đây mọi thay đổi đều phải ghi changelog (quy ước trong `CLAUDE.md`). | – |
 | 08:25 | Sửa | #178 | File Agent xuất ra đọc được: PDF đủ chữ và có bảng, Excel và Word có bảng thật. Tin Woli AI hiển thị có định dạng và được tính vào số chưa đọc cạnh Messages. | [12–13/11](bugfix-log-20261113.md) |
@@ -33,7 +33,7 @@ vi sẵn có), **Vận hành** (cấu hình, hạ tầng, không đổi code).
 
 ### Lưu ý khi dùng
 
-**Tin Woli AI trọn báo cáo (#___)**
+**Tin Woli AI trọn báo cáo (#181)**
 
 - Một tin Woli AI chứa tối đa 30.000 ký tự. Báo cáo dài hơn tự nối sang tin kế
   tiếp, chia giữa các đoạn; bảng bị chia thì mỗi phần lặp lại dòng tiêu đề.

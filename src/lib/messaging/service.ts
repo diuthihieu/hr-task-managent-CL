@@ -12,6 +12,7 @@ import { badRequest, forbidden, notFound, HttpError, type SessionUser } from "@/
 import { rateLimit } from "@/lib/rate-limit";
 import { pushDirect } from "@/lib/push";
 import { publish } from "./realtime";
+import { fitMessage } from "./fit-message";
 import { makeT, normalizeLocale } from "@/lib/i18n/core";
 
 export const MESSAGE_MAX = 4000;
@@ -470,23 +471,12 @@ export async function searchTasks(user: SessionUser, q: string) {
   return tasks.map((t) => ({ id: t.id, title: t.title, project: t.project.name, workspace: t.workspace.name }));
 }
 
-/**
- * A long Markdown text cut to fit one message at the end of a block (a blank line), so a table or a
- * list is never cut in the middle and still renders.
- */
-export function fitMessage(text: string, max = MESSAGE_MAX): string {
-  if (text.length <= max) return text;
-  const room = max - 2;
-  const cut = text.lastIndexOf("\n\n", room);
-  return `${text.slice(0, cut > max / 2 ? cut : room).trimEnd()}\n…`;
-}
-
 /** Woli AI writes into a user's inbox (scheduled workflows, background Skill runs). */
 export async function postBotMessage(userId: string, body: string, opts: { outputIds?: string[]; taskIds?: string[] } = {}) {
   const conversationId = await botInbox(userId);
   const now = new Date();
   const msg = await prisma.$transaction(async (tx) => {
-    const created = await tx.chatMessage.create({ data: { conversationId, authorId: null, body: fitMessage(body), outputIds: opts.outputIds ?? [], taskIds: opts.taskIds ?? [], createdAt: now } });
+    const created = await tx.chatMessage.create({ data: { conversationId, authorId: null, body: fitMessage(body, MESSAGE_MAX), outputIds: opts.outputIds ?? [], taskIds: opts.taskIds ?? [], createdAt: now } });
     await tx.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: now } });
     return created;
   });

@@ -293,22 +293,33 @@ async function makePdf(title: string, markdown: string) {
         const spare = width - minSum;
         widths = longestWord.map((w, i) => w + (spare * want[i]) / wantSum);
       }
+      // A row is drawn in as many pieces as it needs: a cell with more lines than a page holds continues
+      // on the next page (under the repeated header) instead of running off the bottom.
       const drawRow = (cells: string[], head: boolean) => {
         const face = head ? bold : regular;
         const wrapped = cells.map((c, i) => wrapPdfLine(c, face, size, widths[i] - pad * 2));
-        const h = Math.max(...wrapped.map((w) => w.length)) * lineH + pad * 2;
-        if (y - h < margin) {
-          addPage();
-          if (!head) drawRow(block.header, true);
+        const total = Math.max(...wrapped.map((w) => w.length));
+        let from = 0;
+        while (from < total) {
+          let fits = Math.floor((y - margin - pad * 2) / lineH);
+          // Too little room for a sensible piece: start it on a new page.
+          if (fits < Math.min(total - from, 2)) {
+            addPage();
+            if (!head) drawRow(block.header, true);
+            fits = Math.max(1, Math.floor((y - margin - pad * 2) / lineH));
+          }
+          const count = Math.min(fits, total - from);
+          const h = count * lineH + pad * 2;
+          if (head) page.drawRectangle({ x: margin, y: y - h, width, height: h, color: rgb(0.93, 0.95, 1) });
+          let x = margin;
+          wrapped.forEach((lines, i) => {
+            lines.slice(from, from + count).forEach((line, n) => draw(line, x + pad, y - pad - size - n * lineH + 1, size, face, head ? dark : ink));
+            page.drawRectangle({ x, y: y - h, width: widths[i], height: h, borderColor: rule, borderWidth: 0.5 });
+            x += widths[i];
+          });
+          y -= h;
+          from += count;
         }
-        if (head) page.drawRectangle({ x: margin, y: y - h, width, height: h, color: rgb(0.93, 0.95, 1) });
-        let x = margin;
-        wrapped.forEach((lines, i) => {
-          lines.forEach((line, n) => draw(line, x + pad, y - pad - size - n * lineH + 1, size, face, head ? dark : ink));
-          page.drawRectangle({ x, y: y - h, width: widths[i], height: h, borderColor: rule, borderWidth: 0.5 });
-          x += widths[i];
-        });
-        y -= h;
       };
       y -= 3;
       drawRow(block.header, true);

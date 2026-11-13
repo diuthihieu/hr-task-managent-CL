@@ -12,6 +12,7 @@ import { badRequest, forbidden, notFound, HttpError, type SessionUser } from "@/
 import { rateLimit } from "@/lib/rate-limit";
 import { pushDirect } from "@/lib/push";
 import { publish } from "./realtime";
+import { fitMessage } from "./fit-message";
 import { makeT, normalizeLocale } from "@/lib/i18n/core";
 
 export const MESSAGE_MAX = 4000;
@@ -157,6 +158,11 @@ export async function respondContact(user: SessionUser, otherId: string, action:
 // Conversations
 
 const activeMember = (userId: string) => ({ userId, leftAt: null });
+/**
+ * Messages written by someone else, Woli AI included. Not `NOT: { authorId }`: in SQL that drops rows
+ * whose author is NULL, so messages from Woli AI were never counted as unread.
+ */
+const notMine = (userId: string): Prisma.ChatMessageWhereInput => ({ OR: [{ authorId: null }, { authorId: { not: userId } }] });
 
 /** My membership, or 404 (never reveal that a conversation exists). */
 async function membership(user: SessionUser, conversationId: string) {
@@ -280,7 +286,7 @@ export async function listConversations(user: SessionUser) {
   });
   const unread = await prisma.chatMessage.groupBy({
     by: ["conversationId"],
-    where: { OR: rows.map((r) => ({ conversationId: r.conversationId, createdAt: { gt: r.lastReadAt } })), NOT: { authorId: user.id } },
+    where: { AND: [{ OR: rows.map((r) => ({ conversationId: r.conversationId, createdAt: { gt: r.lastReadAt } })) }, notMine(user.id)] },
     _count: { _all: true },
   });
   const unreadBy = new Map(unread.map((u) => [u.conversationId, u._count._all]));
@@ -306,7 +312,7 @@ export async function listConversations(user: SessionUser) {
 export async function unreadTotal(user: SessionUser): Promise<number> {
   const rows = await prisma.conversationMember.findMany({ where: { ...activeMember(user.id), muted: false }, select: { conversationId: true, lastReadAt: true } });
   if (!rows.length) return 0;
-  return prisma.chatMessage.count({ where: { OR: rows.map((r) => ({ conversationId: r.conversationId, createdAt: { gt: r.lastReadAt } })), NOT: { authorId: user.id } } });
+  return prisma.chatMessage.count({ where: { AND: [{ OR: rows.map((r) => ({ conversationId: r.conversationId, createdAt: { gt: r.lastReadAt } })) }, notMine(user.id)] } });
 }
 
 // ---------------------------------------------------------------------------------------------------
@@ -470,7 +476,7 @@ export async function postBotMessage(userId: string, body: string, opts: { outpu
   const conversationId = await botInbox(userId);
   const now = new Date();
   const msg = await prisma.$transaction(async (tx) => {
-    const created = await tx.chatMessage.create({ data: { conversationId, authorId: null, body: body.slice(0, MESSAGE_MAX), outputIds: opts.outputIds ?? [], taskIds: opts.taskIds ?? [], createdAt: now } });
+    const created = await tx.chatMessage.create({ data: { conversationId, authorId: null, body: fitMessage(body, MESSAGE_MAX), outputIds: opts.outputIds ?? [], taskIds: opts.taskIds ?? [], createdAt: now } });
     await tx.conversation.update({ where: { id: conversationId }, data: { lastMessageAt: now } });
     return created;
   });

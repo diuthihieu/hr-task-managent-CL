@@ -72,6 +72,10 @@ test("workflows: validated, owner-only, run by the tick into the Woli AI inbox, 
   const posted = await prisma.chatMessage.findFirstOrThrow({ where: { conversationId: inbox.id }, orderBy: { createdAt: "desc" } });
   assert.match(posted.body, /Monday digest/);
   assert.equal(posted.authorId, null, "written by Woli AI");
+  const unread = await viewer.get<{ count: number }>("/api/messages/unread");
+  assert.ok(unread.body.count >= 1, "a message from Woli AI counts as unread (the sidebar badge)");
+  const convs = await viewer.get<{ id: string; kind: string; unread: number }[]>("/api/messages");
+  assert.ok((convs.body.find((c) => c.kind === "bot")?.unread ?? 0) >= 1);
   const usage = await prisma.aiUsageEvent.findFirst({ where: { feature: "agent-workflow" }, orderBy: { createdAt: "desc" } });
   assert.equal(usage?.userId, s.viewerId, "the AI call is counted against the owner, not left anonymous");
   const r2 = await tick(`Bearer ${process.env.CRON_SECRET}`);

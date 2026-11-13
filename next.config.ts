@@ -24,7 +24,8 @@ const nextConfig: NextConfig = {
   output: "standalone",
   env: { NEXT_PUBLIC_BUILD_ID: BUILD_ID },
   outputFileTracingIncludes: {
-    "/*": ["./node_modules/@fontsource/noto-sans/files/noto-sans-vietnamese-400-normal.woff"],
+    // Agent Work PDFs: Noto Sans is split by script, and a Vietnamese text needs all three (400 + 700).
+    "/*": ["./node_modules/@fontsource/noto-sans/files/noto-sans-{latin,latin-ext,vietnamese}-{400,700}-normal.woff"],
   },
   poweredByHeader: false,
   // SMTP needs the real Node net/tls stack; bundling nodemailer breaks the handshake.

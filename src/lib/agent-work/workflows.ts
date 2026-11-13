@@ -8,6 +8,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { badRequest, notFound, forbidden, requireWorkspaceRole, visibleProjectWhere, type SessionUser } from "@/lib/authz";
 import { postBotMessage } from "@/lib/messaging/service";
+import { fitMessage } from "@/lib/messaging/fit-message";
 import { runWithAiContext } from "@/lib/ai/usage";
 import { accessibleAgentSkillWhere } from "./access";
 import { normalizeCommandArgs } from "./command-args";
@@ -155,8 +156,10 @@ export async function executeWorkflow(workflowId: string): Promise<Outcome> {
     if (run.status === "completed") {
       const content = "content" in result && typeof result.content === "string" ? result.content : "";
       const outputIds = "outputIds" in result && Array.isArray(result.outputIds) ? (result.outputIds as string[]) : (run.outputs ?? []).map((o) => o.id);
-      const body = `**${w.name}**\n\n${content}`.slice(0, 3800);
-      await postBotMessage(w.ownerId, content.length + w.name.length + 6 > 3800 ? `${body}…\n\n${link}` : body, { outputIds });
+      // The full result is in the attached files and the run; the message carries what fits, cut at a block.
+      const full = `**${w.name}**\n\n${content}`;
+      const body = full.length > 3600 ? `${fitMessage(full, 3600)}\n\n[${w.name}](${link})` : full;
+      await postBotMessage(w.ownerId, body, { outputIds });
       outcome = { status: "completed", runId: run.id };
     } else if (run.status === "waiting_approval") {
       await postBotMessage(w.ownerId, `**${w.name}**\n\nThis run mentions sensitive data and waits for your approval: ${link}`);

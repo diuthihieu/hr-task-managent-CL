@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { cn, initials } from "@/lib/utils";
 import { chatChanged, useChatLive, useChatSignals } from "./use-chat-live";
+import { Markdown } from "@/components/ai/markdown";
 
 interface PersonLite {
   id: string;
@@ -307,7 +308,7 @@ function Thread({ meId, conversation, title, onBack, onChanged, onLeft }: { meId
                 {newDay && <p className="text-center text-[10px] text-neutral-400 py-2">{dayLabel(m.createdAt)}</p>}
                 <div className={cn("group flex gap-2", m.mine ? "justify-end" : "justify-start", !sameAuthor && "pt-2")} data-testid="chat-message">
                   {!m.mine && <span className="w-7">{!sameAuthor && <Avatar name={m.author?.name ?? "Woli AI"} color={m.author?.avatarColor} size={28} bot={!m.author} />}</span>}
-                  <div className={cn("max-w-[78%] flex flex-col", m.mine ? "items-end" : "items-start")}>
+                  <div className={cn("flex flex-col min-w-0", m.author || m.mine ? "max-w-[78%]" : "max-w-[92%]", m.mine ? "items-end" : "items-start")}>
                     {!m.mine && !sameAuthor && conversation.kind === "group" && <span className="text-[11px] text-neutral-500 mb-0.5">{m.author?.name}</span>}
                     <div className="flex items-center gap-1">
                       {changeable && (
@@ -321,8 +322,8 @@ function Thread({ meId, conversation, title, onBack, onChanged, onLeft }: { meId
                           </DropdownMenuContent>
                         </DropdownMenu>
                       )}
-                      <div className={cn("rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap break-words", m.recalled ? "italic text-neutral-400 border border-dashed border-neutral-300 dark:border-neutral-700" : m.mine ? "bg-indigo-600 text-white" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100")} data-testid="chat-bubble">
-                        {m.recalled ? t("chat.recalled") : m.body}
+                      <div className={cn("rounded-2xl px-3 py-2 text-sm break-words", m.author && "whitespace-pre-wrap", !m.author && !m.mine && "min-w-0 max-w-full overflow-x-auto", m.recalled ? "italic text-neutral-400 border border-dashed border-neutral-300 dark:border-neutral-700" : m.mine ? "bg-indigo-600 text-white" : "bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100")} data-testid="chat-bubble">
+                        {m.recalled ? t("chat.recalled") : m.author ? m.body : <Markdown text={m.body} className="text-sm" />}
                       </div>
                     </div>
                     {m.tasks.length > 0 && (
